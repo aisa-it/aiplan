@@ -1,0 +1,9 @@
+[submodule "aiplan-help"]
+	path = aiplan-help
+	url = git@github.com:aisa-it/aiplan-help.git
+[submodule "aiplan-front"]
+	path = aiplan-front
+	url = git@github.com:aisa-it/aiplan-front.git
+[submodule "aiplan-api-ts"]
+	path = aiplan-api-ts
+	url = git@github.com:aisa-it/aiplan-api-ts.git

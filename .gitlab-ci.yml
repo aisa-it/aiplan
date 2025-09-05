@@ -1,0 +1,106 @@
+stages:
+  - generate
+  - build
+  - helm
+  - deploy
+
+services:
+  - name: docker:27.2.0-dind
+    command: ["--registry-mirror", "http://10.0.0.83:5005"]
+
+.docker:
+  image: docker:latest
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_VERSION: '27.2.0'
+.dagger:
+  extends: [.docker]
+  before_script:
+    - apk add curl
+    - curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.18.12 BIN_DIR=/usr/local/bin sh
+
+gen-ts-api:
+  #variables:
+  #  GIT_SUBMODULE_STRATEGY: recursive
+  #  GIT_SUBMODULE_FORCE_HTTPS: "true"
+  #  GIT_STRATEGY: clone
+  tags:
+    - 110-aiplan
+  stage: generate
+  image: registry.webdevsrv.office.aisa.ru/aiplan/utils/gen-ts-api
+  allow_failure: true
+  script:
+    - git config --global url."https://github.com/".insteadOf "ssh://git@github.com:"
+    - git config --global url."https://github.com/".insteadOf "git@github.com:"
+    - git submodule sync --recursive
+    - git submodule update --init --recursive
+    - cd aiplan-api-ts-github
+    - git remote remove ci || true
+    - git remote add ci https://oauth2:$GITHUB_ACCESS_KEY@github.com/aisa-it/aiplan-api-ts.git
+    - git config user.email "gitlab@aisa.ru"
+    - git config user.name "Gitlab Runner"
+    - git checkout main
+    - git fetch ci
+    - git fetch --tags ci
+    - git reset --hard ci/main
+    - git clean -f -d
+    - git tag
+    - git tag -d v0.3.367 v1.38.0 v1.39.0 v1.40.0 || true
+
+    - npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/internal/aiplan/docs/swagger.json -o ./src/ -n aiplan-api.ts
+    - git add .
+    - git commit -m "new gen"
+    - git tag
+    - yarn version --minor
+    - git push --set-upstream ci main
+    - git push --tags
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v(?:\d+.){2}(?:\d+)$/
+
+build:
+  #variables:
+  #  GIT_SUBMODULE_STRATEGY: recursive
+  #  GIT_SUBMODULE_FORCE_HTTPS: "true"
+  tags:
+    - 110-aiplan
+  stage: build
+  extends: [.dagger]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v(?:\d+.){2}(?:\d+)$/
+  script:
+    - git config --global url."https://github.com/".insteadOf "ssh://git@github.com:"
+    - git submodule sync --recursive
+    - git submodule update --init --recursive
+    - dagger call --progress=plain build-app --source=. --version=$CI_COMMIT_TAG --gitlabSecret=env:CI_REGISTRY_PASSWORD --gitlabRegistry=$CI_REGISTRY --gitlabRegistryUser=$CI_REGISTRY_USER --gitlabRegistryImage=$CI_REGISTRY_IMAGE --demoSecret=env:DEMO_REGISTRY_PASSWORD 
+
+helm:
+  tags:
+    - 110-aiplan
+  stage: helm
+  extends: [.dagger]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v(?:\d+.){2}(?:\d+)$/
+  script:
+    - dagger call --progress=plain helm --kubeDir=./kuber --chartName=$CHARTNAME --version=$CI_COMMIT_TAG --ciApiUrl=$CI_API_V4_URL --ciProjectId=$CI_PROJECT_ID --channel=$CHANNEL --gitlabToken=$CI_JOB_TOKEN --demoToken=$DEMO_CHART_TOKEN --demoChartUrl=$DEMO_CHART_URL
+
+deployTest:
+  tags:
+    - 110-aiplan
+  image:
+    name: registry.webdevsrv.office.aisa.ru/aiplan/utils/helm-deploy:latest
+    entrypoint: ['']
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v(?:\d+.){2}(?:\d+)$/
+  before_script:
+    - cat $PGP_PRIVATE_KEY | gpg --batch --import
+    - echo $PASSPHRASE | gpg --batch --always-trust --yes --passphrase-fd 0 --pinentry-mode=loopback -s $(mktemp)
+    - helm repo add chartMuseum --username aiplan --password $DEMO_REGISTRY_PASSWORD https://chartmuseum.aiplan.aisa.ru
+    - helm repo update
+    - helm plugin install https://github.com/jkroepke/helm-secrets --version v4.6.3
+  script:
+    - helm secrets upgrade --kube-context=aiplan/aiplan:test --history-max=5 --install=true --namespace=aiplan2 --values=kuber/aiplan/values/aiplan2.yaml --version=$CI_COMMIT_TAG --timeout 10m --wait=true aiplan2 chartMuseum/aiplan
+    - curl -s --data-urlencode "chat_id=$CHAT_ID" --data-urlencode "text=Тест обновлен до версии $CI_COMMIT_TAG" https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage
+     

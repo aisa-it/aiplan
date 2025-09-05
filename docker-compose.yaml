@@ -1,0 +1,67 @@
+name: aiplan
+
+services:
+  server:
+    image: "" # TODO: change to github image
+    restart: always
+    ports:
+      - 8080:8080
+      - 2112:2112 # Metrics
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - minio
+    networks:
+      - aiplan-net
+
+  db:
+    image: postgres:17-alpine
+    ports:
+      - 5432:5432 # For database debug
+    restart: always
+    command: postgres -c 'max_connections=1000'
+    volumes:
+      - db-data:/var/lib/postgresql/data # Persistent DB storage
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $POSTGRES_DB -U $POSTGRES_USER"]
+      interval: 10s
+      timeout: 60s
+      retries: 10
+      start_period: 80s
+    networks:
+      - aiplan-net
+
+  minio:
+    image: minio/minio
+    restart: always
+    command: server /data --console-address ":9090"
+    ports:
+      - 9090:9090 # For minio console
+      - 9000:9000
+    volumes:
+      - minio-data:/data
+    env_file:
+      - .env
+    networks:
+      - aiplan-net
+
+  createbuckets:
+    image: minio/mc
+    entrypoint: >
+      /bin/sh -c " /usr/bin/mc alias set aiplan-minio http://\$AWS_S3_ENDPOINT_URL \$AWS_ACCESS_KEY_ID \$AWS_SECRET_ACCESS_KEY; /usr/bin/mc mb --ignore-existing aiplan-minio/\$AWS_S3_BUCKET_NAME; /usr/bin/mc anonymous set download aiplan-minio/\$AWS_S3_BUCKET_NAME; exit 0; "
+    env_file:
+      - .env
+    depends_on:
+      - minio
+    networks:
+      - aiplan-net
+
+volumes:
+  db-data:
+  minio-data:
+
+networks:
+  aiplan-net:
