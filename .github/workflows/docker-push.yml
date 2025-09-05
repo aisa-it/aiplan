@@ -18,7 +18,7 @@ jobs:
           submodules: "true"
 
       - name: Build and Push
-        uses: dagger/dagger-for-github@latest
+        uses: dagger/dagger-for-github@$v8.1.0
         with:
           call: build-app --source=. --version=${{ github.ref_name }} --registryUser=${{ github.actor }} --registrySecret=${{ secrets.GITHUB_TOKEN }} --imageName=aisa-it/aiplan
           version: "0.18.12"
