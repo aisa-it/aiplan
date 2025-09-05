@@ -1,0 +1,24 @@
+name: Build and Push app docker image to github registry
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: "true"
+
+      - name: Build and Push
+        uses: dagger/dagger-for-github@latest
+        with:
+          call: build-app --source=. --version=$CI_COMMIT_TAG --registryUser=${{ github.actor }} --registrySecret=${{ secrets.GITHUB_TOKEN }} --imageName=aisa-it/aiplan
+          version: "0.18.12"

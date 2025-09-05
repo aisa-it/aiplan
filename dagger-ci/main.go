@@ -155,37 +155,19 @@ func (m *Aiplan) Helm(
 func (m *Aiplan) Publish(
 	ctx context.Context,
 	images []*dagger.Container,
-	// +optional
-	gitlabSecret *dagger.Secret,
-	// +optional
-	gitlabRegistry string,
-	// +optional
-	gitlabRegistryUser string,
-	// +optional
-	gitlabImageName string,
-	// +optional
-	demoSecret *dagger.Secret,
-	// +optional
-	demoImageName string,
+	registrySecret *dagger.Secret,
+	registryUser string,
+	imageName string,
 ) (string, error) {
-	var refGitlab, refDemo string
-	var err error
-	if gitlabSecret != nil {
-		refGitlab, err = dag.Container().
-			WithRegistryAuth(gitlabRegistry, gitlabRegistryUser, gitlabSecret).
-			Publish(ctx, gitlabImageName, dagger.ContainerPublishOpts{PlatformVariants: images})
-		if err != nil {
-			return refGitlab, err
-		}
+
+	refGitlab, err := dag.Container().
+		WithRegistryAuth("ghcr.io", registryUser, registrySecret).
+		Publish(ctx, "ghcr.io/"+imageName, dagger.ContainerPublishOpts{PlatformVariants: images})
+	if err != nil {
+		return refGitlab, err
 	}
-	if demoSecret != nil {
-		refDemo, err = dag.Container().WithRegistryAuth("registry.aiplan.aisa.ru", "aiplan", demoSecret).
-			Publish(ctx, demoImageName, dagger.ContainerPublishOpts{PlatformVariants: images})
-		if err != nil {
-			return refDemo, err
-		}
-	}
-	return refGitlab + ":" + refDemo, err
+
+	return refGitlab, err
 }
 
 func (m *Aiplan) Export(
@@ -202,32 +184,17 @@ func (m *Aiplan) BuildLocal(ctx context.Context, name string, source *dagger.Dir
 }
 
 func (m *Aiplan) BuildApp(ctx context.Context, version string, source *dagger.Directory,
-	// +optional
-	gitlabSecret *dagger.Secret,
-	// +optional
-	gitlabRegistry string,
-	// +optional
-	gitlabRegistryUser string,
-	// +optional
-	gitlabRegistryImage string,
-	// +optional
-	demoSecret *dagger.Secret,
+	registrySecret *dagger.Secret,
+	registryUser string,
+	imageName string,
 ) error {
 	back := m.Build(version, source)
 
-	fmt.Println("Build back")
-	backRef, err := m.Publish(ctx, back, gitlabSecret, gitlabRegistry, gitlabRegistryUser, fmt.Sprintf("%s:%s", gitlabRegistryImage, version), demoSecret, fmt.Sprintf("registry.aiplan.aisa.ru/aiplan:api-%s", version))
+	backRef, err := m.Publish(ctx, back, registrySecret, registryUser, fmt.Sprintf("%s:%s", imageName, version))
 	if err != nil {
 		return err
 	}
 	fmt.Println(backRef)
-
-	fmt.Println("Build promo")
-	promoRef, err := m.BuildPromo(ctx, version, source.Directory("aiplan-website"), demoSecret)
-	if err != nil {
-		return err
-	}
-	fmt.Println(promoRef)
 
 	return nil
 }
