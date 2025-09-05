@@ -20,5 +20,5 @@ jobs:
       - name: Build and Push
         uses: dagger/dagger-for-github@latest
         with:
-          call: build-app --source=. --version=$CI_COMMIT_TAG --registryUser=${{ github.actor }} --registrySecret=${{ secrets.GITHUB_TOKEN }} --imageName=aisa-it/aiplan
+          call: build-app --source=. --version=${{ github.ref_name }} --registryUser=${{ github.actor }} --registrySecret=${{ secrets.GITHUB_TOKEN }} --imageName=aisa-it/aiplan
           version: "0.18.12"
