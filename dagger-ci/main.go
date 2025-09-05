@@ -90,7 +90,7 @@ func (m *Aiplan) Build(version string, source *dagger.Directory) []*dagger.Conta
 			WithEnvVariable("GOARCH", buildParam.Arch).
 			WithExec([]string{"go", "build", "-o", buildParam.BinName, "-ldflags", fmt.Sprintf("-s -w -X main.version=%s", version), "cmd/aiplan/main.go"})
 
-		front := m.FrontBuildEnv(version, source.Directory("aiplan-quasar/"))
+		front := m.FrontBuildEnv(version, source.Directory("aiplan-front/"))
 
 		image := m.BackEnv(
 			buildParam.Platform,
