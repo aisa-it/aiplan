@@ -443,6 +443,7 @@ type ProjectMemberNS struct {
 	DisableProjectStatus          bool `json:"disable_project_status"`
 	DisableProjectLabel           bool `json:"disable_project_label"`
 	DisableProjectIssue           bool `json:"disable_project_issue"`
+	DisableProjectTemplate        bool `json:"disable_project_template"`
 }
 
 func (ns ProjectMemberNS) Value() (driver.Value, error) {
@@ -606,6 +607,10 @@ func (ns ProjectMemberNS) IsNotify(field *string, entity string, verb string, ro
 	case "label", "label_name", "label_color":
 		if isPrAdmin {
 			return !ns.DisableProjectLabel
+		}
+	case "template", "template_template", "template_name":
+		if isPrAdmin {
+			return !ns.DisableProjectTemplate
 		}
 	}
 	return false

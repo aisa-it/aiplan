@@ -112,6 +112,12 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 					}
 					msg.Text += fmt.Sprintf("Исполнители: *%s*", strings.Join(assignees, "*, *"))
 				}
+			case "template":
+				msg.Text = act.Title("создал(-a) шаблон задачи в")
+				msg.Text += Stelegramf("*Название*: %s\n", activity.NewIssueTemplate.Name)
+				msg.Text += Stelegramf("```\n%s```",
+					HtmlToTg(activity.NewIssueTemplate.Template.String()),
+				)
 			case "state":
 				msg.Text = act.Title("создал(-a) статус в")
 				msg.Text += Stelegramf("*Название*: %s\n*Группа*: %s", activity.NewState.Name, stateTranslate(activity.NewState.Group))
@@ -184,6 +190,18 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 				case "name":
 					msg.Text += Stelegramf("*Название Статуса*: ~%s~ %s", fmt.Sprint(*activity.OldValue), activity.NewValue)
 				}
+			case "template_name", "template_template":
+				action := strings.Split(*activity.Field, "_")[1]
+				msg.Text = act.Title("изменил(-a) в проекте")
+				switch action {
+				case "name":
+					msg.Text += Stelegramf("*Название шаблона задачи*: \n~%s~ %s", fmt.Sprint(*activity.OldValue), activity.NewValue)
+				case "template":
+					msg.Text += Stelegramf("*Шаблон задачи '%s'*:", activity.NewIssueTemplate.Name)
+					msg.Text += Stelegramf("```\n%s```",
+						HtmlToTg(activity.NewValue),
+					)
+				}
 			case "status_default":
 				msg.Text = act.Title("изменил(-a) статус по умолчанию в")
 				msg.Text += Stelegramf("~%s~ %s", activity.OldState.Name, activity.NewState.Name)
@@ -225,6 +243,8 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 				msg.Text += Stelegramf("*Тег*: ~%s~", fmt.Sprint(*activity.OldValue))
 			case "state":
 				msg.Text += Stelegramf("*Статус*: ~%s~", fmt.Sprint(*activity.OldValue))
+			case "template":
+				msg.Text += Stelegramf("*Шаблон*: ~%s~", fmt.Sprint(*activity.OldValue))
 			default:
 				return
 			}

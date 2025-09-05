@@ -262,6 +262,10 @@ func entityNameUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, 
 	return entityFieldUpdate[E, A]("name", nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
+func entityTemplateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
+	return entityFieldUpdate[E, A]("template", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+}
+
 func entityLogoUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	return entityFieldUpdate[E, A]("logo", nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }

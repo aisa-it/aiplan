@@ -28,7 +28,7 @@ const (
 type Entity interface {
 	User |
 		Workspace | WorkspaceMember |
-		Project | ProjectMember | Label | State |
+		Project | ProjectMember | Label | State | IssueTemplate |
 		Issue | IssueLink | IssueComment | IssueAttachment |
 		Doc | DocComment | DocAttachment |
 		Form
@@ -447,7 +447,7 @@ func getEntityRecursive(val reflect.Value, typ reflect.Type, pref string) any {
 			if method.IsValid() && method.Type().NumIn() == 0 && method.Type().NumOut() == 1 {
 				return method.Call(nil)[0].Interface()
 			} else {
-				errMsg := fmt.Sprintf("err: %s not have method 'ToLightDTO'", fieldVal.Type().String())
+				errMsg := fmt.Sprintf("Err: %s not have method 'ToLightDTO'", fieldVal.Type().String())
 				slog.Info(errMsg)
 			}
 		}

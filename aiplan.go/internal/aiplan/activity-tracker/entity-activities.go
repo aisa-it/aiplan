@@ -63,6 +63,8 @@ func getFuncUpdate[E dao.Entity, A dao.Activity](field string) activityFuncGen[E
 		return entityEditorsUpdate[E, A]
 	case FIELD_NAME: // issue(+)
 		return entityNameUpdate[E, A]
+	case FIELD_TEMPLATE:
+		return entityTemplateUpdate[E, A]
 	case FIELD_LOGO: // issue(+)
 		return entityLogoUpdate[E, A]
 	case FIELD_TOKEN:

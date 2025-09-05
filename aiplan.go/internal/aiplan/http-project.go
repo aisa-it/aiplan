@@ -2806,8 +2806,7 @@ func (s *Services) getProjectIssueTemplates(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	arr := resp.Result.(*[]dao.IssueTemplate)
-	resp.Result = utils.SliceToSlice(arr, func(t *dao.IssueTemplate) dto.IssueTemplate {
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.IssueTemplate), func(t *dao.IssueTemplate) dto.IssueTemplate {
 		return *t.ToDTO()
 	})
 
@@ -2855,6 +2854,11 @@ func (s *Services) createIssueTemplate(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrIssueTemplateDuplicatedName)
 		}
 		return EError(c, err)
+	}
+
+	err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, it, user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusCreated)
@@ -2911,26 +2915,55 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 	user := c.(ProjectContext).User
 	templateId := c.Param("templateId")
 
+	var template dao.IssueTemplate
+	if err := s.db.Where("id = ?", templateId).
+		Where("project_id = ?", project.ID).
+		Find(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrIssueTemplateNotFound)
+		}
+		return EError(c, err)
+	}
+
+	oldTemplateMap := StructToJSONMap(template)
+	oldTemplateMap["updateScope"] = "template"
+	oldTemplateMap["updateScopeId"] = templateId
+
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.
-		Where("workspace_id = ?", project.WorkspaceId).Where("project_id = ?", project.ID).Where("id = ?", templateId).
-		Updates(&dao.IssueTemplate{
-			UpdatedById: uuid.Must(uuid.FromString(user.ID)),
-			UpdatedAt:   time.Now(),
-			Name:        req.Name,
-			Template:    req.Template,
-		}).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return EErrorDefined(c, apierrors.ErrIssueTemplateNotFound)
+	var fields []string
+	if req.Name != template.Name {
+		fields = append(fields, "name")
+		template.Name = req.Name
+	}
+	if req.Template != template.Template {
+		fields = append(fields, "template")
+		template.Template = req.Template
+	}
+
+	if len(fields) > 0 {
+		fields = append(fields, "updated_by_id")
+		template.UpdatedById = uuid.Must(uuid.FromString(user.ID))
+		if err := s.db.
+			Select(fields).
+			Updates(&template).Error; err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return EErrorDefined(c, apierrors.ErrIssueTemplateDuplicatedName)
+			}
+			return EError(c, err)
 		}
-		if err == gorm.ErrDuplicatedKey {
-			return EErrorDefined(c, apierrors.ErrIssueTemplateDuplicatedName)
+		newTemplateMap := StructToJSONMap(template)
+		newTemplateMap["updateScope"] = "template"
+		newTemplateMap["updateScopeId"] = templateId
+
+		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newTemplateMap, oldTemplateMap, project, user)
+		if err != nil {
+			errStack.GetError(c, err)
+			//return err
 		}
-		return EError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2953,14 +2986,34 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/templates/{templateId} [delete]
 func (s *Services) deleteIssueTemplate(c echo.Context) error {
 	project := c.(ProjectContext).Project
+	user := c.(ProjectContext).User
 	templateId := c.Param("templateId")
 
-	if err := s.db.
-		Where("workspace_id = ?", project.WorkspaceId).Where("project_id = ?", project.ID).Where("id = ?", templateId).
-		Delete(&dao.IssueTemplate{}).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return EErrorDefined(c, apierrors.ErrIssueTemplateNotFound)
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		var template dao.IssueTemplate
+		if err := tx.
+			Where("workspace_id = ?", project.WorkspaceId).
+			Where("project_id = ?", project.ID).
+			Where("id = ?", templateId).
+			First(&template).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return EErrorDefined(c, apierrors.ErrIssueTemplateNotFound)
+			}
+			return EError(c, err)
 		}
+		err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, template, user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
+
+		if err := s.db.
+			Delete(&template).Error; err != nil {
+			return EError(c, err)
+		}
+
+		return nil
+	}); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)

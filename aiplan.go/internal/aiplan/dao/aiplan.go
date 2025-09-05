@@ -489,7 +489,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 			fieldTag, ok := structField.Tag.Lookup("field")
 			if ok {
 				switch targetField {
-				case "link_title", "link_url", "status_color", "status_name", "status_description", "status_group", "label_name", "label_color", "status_default":
+				case "link_title", "link_url", "status_color", "status_name", "status_description", "status_group", "label_name", "label_color", "status_default", "template_name", "template_template":
 					targetField = strings.Split(targetField, "_")[0]
 					if targetField == "status" {
 						targetField = "state"

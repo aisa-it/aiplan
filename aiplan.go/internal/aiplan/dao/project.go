@@ -1168,6 +1168,7 @@ func (ProjectActivity) GetEntity() string {
 // -migration
 type ProjectActivityExtendFields struct {
 	IssueExtendFields
+	ProjectTemplateExtendFields
 	ProjectMemberExtendFields
 	StateExtendFields
 	LabelExtendFields
@@ -1348,13 +1349,33 @@ type IssueTemplate struct {
 	WorkspaceId uuid.UUID `gorm:"index:issue_template,priority:1"`
 	ProjectId   uuid.UUID `gorm:"index:issue_template,priority:2;uniqueIndex:issue_template_name_idx,priority:1"`
 
-	Name     string `gorm:"uniqueIndex:issue_template_name_idx,priority:2"`
-	Template types.RedactorHTML
+	Name     string             `json:"name" gorm:"uniqueIndex:issue_template_name_idx,priority:2"`
+	Template types.RedactorHTML `json:"template"`
 
 	Workspace *Workspace
 	Project   *Project
 	CreatedBy *User
 	UpdatedBy *User
+}
+
+func (it IssueTemplate) GetId() string {
+	return it.Id.String()
+}
+
+func (it IssueTemplate) GetString() string {
+	return it.Name
+}
+
+func (it IssueTemplate) GetEntityType() string {
+	return "template"
+}
+
+func (it IssueTemplate) GetProjectId() string {
+	return it.ProjectId.String()
+}
+
+func (it IssueTemplate) GetWorkspaceId() string {
+	return it.WorkspaceId.String()
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM (GORM). Применяется для определения имени таблицы, в которой хранятся данные модели.
@@ -1368,23 +1389,65 @@ func (IssueTemplate) TableName() string {
 	return "issue_templates"
 }
 
-// ToDTO преобразует объект IssueTemplate в его упрощенную версию (IssueTemplateLight). Используется для возврата только необходимых данных, без необходимости загрузки всех полей.
+// ToLightDTO преобразует объект IssueTemplate в его упрощенную версию (IssueTemplateLight). Используется для возврата только необходимых данных, без необходимости загрузки всех полей.
 //
 // Параметры:
 //   - it: объект IssueTemplate, который нужно преобразовать.
 //
 // Возвращает:
 //   - *dto.IssueTemplate: упрощенная версия объекта IssueTemplate.
-func (it *IssueTemplate) ToDTO() *dto.IssueTemplate {
-	return &dto.IssueTemplate{
-		Id:          it.Id,
-		CreatedAt:   it.CreatedAt,
-		CreatedById: it.CreatedById,
-		UpdatedAt:   it.UpdatedAt,
-		UpdatedById: it.UpdatedById,
-		WorkspaceId: it.WorkspaceId,
-		ProjectId:   it.ProjectId,
-		Name:        it.Name,
-		Template:    it.Template,
+func (it *IssueTemplate) ToLightDTO() *dto.IssueTemplateLight {
+	if it == nil {
+		return nil
 	}
+	return &dto.IssueTemplateLight{
+		Name:     it.Name,
+		Template: it.Template,
+	}
+}
+
+func (it *IssueTemplate) ToDTO() *dto.IssueTemplate {
+	if it == nil {
+		return nil
+	}
+	ttt := *it.ToLightDTO()
+	return &dto.IssueTemplate{
+		IssueTemplateLight: ttt,
+		Id:                 it.Id,
+		CreatedAt:          it.CreatedAt,
+		CreatedById:        it.CreatedById,
+		UpdatedAt:          it.UpdatedAt,
+		UpdatedById:        it.UpdatedById,
+		WorkspaceId:        it.WorkspaceId,
+		ProjectId:          it.ProjectId,
+	}
+}
+
+func (it *IssueTemplate) BeforeDelete(tx *gorm.DB) error {
+	// ProjectActivity update create to nil
+	tx.Where("new_identifier = ? AND verb = ? AND field = ?", it.Id, "created", it.GetEntityType()).
+		Model(&ProjectActivity{}).Update("new_identifier", nil)
+
+	if err := tx.
+		Where("project_activity_id in (?)", tx.Select("id").
+			Where("project_id = ?", it.ProjectId).
+			Where("new_identifier = ? or old_identifier = ?", it.Id, it.Id).
+			Model(&ProjectActivity{})).
+		Unscoped().Delete(&UserNotifications{}).Error; err != nil {
+		return err
+	}
+
+	//ProjectActivity delete other activity
+	if err := tx.Where("new_identifier = ? or old_identifier = ?", it.Id, it.Id).Delete(&ProjectActivity{}).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ProjectTemplateExtendFields
+// -migration
+type ProjectTemplateExtendFields struct {
+	NewIssueTemplate *IssueTemplate `json:"-" gorm:"-" field:"template" extensions:"x-nullable"`
+	OldIssueTemplate *IssueTemplate `json:"-" gorm:"-" field:"template" extensions:"x-nullable"`
 }

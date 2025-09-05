@@ -26,6 +26,7 @@ const (
 
 	FIELD_NAME             = "name"
 	FIELD_TITLE            = "title"
+	FIELD_TEMPLATE         = "template"
 	FIELD_WATCHERS         = "watchers_list"
 	FIELD_ASSIGNEES        = "assignees_list"
 	FIELD_READERS          = "readers_list"

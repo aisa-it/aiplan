@@ -122,7 +122,13 @@ type RulesLog struct {
 	LuaErr       *string   `json:"lua_err,omitempty" extensions:"x-nullable"`
 }
 
+type IssueTemplateLight struct {
+	Name     string             `json:"name"`
+	Template types.RedactorHTML `json:"template" swaggertype:"string"`
+}
+
 type IssueTemplate struct {
+	IssueTemplateLight
 	Id          uuid.UUID `json:"id"`
 	CreatedAt   time.Time `json:"created_at"`
 	CreatedById uuid.UUID `json:"created_by_id"`
@@ -131,7 +137,4 @@ type IssueTemplate struct {
 
 	WorkspaceId uuid.UUID `json:"workspace_id"`
 	ProjectId   uuid.UUID `json:"project_id"`
-
-	Name     string             `json:"name"`
-	Template types.RedactorHTML `json:"template" swaggertype:"string"`
 }
