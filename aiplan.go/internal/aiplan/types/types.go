@@ -442,7 +442,7 @@ type ProjectMemberNS struct {
 	DisableProjectRole            bool `json:"disable_project_role"`
 	DisableProjectStatus          bool `json:"disable_project_status"`
 	DisableProjectLabel           bool `json:"disable_project_label"`
-	DisableProjectIssue           bool `json:"disable_project_issue"`
+	DisableProjectLogo            bool `json:"disable_project_logo"`
 	DisableProjectTemplate        bool `json:"disable_project_template"`
 }
 
@@ -493,12 +493,18 @@ func (ns ProjectMemberNS) IsNotify(field *string, entity string, verb string, ro
 		if isPrAdmin {
 			return !ns.DisableProjectName
 		}
+
 	case "issue":
 		if isProject {
-			if isPrAdmin {
-				return !ns.DisableProjectIssue
-			}
 			return !ns.DisableIssueNew
+		}
+
+		if isIssue {
+			return !ns.DisableIssueTransfer
+		}
+	case "logo", "emoji":
+		if isProject {
+			return !ns.DisableProjectLogo
 		}
 
 	case "parent":

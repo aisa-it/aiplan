@@ -59,6 +59,7 @@ type Project struct {
 	UpdatedById      *string        `json:"updated_by" extensions:"x-nullable"`
 	WorkspaceId      string         `json:"workspace" gorm:"uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
 	Emoji            int32          `json:"emoji,string" gorm:"default:127773"`
+	LogoId           uuid.NullUUID  `json:"logo"`
 	CoverImage       *string        `json:"cover_image" extensions:"x-nullable"`
 	EstimateId       *string        `json:"estimate" extensions:"x-nullable"`
 	RulesScript      *string        `json:"rules_script" extensions:"x-nullable"`
@@ -128,6 +129,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		ProjectLeadId:           project.ProjectLeadId,
 		WorkspaceId:             project.WorkspaceId,
 		Emoji:                   project.Emoji,
+		LogoId:                  project.LogoId,
 		CoverImage:              project.CoverImage,
 		Url:                     types.JsonURL{project.URL},
 		IsFavorite:              project.IsFavorite,
@@ -389,6 +391,17 @@ func (project *Project) BeforeDelete(tx *gorm.DB) error {
 	tx.Where("old_identifier = ?", project.ID).
 		Model(&IssueActivity{}).
 		Update("old_identifier", nil)
+
+	//delete asset
+	if project.LogoId.Valid {
+		if err := tx.Exec("UPDATE projects SET logo_id = NULL WHERE id = ?", project.ID).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", project.LogoId.UUID).
+			Delete(&FileAsset{}).Error; err != nil {
+			return err
+		}
+	}
 
 	var issues []Issue
 	if err := tx.Where("project_id = ?", project.ID).Unscoped().Find(&issues).Error; err != nil {
