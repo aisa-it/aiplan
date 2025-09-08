@@ -23,6 +23,7 @@ type ProjectLight struct {
 	WorkspaceId   string        `json:"workspace"`
 	Emoji         int32         `json:"emoji,string"`
 	CoverImage    *string       `json:"cover_image" extensions:"x-nullable"`
+	LogoId        uuid.NullUUID `json:"logo"  extensions:"x-nullable" swaggertype:"string"`
 	Url           types.JsonURL `json:"url,omitempty"`
 	IsFavorite    bool          `json:"is_favorite"`
 
