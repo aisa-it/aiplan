@@ -2,7 +2,7 @@ name: aiplan
 
 services:
   server:
-    image: "" # TODO: change to github image
+    image: "ghcr.io/aisa-it/aiplan:latest"
     restart: always
     ports:
       - 8080:8080
