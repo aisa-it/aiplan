@@ -12880,6 +12880,143 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/logo/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Загружает новый логотип для указанного проекта и обновляет запись в базе данных.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты (логотип): обновление логотипа",
+                "operationId": "updateProjectLogo",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Файл логотипа",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленный проект",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Project"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка: неверный формат файла",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Ошибка: недостаточно прав для обновления логотипа",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Ошибка: не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет логотип указанного проекта и обновляет запись в базе данных.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты (логотип): удаление логотипа проекта",
+                "operationId": "deleteProjectLogo",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленное рабочее пространство",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Project"
+                        }
+                    },
+                    "403": {
+                        "description": "Ошибка: недостаточно прав для удаления логотипа",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Ошибка: не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/me/notifications/": {
             "post": {
                 "security": [
@@ -17171,6 +17308,10 @@ const docTemplate = `{
                 "is_favorite": {
                     "type": "boolean"
                 },
+                "logo": {
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "name": {
                     "type": "string"
                 },
@@ -17287,6 +17428,10 @@ const docTemplate = `{
                 },
                 "is_favorite": {
                     "type": "boolean"
+                },
+                "logo": {
+                    "type": "string",
+                    "x-nullable": true
                 },
                 "name": {
                     "type": "string"
@@ -18430,10 +18575,10 @@ const docTemplate = `{
                 "disable_project_identifier": {
                     "type": "boolean"
                 },
-                "disable_project_issue": {
+                "disable_project_label": {
                     "type": "boolean"
                 },
-                "disable_project_label": {
+                "disable_project_logo": {
                     "type": "boolean"
                 },
                 "disable_project_member": {
@@ -18452,6 +18597,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "disable_project_status": {
+                    "type": "boolean"
+                },
+                "disable_project_template": {
                     "type": "boolean"
                 },
                 "disable_state": {
