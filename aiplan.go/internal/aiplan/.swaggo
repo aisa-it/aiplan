@@ -1,0 +1,4 @@
+replace time.Duration int64
+replace sheff.online/aiplan/internal/aiplan/types.JsonURL string
+replace sheff.online/aiplan/internal/aiplan/types.TargetDate string
+replace sheff.online/aiplan/internal/aiplan/types.RedactorHTML string

@@ -1,0 +1,10 @@
+<div class="mail-content" style="font-size: 16px;line-height: 1.375;margin-top: 24px;">
+   {{if .Inviter.FirstName}}
+   {{.Inviter.FirstName}} {{.Inviter.LastName}} {{else}} {{.Inviter.Email}} {{end}} пригласил Вас в проект
+   <b>{{.ProjectName}}</b> из пространства <b>{{.WorkspaceName}}</b>.
+</div>
+<div class="mail-footer" style="width: 100%;border-collapse: collapse;font-size: 14px;margin-top: 24px;">
+   <a class="btn" href="{{.InvitationUrl}}"
+      style="display: inline-block;background-color: #3F76FF;padding: 11px 16px;color: white;font-weight: 500;font-size: 16px;text-decoration: none;border-radius: 8px;line-height: 1.125;margin-top: 1px;margin-bottom: 1px;">Принять
+      приглашение</a>
+</div>
