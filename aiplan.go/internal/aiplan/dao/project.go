@@ -274,13 +274,19 @@ func (project *Project) AfterCreate(tx *gorm.DB) error {
 
 	for _, admin := range workspaceAdmins {
 		member := ProjectMember{
-			ID:             GenID(),
-			ProjectId:      project.ID,
-			Role:           types.AdminRole,
-			WorkspaceAdmin: true,
-			MemberId:       admin.MemberId,
-			WorkspaceId:    project.WorkspaceId,
-			ViewProps:      DefaultViewProps,
+			ID:                              GenID(),
+			ProjectId:                       project.ID,
+			Role:                            types.AdminRole,
+			WorkspaceAdmin:                  true,
+			MemberId:                        admin.MemberId,
+			WorkspaceId:                     project.WorkspaceId,
+			ViewProps:                       types.DefaultViewProps,
+			NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
+			NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
+			NotificationAuthorSettingsTG:    types.DefaultProjectMemberNS,
+			NotificationSettingsEmail:       types.DefaultProjectMemberNS,
+			NotificationSettingsApp:         types.DefaultProjectMemberNS,
+			NotificationSettingsTG:          types.DefaultProjectMemberNS,
 		}
 		if admin.MemberId == project.CreatedById {
 			member.WorkspaceAdmin = false
@@ -448,27 +454,6 @@ func (project *Project) BeforeDelete(tx *gorm.DB) error {
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели.  Используется для взаимодействия с базой данных через ORM.
 func (Project) TableName() string {
 	return "projects"
-}
-
-var defaultPageSize int = 25
-var DefaultViewProps = types.ViewProps{
-	ShowEmptyGroups: false,
-	ShowSubIssues:   true,
-	ShowOnlyActive:  false,
-	AutoSave:        false,
-	IssueView:       "list",
-	Filters: types.ViewFilters{
-		GroupBy:    "None",
-		OrderBy:    "sequence_id",
-		OrderDesc:  true,
-		States:     []string{},
-		Workspaces: []string{},
-		Projects:   []string{},
-	},
-	Columns:         []string{},
-	GroupTablesHide: make(map[string]bool),
-	ActiveTab:       "all",
-	PageSize:        &defaultPageSize,
 }
 
 // Участники проектов
