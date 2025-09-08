@@ -1,80 +1,82 @@
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-# АИПлан - Open-source система управления проектами
-Познакомьтесь с АИПлан — профессиональной платформой для управления проектами, которая помогает командам отслеживать задачи, созваниваться, вести документацию и выпускать качественный продукт. 🚀
-Продукт предоставляет удобные инструменты для планирования, отслеживания и выполнения задач, а также для совместной работы внутри команды.
-Система разработана для малых, средних команд и для крупных организаций, которые стремятся оптимизировать рабочие процессы, улучшить коммуникацию и повысить продуктивность.
+[![en](https://img.shields.io/badge/README-en-green.svg)](https://github.com/aisa-it/aiplan/blob/main/README.md)
+[![ru](https://img.shields.io/badge/README-ru-green.svg)](https://github.com/aisa-it/aiplan/blob/main/README.ru.md)
+# AIPlan - An open-source project management system
+Get to know AIPlan, a professional project management platform that helps teams track tasks, make phone calls, maintain documentation, and produce a high—quality product.
+The product provides convenient tools for planning, tracking, and completing tasks, as well as for teamwork within a team.
+The system is designed for small, medium-sized teams and for large organizations that seek to optimize work processes, improve communication and increase productivity.
 
-АИПлан постоянно совершенствуется. Ваши предложения и отчеты об ошибках помогают нам стать лучше. Создавайте запросы в службе поддержки https://t.me/aiplan_faq.
+The AIPLAN is constantly being improved. Your suggestions and bug reports help us to become better. Create support requests. https://t.me/aiplan_faq .
 
-## 🌟 Ключевые возможности
-1. **Управление задачами**:
-   - Создание задач с указанием сроков, приоритетов и ответственных лиц.
-   - Возможность связать задачи между друг другом для более детального планирования.
-   - Назначение ролей и прав доступа для участников проекта.
-   - Отслеживание статуса выполнения задач в реальном времени.
-   - Работа с документами:
-   - Возможность создания и хранения документов прямо в системе.
-   - Удобный текстовый редактор для редактирования документов.
-   - Организация документов по папкам и проектам для удобного доступа.
-2. **Формы**:
-   - Создание форм для сбора обратной связи или данных.
-   - Генерация уникальных ссылок на формы, которые можно отправлять пользователям (как внутри команды, так и внешним участникам).
-   - Автоматическое сохранение полученных данных в системе.
-3. **Календарь**:
-   - Интерактивный календарь для просмотра всех задач и мероприятий по дням, неделям или месяцам.
-   - Возможность фильтрации задач по ответственным лицам, проектам или статусам.
-4. **Видеозвонки и конференции**:
-   - Встроенный инструмент для видеозвонков прямо в системе.
-   - Возможность организовывать встречи с участниками команды без необходимости использования сторонних приложений.
-   - Поддержка экранного взаимодействия: демонстрация экрана во время звонков.
-   - Запись встреч для последующего просмотра или анализа.
-5. **Интеграции**:
-   - Возможность экспорта данных в форматах .docx, .pdf.
-   - Возможность импорта данных из Jira.
-6. **Отчеты и аналитика**:
-   - Отслеживание активности пользователей по проектам.
-7. **Уведомления и напоминания**:
-   - Настраиваемые уведомления о новых задачах и любых изменениях в них.
-   - Поддержка уведомлений через email, Telegram и внутри системы.
+## 🌟 Key features
+1. **Task Management**:
+   - Create tasks with deadlines, priorities, and responsible persons.
+   - The ability to link tasks to each other for more detailed planning.
+   - Assigning roles and access rights to project participants.
+   - Real-time task completion status tracking.
+   - Working with documents:
+   - The ability to create and store documents directly in the system.
+   - A convenient text editor for editing documents.
+   - Organize documents into folders and projects for easy access.
+2. **Forms**:
+   - Create forms to collect feedback or data.
+   - Generation of unique links to forms that can be sent to users (both within the team and to external participants).
+   - Automatic saving of the received data in the system.
+3. **Calendar**:
+   - An interactive calendar for viewing all tasks and activities by day, week or month.
+   - The ability to filter tasks by responsible persons, projects or statuses.
+4. **Video Calls and Conferences**:
+   - Built-in video calling tool directly in the system.
+   - The ability to organize meetings with team members without the need to use third-party applications.
+   - Screen interaction support: screen demonstration during calls.
+   - Record meetings for later viewing or analysis.
+5. **Integration**:
+   - The ability to export data in formats .docx, .pdf.
+   - The ability to import data from Jira.
+6. **Reports and analytics**:
+   - Tracking user activity on projects.
+7. **Notifications and Reminders**:
+   - Customizable notifications about new tasks and any changes to them.
+   - Support for notifications via email, Telegram and within the system.
 
-## 📝 Документация
-В случае возникновения каких-либо вопросов и для подробного изучения возможностей продукта вы всегда можете обратиться к Руководству Пользователя, которое вы найдёте внутри продукта.
+## Documentation
+If you have any questions and for a detailed study of the product's capabilities, you can always refer to the User's Manual, which you will find inside the product.
 
-## Как установить
-Конфигурация производится посредством .env файла.
+## How to install
+The configuration is done by .env file.
 ```
 docker-compose up -d
 ```
-Приложение будет доступно по адресу http://localhost:8080
+The application will be available at http://localhost:8080
 
-## Параметры приложения
+## Application Parameters
 
-| Параметр                | Описание                                                                   | Тип    |
+| Parameter               | Description                                                                | Type |
 | ----------------------- | -------------------------------------------------------------------------- | ------ |
-| `SECRET_KEY`            | Ключ для генерации JWT токенов.                                            | string |
-| `AWS_REGION`            | Регион minio                                                               | string |
-| `AWS_ACCESS_KEY_ID`     | Логин minio                                                                | string |
-| `AWS_SECRET_ACCESS_KEY` | Пароль minio                                                               | string |
-| `AWS_S3_ENDPOINT_URL`   | Путь до minio                                                              | string |
-| `AWS_S3_BUCKET_NAME`    | Название бакета minio                                                      | string |
-| `DATABASE_URL`          | DSN базы данных                                                            | string |
-| `DEFAULT_EMAIL`         | Email стандартного пользователя(пароль `password123` при создании)         | string |
-| `EMAIL_ACTIVITY_DISABLED`         | Отключение отправки уведомлений на почту         | bool |
-| `EMAIL_HOST`            | Путь до почтового сервера                                                  | string |
-| `EMAIL_HOST_USER`       | Логин почтового сервера                                                    | string |
-| `EMAIL_HOST_PASSWORD`   | Пароль почтового сервера                                                   | string |
-| `EMAIL_PORT`            | Порт почтового сервера                                                     | int    |
-| `EMAIL_FROM`            | Email рассылки                                                             | string |
-| `EMAIL_WORKERS`               | Количество параллельных обработчиков почтовых уведомлений приложения                                                   | int |
-| `WEB_URL`               | Внешний адрес приложения                                                   | string |
-| `JITSI_URL`               | Адрес jitsi конференций                                                   | string |
-| `FRONT_PATH`            | Путь до скомпилированного фронта(если указать, бек будет отдавать статику) | string |
-| `NOTIFICATIONS_PERIOD`  | Временной период пачки email уведомлений                                   | int    |
-| `TELEGRAM_BOT_TOKEN`    | Токен telegram бота                                                        | string |
-| `TELEGRAM_COMMANDS_DISABLED`    | Отключение команд телеграм бота                                                        | bool |
-| `SESSIONS_DB_PATH`    | Путь до файла сессионной базы                                                        | string |
-| `SIGN_UP_ENABLE`    | Включение регистрации в системе                                                        | bool |
-| `DEMO`    | Демо режим                                                        | bool |
-| `SWAGGER_ENABLED`    | Включение Swagger API документации на адрес /api/swagger                                                        | bool |
-| `NY_ENABLE`    | Включение новогодней темы                                                        | bool |
-| `CAPTCHA_DISABLED`    | Отключение капчи                                                        | bool |
+| `SECRET_KEY`            | The key for generating JWT tokens.                                         | string |
+| `AWS_REGION`            | Minio region                                                               | string |
+| `AWS_ACCESS_KEY_ID`     | minio login                                                                | string |
+| `AWS_SECRET_ACCESS_KEY` | minio password                                                             | string |
+| `AWS_S3_ENDPOINT_URL`   | Path to minio                                                              | string |
+| `AWS_S3_BUCKET_NAME`    | Name of the minio bucket                                                   | string |
+| `DATABASE_URL`          | DSN of the database                                                        | string |
+| `DEFAULT_EMAIL`         | Email of the standard user (password `password123` at creation)            | string |
+| `EMAIL_ACTIVITY_DISABLED`| Disabling sending notifications to                                        |  bool  |
+| `EMAIL_HOST`            | Path to the mail server                                                    | string |
+| `EMAIL_HOST_USER`       | Mail server login                                                          | string |
+| `EMAIL_HOST_PASSWORD`   | Mail server password                                                       | string |
+| `EMAIL_PORT`            | Mail server port                                                           |   int  |
+| `EMAIL_FROM`            | Mailing list email                                                         | string |
+| `EMAIL_WORKERS`         | Number of parallel mail notification handlers of the application           |   int  |
+| `WEB_URL`               | External address of the application                                        | string |
+| `JITSI_URL`             | Address of the jitsi conferences                                           | string |
+| `FRONT_PATH`            | The path to the compiled front (if specified, the back will return static) | string |
+| `NOTIFICATIONS_PERIOD`  | Time period of a batch of email notifications                              |   int  |
+| `TELEGRAM_BOT_TOKEN`    | Telegram bot token                                                         | string |
+| `TELEGRAM_COMMANDS_DISABLED` | Disabling telegram bot commands                                       |  bool  |
+| `SESSIONS_DB_PATH`      | Path to the session database file                                          | string |
+| `SIGN_UP_ENABLE`        | Enabling registration in the                                               |  bool  |
+| `DEMO`                  | Demo mode                                                                  |  bool  |
+| `SWAGGER_ENABLED`       | Enabling the Swagger API documentation at /api/swagger                     |  bool  |
+| `NY_ENABLE`             | Enabling the New Year theme                                                |  bool  |
+| `CAPTCHA_DISABLED`      | Disabling captcha                                                          |  bool  |
