@@ -399,7 +399,7 @@ func (wm *WorkspaceMember) AfterCreate(tx *gorm.DB) error {
 				WorkspaceAdmin: true,
 				MemberId:       wm.MemberId,
 				WorkspaceId:    project.WorkspaceId,
-				ViewProps:      DefaultViewProps,
+				ViewProps:      types.DefaultViewProps,
 			}
 		}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(members).Error
@@ -440,7 +440,7 @@ func (wm *WorkspaceMember) AfterUpdate(tx *gorm.DB) error {
 				WorkspaceAdmin: true,
 				MemberId:       wm.MemberId,
 				WorkspaceId:    project.WorkspaceId,
-				ViewProps:      DefaultViewProps,
+				ViewProps:      types.DefaultViewProps,
 			}
 		}
 		if len(members) == 0 {
