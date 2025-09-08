@@ -32,6 +32,7 @@ func ResultToLog(issue dao.Issue, user dao.User, result LuaResp, err IRulesError
 	} else {
 		t = "fail"
 		msg = err.Error()
+		err.SetClientError()
 	}
 	*logs = append(*logs, dao.RulesLog{
 		Id:           dao.GenUUID(),
