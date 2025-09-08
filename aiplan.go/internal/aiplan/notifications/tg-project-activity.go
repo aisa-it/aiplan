@@ -155,6 +155,10 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 				}
 				msg.Text = act.Title("изменил(-a) в")
 				msg.Text += Stelegramf("*%s*: ~%s~ %s", fieldsTranslation[*activity.Field], oldV, activity.NewValue)
+
+			case "logo":
+				msg.Text = act.Title("изменил(-a) в проекте")
+				msg.Text += Stelegramf("*Логотип проекта*")
 			case "public":
 				if activity.NewValue == "true" {
 					msg.Text = act.Title("сделал(-a) публичным")
