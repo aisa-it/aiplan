@@ -105,6 +105,9 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	projectGroup.GET("/activities/", s.getProjectActivityList)
 
+	projectGroup.POST("/logo/", s.updateProjectLogo)
+	projectGroup.DELETE("/logo/", s.deleteProjectLogo)
+
 	workspaceGroup.GET("/project-identifiers/", s.checkProjectIdentifierAvailability)
 
 	projectGroup.GET("/members/", s.getProjectMemberList)
@@ -3017,6 +3020,146 @@ func (s *Services) deleteIssueTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+// updateProjectLogo godoc
+// @id updateProjectLogo
+// @Summary Проекты (логотип): обновление логотипа
+// @Description Загружает новый логотип для указанного проекта и обновляет запись в базе данных.
+// @Tags Projects
+// @Accept multipart/form-data
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param file formData file true "Файл логотипа"
+// @Success 200 {object} dto.Project "Обновленный проект"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка: неверный формат файла"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для обновления логотипа"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/logo/ [post]
+func (s *Services) updateProjectLogo(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+
+	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
+		return EError(c, apierrors.ErrAssetsNotAllowed)
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		return EError(c, err)
+	}
+
+	fileAsset := dao.FileAsset{
+		Id:          dao.GenUUID(),
+		CreatedById: &user.ID,
+		WorkspaceId: &project.WorkspaceId,
+	}
+
+	oldLogoId := project.LogoId
+
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		var oldLogo dao.FileAsset
+		if project.LogoId.Valid {
+			if err := tx.Where("id = ?", project.LogoId).First(&oldLogo).Error; err != nil {
+				if err != gorm.ErrRecordNotFound {
+					return err
+				}
+			}
+		}
+
+		if err := s.uploadAssetForm(tx, file, &fileAsset, filestorage.Metadata{
+			WorkspaceId: project.WorkspaceId,
+			ProjectId:   project.ID,
+		}); err != nil {
+			return err
+		}
+
+		project.LogoId = uuid.NullUUID{UUID: fileAsset.Id, Valid: true}
+		if err := tx.Select("logo_id").Updates(&project).Error; err != nil {
+			return err
+		}
+
+		if !oldLogo.Id.IsNil() {
+			if err := tx.Delete(&oldLogo).Error; err != nil {
+				return err
+			}
+		}
+
+		//Трекинг активности
+		oldMap := map[string]interface{}{
+			"logo": oldLogoId.UUID.String(),
+		}
+		newMap := map[string]interface{}{
+			"logo": fileAsset.Id.String(),
+		}
+
+		err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, project, user)
+		if err != nil {
+			errStack.GetError(c, err)
+		}
+
+		return nil
+	}); err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, project.ToDTO())
+}
+
+// deleteProjectLogo godoc
+// @id deleteProjectLogo
+// @Summary Проекты (логотип): удаление логотипа проекта
+// @Description Удаляет логотип указанного проекта и обновляет запись в базе данных.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} dto.Project "Обновленное рабочее пространство"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для удаления логотипа"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/logo/ [delete]
+func (s *Services) deleteProjectLogo(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+	oldLogoId := project.LogoId.UUID.String()
+
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		project.UpdatedById = &user.ID
+		project.LogoId = uuid.NullUUID{}
+		if err := tx.Select("logo_id").Updates(&project).Error; err != nil {
+			return err
+		}
+
+		if project.LogoId.Valid {
+			if err := tx.Where("id = ?", project.LogoId.UUID).Delete(&dao.FileAsset{}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return EError(c, err)
+	}
+
+	//Трекинг активности
+	oldMap := map[string]interface{}{
+		"logo": oldLogoId,
+	}
+	newMap := map[string]interface{}{
+		"logo": uuid.NullUUID{}.UUID.String(),
+	}
+
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, project, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, project.ToDTO())
 }
 
 /*
