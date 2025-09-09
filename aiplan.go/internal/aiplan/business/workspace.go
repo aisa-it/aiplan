@@ -2,6 +2,7 @@ package business
 
 import (
 	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
 	"sheff.online/aiplan/internal/aiplan/dao"
@@ -118,10 +119,18 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 	data := map[string]interface{}{
 		"updateScopeId": requestedMember.MemberId,
 	}
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](b.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, *requestedMember, b.workspaceCtx.user)
-	if err != nil {
-		errStack.GetError(b.workspaceCtx.c, err)
+
+	if err := b.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](b.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, *requestedMember, b.workspaceCtx.user)
+		if err != nil {
+			errStack.GetError(b.workspaceCtx.c, err)
+			return err
+		}
+
+		return b.db.Omit(clause.Associations).Delete(requestedMember).Error
+	}); err != nil {
+		return err
 	}
 
-	return b.db.Omit(clause.Associations).Delete(requestedMember).Error
+	return nil
 }

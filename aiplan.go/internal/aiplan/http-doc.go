@@ -592,16 +592,22 @@ func (s *Services) deleteDoc(c echo.Context) error {
 	doc := c.(DocContext).Doc
 	user := c.(DocContext).User
 
-	if len(doc.ChildDocs) > 0 {
-		return EErrorDefined(c, apierrors.ErrDocDeleteHasChild)
-	}
-	data := make(map[string]interface{})
-	if err := createDocActivity(s.tracker, tracker.ENTITY_DELETE_ACTIVITY, data, nil, doc, user, nil); err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if len(doc.ChildDocs) > 0 {
+			return EErrorDefined(c, apierrors.ErrDocDeleteHasChild)
+		}
+		data := make(map[string]interface{})
+		if err := createDocActivity(s.tracker, tracker.ENTITY_DELETE_ACTIVITY, data, nil, doc, user, nil); err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Delete(&doc).Error; err != nil {
-		return EErrorDefined(c, apierrors.ErrGeneric)
+		return s.db.Delete(&doc).Error
+	}); err != nil {
+		if err.Error() == "forbidden" {
+			return EErrorDefined(c, apierrors.ErrDocUpdateForbidden)
+		}
+		return EError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -1258,14 +1264,18 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
-	err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, comment, &user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, comment, &user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Delete(&comment).Error; err != nil {
+		return s.db.Delete(&comment).Error
+	}); err != nil {
 		return EError(c, err)
 	}
+
 	return c.NoContent(http.StatusOK)
 }
 
@@ -1542,13 +1552,16 @@ func (s *Services) deleteDocAttachment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, attachment, user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, attachment, user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Omit(clause.Associations).
-		Delete(&attachment).Error; err != nil {
+		return s.db.Omit(clause.Associations).
+			Delete(&attachment).Error
+	}); err != nil {
 		return EError(c, err)
 	}
 
