@@ -1456,12 +1456,19 @@ func (s *Services) deleteIssue(c echo.Context) error {
 	//	return EError(c, err)
 	//}
 
-	err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, issue, &user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
 
-	if err := s.db.Delete(&issue).Error; err != nil {
+		err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, issue, &user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
+
+		return s.db.Delete(&issue).Error
+	}); err != nil {
+		if err.Error() == "forbidden" {
+			return EErrorDefined(c, apierrors.ErrDocUpdateForbidden)
+		}
 		return EError(c, err)
 	}
 
@@ -2300,18 +2307,17 @@ func (s *Services) deleteIssueLink(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, link, &user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, link, &user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Delete(&link).Error; err != nil {
+		return s.db.Delete(&link).Error
+	}); err != nil {
 		return EError(c, err)
 	}
-
-	//if err := s.tracker.TrackActivity(tracker.LINK_DELETED_ACTIVITY, nil, nil, issueId, tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
 
 	return c.NoContent(http.StatusOK)
 }
@@ -2893,12 +2899,15 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
-	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, comment, &user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, comment, &user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Delete(&comment).Error; err != nil {
+		return s.db.Delete(&comment).Error
+	}); err != nil {
 		return EError(c, err)
 	}
 
@@ -3357,18 +3366,17 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, attachment, &user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, attachment, &user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
+		return s.db.Omit(clause.Associations).Delete(&attachment).Error
+	}); err != nil {
 		return EError(c, err)
 	}
-
-	//if err := s.tracker.TrackActivity(tracker.ATTACHMENT_DELETED_ACTIVITY, nil, nil, issueId, tracker.ENTITY_TYPE_ISSUE, attachment.Project, user); err != nil {
-	//	return EError(c, err)
-	//}
 
 	return c.NoContent(http.StatusOK)
 }

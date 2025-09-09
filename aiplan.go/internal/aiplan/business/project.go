@@ -45,6 +45,7 @@ func (b *Business) DeleteProject() error {
 	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](b.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, *b.projectCtx.project, b.projectCtx.user)
 	if err != nil {
 		errStack.GetError(nil, err)
+		return err
 	}
 
 	// Soft-delete project
@@ -156,12 +157,15 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 		"updateScopeId": requestedMember.MemberId,
 	}
 
-	err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](b.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, *requestedMember, actor.Member)
-	if err != nil {
-		errStack.GetError(nil, err)
-	}
+	if err := b.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](b.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, *requestedMember, actor.Member)
+		if err != nil {
+			errStack.GetError(nil, err)
+			return err
+		}
 
-	if err := b.db.Delete(&requestedMember).Error; err != nil {
+		return b.db.Delete(&requestedMember).Error
+	}); err != nil {
 		return err
 	}
 

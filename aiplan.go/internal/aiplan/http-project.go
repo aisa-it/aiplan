@@ -2112,20 +2112,17 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//TODO check it
-	err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, label, &user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, label, &user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Delete(&label).Error; err != nil {
+		return s.db.Delete(&label).Error
+	}); err != nil {
 		return EError(c, err)
 	}
-
-	// Трек активности после успешного удаления тега
-	//if err := s.tracker.TrackActivity(tracker.PROJECT_LABEL_DELETED_ACTIVITY, nil, StructToJSONMap(label), project.ID, tracker.ENTITY_TYPE_PROJECT, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
 
 	return c.NoContent(http.StatusOK)
 }
@@ -2287,19 +2284,15 @@ func (s *Services) createState(c echo.Context) error {
 			return err
 		}
 
-		// Трек активности после успешного создания статуса
-		//if err := s.tracker.TrackActivity(tracker.PROJECT_STATE_CREATED_ACTIVITY, StructToJSONMap(state), nil, project.ID, tracker.ENTITY_TYPE_PROJECT, &project, user); err != nil {
-		//	return EError(c, err)
-		//}
+		err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, state, &user)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
 		return nil
 	}); err != nil {
 		return EError(c, err)
-	}
-
-	err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, state, &user)
-	if err != nil {
-		errStack.GetError(c, err)
 	}
 
 	return c.JSON(http.StatusCreated, state.ToLightDTO())
@@ -2541,17 +2534,10 @@ func (s *Services) deleteState(c echo.Context) error {
 		err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, state, &user)
 		if err != nil {
 			errStack.GetError(c, err)
-		}
-
-		if err := tx.Omit(clause.Associations).Delete(&state).Error; err != nil {
 			return err
 		}
 
-		//if err := s.tracker.TrackActivity(tracker.PROJECT_STATE_DELETED_ACTIVITY, nil, StructToJSONMap(state), project.ID, tracker.ENTITY_TYPE_PROJECT, &project, user); err != nil {
-		//	return err
-		//}
-
-		return nil
+		return tx.Omit(clause.Associations).Delete(&state).Error
 	}); err != nil {
 		return EError(c, err)
 	}
@@ -3004,14 +2990,17 @@ func (s *Services) deleteIssueTemplate(c echo.Context) error {
 			}
 			return EError(c, err)
 		}
-		err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, template, user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
 
-		if err := s.db.
-			Delete(&template).Error; err != nil {
+		if err := s.db.Transaction(func(tx *gorm.DB) error {
+			err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, template, user)
+			if err != nil {
+				errStack.GetError(c, err)
+				return err
+			}
+
+			return s.db.
+				Delete(&template).Error
+		}); err != nil {
 			return EError(c, err)
 		}
 
