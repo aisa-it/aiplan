@@ -91,6 +91,7 @@ var (
 	ErrIntegrationNotFound               = DefinedError{Code: 2033, StatusCode: http.StatusNotFound, Err: "integration not found", RuErr: "Запрашиваемой интеграции не существует"}
 	ErrChangeWorkspaceOwner              = DefinedError{Code: 2034, StatusCode: http.StatusBadRequest, Err: "error change of workspace owner", RuErr: "Не получилось изменить владельца пространства"}
 	ErrDeleteLastWorkspaceMember         = DefinedError{Code: 2035, StatusCode: http.StatusBadRequest, Err: "cannot delete the last workspace member", RuErr: "Невозможно удалить последнего участника пространства"}
+
 	// 3*** - project errors
 	ErrProjectConflict                   = DefinedError{Code: 3001, StatusCode: http.StatusConflict, Err: "project already exists", RuErr: "Такой проект уже существует"}
 	ErrProjectAdminNotFound              = DefinedError{Code: 3002, StatusCode: http.StatusNotFound, Err: "project admin not found", RuErr: "Администратор проекта не найден"}
@@ -175,7 +176,9 @@ var (
 	ErrAttachmentsIncorrectMetadata    = DefinedError{Code: 4017, StatusCode: http.StatusBadRequest, Err: "incorrect attachment metadata", RuErr: "Ошибка клиента"}
 	ErrChildDependency                 = DefinedError{Code: 4018, StatusCode: http.StatusBadRequest, Err: "cyclic dependency detected", RuErr: "Попытка создания циклической зависимости дочерних задач"}
 	ErrIssueDescriptionLocked          = DefinedError{Code: 4019, StatusCode: http.StatusTooManyRequests, Err: "issue description locked by another user", RuErr: "Задача редактируется другим пользователем"}
-	ErrIssueDescriptionNotLockedByUser = DefinedError{Code: 4020, Err: "you are not locking this issue description", RuErr: "Вы не редактируете сейчас эту задачу"}
+	ErrIssueDescriptionNotLockedByUser = DefinedError{Code: 4020, StatusCode: http.StatusForbidden, Err: "you are not locking this issue description", RuErr: "Вы не редактируете сейчас эту задачу"}
+	ErrIssueScriptFail                 = DefinedError{Code: 4021, StatusCode: http.StatusForbidden, Err: "prohibition of committing an action", RuErr: "Запрет на совершение действия"}
+	ErrIssueCustomScriptFail           = DefinedError{Code: 4022, StatusCode: http.StatusForbidden, Err: "prohibition of committing an action", RuErr: "Запрет на совершение действия"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email"}
