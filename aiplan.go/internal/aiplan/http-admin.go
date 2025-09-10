@@ -1129,7 +1129,7 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 					WorkspaceId: workspaceId,
 					CreatedById: &superUser.ID,
 					CreatedAt:   time.Now(),
-					ViewProps:   dao.DefaultViewProps,
+					ViewProps:   types.DefaultViewProps,
 					Role:        role.Role,
 				}
 				if err := tx.Model(&dao.ProjectMember{}).Create(&member).Error; err != nil {
