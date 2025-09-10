@@ -702,13 +702,20 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
 						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": user.ID}),
 					}).Create(&dao.ProjectMember{
-						ID:          dao.GenID(),
-						CreatedAt:   time.Now(),
-						CreatedById: &user.ID,
-						WorkspaceId: workspace.ID,
-						ProjectId:   project.ID,
-						Role:        types.AdminRole,
-						MemberId:    requestedMember.MemberId,
+						ID:                              dao.GenID(),
+						CreatedAt:                       time.Now(),
+						CreatedById:                     &user.ID,
+						WorkspaceId:                     workspace.ID,
+						ProjectId:                       project.ID,
+						Role:                            types.AdminRole,
+						MemberId:                        requestedMember.MemberId,
+						ViewProps:                       types.DefaultViewProps,
+						NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsTG:    types.DefaultProjectMemberNS,
+						NotificationSettingsEmail:       types.DefaultProjectMemberNS,
+						NotificationSettingsApp:         types.DefaultProjectMemberNS,
+						NotificationSettingsTG:          types.DefaultProjectMemberNS,
 					}).Error; err != nil {
 						return err
 					}
@@ -1111,14 +1118,20 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			}
 
 			workspaceMember = dao.WorkspaceMember{
-				ID:          dao.GenID(),
-				WorkspaceId: workspace.ID,
-				MemberId:    user.ID,
-				Role:        invite.Role,
-				CreatedById: &issuer.ID,
-				Member:      &user,
-				Workspace:   &workspace,
-				CreatedBy:   &issuer,
+				ID:                              dao.GenID(),
+				WorkspaceId:                     workspace.ID,
+				MemberId:                        user.ID,
+				Role:                            invite.Role,
+				CreatedById:                     &issuer.ID,
+				Member:                          &user,
+				Workspace:                       &workspace,
+				CreatedBy:                       &issuer,
+				NotificationAuthorSettingsEmail: types.DefaultWorkspaceMemberNS,
+				NotificationAuthorSettingsApp:   types.DefaultWorkspaceMemberNS,
+				NotificationAuthorSettingsTG:    types.DefaultWorkspaceMemberNS,
+				NotificationSettingsEmail:       types.DefaultWorkspaceMemberNS,
+				NotificationSettingsApp:         types.DefaultWorkspaceMemberNS,
+				NotificationSettingsTG:          types.DefaultWorkspaceMemberNS,
 			}
 			if err := tx.Omit(clause.Associations).Create(&workspaceMember).Error; err != nil {
 				if err == gorm.ErrDuplicatedKey {
@@ -1135,14 +1148,21 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 				for _, project := range projects {
 					projectMember := dao.ProjectMember{
-						ID:          dao.GenID(),
-						CreatedAt:   time.Now(),
-						CreatedById: &user.ID,
-						WorkspaceId: workspace.ID,
-						ProjectId:   project.ID,
-						Role:        types.AdminRole,
-						MemberId:    workspaceMember.MemberId,
-						Member:      &user,
+						ID:                              dao.GenID(),
+						CreatedAt:                       time.Now(),
+						CreatedById:                     &user.ID,
+						WorkspaceId:                     workspace.ID,
+						ProjectId:                       project.ID,
+						Role:                            types.AdminRole,
+						MemberId:                        workspaceMember.MemberId,
+						Member:                          &user,
+						ViewProps:                       types.DefaultViewProps,
+						NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsTG:    types.DefaultProjectMemberNS,
+						NotificationSettingsEmail:       types.DefaultProjectMemberNS,
+						NotificationSettingsApp:         types.DefaultProjectMemberNS,
+						NotificationSettingsTG:          types.DefaultProjectMemberNS,
 					}
 					if err := tx.Clauses(clause.OnConflict{
 						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
@@ -1328,11 +1348,17 @@ func (s *Services) createWorkspace(c echo.Context) error {
 	}
 
 	workspaceMember := dao.WorkspaceMember{
-		ID:          dao.GenID(),
-		WorkspaceId: workspace.ID,
-		MemberId:    user.ID,
-		CreatedById: &user.ID,
-		Role:        15,
+		ID:                              dao.GenID(),
+		WorkspaceId:                     workspace.ID,
+		MemberId:                        user.ID,
+		CreatedById:                     &user.ID,
+		Role:                            15,
+		NotificationAuthorSettingsEmail: types.DefaultWorkspaceMemberNS,
+		NotificationAuthorSettingsApp:   types.DefaultWorkspaceMemberNS,
+		NotificationAuthorSettingsTG:    types.DefaultWorkspaceMemberNS,
+		NotificationSettingsEmail:       types.DefaultWorkspaceMemberNS,
+		NotificationSettingsApp:         types.DefaultWorkspaceMemberNS,
+		NotificationSettingsTG:          types.DefaultWorkspaceMemberNS,
 	}
 	if err := s.db.Create(&workspaceMember).Error; err != nil {
 		return EError(c, err)

@@ -1034,7 +1034,13 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	projectMember.ProjectId = project.ID
 	projectMember.CreatedById = &user.ID
 	projectMember.WorkspaceId = workspaceMember.WorkspaceId
-	projectMember.ViewProps = dao.DefaultViewProps
+	projectMember.ViewProps = types.DefaultViewProps
+	projectMember.NotificationAuthorSettingsEmail = types.DefaultProjectMemberNS
+	projectMember.NotificationAuthorSettingsApp = types.DefaultProjectMemberNS
+	projectMember.NotificationAuthorSettingsTG = types.DefaultProjectMemberNS
+	projectMember.NotificationSettingsEmail = types.DefaultProjectMemberNS
+	projectMember.NotificationSettingsApp = types.DefaultProjectMemberNS
+	projectMember.NotificationSettingsTG = types.DefaultProjectMemberNS
 
 	if err := s.db.Create(&projectMember).Error; err != nil {
 		return EError(c, err)
@@ -1154,14 +1160,20 @@ func (s *Services) joinProjects(c echo.Context) error {
 		}
 
 		memberships = append(memberships, dao.ProjectMember{
-			ID:          dao.GenID(),
-			ProjectId:   projectId,
-			MemberId:    user.ID,
-			Role:        role,
-			WorkspaceId: workspaceMember.WorkspaceId,
-			CreatedById: &user.ID,
-			CreatedAt:   time.Now(),
-			ViewProps:   dao.DefaultViewProps,
+			ID:                              dao.GenID(),
+			ProjectId:                       projectId,
+			MemberId:                        user.ID,
+			Role:                            role,
+			WorkspaceId:                     workspaceMember.WorkspaceId,
+			CreatedById:                     &user.ID,
+			CreatedAt:                       time.Now(),
+			ViewProps:                       types.DefaultViewProps,
+			NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
+			NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
+			NotificationAuthorSettingsTG:    types.DefaultProjectMemberNS,
+			NotificationSettingsEmail:       types.DefaultProjectMemberNS,
+			NotificationSettingsApp:         types.DefaultProjectMemberNS,
+			NotificationSettingsTG:          types.DefaultProjectMemberNS,
 		})
 	}
 
