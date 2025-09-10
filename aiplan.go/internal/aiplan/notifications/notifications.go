@@ -119,7 +119,7 @@ func (n *ProjectNotification) Handle(activity dao.ActivityI) error {
 			return err
 		}
 	}
-	if a.Field != nil && *a.Field == "issue" {
+	if a.Field != nil && *a.Field == "issue" && a.Verb != "deleted" {
 		if err := n.Db.Unscoped().
 			Joins("Author").
 			Joins("Workspace").

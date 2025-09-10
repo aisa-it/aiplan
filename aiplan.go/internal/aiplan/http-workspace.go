@@ -439,6 +439,7 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
+		return err
 	}
 	// Cancel jira imports
 	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
@@ -1836,14 +1837,18 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, wm, c.(WorkspaceContext).User)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, wm, c.(WorkspaceContext).User)
+		if err != nil {
+			errStack.GetError(c, err)
+			return err
+		}
 
-	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).Delete(&dao.WorkspaceMember{}).Error; err != nil {
+		return s.db.Session(&gorm.Session{SkipHooks: true}).Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).Delete(&dao.WorkspaceMember{}).Error
+	}); err != nil {
 		return EError(c, err)
 	}
+
 	return c.NoContent(http.StatusOK)
 }
 
