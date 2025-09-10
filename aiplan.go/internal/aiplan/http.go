@@ -303,6 +303,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		os.Exit(0)
 	}()
 
+	sendPasswordDefaultAdmin(db, es)
+
 	{ // register handler ws & UserNotify activity
 		tr.RegisterHandler(notifications.NewIssueNotification(ns))
 		tr.RegisterHandler(notifications.NewProjectNotification(ns))
@@ -959,4 +961,16 @@ func slicesEqualIgnoreOrder(s1, s2 reflect.Value) bool {
 	}
 
 	return true
+}
+
+func sendPasswordDefaultAdmin(tx *gorm.DB, es *notifications.EmailService) {
+	var user dao.User
+	if err := tx.Where("username = ?", "admin").Where("is_onboarded = ?", false).First(&user).Error; err != nil {
+		return
+	}
+
+	err := es.NewUserPasswordNotify(user, "password123")
+	if err != nil {
+		return
+	}
 }
