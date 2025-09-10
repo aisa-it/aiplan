@@ -120,6 +120,15 @@ func (n *ProjectNotification) Handle(activity dao.ActivityI) error {
 		}
 	}
 	if a.Field != nil && *a.Field == "issue" && a.Verb != "deleted" {
+		var issueId string
+		if a.NewIdentifier != nil {
+			issueId = *a.NewIdentifier
+		} else if a.OldIdentifier != nil {
+			issueId = *a.OldIdentifier
+		} else {
+			return nil
+		}
+
 		if err := n.Db.Unscoped().
 			Joins("Author").
 			Joins("Workspace").
@@ -127,7 +136,7 @@ func (n *ProjectNotification) Handle(activity dao.ActivityI) error {
 			Joins("Parent").
 			Preload("Assignees").
 			Preload("Watchers").
-			Where("issues.id = ?", a.NewIssue.ID).
+			Where("issues.id = ?", issueId).
 			First(&a.NewIssue).Error; err != nil {
 			slog.Error("Get issue for activity", "activityId", a.Id, "err", err)
 			return err
