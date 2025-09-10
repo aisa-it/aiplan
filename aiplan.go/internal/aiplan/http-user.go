@@ -1913,6 +1913,12 @@ func (s *Services) getFilterMemberList(c echo.Context) error {
 			Where("lower(username) LIKE ? OR lower(first_name) LIKE ? OR lower(last_name) LIKE ?", searchQuery, searchQuery, searchQuery)
 	}
 
+	query = query.
+		Order("CASE WHEN last_name = '' THEN 1 ELSE 0 END").
+		Order("lower(last_name)").
+		Order("lower(first_name)").
+		Order("lower(email)")
+
 	resp, err := dao.PaginationRequest(offset, limit, query, &users)
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {

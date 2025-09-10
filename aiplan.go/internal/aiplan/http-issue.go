@@ -1058,10 +1058,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			rules.ResultToLog(issue, user, res, err, &rulesLog)
 
 			if !res.ClientResult {
-				return c.JSON(http.StatusBadRequest, map[string]interface{}{
-					"status": res,
-					"error":  err.Error(),
-				})
+				return EError(c, err.ClientError())
 			}
 		}
 		issue.StateId = &newState.ID
@@ -1121,10 +1118,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			rules.ResultToLog(issue, user, res, err, &rulesLog)
 
 			if !res.ClientResult {
-				return c.JSON(http.StatusBadRequest, map[string]interface{}{
-					"status": res,
-					"error":  err.Error(),
-				})
+				return EError(c, err.ClientError())
 			}
 		}
 
@@ -1137,10 +1131,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			rules.ResultToLog(issue, user, res, err, &rulesLog)
 
 			if !res.ClientResult {
-				return c.JSON(http.StatusBadRequest, map[string]interface{}{
-					"status": res,
-					"error":  err.Error(),
-				})
+				return EError(c, err.ClientError())
 			}
 		}
 
@@ -1160,10 +1151,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			rules.ResultToLog(issue, user, res, err, &rulesLog)
 
 			if !res.ClientResult {
-				return c.JSON(http.StatusBadRequest, map[string]interface{}{
-					"status": res,
-					"error":  err.Error(),
-				})
+				return EError(c, err.ClientError())
 			}
 		}
 	}
@@ -1416,10 +1404,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		rules.ResultToLog(issue, user, res, err, &rulesLog)
 
 		if !res.ClientResult {
-			return c.JSON(http.StatusBadRequest, map[string]interface{}{
-				"status": res,
-				"error":  err.Error(),
-			})
+			return EError(c, err.ClientError())
 		}
 	}
 
