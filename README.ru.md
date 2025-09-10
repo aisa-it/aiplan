@@ -1,6 +1,7 @@
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![en](https://img.shields.io/badge/README-en-green.svg)](https://github.com/aisa-it/aiplan/blob/main/README.md)
 [![ru](https://img.shields.io/badge/README-ru-green.svg)](https://github.com/aisa-it/aiplan/blob/main/README.ru.md)
+[![telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/aiplan_faq)
 # АИПлан - Open-source система управления проектами
 Познакомьтесь с АИПлан — профессиональной платформой для управления проектами, которая помогает командам отслеживать задачи, созваниваться, вести документацию и выпускать качественный продукт. 🚀
 Продукт предоставляет удобные инструменты для планирования, отслеживания и выполнения задач, а также для совместной работы внутри команды.
