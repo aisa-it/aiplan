@@ -73,7 +73,7 @@ type Issue struct {
 
 	EstimatePoint int      `json:"estimate_point"`
 	URL           *url.URL `json:"-" gorm:"-" extensions:"x-nullable"`
-	ShortURL      *url.URL `json:"-" gorm:"-"`
+	ShortURL      *url.URL `json:"-" gorm:"-" extensions:"x-nullable"`
 
 	Draft bool `json:"draft"`
 

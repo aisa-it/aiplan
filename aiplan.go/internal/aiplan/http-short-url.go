@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sheff.online/aiplan/internal/aiplan/utils"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -68,6 +69,29 @@ func (s *Services) shortDocURLRedirect(c echo.Context) error {
 		"/%s/aidoc/%s/",
 		slug,
 		doc.ID.String()))
+	path := cfg.WebURL.ResolveReference(ref)
+	return c.Redirect(http.StatusTemporaryRedirect, path.String())
+}
+
+func (s *Services) shortSearchFilterURLRedirect(c echo.Context) error {
+	base := c.Param("base")
+
+	id, err := utils.Base64ToUUID(base)
+	if err != nil {
+		return c.Redirect(http.StatusTemporaryRedirect, "/not-found/")
+	}
+
+	var sf dao.SearchFilter
+	if err := s.db.
+		Where("id = ?", id).Where("public = ?", true).
+		First(&sf).Error; err != nil {
+		return c.Redirect(http.StatusTemporaryRedirect, "/not-found/")
+	}
+
+	ref, _ := url.Parse(fmt.Sprintf(
+		"/filters/%s/",
+		id.String(),
+	))
 	path := cfg.WebURL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }

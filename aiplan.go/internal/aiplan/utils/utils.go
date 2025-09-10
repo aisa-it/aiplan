@@ -9,11 +9,12 @@
 package utils
 
 import (
+	"encoding/base64"
 	"errors"
+	"github.com/gofrs/uuid"
 	"iter"
 	"net/http"
 	"net/url"
-
 	"sheff.online/aiplan/internal/aiplan/dto"
 )
 
@@ -210,4 +211,17 @@ func CompareUsers(a *dto.UserLight, b *dto.UserLight) int {
 		return 1
 	}
 	return 0
+}
+
+func UUIDToBase64(u uuid.UUID) string {
+	return base64.RawURLEncoding.EncodeToString(u[:])
+}
+
+func Base64ToUUID(encoded string) (uuid.UUID, error) {
+	data, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	return uuid.FromBytes(data)
 }
