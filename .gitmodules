@@ -7,3 +7,6 @@
 [submodule "aiplan-api-ts"]
 	path = aiplan-api-ts
 	url = git@github.com:aisa-it/aiplan-api-ts.git
+[submodule "aiplan-helm"]
+	path = aiplan-helm
+	url = git@github.com:aisa-it/aiplan-helm.git

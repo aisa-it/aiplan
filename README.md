@@ -1,6 +1,7 @@
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![en](https://img.shields.io/badge/README-en-green.svg)](https://github.com/aisa-it/aiplan/blob/main/README.md)
 [![ru](https://img.shields.io/badge/README-ru-green.svg)](https://github.com/aisa-it/aiplan/blob/main/README.ru.md)
+[![telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/aiplan_faq)
 # AIPlan - An open-source project management system
 Get to know AIPlan, a professional project management platform that helps teams track tasks, make phone calls, maintain documentation, and produce a high—quality product.
 The product provides convenient tools for planning, tracking, and completing tasks, as well as for teamwork within a team.
