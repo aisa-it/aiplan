@@ -9,6 +9,7 @@ package dao
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"time"
 
@@ -273,20 +274,24 @@ type SearchFilter struct {
 
 	Author *User `json:"author_detail" gorm:"foreignKey:AuthorID" extensions:"x-nullable"`
 
-	Users []User `json:"-" gorm:"constraint:OnDelete:CASCADE;many2many:user_search_filters"`
+	Users    []User   `json:"-" gorm:"constraint:OnDelete:CASCADE;many2many:user_search_filters"`
+	URL      *url.URL `json:"-" gorm:"-" extensions:"x-nullable"`
+	ShortURL *url.URL `json:"-" gorm:"-" extensions:"x-nullable"`
 }
 
 func (sf *SearchFilter) ToLightDTO() *dto.SearchFilterLight {
 	if sf == nil {
 		return nil
 	}
-
+	sf.SetUrl()
 	return &dto.SearchFilterLight{
 		ID:          sf.ID.String(),
 		Name:        sf.Name,
 		Description: sf.Description,
 		Public:      sf.Public,
 		Filter:      sf.Filter,
+		Url:         types.JsonURL{Url: sf.URL},
+		ShortUrl:    types.JsonURL{Url: sf.ShortURL},
 	}
 }
 
@@ -301,7 +306,26 @@ func (sf *SearchFilter) ToFullDTO() *dto.SearchFilterFull {
 	}
 }
 
+func (sf *SearchFilter) AfterFind(tx *gorm.DB) (err error) {
+	sf.SetUrl()
+	return nil
+}
+
 func (SearchFilter) TableName() string { return "search_filters" }
+
+func (sf *SearchFilter) SetUrl() {
+	if !sf.Public {
+		return
+	}
+	urlFilter := fmt.Sprintf("/filters/%s/", sf.ID.String())
+	shortUrl := fmt.Sprintf("/sf/%s/", utils.UUIDToBase64(sf.ID))
+
+	u, _ := url.Parse(urlFilter)
+	shortU, _ := url.Parse(shortUrl)
+
+	sf.URL = Config.WebURL.ResolveReference(u)
+	sf.ShortURL = Config.WebURL.ResolveReference(shortU)
+}
 
 type UserNotifications struct {
 	ID        string         `gorm:"column:id;primaryKey" json:"id"`
