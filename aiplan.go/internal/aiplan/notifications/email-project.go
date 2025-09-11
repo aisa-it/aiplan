@@ -103,12 +103,15 @@ func (e *emailNotifyProject) Process() {
 }
 
 type projectMember struct {
-	User            dao.User
-	ProjectLeader   bool
-	ProjectAdmin    bool
-	DefaultWatcher  bool
-	DefaultAssigner bool
-	IssueMember     bool
+	User                  dao.User
+	ProjectLeader         bool
+	ProjectAdmin          bool
+	DefaultWatcher        bool
+	DefaultAssigner       bool
+	IssueMember           bool
+	ProjectRole           int
+	ProjectAuthorSettings types.ProjectMemberNS
+	ProjectMemberSettings types.ProjectMemberNS
 }
 
 type projectActivitySorter struct {
@@ -171,8 +174,11 @@ func newProjectActivity(tx *gorm.DB, project *dao.Project) *projectActivity {
 	{ //add Leader
 		if lead, ok := memberMap[project.ProjectLeadId]; ok && lead.Member != nil {
 			res.users[memberMap[project.ProjectLeadId].Member.Email] = projectMember{
-				User:          *lead.Member,
-				ProjectLeader: true,
+				User:                  *lead.Member,
+				ProjectLeader:         true,
+				ProjectRole:           lead.Role,
+				ProjectMemberSettings: lead.NotificationSettingsEmail,
+				ProjectAuthorSettings: lead.NotificationAuthorSettingsEmail,
 			}
 		}
 	}
@@ -185,15 +191,21 @@ func newProjectActivity(tx *gorm.DB, project *dao.Project) *projectActivity {
 				continue
 			}
 			res.users[member.Member.Email] = projectMember{
-				User:            *member.Member,
-				ProjectAdmin:    isAdmin,
-				DefaultAssigner: member.IsDefaultAssignee,
-				DefaultWatcher:  member.IsDefaultWatcher,
+				User:                  *member.Member,
+				ProjectAdmin:          isAdmin,
+				DefaultAssigner:       member.IsDefaultAssignee,
+				DefaultWatcher:        member.IsDefaultWatcher,
+				ProjectRole:           member.Role,
+				ProjectMemberSettings: member.NotificationSettingsEmail,
+				ProjectAuthorSettings: member.NotificationAuthorSettingsEmail,
 			}
 		} else {
 			pm.ProjectAdmin = isAdmin
 			pm.DefaultAssigner = member.IsDefaultAssignee
 			pm.DefaultWatcher = member.IsDefaultWatcher
+			pm.ProjectRole = member.Role
+			pm.ProjectAuthorSettings = member.NotificationAuthorSettingsEmail
+			pm.ProjectMemberSettings = member.NotificationSettingsEmail
 			res.users[member.Member.Email] = pm
 		}
 	}
@@ -233,13 +245,7 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 
 		var sendActivities []dao.ProjectActivity
 		for _, activity := range pa.activities {
-			if member.ProjectAdmin {
-				if activity.Field != nil && *activity.Field == "issue" {
-					continue
-				}
-				sendActivities = append(sendActivities, activity)
-				continue
-			}
+
 			if activity.NewIssue != nil {
 				var issue dao.Issue
 				if err := tx.
@@ -255,10 +261,29 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 				}
 				isWatcher := utils.CheckInSlice([]string{member.User.ID}, issue.WatcherIDs...) || member.DefaultWatcher
 				isAssignee := utils.CheckInSlice([]string{member.User.ID}, issue.AssigneeIDs...) || member.DefaultAssigner
+
 				if isWatcher || isAssignee || issue.CreatedById == member.User.ID {
-					sendActivities = append(sendActivities, activity)
+					if issue.CreatedById == member.User.ID {
+						if member.ProjectAuthorSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
+							sendActivities = append(sendActivities, activity)
+							continue
+						}
+						continue
+					}
+					if member.ProjectMemberSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
+						sendActivities = append(sendActivities, activity)
+						continue
+					}
+				}
+				continue
+			}
+
+			if member.ProjectAdmin {
+				if activity.Field != nil && *activity.Field == "issue" {
 					continue
 				}
+				sendActivities = append(sendActivities, activity)
+				continue
 			}
 		}
 
