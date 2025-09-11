@@ -233,13 +233,7 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 
 		var sendActivities []dao.ProjectActivity
 		for _, activity := range pa.activities {
-			if member.ProjectAdmin {
-				if activity.Field != nil && *activity.Field == "issue" {
-					continue
-				}
-				sendActivities = append(sendActivities, activity)
-				continue
-			}
+
 			if activity.NewIssue != nil {
 				var issue dao.Issue
 				if err := tx.
@@ -259,6 +253,13 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 					sendActivities = append(sendActivities, activity)
 					continue
 				}
+			}
+			if member.ProjectAdmin {
+				if activity.Field != nil && *activity.Field == "issue" {
+					continue
+				}
+				sendActivities = append(sendActivities, activity)
+				continue
 			}
 		}
 
