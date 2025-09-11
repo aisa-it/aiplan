@@ -301,6 +301,12 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []int64 {
 		act.NewIssue.Workspace = act.Workspace
 		issueUserTgId = GetUserTgIdFromIssue(act.NewIssue)
 		defaultWatcherUserTgId = GetUserTgIgDefaultWatchers(tx, act.ProjectId)
+		userMap := utils.MergeMaps(issueUserTgId, defaultWatcherUserTgId)
+		ids := make([]string, 0, len(userMap))
+		for id, _ := range userMap {
+			ids = append(ids, id)
+		}
+		query = query.Where("member_id in (?)", ids)
 	} else {
 		query = query.Where("project_members.role = ?", types.AdminRole)
 
