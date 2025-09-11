@@ -48,8 +48,8 @@ The configuration is done by .env file.
 ```
 docker-compose up -d
 ```
-The application will be available at http://localhost:8080\
-Default user (superuser) email: `DEFAULT_EMAIL`; password: `password123`
+- The application will be available at http://localhost:8080\
+- Default user (superuser) email: `DEFAULT_EMAIL`; password: `password123`
 
 ## Application Parameters
 
