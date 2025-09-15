@@ -264,7 +264,6 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			errStack.GetError(c, err)
 		}
 		return nil
-		//return s.tracker.TrackActivity(tracker.WORKSPACE_UPDATED_ACTIVITY, newWorkspaceMap, oldWorkspaceMap, workspace.ID, tracker.ENTITY_TYPE_WORKSPACE, nil, *user)
 	}); err != nil {
 		return EError(c, err)
 	}
@@ -349,10 +348,6 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-
-		//if err := s.tracker.TrackActivity(tracker.WORKSPACE_LOGO_UPDATED_ACTIVITY, newMemberMap, oldMemberMap, workspace.ID, tracker.ENTITY_TYPE_WORKSPACE, nil, *user); err != nil {
-		//	return err
-		//}
 
 		return nil
 	}); err != nil {
@@ -736,11 +731,6 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 			newMemberMap = StructToJSONMap(requestedMember)
 			newMemberMap["updateScopeId"] = requestedMember.MemberId
 
-			// Трек активности после обновления роли участника
-			//if err := s.tracker.TrackActivity(tracker.WORKSPACE_MEMBER_UPDATED_ACTIVITY, newMemberMap, oldMemberMap, workspace.ID, tracker.ENTITY_TYPE_WORKSPACE, nil, user); err != nil {
-			//	return EError(c, err)
-			//}
-
 			return nil
 		}); err != nil {
 			return EError(c, err)
@@ -902,12 +892,6 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 			return EError(c, err)
 		}
 	}
-
-	//oldMemberMap := StructToJSONMap(requestedMember)
-
-	//if err := s.tracker.TrackActivity(tracker.WORKSPACE_MEMBER_REMOVED_ACTIVITY, nil, oldMemberMap, workspace.ID, tracker.ENTITY_TYPE_WORKSPACE, nil, *c.(WorkspaceContext).User); err != nil {
-	//	return err
-	//}
 
 	return c.NoContent(http.StatusNoContent)
 
@@ -1196,11 +1180,6 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			}
 		}
 
-		//newMemberMap := StructToJSONMap(workspaceMember)
-		//if err := s.tracker.TrackActivity(tracker.WORKSPACE_MEMBER_ADDED_ACTIVITY, newMemberMap, nil, workspace.ID, tracker.ENTITY_TYPE_WORKSPACE, nil, issuer); err != nil {
-		//	return EError(c, err)
-		//}
-
 		data := map[string]interface{}{
 			"updateScopeId":       workspaceMember.MemberId,
 			"member_activity_val": workspaceMember.Role,
@@ -1485,10 +1464,6 @@ func (s *Services) getWorkspaceToken(c echo.Context) error {
 func (s *Services) resetWorkspaceToken(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
-	//TODO check it
-	//oldToken := map[string]interface{}{
-	//	"integration_token": workspace.IntegrationToken,
-	//}
 
 	newToken := map[string]interface{}{
 		"integration_token": password.MustGenerate(64, 30, 0, false, true),
@@ -1510,10 +1485,6 @@ func (s *Services) resetWorkspaceToken(c echo.Context) error {
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
-	//if err := s.tracker.TrackActivity(tracker.WORKSPACE_TOKEN_UPDATED_ACTIVITY, newToken, oldToken, workspace.ID, tracker.ENTITY_TYPE_WORKSPACE, nil, *user); err != nil {
-	//	return EError(c, err)
-	//}
 
 	return c.NoContent(http.StatusCreated)
 }
