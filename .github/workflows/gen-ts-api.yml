@@ -36,11 +36,12 @@ jobs:
       - name: Generate API
         run: |
           cd aiplan-api-ts
+          git checkout main
           npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/internal/aiplan/docs/swagger.json -o ./src/ -n aiplan-api.ts
           git add .
           git commit -m "new generated API version" || echo "No changes to commit"
           yarn version --minor
-          git push
+          git push origin main
           git push --tags
 
       - name: Get latest submodule commit hash
