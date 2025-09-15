@@ -98,6 +98,100 @@
             </td>
         </tr>
         {{end}}
+
+        {{with $activity := .Changes.watchers }}
+        <tr>
+            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
+            </td>
+            <td class="task-table-left-col"
+                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                Наблюдатели:
+            </td>
+            <td class="task-table-right-col"
+                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                {{ $first := true }}
+                {{ range $index, $watcher := .Doc.Watchers}}
+                {{- if or $activity.OldDocWatcher (and $activity.NewDocWatcher (not (eq $watcher.ID $activity.NewDocWatcher.ID)))
+                -}}
+                {{- if not $first -}}, {{else}} {{$first = false}} {{end}}
+                {{- $watcher.GetName -}}
+                {{- end -}}
+                {{end}}{{- if not $first -}},{{- end -}}
+                {{if .OldDocWatcher}}
+                <del style="color: #999999">{{.OldDocWatcher.GetName}}</del>
+                {{end}}
+                {{if .NewDocWatcher}}<span class="new-status" style="color: #05bd8d">{{ .NewDocWatcher.GetName }}</span>{{end}}
+            </td>
+        </tr>
+        <tr>
+            <td class="task-table-separator" colspan="3"
+                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
+            </td>
+        </tr>
+        {{end}}
+
+        {{with $activity := .Changes.readers }}
+        <tr>
+            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
+            </td>
+            <td class="task-table-left-col"
+                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                Права на просмотр:
+            </td>
+            <td class="task-table-right-col"
+                style="text-align: left;vertical-align: bottom;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                {{ $first := true }}
+                {{ range $index, $reader := .Doc.Readers}}
+                {{- if or $activity.OldDocReader (and $activity.NewDocReader (not (eq $reader.ID $activity.NewDocReader.ID)))
+                -}}
+                {{- if not $first -}}, {{else}} {{$first = false}} {{end}}
+                {{- $reader.GetName -}}
+                {{- end -}}
+                {{end}}{{- if not $first -}},{{- end -}}
+                {{if .OldDocReader}}
+                <del style="color: #999999">{{.OldDocReader.GetName}}</del>
+                {{end}}
+                {{if .NewDocReader}}<span class="new-status" style="color: #05bd8d">{{ .NewDocReader.GetName }}</span>{{end}}
+            </td>
+        </tr>
+        <tr>
+            <td class="task-table-separator" colspan="3"
+                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
+            </td>
+        </tr>
+        {{end}}
+
+        {{with $activity := .Changes.editors }}
+        <tr>
+            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
+            </td>
+            <td class="task-table-left-col"
+                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                Права на редактирование:
+            </td>
+            <td class="task-table-right-col"
+                style="text-align: left;vertical-align: bottom;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                {{ $first := true }}
+                {{ range $index, $editor := .Doc.Editors}}
+                {{- if or $activity.OldDocEditor (and $activity.NewDocEditor (not (eq $editor.ID $activity.NewDocEditor.ID)))
+                -}}
+                {{- if not $first -}}, {{else}} {{$first = false}} {{end}}
+                {{- $editor.GetName -}}
+                {{- end -}}
+                {{end}}{{- if not $first -}},{{- end -}}
+                {{if .OldDocEditor}}
+                <del style="color: #999999">{{.OldDocEditor.GetName}}</del>
+                {{end}}
+                {{if .NewDocEditor}}<span class="new-status" style="color: #05bd8d">{{ .NewDocEditor.GetName }}</span>{{end}}
+            </td>
+        </tr>
+        <tr>
+            <td class="task-table-separator" colspan="3"
+                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
+            </td>
+        </tr>
+        {{end}}
+
         {{with .Changes.doc }}
         <tr>
             <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
@@ -118,7 +212,7 @@
             </td>
             {{ if ne .Verb "move_doc_to_workspace" }}
             <td class="task-table-right-col"
-                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                style="text-align: left;vertical-align: bottom;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
                 {{ if ne .Verb "move_workspace_to_doc" }}
                 <del style="color: #999999">{{.OldValue}}</del>
                 {{end}}
@@ -131,6 +225,7 @@
                 <del style="color: #999999">{{.OldValue}}</del>
             </td>
             {{ end }}
+
 
         </tr>
         <tr>
