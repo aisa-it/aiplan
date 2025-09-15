@@ -410,6 +410,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			"sign_up": cfg.SignUpEnable,
 			"demo":    cfg.Demo,
 			"ny":      cfg.NYEnable,
+			"captcha": !cfg.CaptchaDisabled,
 		})
 	})
 
