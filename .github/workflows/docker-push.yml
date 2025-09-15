@@ -103,4 +103,4 @@ jobs:
         run: |
           git add aiplan-api-ts
           git commit -m "Update api ts submodule to ${{ steps.submodule_commit.outputs.commit_hash }}"
-          git push
+          git push origin HEAD:main
