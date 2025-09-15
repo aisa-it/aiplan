@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: node-latest
+    runs-on: ubuntu-latest
     permissions:
       packages: write
       contents: read
@@ -24,10 +24,13 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Prepare
         run: |
-          apt-get update
-          apt-get install git -y
           npm i -g swagger-typescript-api
 
       - name: Generate API
