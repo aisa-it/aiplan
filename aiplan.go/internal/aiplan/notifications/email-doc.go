@@ -174,7 +174,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 
 		content, textContent, err := getDocNotificationHTML(tx, sendActivities, &member.User, da.doc)
 		if err != nil {
-			slog.Error("Make issue notification HTML", "err", err)
+			slog.Error("Make doc notification HTML", "err", err)
 			continue
 		}
 
@@ -196,7 +196,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.WorkspaceMemberSettings.IsNotify(&field, "doc", "all", author.WorkspaceRole) {
 			content, textContent, err := getDocNotificationHTML(tx, author.activities, &author.User, da.doc)
 			if err != nil {
-				slog.Error("Make issue notification HTML", "err", err)
+				slog.Error("Make doc notification HTML", "err", err)
 				continue
 			}
 			mails = append(mails, mail{
@@ -361,6 +361,11 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 }
 
 func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
+	var newDoc *dao.Doc
+	if activity.NewDoc != nil {
+		newDoc = activity.NewDoc
+		newDoc.Workspace = activity.Workspace
+	}
 	if activity.DocId != "" { //
 		if v, ok := as.Docs[activity.DocId]; !ok {
 			activity.Doc.Workspace = activity.Workspace
@@ -422,6 +427,22 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			if err := tx.Where("name = ?", "doc_activity_new").First(&template).Error; err != nil {
 				return "", "", err
 			}
+			var docId string
+			if activity.NewIdentifier != nil {
+				docId = *activity.NewIdentifier
+			}
+
+			var newDoc dao.Doc
+			if err := tx.Unscoped().
+				Joins("Author").
+				Joins("Workspace").
+				Preload("Readers").
+				Preload("Editors").
+				Preload("Watchers").
+				Where("docs.id = ?", docId).
+				First(&newDoc).Error; err != nil {
+				continue
+			}
 
 			description := replaceTablesToText(replaceImageToText(activity.Doc.Content.Body))
 			description = policy.ProcessCustomHtmlTag(description)
@@ -436,8 +457,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 				Description string
 			}{
 				activity.Actor,
-				*doc,
-				doc.ParentDoc,
+				newDoc,
+				doc,
 				activity.CreatedAt.In((*time.Location)(&targetUser.UserTimezone)),
 				description,
 			}); err != nil {
