@@ -673,7 +673,10 @@ func (activity *WorkspaceActivity) ToLightDTO() *dto.EntityActivityLight {
 
 		EntityUrl: activity.GetUrl(),
 	}
+}
 
+func (wa *WorkspaceActivity) AfterFind(tx *gorm.DB) error {
+	return EntityActivityAfterFind(wa, tx)
 }
 
 // WorkspaceActivityExtendFields

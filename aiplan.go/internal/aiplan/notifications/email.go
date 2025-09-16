@@ -47,8 +47,9 @@ func (es *EmailService) EmailActivity() {
 		return
 	}
 
-	newEmailNotifyIssue(es).Process()
+	newEmailNotifyWorkspace(es).Process()
 	newEmailNotifyProject(es).Process()
+	newEmailNotifyIssue(es).Process()
 	newEmailNotifyDoc(es).Process()
 }
 

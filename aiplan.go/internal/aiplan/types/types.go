@@ -686,6 +686,7 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 	}
 
 	isDoc := entity == "doc"
+	isWorkspace := entity == "workspace"
 	isWorkspaceAdmin := entity == "workspace" && role == AdminRole
 
 	switch *field {
@@ -735,6 +736,17 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 			case "move_workspace_to_doc", "move_doc_to_workspace", "move_doc_to_doc", "added", "removed":
 				return !ns.DisableDocMove
 			}
+		}
+		if isWorkspace {
+			switch verb {
+			case "created":
+				return !ns.DisableDocCreate
+			case "added", "removed":
+				return !ns.DisableDocMove
+			case "deleted":
+				return !ns.DisableDocDelete
+			}
+
 		}
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceDoc

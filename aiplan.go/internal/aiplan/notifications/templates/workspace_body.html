@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{.Title}}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* cyrillic-ext */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: italic;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWEBXyIfDnIV7nEnXO61F3f.woff2) format('woff2');
+            unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+        }
+
+        /* cyrillic */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: italic;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWEBXyIfDnIV7nEnXq61F3f.woff2) format('woff2');
+            unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+        }
+
+        /* latin-ext */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: italic;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWEBXyIfDnIV7nEnXC61F3f.woff2) format('woff2');
+            unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+        }
+
+        /* latin */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: italic;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWEBXyIfDnIV7nEnX661A.woff2) format('woff2');
+            unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+        }
+
+        /* cyrillic-ext */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: normal;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWKBXyIfDnIV7nMrXyi0A.woff2) format('woff2');
+            unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+        }
+
+        /* cyrillic */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: normal;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWKBXyIfDnIV7nFrXyi0A.woff2) format('woff2');
+            unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+        }
+
+        /* latin-ext */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: normal;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWKBXyIfDnIV7nPrXyi0A.woff2) format('woff2');
+            unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+        }
+
+        /* latin */
+        @font-face {
+            font-family: 'Rubik';
+            font-style: normal;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url(https://fonts.gstatic.com/s/rubik/v28/iJWKBXyIfDnIV7nBrXw.woff2) format('woff2');
+            unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+            font: 16px/1.375 Rubik, sans-serif;
+        }
+
+        @media (max-width: 767px) {
+            .mail-body {
+                width: 100%;
+                max-width: none;
+            }
+
+            .page-main {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body style="margin: 0;padding: 0;background-color: #f8f9fa;font: 14px/1.428 Rubik, sans-serif;">
+<table class="page-wrapper" style="width: 100%;">
+    <tr>
+        <td class="page-v-spacing" style="height: 80px;"></td>
+    </tr>
+    <tr>
+        <td class="page-main">
+            <table class="mail-body" align="center"
+                   style="background-color: white;width: 80%;max-width: 648px;border: #dde2ea 1px solid;border-radius: 16px;border-spacing: 0;color: #474a52;">
+                <tr>
+                    <td class="mail-body-borders" style="padding: 0;border: none;">
+                        <table class="mail-body-spacing" style="width: 100%;border-collapse: collapse;">
+                            <tr>
+                                <td class="mail-body-v-spacing" colspan="3" style="width: 21px;height: 19px;padding: 0;">
+                                </td>
+                            </tr>
+<!--                            {{if and .Doc (or (gt .ActivityCount 0) (gt .CommentCount 0))}}-->
+<!--                            <tr>-->
+<!--                                <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>-->
+<!--                                <td style="padding: 0;">-->
+<!--                                    <div class="mail-body-header" style="margin-top: 2px;">Всего-->
+<!--                                        {{if gt .ActivityCount 0}}-->
+<!--                                        <span class="updates-count"-->
+<!--                                              style="font-weight: bold;letter-spacing: 0.75px;">{{.ActivityCount}}-->
+<!--                                    обновл{{if eq .ActivityCount 1}}ение{{else}}.{{end}}</span>-->
+<!--                                        {{- end -}}-->
+<!--                                        {{- if and (gt .ActivityCount 0) (gt .CommentCount 0) -}}-->
+<!--                                        ,-->
+<!--                                        {{end}}-->
+<!--                                        {{if gt .CommentCount 0}}-->
+<!--                                        <span class="updates-count"-->
+<!--                                              style="font-weight: bold;letter-spacing: 0.75px;">{{.CommentCount}}-->
+<!--                                    коммент{{if eq .CommentCount 1}}арий{{else}}.{{end}}</span>-->
+<!--                                        {{end}}-->
+<!--                                    </div>-->
+<!--                                </td>-->
+<!--                                <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>-->
+<!--                            </tr>-->
+<!--                            <tr>-->
+<!--                                <td class="mail-body-v-spacing" colspan="3" style="width: 21px;height: 19px;padding: 0;">-->
+<!--                                </td>-->
+<!--                            </tr>-->
+<!--                            {{end}}-->
+                            <tr>
+                                <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>
+                                <td style="padding: 0;">
+                                    <table class="mail-main"
+                                           style="width: 100%;border: #dde2ea 1px solid;border-radius: 8px;">
+                                        <tr>
+                                            <td colspan="3" class="main-v-spacing" style="padding: 0;height: 10px;">
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="main-h-spacing" style="padding: 0;width: 10px;"></td>
+                                            <td>
+                                                <div class="breadcrumbs" style="margin-bottom: 4px;letter-spacing: 0.5px;">
+                                                    {{.DocBreadcrumb}}</div>
+
+
+                                                <div class="title"
+                                                     style="font-size: 24px;font-weight: 500;line-height: 19px;margin-bottom: 8px;">
+                                                    {{.Title}}</div>
+
+<!--                                                {{if .Doc}}-->
+                                                <div><a class="task-link" href="{{.Workspace.URL.String}}"
+                                                        style="color: #3f76ff;text-decoration: none;letter-spacing: 0.5px;">Перейти в
+                                                    пространство</a></div>
+<!--                                                {{else}}-->
+<!--                                                <div class="datetime-info" style="color: #8b8b98;">{{.CreatedAt.Format-->
+<!--                                                    "02.01.2006 15:04 MST"}}-->
+<!--                                                </div>-->
+<!--                                                {{end}}-->
+
+                                                {{.WorkspaceBody}}
+                                            </td>
+                                            <td class="main-h-spacing" style="padding: 0;width: 10px;"></td>
+                                        </tr>
+
+                                        <tr>
+                                            <td colspan="3" class="main-v-spacing" style="padding: 0;height: 10px;">
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    <table class="mail-footer"
+                                           style="width: 100%;border-collapse: collapse;font-size: 14px;margin-top: 24px;">
+                                        <tr>
+                                            <td style="padding: 0;vertical-align: middle;"><span>Это сообщение
+                                          отправлено из АИПлан</span></td>
+                                            <td class="footer-logo-t-cell"
+                                                style="width: 90px;text-align: right;padding: 0;vertical-align: middle;">
+                                                <svg width="80" height="24" viewBox="0 0 80 24" fill="none" class="footer-logo"
+                                                     alt="АИПЛАН" style="vertical-align: middle;"
+                                                     xmlns="http://www.w3.org/2000/svg">
+                                                    <path
+                                                            d="M1.79688 10.3451C1.79688 5.66356 1.79688 3.32279 3.25124 1.86843C4.70561 0.414062 7.04637 0.414062 11.7279 0.414062H21.6589C26.3405 0.414062 28.6812 0.414062 30.1356 1.86843C31.59 3.32279 31.59 5.66356 31.59 10.3451V13.6554C31.59 18.337 31.59 20.6777 30.1356 22.1321C28.6812 23.5865 26.3405 23.5865 21.6589 23.5865H11.7279C7.04637 23.5865 4.70561 23.5865 3.25124 22.1321C1.79688 20.6777 1.79688 18.337 1.79688 13.6554V10.3451Z"
+                                                            fill="#3F76FF" />
+                                                    <path
+                                                            d="M5.06028 18.2085C4.96759 18.2085 4.88069 18.1737 4.79959 18.1042C4.73007 18.0347 4.69531 17.9478 4.69531 17.8435C4.69531 17.7972 4.7069 17.745 4.73007 17.6871L8.91848 6.47745C8.95324 6.36159 9.01697 6.26311 9.10966 6.182C9.21393 6.08931 9.35297 6.04297 9.52676 6.04297H11.4211C11.5949 6.04297 11.7281 6.08931 11.8208 6.182C11.9135 6.26311 11.983 6.36159 12.0294 6.47745L16.2178 17.6871C16.2294 17.745 16.2352 17.7972 16.2352 17.8435C16.2352 17.9478 16.2004 18.0347 16.1309 18.1042C16.0614 18.1737 15.9803 18.2085 15.8876 18.2085H14.3756C14.2134 18.2085 14.0917 18.1737 14.0106 18.1042C13.9411 18.0231 13.8948 17.9478 13.8716 17.8783L13.1058 15.8905C13.0811 15.8264 13.0688 15.7943 13.0423 15.7762C13.0158 15.758 12.9815 15.758 12.9127 15.758H8.03512C7.96639 15.758 7.93202 15.758 7.90557 15.7762C7.87911 15.7943 7.86676 15.8264 7.84205 15.8905L7.07628 17.8783C7.05311 17.9478 7.00097 18.0231 6.91986 18.1042C6.85035 18.1737 6.73449 18.2085 6.57228 18.2085H5.06028ZM8.60303 13.4814C8.5568 13.6078 8.53369 13.671 8.56458 13.7152C8.59546 13.7594 8.66275 13.7594 8.79734 13.7594H12.1496C12.2846 13.7594 12.3521 13.7594 12.3829 13.7151C12.4138 13.6708 12.3904 13.6075 12.3437 13.4809L10.8552 9.44608C10.6919 9.00345 10.6102 8.78214 10.4658 8.78235C10.3214 8.78255 10.2404 9.0041 10.0783 9.44719L8.60303 13.4814Z"
+                                                            fill="white" />
+                                                    <path
+                                                            d="M17.4472 18.2085C17.3314 18.2085 17.2329 18.1679 17.1518 18.0868C17.0707 18.0057 17.0301 17.9015 17.0301 17.774V6.47745C17.0301 6.35 17.0707 6.24573 17.1518 6.16462C17.2329 6.08352 17.3371 6.04297 17.4646 6.04297H19.0287C19.1562 6.04297 19.2547 6.08352 19.3242 6.16462C19.4053 6.24573 19.4458 6.35 19.4458 6.47745V13.8005C19.4458 14.069 19.4458 14.2033 19.5181 14.2262C19.5903 14.249 19.6675 14.1392 19.822 13.9195L25.1636 6.32104C25.21 6.26311 25.2737 6.20518 25.3548 6.14724C25.4359 6.07773 25.5402 6.04297 25.6676 6.04297H27.1101C27.226 6.04297 27.3245 6.08352 27.4056 6.16462C27.4867 6.24573 27.5272 6.35 27.5272 6.47745V17.7914C27.5272 17.9072 27.4867 18.0057 27.4056 18.0868C27.3245 18.1679 27.226 18.2085 27.1101 18.2085H25.546C25.4185 18.2085 25.3142 18.1679 25.2331 18.0868C25.152 18.0057 25.1115 17.9072 25.1115 17.7914V10.6149C25.1115 10.3499 25.1115 10.2174 25.0397 10.1943C24.9679 10.1713 24.8907 10.279 24.7364 10.4945L19.4111 17.9304C19.3763 17.9768 19.3184 18.0347 19.2373 18.1042C19.1562 18.1737 19.0461 18.2085 18.9071 18.2085H17.4472Z"
+                                                            fill="white" />
+                                                    <path
+                                                            d="M34.0734 17.9585C33.9575 17.9585 33.859 17.9237 33.7779 17.8542C33.6968 17.7731 33.6562 17.6688 33.6562 17.5414V6.22745C33.6562 6.1 33.6968 5.99573 33.7779 5.91462C33.859 5.83352 33.9575 5.79297 34.0734 5.79297H43.1801C43.3076 5.79297 43.4118 5.83352 43.4929 5.91462C43.574 5.99573 43.6146 6.1 43.6146 6.22745V17.5414C43.6146 17.6572 43.574 17.7557 43.4929 17.8368C43.4118 17.9179 43.3076 17.9585 43.1801 17.9585H41.616C41.5001 17.9585 41.4016 17.9179 41.3205 17.8368C41.2394 17.7557 41.1989 17.6572 41.1989 17.5414V8.17228C41.1989 8.07475 41.1989 8.02598 41.1686 7.99568C41.1383 7.96538 41.0895 7.96538 40.992 7.96538H36.2789C36.1813 7.96538 36.1326 7.96538 36.1023 7.99568C36.072 8.02598 36.072 8.07475 36.072 8.17228V17.5414C36.072 17.6572 36.0314 17.7557 35.9503 17.8368C35.8808 17.9179 35.7823 17.9585 35.6549 17.9585H34.0734Z"
+                                                            fill="#3F76FF" />
+                                                    <path
+                                                            d="M53.5364 17.9585C53.4205 17.9585 53.322 17.9179 53.2409 17.8368C53.1598 17.7557 53.1193 17.6572 53.1193 17.5414V8.17228C53.1193 8.07475 53.1193 8.02598 53.089 7.99568C53.0587 7.96538 53.0099 7.96538 52.9124 7.96538H49.5549C49.4573 7.96538 49.4086 7.96538 49.3783 7.99568C49.348 8.02598 49.348 8.07475 49.348 8.17228V10.1552C49.348 11.5455 49.2727 12.7331 49.122 13.7179C48.983 14.7028 48.7513 15.5022 48.4269 16.1163C48.1025 16.7188 47.6622 17.1706 47.106 17.4719C46.5499 17.7615 45.8547 17.9179 45.0205 17.9411C44.9047 17.9527 44.8004 17.9179 44.7077 17.8368C44.6266 17.7441 44.586 17.6399 44.586 17.524V16.2206C44.586 15.9772 44.7193 15.8382 44.9858 15.8035C45.3333 15.7455 45.6288 15.5833 45.8721 15.3168C46.127 15.0503 46.3356 14.6738 46.4978 14.1872C46.6716 13.7006 46.799 13.0981 46.8801 12.3797C46.9612 11.6498 47.0018 10.804 47.0018 9.84235V6.21007C47.0018 6.09421 47.0423 5.99573 47.1234 5.91462C47.2045 5.83352 47.303 5.79297 47.4189 5.79297H55.1005C55.228 5.79297 55.3322 5.83352 55.4133 5.91462C55.4945 5.99573 55.535 6.1 55.535 6.22745V17.5414C55.535 17.6572 55.4945 17.7557 55.4133 17.8368C55.3322 17.9179 55.228 17.9585 55.1005 17.9585H53.5364Z"
+                                                            fill="#3F76FF" />
+                                                    <path
+                                                            d="M56.6778 17.9585C56.5851 17.9585 56.4982 17.9237 56.4171 17.8542C56.3476 17.7847 56.3128 17.6978 56.3128 17.5935C56.3128 17.5472 56.3244 17.495 56.3476 17.4371L60.536 6.22745C60.5708 6.11159 60.6345 6.01311 60.7272 5.932C60.8314 5.83931 60.9705 5.79297 61.1443 5.79297H63.0386C63.2124 5.79297 63.3457 5.83931 63.4383 5.932C63.531 6.01311 63.6006 6.11159 63.6469 6.22745L67.8353 17.4371C67.8469 17.495 67.8527 17.5472 67.8527 17.5935C67.8527 17.6978 67.8179 17.7847 67.7484 17.8542C67.6789 17.9237 67.5978 17.9585 67.5051 17.9585H65.9931C65.8309 17.9585 65.7092 17.9237 65.6281 17.8542C65.5586 17.7731 65.5123 17.6978 65.4891 17.6283L64.7233 15.6405C64.6986 15.5764 64.6863 15.5443 64.6598 15.5262C64.6334 15.508 64.599 15.508 64.5303 15.508H59.6526C59.5839 15.508 59.5495 15.508 59.5231 15.5262C59.4966 15.5443 59.4843 15.5764 59.4596 15.6405L58.6938 17.6283C58.6706 17.6978 58.6185 17.7731 58.5374 17.8542C58.4679 17.9237 58.352 17.9585 58.1898 17.9585H56.6778ZM60.2205 13.2314C60.1743 13.3578 60.1512 13.421 60.1821 13.4652C60.213 13.5094 60.2803 13.5094 60.4149 13.5094H63.7671C63.9021 13.5094 63.9696 13.5094 64.0004 13.4651C64.0313 13.4208 64.008 13.3575 63.9613 13.2309L62.4727 9.19608C62.3094 8.75345 62.2277 8.53214 62.0833 8.53235C61.9389 8.53255 61.8579 8.7541 61.6958 9.19719L60.2205 13.2314Z"
+                                                            fill="#3F76FF" />
+                                                    <path
+                                                            d="M69.0647 17.9585C68.9489 17.9585 68.8504 17.9237 68.7693 17.8542C68.6882 17.7731 68.6476 17.6688 68.6476 17.5414V6.22745C68.6476 6.1 68.6882 5.99573 68.7693 5.91462C68.8504 5.83352 68.9489 5.79297 69.0647 5.79297H70.6462C70.7737 5.79297 70.8722 5.83352 70.9417 5.91462C71.0228 5.99573 71.0634 6.1 71.0634 6.22745V10.5044C71.0634 10.6019 71.0634 10.6507 71.0937 10.681C71.124 10.7113 71.1727 10.7113 71.2702 10.7113H75.9833C76.0809 10.7113 76.1296 10.7113 76.1599 10.681C76.1902 10.6507 76.1902 10.6019 76.1902 10.5044V6.22745C76.1902 6.1 76.2308 5.99573 76.3119 5.91462C76.393 5.83352 76.4915 5.79297 76.6074 5.79297H78.1715C78.2989 5.79297 78.4032 5.83352 78.4843 5.91462C78.5654 5.99573 78.606 6.1 78.606 6.22745V17.5414C78.606 17.6572 78.5654 17.7557 78.4843 17.8368C78.4032 17.9179 78.2989 17.9585 78.1715 17.9585H76.6074C76.4915 17.9585 76.393 17.9179 76.3119 17.8368C76.2308 17.7557 76.1902 17.6572 76.1902 17.5414V13.0906C76.1902 12.9931 76.1902 12.9443 76.1599 12.914C76.1296 12.8837 76.0809 12.8837 75.9833 12.8837H71.2702C71.1727 12.8837 71.124 12.8837 71.0937 12.914C71.0634 12.9443 71.0634 12.9931 71.0634 13.0906V17.5414C71.0634 17.6572 71.0228 17.7557 70.9417 17.8368C70.8722 17.9179 70.7737 17.9585 70.6462 17.9585H69.0647Z"
+                                                            fill="#3F76FF" />
+                                                </svg>
+
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                                <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>
+                            </tr>
+                            <tr>
+                                <td class="mail-body-v-spacing" colspan="3" style="width: 21px;height: 19px;padding: 0;">
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    <tr>
+        <td class="page-v-spacing" style="height: 80px;"></td>
+    </tr>
+</table>
+</body>
+
+</html>
