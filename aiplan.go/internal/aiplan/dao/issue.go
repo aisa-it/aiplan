@@ -1865,10 +1865,14 @@ func GetIssuesGroupsSize(db *gorm.DB, query *gorm.DB, groupByParam string, proje
 	case "author":
 		query = db.
 			Model(&User{}).
-			Joins("LEFT JOIN issues on users.id = issues.created_by_id and project_id = ?", projectId).
-			Select("count(*) as Count, users.id as \"Key\"")
+			Joins("LEFT JOIN issues on users.id = issues.created_by_id and issues.project_id = ?", projectId).
+			Select("count(issues.created_by_id) as Count, users.id as \"Key\"")
 	case "state":
-		query = query.Select("count(*) as Count, coalesce(state_id, '') as \"Key\"")
+		query = db.
+			Model(&State{}).
+			Joins("LEFT JOIN issues on states.id = issues.state_id and issues.project_id = ?", projectId).
+			Where("states.project_id = ?", projectId).
+			Select("count(issues.state_id) as Count, states.id as \"Key\"")
 	case "labels":
 		query = query.
 			Model(&IssueLabel{}).

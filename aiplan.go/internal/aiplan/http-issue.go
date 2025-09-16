@@ -630,8 +630,6 @@ func (s *Services) getIssueList(c echo.Context) error {
 		})
 	}
 
-	groupSizeQuery := query.Session(&gorm.Session{}).Model(&dao.Issue{})
-
 	var selectExprs []string
 	var selectInterface []any
 
@@ -728,24 +726,61 @@ func (s *Services) getIssueList(c echo.Context) error {
 		}
 		groupMap := make(map[string]IssuesGroupResponse, len(groupSize))
 
+		totalCount := 0
+
 		for group, size := range groupSize {
+			totalCount += size
+
+			q := groupSelectQuery.Session(&gorm.Session{})
+
 			var entity any
 			switch groupByParam {
 			case "priority":
-				groupSelectQuery.Where("issues.priority = ?", group)
+				q = q.Where("issues.priority = ?", group)
 				entity = group
 			case "author":
-				groupSelectQuery.Where("created_by_id = ?", group)
+				q = q.Where("created_by_id = ?", group)
+				if size == 0 {
+					var user dao.User
+					if err := s.db.Where("id = ?", group).First(&user).Error; err != nil {
+						return EError(c, err)
+					}
+					entity = user.ToLightDTO()
+				}
+			case "state":
+				q = q.Where("state_id = ?", group)
+				if size == 0 {
+					var state dao.State
+					if err := s.db.Where("id = ?", group).First(&state).Error; err != nil {
+						return EError(c, err)
+					}
+					entity = state.ToLightDTO()
+				}
+			case "labels":
+			case "assignees":
+			case "watchers":
+			}
+
+			if size == 0 {
+				groupMap[group] = IssuesGroupResponse{
+					Entity: entity,
+					Count:  size,
+				}
+				continue
 			}
 
 			var issues []dao.IssueWithCount
-			if err := groupSelectQuery.Find(&issues).Error; err != nil {
+			if err := q.Find(&issues).Error; err != nil {
 				return EError(c, err)
 			}
 
-			switch groupByParam {
-			case "author":
-				entity = issues[0].Author.ToLightDTO()
+			if len(issues) > 0 {
+				switch groupByParam {
+				case "author":
+					entity = issues[0].Author.ToLightDTO()
+				case "state":
+					entity = issues[0].State.ToLightDTO()
+				}
 			}
 
 			groupMap[group] = IssuesGroupResponse{
@@ -756,6 +791,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		}
 
 		return c.JSON(http.StatusOK, IssuesGroupedResponse{
+			Count:   totalCount,
 			Offset:  offset,
 			Limit:   limit,
 			GroupBy: groupByParam,
@@ -3628,9 +3664,16 @@ func SortIssuesGroups(groupByParam string, issuesGroups map[string]IssuesGroupRe
 			entity2 := e2.Entity.(*dto.UserLight)
 			return utils.CompareUsers(entity1, entity2)
 		case "state":
-			entity1 := e1.Entity.(*dto.StateLight)
-			entity2 := e2.Entity.(*dto.StateLight)
-			return int(entity1.Sequence) - int(entity2.Sequence)
+			entity1, _ := e1.Entity.(*dto.StateLight)
+			entity2, _ := e2.Entity.(*dto.StateLight)
+			if entity1 == entity2 {
+				return 0
+			}
+			if entity1 == nil || (entity2 != nil && entity1.Name > entity2.Name) {
+				return 1
+			} else {
+				return -1
+			}
 		case "labels":
 			entity1, _ := e1.Entity.(*dto.LabelLight)
 			entity2, _ := e2.Entity.(*dto.LabelLight)
