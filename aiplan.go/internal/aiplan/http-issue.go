@@ -736,7 +736,11 @@ func (s *Services) getIssueList(c echo.Context) error {
 			var entity any
 			switch groupByParam {
 			case "priority":
-				q = q.Where("issues.priority = ?", group)
+				if group != "" {
+					q = q.Where("issues.priority = ?", group)
+				} else {
+					q = q.Where("issues.priority is null")
+				}
 				entity = group
 			case "author":
 				q = q.Where("created_by_id = ?", group)
@@ -774,13 +778,11 @@ func (s *Services) getIssueList(c echo.Context) error {
 				return EError(c, err)
 			}
 
-			if len(issues) > 0 {
-				switch groupByParam {
-				case "author":
-					entity = issues[0].Author.ToLightDTO()
-				case "state":
-					entity = issues[0].State.ToLightDTO()
-				}
+			switch groupByParam {
+			case "author":
+				entity = issues[0].Author.ToLightDTO()
+			case "state":
+				entity = issues[0].State.ToLightDTO()
 			}
 
 			groupMap[group] = IssuesGroupResponse{
