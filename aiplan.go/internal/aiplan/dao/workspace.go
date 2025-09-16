@@ -367,17 +367,33 @@ func (wm WorkspaceMember) GetWorkspaceId() string {
 	return wm.WorkspaceId
 }
 
+func (wm *WorkspaceMember) ToLightDTO() *dto.WorkspaceMemberLight {
+	if wm == nil {
+		return nil
+	}
+
+	return &dto.WorkspaceMemberLight{
+		ID:              wm.ID,
+		Role:            wm.Role,
+		EditableByAdmin: wm.EditableByAdmin,
+		MemberId:        wm.MemberId,
+		Member:          wm.Member.ToLightDTO(),
+	}
+}
+
 func (wm *WorkspaceMember) ToDTO() *dto.WorkspaceMember {
 	if wm == nil {
 		return nil
 	}
 
 	return &dto.WorkspaceMember{
-		ID:              wm.ID,
-		Role:            wm.Role,
-		EditableByAdmin: wm.EditableByAdmin,
-		MemberId:        wm.MemberId,
-		Member:          wm.Member.ToLightDTO(),
+		WorkspaceMemberLight:            *wm.ToLightDTO(),
+		NotificationSettingsApp:         wm.NotificationSettingsApp,
+		NotificationAuthorSettingsApp:   wm.NotificationAuthorSettingsApp,
+		NotificationSettingsTG:          wm.NotificationSettingsTG,
+		NotificationAuthorSettingsTG:    wm.NotificationAuthorSettingsTG,
+		NotificationSettingsEmail:       wm.NotificationSettingsEmail,
+		NotificationAuthorSettingsEmail: wm.NotificationAuthorSettingsEmail,
 	}
 }
 
