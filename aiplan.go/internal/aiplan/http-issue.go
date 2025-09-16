@@ -19,7 +19,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -444,7 +443,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if limit > 1000 {
+	if limit > 100 {
 		return EErrorDefined(c, apierrors.ErrLimitTooHigh)
 	}
 
@@ -487,7 +486,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Filters
-	{
+	if groupByParam == "" {
 		if len(filters.AuthorIds) > 0 {
 			query = query.Where("issues.created_by_id in (?)", filters.AuthorIds)
 		}
@@ -719,12 +718,57 @@ func (s *Services) getIssueList(c echo.Context) error {
 		order.Column = clause.Column{Table: "issues", Name: orderByParam}
 	}
 
+	groupSelectQuery := query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(limit).Offset(offset).Session(&gorm.Session{})
+
+	// Get groups
+	if groupByParam != "" && slices.Contains(issueGroupFields, groupByParam) {
+		groupSize, err := dao.GetIssuesGroupsSize(s.db, groupSelectQuery, groupByParam, projectMember.ProjectId) // TODO: remove projectID
+		if err != nil {
+			return EError(c, err)
+		}
+		groupMap := make(map[string]IssuesGroupResponse, len(groupSize))
+
+		for group, size := range groupSize {
+			var entity any
+			switch groupByParam {
+			case "priority":
+				groupSelectQuery.Where("issues.priority = ?", group)
+				entity = group
+			case "author":
+				groupSelectQuery.Where("created_by_id = ?", group)
+			}
+
+			var issues []dao.IssueWithCount
+			if err := groupSelectQuery.Find(&issues).Error; err != nil {
+				return EError(c, err)
+			}
+
+			switch groupByParam {
+			case "author":
+				entity = issues[0].Author.ToLightDTO()
+			}
+
+			groupMap[group] = IssuesGroupResponse{
+				Entity: entity,
+				Count:  size,
+				Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) *dto.IssueWithCount { return i.ToDTO() }),
+			}
+		}
+
+		return c.JSON(http.StatusOK, IssuesGroupedResponse{
+			Offset:  offset,
+			Limit:   limit,
+			GroupBy: groupByParam,
+			Issues:  SortIssuesGroups(groupByParam, groupMap),
+		})
+	}
+
 	if order != nil {
-		query = query.Order(*order)
+		groupSelectQuery = groupSelectQuery.Order(*order)
 	}
 
 	var issues []dao.IssueWithCount
-	if err := query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(limit).Offset(offset).Find(&issues).Error; err != nil {
+	if err := groupSelectQuery.Find(&issues).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -754,88 +798,6 @@ func (s *Services) getIssueList(c echo.Context) error {
 				issues[i].Parent = parentsMap[issues[i].ParentId.UUID.String()]
 			}
 		}
-	}
-
-	if groupByParam != "" && slices.Contains(issueGroupFields, groupByParam) {
-		issuesGroups := make(map[string]IssuesGroupResponse)
-
-		for _, issue := range issues {
-			var keys []string
-			var entities any
-			switch groupByParam {
-			case "priority":
-				keys = []string{getNilString(issue.Priority)}
-				entities = keys
-			case "author":
-				keys = []string{issue.CreatedById}
-				entities = issue.Author.ToLightDTO()
-			case "state":
-				keys = []string{getNilString(issue.StateId)}
-				entities = issue.State.ToLightDTO()
-			case "labels":
-				if len(issue.AssigneeIDs) > 0 {
-					keys = issue.LabelIDs
-				} else {
-					keys = []string{""}
-				}
-				entities = utils.SliceToSlice(issue.Labels, func(l *dao.Label) *dto.LabelLight { return l.ToLightDTO() })
-			case "assignees":
-				if len(issue.AssigneeIDs) > 0 {
-					keys = issue.AssigneeIDs
-				} else {
-					keys = []string{""}
-				}
-				entities = utils.SliceToSlice(issue.Assignees, func(u *dao.User) *dto.UserLight { return u.ToLightDTO() })
-			case "watchers":
-				if len(issue.WatcherIDs) > 0 {
-					keys = issue.WatcherIDs
-				} else {
-					keys = []string{""}
-				}
-				entities = utils.SliceToSlice(issue.Watchers, func(u *dao.User) *dto.UserLight { return u.ToLightDTO() })
-			default:
-				continue
-			}
-			for i, key := range keys {
-				group, ok := issuesGroups[key]
-				if !ok {
-					// create group
-					group = IssuesGroupResponse{}
-					s := reflect.ValueOf(entities)
-					if key == "" {
-						group.Entity = nil
-					} else if s.Kind() == reflect.Slice {
-						if s.Len() < len(keys) {
-							group.Entity = nil
-						} else {
-							group.Entity = s.Index(i).Interface()
-						}
-					} else {
-						group.Entity = entities
-					}
-				}
-				group.Issues = append(group.Issues, issue.ToDTO())
-				issuesGroups[key] = group
-			}
-		}
-
-		groupCounts, err := dao.GetIssuesGroupsSize(s.db, groupSizeQuery, groupByParam)
-		if err != nil {
-			return EError(c, err)
-		}
-
-		for k, c := range issuesGroups {
-			c.Count = groupCounts[k]
-			issuesGroups[k] = c
-		}
-
-		return c.JSON(http.StatusOK, IssuesGroupedResponse{
-			Count:   count,
-			Offset:  offset,
-			Limit:   limit,
-			GroupBy: groupByParam,
-			Issues:  SortIssuesGroups(groupByParam, issuesGroups),
-		})
 	}
 
 	if lightSearch {
@@ -3649,9 +3611,9 @@ type IssuesGroupedResponse struct {
 }
 
 type IssuesGroupResponse struct {
-	Entity any   `json:"entity"`
-	Count  int   `json:"count"`
-	Issues []any `json:"issues"`
+	Entity any                   `json:"entity"`
+	Count  int                   `json:"count"`
+	Issues []*dto.IssueWithCount `json:"issues"`
 }
 
 func SortIssuesGroups(groupByParam string, issuesGroups map[string]IssuesGroupResponse) []IssuesGroupResponse {
