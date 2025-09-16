@@ -40,10 +40,37 @@
           text-align: left;
         ">
                 <div>
-                    Пользователь {{ .Actor.GetName }} создал документ {{.CreatedAt.Format "02.01.2006 15:04 MST"}}
+                    Пользователь {{ .Actor.GetName }}
+                    {{ if eq .Verb "created" }}
+                    создал документ
+                    {{if eq .Parent nil}}
+                    в корне пространства
+                    {{ end }}
+                    {{ else if eq .Verb "added" }}
+                    добавил документ
+                    {{if eq .Parent nil}}
+                    в корень пространства
+                    {{ end }}
+                    {{ else if eq .Verb "removed" }}
+                    убрал документ
+                    {{if ne .Parent nil}}
+                    из корня пространства
+                    {{ end }}
+                    {{ else if eq .Verb "deleted" }}
+                    удалил документ '{{.OldVal}}'
+                    {{if ne .Parent nil}}
+                    из корня пространства
+                    {{ end }}
+                    {{ else }}
+                    Вложенный документ:
+                    {{ end }}
+                    {{.CreatedAt.Format "02.01.2006 15:04 MST"}}
+                    {{ if ne .Verb "deleted" }}
                     <div><a class="task-link" href="{{.Doc.URL.String}}"
                             style="color: #3f76ff;text-decoration: none;letter-spacing: 0.5px;">{{.Doc.Title}}</a></div>
                 </div>
+                {{ end }}
+
             </th>
         </tr>
         <tr>
@@ -140,170 +167,50 @@
         </tr>
         {{end}}
 
-        {{if gt (len .Doc.Editors) 0}}
-        <tr>
-            <td style="
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 0;
-          padding-right: 0;
-        "></td>
-            <td class="task-table-left-col" style="
-          text-align: right;
-          width: 124px;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                Редакторы:
-            </td>
-            <td class="task-table-right-col" style="
-          text-align: left;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                {{range $index, $editor := .Doc.Editors}} {{if
-                $index}},{{end}} {{$editor.GetName}}{{end}}
-            </td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3" style="
-          height: 8px;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 0;
-          padding-right: 0;
-        "></td>
-        </tr>
-        {{end}}
 
-        {{if gt (len .Doc.Watchers) 0}}
-        <tr>
-            <td style="
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 0;
-          padding-right: 0;
-        "></td>
-            <td class="task-table-left-col" style="
-          text-align: right;
-          width: 124px;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                Наблюдатели:
-            </td>
-            <td class="task-table-right-col" style="
-          text-align: left;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                {{range $index, $watcher := .Doc.Watchers}} {{if
-                $index}},{{end}} {{$watcher.GetName}}{{end}}
-            </td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3" style="
-          height: 8px;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 0;
-          padding-right: 0;
-        "></td>
-        </tr>
-        {{end}}
+                {{if gt (len .Doc.Watchers) 0}}
+                <tr>
+                    <td style="
+                  padding-top: 0;
+                  padding-bottom: 0;
+                  padding-left: 0;
+                  padding-right: 0;
+                "></td>
+                    <td class="task-table-left-col" style="
+                  text-align: right;
+                  width: 124px;
+                  vertical-align: top;
+                  padding-top: 0;
+                  padding-bottom: 0;
+                  padding-left: 4px;
+                  padding-right: 4px;
+                  letter-spacing: 0.5px;
+                ">
+                        Наблюдатели:
+                    </td>
+                    <td class="task-table-right-col" style="
+                  text-align: left;
+                  vertical-align: top;
+                  padding-top: 0;
+                  padding-bottom: 0;
+                  padding-left: 4px;
+                  padding-right: 4px;
+                  letter-spacing: 0.5px;
+                ">
+                        {{range $index, $watcher := .Doc.Watchers}} {{if
+                        $index}},{{end}} {{$watcher.GetName}}{{end}}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="task-table-separator" colspan="3" style="
+                  height: 8px;
+                  padding-top: 0;
+                  padding-bottom: 0;
+                  padding-left: 0;
+                  padding-right: 0;
+                "></td>
+                </tr>
+                {{end}}
 
-        {{if gt (len .Doc.Readers) 0}}
-        <tr>
-            <td style="
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 0;
-          padding-right: 0;
-        "></td>
-            <td class="task-table-left-col" style="
-          text-align: right;
-          width: 124px;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                Права на просмотр:
-            </td>
-            <td class="task-table-right-col" style="
-          text-align: left;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                {{range $index, $reader := .Doc.Readers}} {{if
-                $index}},{{end}} {{$reader.GetName}}{{end}}
-            </td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3" style="
-          height: 8px;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 0;
-          padding-right: 0;
-        "></td>
-        </tr>
-        {{end}}
-
-        {{if ne .Description ""}}
-        <tr>
-            <td style="
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 0;
-          padding-right: 0;
-        "></td>
-            <td class="task-table-left-col" style="
-          text-align: right;
-          width: 124px;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                Описание:
-            </td>
-            <td class="task-table-right-col" style="
-          text-align: left;
-          vertical-align: top;
-          padding-top: 0;
-          padding-bottom: 0;
-          padding-left: 4px;
-          padding-right: 4px;
-          letter-spacing: 0.5px;
-        ">
-                {{ .Description }}
-            </td>
-        </tr>
-        {{end}}
     </table>
 </div>
