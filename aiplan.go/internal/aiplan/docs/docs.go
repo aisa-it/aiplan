@@ -17646,6 +17646,12 @@ const docTemplate = `{
                 },
                 "public": {
                     "type": "boolean"
+                },
+                "short_url": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },
@@ -17666,6 +17672,12 @@ const docTemplate = `{
                 },
                 "public": {
                     "type": "boolean"
+                },
+                "short_url": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },

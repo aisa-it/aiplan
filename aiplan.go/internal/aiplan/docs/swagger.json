@@ -17638,6 +17638,12 @@
                 },
                 "public": {
                     "type": "boolean"
+                },
+                "short_url": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },
@@ -17658,6 +17664,12 @@
                 },
                 "public": {
                     "type": "boolean"
+                },
+                "short_url": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },
