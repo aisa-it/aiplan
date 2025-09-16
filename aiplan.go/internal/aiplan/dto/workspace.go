@@ -43,12 +43,22 @@ type WorkspaceWithCount struct {
 	NameHighlighted string `json:"name_highlighted,omitempty"`
 }
 
-type WorkspaceMember struct {
+type WorkspaceMemberLight struct {
 	ID              string     `json:"id"`
 	Role            int        `json:"role"`
 	EditableByAdmin bool       `json:"editable_by_admin"`
 	MemberId        string     `json:"member_id"`
 	Member          *UserLight `json:"member"`
+}
+
+type WorkspaceMember struct {
+	WorkspaceMemberLight
+	NotificationSettingsApp         types.WorkspaceMemberNS `json:"notification_settings_app"`
+	NotificationAuthorSettingsApp   types.WorkspaceMemberNS `json:"notification_author_settings_app"`
+	NotificationSettingsTG          types.WorkspaceMemberNS `json:"notification_settings_tg" `
+	NotificationAuthorSettingsTG    types.WorkspaceMemberNS `json:"notification_author_settings_tg" `
+	NotificationSettingsEmail       types.WorkspaceMemberNS `json:"notification_settings_email" `
+	NotificationAuthorSettingsEmail types.WorkspaceMemberNS `json:"notification_author_settings_email" `
 }
 
 type WorkspaceFavorites struct {
