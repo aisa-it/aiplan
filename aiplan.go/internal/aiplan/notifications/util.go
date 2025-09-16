@@ -22,8 +22,8 @@ import (
 func prepareHtmlBody(stripPolicy *bluemonday.Policy, html string) string {
 	res := strings.ReplaceAll(html, "<p>", "\n")
 	res = strings.ReplaceAll(res, "<li>", "\n")
-	res = strings.TrimSpace(res)
 	res = stripPolicy.Sanitize(res)
+	res = strings.TrimSpace(res)
 	return res
 }
 
