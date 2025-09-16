@@ -182,7 +182,7 @@ var (
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email"}
-	ErrLimitTooHigh         = DefinedError{Code: 5002, StatusCode: http.StatusBadRequest, Err: "limit must be less than 1000", RuErr: "Запрашиваемый список задач должен состоящий не более чем из 1 000 элементов"}
+	ErrLimitTooHigh         = DefinedError{Code: 5002, StatusCode: http.StatusBadRequest, Err: "limit must be less than 100", RuErr: "Запрашиваемый список задач должен состоящий не более чем из 100 элементов"}
 	ErrUnsupportedSortParam = DefinedError{Code: 5003, StatusCode: http.StatusBadRequest, Err: "unsupported sort parameter %s", RuErr: "Неподдерживаемый параметр сортировки"}
 	ErrURLAndTitleRequired  = DefinedError{Code: 5004, StatusCode: http.StatusBadRequest, Err: "URL and Title are required", RuErr: "Необходимо ввести URL и заголовок"}
 	ErrIssueIDsRequired     = DefinedError{Code: 5005, StatusCode: http.StatusBadRequest, Err: "issue IDs are required", RuErr: "Необходимо ввести ID задачи"}

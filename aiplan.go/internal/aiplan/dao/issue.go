@@ -1858,12 +1858,15 @@ func (rl *RulesLog) ToDTO() *dto.RulesLog {
 	}
 }
 
-func GetIssuesGroupsSize(db *gorm.DB, query *gorm.DB, groupByParam string) (map[string]int, error) {
+func GetIssuesGroupsSize(db *gorm.DB, query *gorm.DB, groupByParam string, projectId string) (map[string]int, error) {
 	switch groupByParam {
 	case "priority":
-		query = query.Select("count(*) as Count, coalesce(priority, '') as \"Key\"")
+		query = query.Model(&Issue{}).Select("count(*) as Count, coalesce(priority, '') as \"Key\"")
 	case "author":
-		query = query.Select("count(*) as Count, created_by_id as \"Key\"")
+		query = db.
+			Model(&User{}).
+			Joins("LEFT JOIN issues on users.id = issues.created_by_id and project_id = ?", projectId).
+			Select("count(*) as Count, users.id as \"Key\"")
 	case "state":
 		query = query.Select("count(*) as Count, coalesce(state_id, '') as \"Key\"")
 	case "labels":
@@ -1882,7 +1885,7 @@ func GetIssuesGroupsSize(db *gorm.DB, query *gorm.DB, groupByParam string) (map[
 			Joins("RIGHT JOIN issues on issues.id = issue_watchers.issue_id").
 			Select("count(*) as Count, coalesce(watcher_id, '') as \"Key\"")
 	}
-	query = query.Group("Key")
+	query = query.Offset(-1).Limit(-1).Group("Key")
 
 	var count []struct {
 		Count int
