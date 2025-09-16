@@ -8476,7 +8476,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.WorkspaceMember"
+                                                "$ref": "#/definitions/dto.WorkspaceMemberLight"
                                             }
                                         }
                                     }
@@ -8776,7 +8776,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Роль участника успешно обновлена",
                         "schema": {
-                            "$ref": "#/definitions/dto.WorkspaceMember"
+                            "$ref": "#/definitions/dto.WorkspaceMemberLight"
                         }
                     },
                     "400": {
@@ -18034,6 +18034,44 @@ const docTemplate = `{
                 "member_id": {
                     "type": "string"
                 },
+                "notification_author_settings_app": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_author_settings_email": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_author_settings_tg": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_app": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_email": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_tg": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "role": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.WorkspaceMemberLight": {
+            "type": "object",
+            "properties": {
+                "editable_by_admin": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "member": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "member_id": {
+                    "type": "string"
+                },
                 "role": {
                     "type": "integer"
                 }
@@ -18788,6 +18826,77 @@ const docTemplate = `{
                 "Friday",
                 "Saturday"
             ]
+        },
+        "types.WorkspaceMemberNS": {
+            "type": "object",
+            "properties": {
+                "disable_doc_attachment": {
+                    "type": "boolean"
+                },
+                "disable_doc_comment": {
+                    "type": "boolean"
+                },
+                "disable_doc_create": {
+                    "type": "boolean"
+                },
+                "disable_doc_delete": {
+                    "type": "boolean"
+                },
+                "disable_doc_desc": {
+                    "type": "boolean"
+                },
+                "disable_doc_editor": {
+                    "type": "boolean"
+                },
+                "disable_doc_move": {
+                    "type": "boolean"
+                },
+                "disable_doc_reader": {
+                    "type": "boolean"
+                },
+                "disable_doc_role": {
+                    "type": "boolean"
+                },
+                "disable_doc_title": {
+                    "type": "boolean"
+                },
+                "disable_doc_watchers": {
+                    "type": "boolean"
+                },
+                "disable_workspace_desc": {
+                    "type": "boolean"
+                },
+                "disable_workspace_doc": {
+                    "type": "boolean"
+                },
+                "disable_workspace_form": {
+                    "type": "boolean"
+                },
+                "disable_workspace_integration": {
+                    "type": "boolean"
+                },
+                "disable_workspace_logo": {
+                    "type": "boolean"
+                },
+                "disable_workspace_member": {
+                    "type": "boolean"
+                },
+                "disable_workspace_name": {
+                    "type": "boolean"
+                },
+                "disable_workspace_owner": {
+                    "type": "boolean"
+                },
+                "disable_workspace_project": {
+                    "type": "boolean"
+                },
+                "disable_workspace_role": {
+                    "type": "boolean"
+                },
+                "disable_workspace_token": {
+                    "type": "boolean"
+                }
+            }
         }
     },
     "securityDefinitions": {
