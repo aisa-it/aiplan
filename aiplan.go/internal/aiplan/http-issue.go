@@ -129,7 +129,9 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 
 	req := http.Request{Header: hook.HTTPRequest.Header}
 	accessCookie, _ := req.Cookie("access_token")
-
+	if accessCookie == nil {
+		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
+	}
 	user_id, err := getUserIdFromJWT(accessCookie.Value)
 	if err != nil {
 		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
