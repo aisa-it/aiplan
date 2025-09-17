@@ -449,6 +449,11 @@ func (s *Services) getIssueList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrLimitTooHigh)
 	}
 
+	// Validate grouped by
+	if groupByParam != "" && slices.Contains(issueGroupFields, groupByParam) {
+		return EErrorDefined(c, apierrors.ErrUnsupportedGroup)
+	}
+
 	orderByParam = strings.TrimPrefix(orderByParam, "-")
 
 	sortValid := false
@@ -721,8 +726,8 @@ func (s *Services) getIssueList(c echo.Context) error {
 	groupSelectQuery := query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(limit).Offset(offset).Session(&gorm.Session{})
 
 	// Get groups
-	if groupByParam != "" && slices.Contains(issueGroupFields, groupByParam) {
-		groupSize, err := dao.GetIssuesGroupsSize(s.db, groupSelectQuery, groupByParam, projectMember.ProjectId) // TODO: remove projectID
+	if groupByParam != "" {
+		groupSize, err := dao.GetIssuesGroupsSize(s.db, groupByParam, projectMember.ProjectId)
 		if err != nil {
 			return EError(c, err)
 		}
@@ -763,8 +768,59 @@ func (s *Services) getIssueList(c echo.Context) error {
 					entity = state.ToLightDTO()
 				}
 			case "labels":
+				qq := s.db.Where("issues.id in (?)", s.db.
+					Model(&dao.IssueLabel{}).
+					Select("issue_id").
+					Where("label_id = ?", group))
+				if group == "" {
+					qq = qq.Or("issues.id not in (?)", s.db.
+						Select("issue_id").
+						Model(&dao.IssueLabel{}))
+				}
+				q = q.Where(qq)
+				if group != "" {
+					var label dao.Label
+					if err := s.db.Where("id = ?", group).First(&label).Error; err != nil {
+						return EError(c, err)
+					}
+					entity = label.ToLightDTO()
+				}
 			case "assignees":
+				qq := s.db.Where("issues.id in (?)", s.db.
+					Model(&dao.IssueAssignee{}).
+					Select("issue_id").
+					Where("assignee_id = ?", group))
+				if group == "" {
+					qq = qq.Or("issues.id not in (?)", s.db.
+						Select("issue_id").
+						Model(&dao.IssueAssignee{}))
+				}
+				q = q.Where(qq)
+				if group != "" {
+					var u dao.User
+					if err := s.db.Where("id = ?", group).First(&u).Error; err != nil {
+						return EError(c, err)
+					}
+					entity = u.ToLightDTO()
+				}
 			case "watchers":
+				qq := s.db.Where("issues.id in (?)", s.db.
+					Model(&dao.IssueWatcher{}).
+					Select("issue_id").
+					Where("watcher_id = ?", group))
+				if group == "" {
+					qq = qq.Or("issues.id not in (?)", s.db.
+						Select("issue_id").
+						Model(&dao.IssueWatcher{}))
+				}
+				q = q.Where(qq)
+				if group != "" {
+					var u dao.User
+					if err := s.db.Where("id = ?", group).First(&u).Error; err != nil {
+						return EError(c, err)
+					}
+					entity = u.ToLightDTO()
+				}
 			}
 
 			if size == 0 {

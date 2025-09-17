@@ -179,6 +179,7 @@ var (
 	ErrIssueDescriptionNotLockedByUser = DefinedError{Code: 4020, StatusCode: http.StatusForbidden, Err: "you are not locking this issue description", RuErr: "Вы не редактируете сейчас эту задачу"}
 	ErrIssueScriptFail                 = DefinedError{Code: 4021, StatusCode: http.StatusForbidden, Err: "prohibition of committing an action", RuErr: "Запрет на совершение действия"}
 	ErrIssueCustomScriptFail           = DefinedError{Code: 4022, StatusCode: http.StatusForbidden, Err: "prohibition of committing an action", RuErr: "Запрет на совершение действия"}
+	ErrUnsupportedGroup                = DefinedError{Code: 4023, StatusCode: http.StatusBadRequest, Err: "unsupported grouping param", RuErr: "Данный параметр не поддерживается для группировки"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email"}
