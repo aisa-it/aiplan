@@ -269,6 +269,7 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 			ids := act.GetIdsToSend(tnp.db, &activity)
 			for _, id := range ids {
 				msg.ChatID = id
+				msg.DisableWebPagePreview = true
 				r, err := tnp.bot.Send(msg)
 				if err != nil && err.Error() != "Bad Request: chat not found" {
 					slog.Error("Telegram send error", "projectActivities", err, "activityId", activity.Id)
