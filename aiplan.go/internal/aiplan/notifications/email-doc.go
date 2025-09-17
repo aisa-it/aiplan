@@ -174,7 +174,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 
 		content, textContent, err := getDocNotificationHTML(tx, sendActivities, &member.User, da.doc)
 		if err != nil {
-			slog.Error("Make issue notification HTML", "err", err)
+			slog.Error("Make doc notification HTML", "err", err)
 			continue
 		}
 
@@ -196,7 +196,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.WorkspaceMemberSettings.IsNotify(&field, "doc", "all", author.WorkspaceRole) {
 			content, textContent, err := getDocNotificationHTML(tx, author.activities, &author.User, da.doc)
 			if err != nil {
-				slog.Error("Make issue notification HTML", "err", err)
+				slog.Error("Make doc notification HTML", "err", err)
 				continue
 			}
 			mails = append(mails, mail{
@@ -281,7 +281,7 @@ func (ia *docActivity) skip(activity dao.DocActivity) bool {
 	return false
 }
 
-func newDocActivity(tx *gorm.DB, doc *dao.Doc) *docActivity {
+func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 	if doc == nil {
 		return nil
 	}
@@ -296,11 +296,6 @@ func newDocActivity(tx *gorm.DB, doc *dao.Doc) *docActivity {
 		commentActivityUser: make(map[string]docCommentAuthor),
 	}
 
-	var workspaceMembers []dao.WorkspaceMember
-	if err := tx.Joins("Member").Where("workspace_id = ?", doc.WorkspaceId).Find(&workspaceMembers).Error; err != nil {
-		return nil
-	}
-
 	checkId := func(users *[]dao.User, id string) bool {
 		if users == nil {
 			return false
@@ -313,6 +308,11 @@ func newDocActivity(tx *gorm.DB, doc *dao.Doc) *docActivity {
 		return false
 	}
 
+	var workspaceMembers []dao.WorkspaceMember
+	if err := tx.Joins("Member").Where("workspace_id = ?", doc.WorkspaceId).Find(&workspaceMembers).Error; err != nil {
+		return nil
+	}
+
 	for _, member := range workspaceMembers {
 		if member.Member == nil {
 			continue
@@ -321,16 +321,24 @@ func newDocActivity(tx *gorm.DB, doc *dao.Doc) *docActivity {
 		isWatcher := checkId(doc.Watchers, member.MemberId)
 		isEditor := checkId(doc.Editors, member.MemberId)
 		isReader := checkId(doc.Readers, member.MemberId)
+		var isAuthorNewDoc, isWatcherNewDoc, isEditorNewDoc, isReaderNewDoc bool
+		if newDoc != nil {
+			newDoc.SetUrl()
+			isAuthorNewDoc = member.MemberId == doc.Author.ID
+			isWatcherNewDoc = checkId(newDoc.Watchers, member.MemberId)
+			isEditorNewDoc = checkId(newDoc.Editors, member.MemberId)
+			isReaderNewDoc = checkId(newDoc.Readers, member.MemberId)
+		}
 
-		if isReader || isEditor || isAuthor || isWatcher {
+		if isReader || isEditor || isAuthor || isWatcher || isAuthorNewDoc || isWatcherNewDoc || isEditorNewDoc || isReaderNewDoc {
 			res.users[member.Member.Email] = docMember{
 				User:              *member.Member,
 				DocAuthorSettings: member.NotificationAuthorSettingsEmail,
 				DocMemberSettings: member.NotificationSettingsEmail,
-				DocAuthor:         isAuthor,
-				Editor:            isEditor,
-				Reader:            isReader,
-				Watcher:           isWatcher,
+				DocAuthor:         isAuthor || isAuthorNewDoc,
+				Editor:            isEditor || isEditorNewDoc,
+				Reader:            isReader || isReaderNewDoc,
+				Watcher:           isWatcher || isWatcherNewDoc,
 			}
 		}
 	}
@@ -361,10 +369,22 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 }
 
 func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
+	var newDocCreate *dao.Doc
+	if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "created" {
+		if tx.
+			Joins("Author").
+			Joins("Workspace").
+			Joins("ParentDoc").
+			Preload("Readers").
+			Preload("Editors").
+			Preload("Watchers").
+			Where("docs.id = ?", activity.NewDoc.ID).First(&newDocCreate).Error != nil {
+		}
+	}
 	if activity.DocId != "" { //
 		if v, ok := as.Docs[activity.DocId]; !ok {
 			activity.Doc.Workspace = activity.Workspace
-			da := newDocActivity(tx, activity.Doc)
+			da := newDocActivity(tx, activity.Doc, newDocCreate)
 			if da != nil {
 				if !da.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
@@ -417,35 +437,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		}
 
 		// new doc
-		if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "created" {
-			var template dao.Template
-			if err := tx.Where("name = ?", "doc_activity_new").First(&template).Error; err != nil {
-				return "", "", err
-			}
-
-			description := replaceTablesToText(replaceImageToText(activity.Doc.Content.Body))
-			description = policy.ProcessCustomHtmlTag(description)
-			description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))
-			description = template.ReplaceTxtToSvg(description)
-			var buf bytes.Buffer
-			if err := template.ParsedTemplate.Execute(&buf, struct {
-				Actor       *dao.User
-				Doc         dao.Doc
-				Parent      *dao.Doc
-				CreatedAt   time.Time
-				Description string
-			}{
-				activity.Actor,
-				*doc,
-				doc.ParentDoc,
-				activity.CreatedAt.In((*time.Location)(&targetUser.UserTimezone)),
-				description,
-			}); err != nil {
-				return "", "", err
-			}
-
-			result += buf.String()
-			continue
+		if activity.Verb == "created" {
+			result += gocGetEmailHtml(tx, targetUser, &activity)
 		}
 
 		// comment
@@ -504,6 +497,9 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			newValue = prepareToMail(prepareHtmlBody(htmlStripPolicy, newValue))
 			activity.OldValue = &oldValue
 			activity.NewValue = newValue
+		}
+		if field == "doc" && activity.Verb == "created" {
+			continue
 		}
 
 		changesMap[field] = activity
@@ -590,4 +586,104 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 
 	content := buff.String()
 	return content, htmlStripPolicy.Sanitize(content), nil
+}
+
+func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
+	if act.Field != nil && *act.Field != "doc" {
+		return ""
+	}
+
+	if act.Verb == "deleted" {
+		var template dao.Template
+		if err := tx.Where("name = ?", "doc_activity_delete").First(&template).Error; err != nil {
+			return ""
+		}
+
+		if act.OldValue == nil {
+			return ""
+		}
+
+		var buf bytes.Buffer
+		if err := template.ParsedTemplate.Execute(&buf, struct {
+			Actor     *dao.User
+			Title     string
+			CreatedAt time.Time
+		}{
+			act.Actor,
+			*act.OldValue,
+			act.CreatedAt.In((*time.Location)(&user.UserTimezone)),
+		}); err != nil {
+			return ""
+		}
+
+		return buf.String()
+	}
+
+	if act.Verb != "deleted" {
+		var template dao.Template
+		if err := tx.Where("name = ?", "doc_activity_new").First(&template).Error; err != nil {
+			return ""
+		}
+		var docId string
+		if act.NewIdentifier != nil {
+			docId = *act.NewIdentifier
+		}
+
+		if act.OldIdentifier != nil {
+			docId = *act.OldIdentifier
+		}
+
+		var newDoc dao.Doc
+		if err := tx.Unscoped().
+			Joins("Author").
+			Joins("Workspace").
+			Joins("ParentDoc").
+			Preload("Readers").
+			Preload("Editors").
+			Preload("Watchers").
+			Where("docs.id = ?", docId).
+			First(&newDoc).Error; err != nil {
+			return ""
+		}
+
+		if act.NewDoc == nil {
+			act.NewDoc = &newDoc
+		}
+		var description, oldVal string
+
+		if act.Verb != "removed" {
+			description = replaceTablesToText(replaceImageToText(act.NewDoc.Content.Body))
+			description = policy.ProcessCustomHtmlTag(description)
+			description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))
+			description = template.ReplaceTxtToSvg(description)
+		}
+
+		if act.OldIdentifier != nil {
+			oldVal = *act.OldIdentifier
+		}
+
+		var buf bytes.Buffer
+		if err := template.ParsedTemplate.Execute(&buf, struct {
+			Actor       *dao.User
+			Doc         dao.Doc
+			Verb        string
+			Parent      *dao.Doc
+			CreatedAt   time.Time
+			Description string
+			OldVal      string
+		}{
+			act.Actor,
+			newDoc,
+			act.Verb,
+			newDoc.ParentDoc,
+			act.CreatedAt.In((*time.Location)(&user.UserTimezone)),
+			description,
+			oldVal,
+		}); err != nil {
+			return ""
+		}
+
+		return buf.String()
+	}
+	return ""
 }

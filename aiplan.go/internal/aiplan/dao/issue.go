@@ -484,7 +484,7 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-	tx.Where("new_identifier = ? AND (verb = ? OR verb = ? OR verb = ?) AND field = ?", issue.ID, "created", "removed", "added", issue.GetEntityType()).
+	tx.Where("new_identifier = ? AND (verb = ? OR verb = ? OR verb = ? OR verb = ?) AND field = ?", issue.ID, "created", "removed", "added", "copied", issue.GetEntityType()).
 		Model(&ProjectActivity{}).
 		Updates(cleanId)
 

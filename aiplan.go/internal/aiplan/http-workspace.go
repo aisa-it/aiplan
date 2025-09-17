@@ -553,7 +553,7 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 // @Param search_query query string false "Поисковый запрос для фильтрации участников по email или имени" default("")
 // @Param order_by query string false "Поле для сортировки: 'last_name' (по умолчанию), 'email', 'role'" default("last_name")
 // @Param desc query bool false "Направление сортировки: true - по убыванию, false - по возрастанию" default(true)
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.WorkspaceMember} "Список участников с учетом пагинации"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.WorkspaceMemberLight} "Список участников с учетом пагинации"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка валидации данных запроса"
 // @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
 // @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
@@ -616,7 +616,7 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMember { return *wm.ToDTO() })
+	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
 
 	return c.JSON(http.StatusOK, res)
 }
@@ -632,7 +632,7 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param memberId path string true "ID участника для обновления роли"
 // @Param role body requestRoleMember true "Новая роль участника"
-// @Success 200 {object} dto.WorkspaceMember "Роль участника успешно обновлена"
+// @Success 200 {object} dto.WorkspaceMemberLight "Роль участника успешно обновлена"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка валидации данных запроса"
 // @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для обновления роли"
 // @Failure 404 {object} apierrors.DefinedError "Ошибка: участник или рабочее пространство не найдены"
@@ -742,7 +742,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, requestedMember.ToDTO())
+	return c.JSON(http.StatusOK, requestedMember.ToLightDTO())
 }
 
 // updateUserEmail godoc
