@@ -377,6 +377,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					continue
 				}
 				msg.ChatID = id
+				msg.DisableWebPagePreview = true
 				r, err := tni.bot.Send(msg)
 				if err != nil && err.Error() != "Bad Request: chat not found" {
 					slog.Error("Telegram send error", "issueActivities", err, "activityId", activity.Id)
