@@ -505,33 +505,9 @@ func (ts *TelegramService) UserPasswordResetNotify(user dao.User, password strin
 
 	msg := tgbotapi.NewMessage(*user.TelegramId, fmt.Sprintf("Ваш пароль был сброшен. Новый пароль: `%s`\nЕсли это были не вы - свяжитесь с администраторами.", password))
 	msg.ParseMode = "markdown"
+	msg.DisableWebPagePreview = true
 	ts.bot.Send(msg)
 }
-
-//func (ts *TelegramService) AddedToProjectNotify(projectMember dao.ProjectMember) {
-//	if ts.disabled {
-//		return
-//	}
-//
-//	if projectMember.Member.TelegramId != nil {
-//		msg := tgbotapi.NewMessage(*projectMember.Member.TelegramId, Stelegramf("Вас добавили в проект [%s/%s](%s)",
-//			projectMember.Workspace.Slug,
-//			projectMember.Project.Name,
-//			projectMember.Project.URL.String()))
-//		msg.ParseMode = "MarkdownV2"
-//		ts.bot.Send(msg)
-//	}
-//
-//	if projectMember.CreatedBy.TelegramId != nil {
-//		msg := tgbotapi.NewMessage(*projectMember.CreatedBy.TelegramId, Stelegramf("Вы добавили пользователя *%s* в проект [%s/%s](%s)",
-//			projectMember.Member.GetName(),
-//			projectMember.Workspace.Slug,
-//			projectMember.Project.Name,
-//			projectMember.Project.URL.String()))
-//		msg.ParseMode = "MarkdownV2"
-//		ts.bot.Send(msg)
-//	}
-//}
 
 func (ts *TelegramService) WorkspaceInvitation(workspaceMember dao.WorkspaceMember) {
 	if ts.disabled {
@@ -543,6 +519,7 @@ func (ts *TelegramService) WorkspaceInvitation(workspaceMember dao.WorkspaceMemb
 			workspaceMember.Workspace.Slug,
 			workspaceMember.Workspace.URL.String()))
 		msg.ParseMode = "MarkdownV2"
+		msg.DisableWebPagePreview = true
 		ts.bot.Send(msg)
 	}
 
@@ -552,6 +529,7 @@ func (ts *TelegramService) WorkspaceInvitation(workspaceMember dao.WorkspaceMemb
 			workspaceMember.Workspace.Slug,
 			workspaceMember.Workspace.URL.String()))
 		msg.ParseMode = "MarkdownV2"
+		msg.DisableWebPagePreview = true
 		ts.bot.Send(msg)
 	}
 }
@@ -571,6 +549,7 @@ func (ts *TelegramService) UserMentionNotification(user dao.User, comment dao.Is
 		replaceImgToEmoj(tmpComment),
 	))
 	msg.ParseMode = "markdown"
+	msg.DisableWebPagePreview = true
 	ts.bot.Send(msg)
 }
 
@@ -581,6 +560,7 @@ func (ts *TelegramService) UserBlockedUntil(user dao.User, until time.Time) {
 
 	msg := tgbotapi.NewMessage(*user.TelegramId, fmt.Sprintf("❗️ Ваша учетная запись была заблокирована из-за подозрительной активности до *%s*", until.Format("02.01.2006 15:04")))
 	msg.ParseMode = "markdown"
+	msg.DisableWebPagePreview = true
 	ts.bot.Send(msg)
 }
 
@@ -593,6 +573,7 @@ func (ts *TelegramService) SendMessage(tgId int64, format string, anyStr []strin
 		anySlice[i] = v
 	}
 	msg.Text = Stelegramf(format, anySlice...)
+	msg.DisableWebPagePreview = true
 	_, err := ts.bot.Send(msg)
 	if err != nil {
 		log.Println("Error sending message to Telegram:", err)

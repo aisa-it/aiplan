@@ -1858,31 +1858,49 @@ func (rl *RulesLog) ToDTO() *dto.RulesLog {
 	}
 }
 
-func GetIssuesGroupsSize(db *gorm.DB, query *gorm.DB, groupByParam string) (map[string]int, error) {
+func GetIssuesGroupsSize(db *gorm.DB, groupByParam string, projectId string) (map[string]int, error) {
+	query := db.Session(&gorm.Session{})
 	switch groupByParam {
 	case "priority":
-		query = query.Select("count(*) as Count, coalesce(priority, '') as \"Key\"")
+		query = query.Where("project_id = ?", projectId).Model(&Issue{}).Select("count(*) as Count, coalesce(priority, '') as \"Key\"")
 	case "author":
-		query = query.Select("count(*) as Count, created_by_id as \"Key\"")
+		query = db.
+			Model(&User{}).
+			Joins("LEFT JOIN issues on users.id = issues.created_by_id and issues.project_id = ?", projectId).
+			Select("count(issues.created_by_id) as Count, users.id as \"Key\"")
 	case "state":
-		query = query.Select("count(*) as Count, coalesce(state_id, '') as \"Key\"")
+		query = db.
+			Model(&State{}).
+			Joins("LEFT JOIN issues on states.id = issues.state_id and issues.project_id = ?", projectId).
+			Where("states.project_id = ?", projectId).
+			Select("count(issues.state_id) as Count, states.id as \"Key\"")
 	case "labels":
-		query = query.
-			Model(&IssueLabel{}).
-			Joins("RIGHT JOIN issues on issues.id = issue_labels.issue_id").
-			Select("count(*) as Count, coalesce(label_id, '') as \"Key\"")
+		query = query.Raw(`select count(i.id) as Count, l.id as Key from labels l
+left join issue_labels il on il.label_id = l.id
+right join issues i on il.issue_id = i.id
+where (il.project_id = ? or il.project_id is null)
+and
+(i.project_id = ? or i.project_id is null)
+and (l.project_id = ? or l.project_id is null)
+group by Key`, projectId, projectId, projectId)
 	case "assignees":
-		query = query.
-			Model(&IssueAssignee{}).
-			Joins("RIGHT JOIN issues on issues.id = issue_assignees.issue_id").
-			Select("count(*) as Count, coalesce(assignee_id, '') as \"Key\"")
+		query = query.Raw(`select count(i.id) as Count, u.id as Key from users u
+left join issue_assignees ia on ia.assignee_id = u.id
+right join issues i on ia.issue_id = i.id
+where (ia.project_id = ? or ia.project_id is null)
+and
+(i.project_id = ? or i.project_id is null)
+group by u.id`, projectId, projectId)
 	case "watchers":
-		query = query.
-			Model(&IssueWatcher{}).
-			Joins("RIGHT JOIN issues on issues.id = issue_watchers.issue_id").
-			Select("count(*) as Count, coalesce(watcher_id, '') as \"Key\"")
+		query = query.Raw(`select count(i.id) as Count, u.id as Key from users u
+left join issue_watchers ia on ia.watcher_id = u.id
+right join issues i on ia.issue_id = i.id
+where (ia.project_id = ? or ia.project_id is null)
+and
+(i.project_id = ? or i.project_id is null)
+group by u.id`, projectId, projectId)
 	}
-	query = query.Group("Key")
+	query = query.Offset(-1).Limit(-1).Group("Key")
 
 	var count []struct {
 		Count int
