@@ -25,10 +25,12 @@ var UgcPolicy *bluemonday.Policy = bluemonday.UGCPolicy()
 func init() {
 	dataSpanAttrs := []string{
 		"style",
+		"class",
 		"data-id",
 		"data-type",
 		"data-date",
 		"data-slug",
+		"data-title",
 		"data-label",
 		"data-doc-id",
 		"contenteditable",
