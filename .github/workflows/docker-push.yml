@@ -6,40 +6,8 @@ on:
       - "v*"
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-          token: ${{ secrets.GIT_PAT }}
-          clean: true
-
-      - name: Config Git
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          git pull origin main
-
-      - name: Git Submodule Update
-        run: |
-          git submodule update --remote --recursive
-
-      - name: Go generate
-        run: |
-          cd aiplan.go
-          go generate ./...
-
-      - name: Push to repo
-        run: |
-          git add .
-          git commit -m "submodules update" || echo "No changes to commit"
-          git push origin HEAD:main
-
   build-and-push:
     runs-on: ubuntu-latest
-    needs: prepare
     permissions:
       packages: write
       contents: read
@@ -55,11 +23,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           call: build-app --source=. --version=${{ github.ref_name }} --registryUser=${{ github.actor }} --registrySecret=GITHUB_TOKEN --imageName=aisa-it/aiplan
-          version: "0.18.12"
+          version: "0.18.17"
 
   generate-api:
     runs-on: ubuntu-latest
-    needs: prepare
     permissions:
       packages: write
       contents: read
