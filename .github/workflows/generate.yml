@@ -13,6 +13,7 @@ jobs:
         with:
           submodules: "true"
           clean: true
+          token: ${{ secrets.GIT_PAT }}
 
       - name: Config Git
         run: |
