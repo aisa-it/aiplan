@@ -41,6 +41,7 @@ import (
 	"time"
 
 	"sheff.online/aiplan/internal/aiplan/business"
+	jitsi_token "sheff.online/aiplan/internal/aiplan/jitsi-token"
 
 	"sheff.online/aiplan/internal/aiplan/cronmanager"
 	"sheff.online/aiplan/internal/aiplan/types"
@@ -89,6 +90,7 @@ type Services struct {
 	sessionsManager     *sessions.SessionsManager
 	integrationsService *integrations.IntegrationsService
 	importService       *issues_import.ImportService
+	jitsiTokenIss       *jitsi_token.JitsiTokenIssuer
 
 	notificationsService *notifications.Notification
 
@@ -285,6 +287,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		//wsNotificationService: ws,
 		notificationsService: ns,
 		business:             bl,
+		jitsiTokenIss:        jitsi_token.NewJitsiTokenIssuer(cfg.JitsiJWTSecret, cfg.JitsiAppID),
 	}
 
 	// Start cronManager
@@ -437,6 +440,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// Get minio file
 	apiGroup.GET("file/:fileName/", s.redirectToMinioFile)
+
+	// Jitsi conf redirect
+	authGroup.GET("conf/:room/", s.redirectToJitsiConf)
 
 	// Front handler
 	if cfg.FrontFilesPath != "" {

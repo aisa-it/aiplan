@@ -20,8 +20,7 @@ import (
 )
 
 type Config struct {
-	SecretKey      string `env:"SECRET_KEY"`
-	JitsiSecretKey string `env:"JITSI_SECRET_KEY"`
+	SecretKey string `env:"SECRET_KEY"`
 
 	AWSRegion     string `env:"AWS_REGION"`
 	AWSAccessKey  string `env:"AWS_ACCESS_KEY_ID"`
@@ -44,7 +43,9 @@ type Config struct {
 	WebURLRaw string `env:"WEB_URL"`
 	WebURL    *url.URL
 
-	JitsiURL string `env:"JITSI_URL"`
+	JitsiURL       string `env:"JITSI_URL"`
+	JitsiJWTSecret string `env:"JITSI_JWT_SECRET"`
+	JitsiAppID     string `env:"JITSI_APP_ID"`
 
 	FrontFilesPath string `env:"FRONT_PATH"`
 
