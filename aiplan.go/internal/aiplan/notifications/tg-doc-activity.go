@@ -198,6 +198,7 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 					continue
 				}
 				msg.ChatID = id
+				msg.DisableWebPagePreview = true
 				r, err := tnd.bot.Send(msg)
 				if err != nil && err.Error() != "Bad Request: chat not found" {
 					slog.Error("Telegram send error", "docActivities", err, "activityId", activity.Id)

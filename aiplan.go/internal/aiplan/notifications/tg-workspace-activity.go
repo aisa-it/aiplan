@@ -154,6 +154,7 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 			ids := act.GetIdsToSend(tnw.db, &activity)
 			for _, id := range ids {
 				msg.ChatID = id
+				msg.DisableWebPagePreview = true
 				r, err := tnw.bot.Send(msg)
 				if err != nil && err.Error() != "Bad Request: chat not found" {
 					slog.Error("Telegram send error", "workspaceActivities", err, "activityId", activity.Id)
