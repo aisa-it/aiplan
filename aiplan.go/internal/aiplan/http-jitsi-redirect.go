@@ -16,14 +16,9 @@ func (s *Services) redirectToJitsiConf(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	u, err := url.Parse(cfg.JitsiURL)
-	if err != nil {
-		return EError(c, err)
-	}
-	u.Path = room
-	q := u.Query()
+	q := make(url.Values)
 	q.Add("jwt", token)
-	u.RawQuery = q.Encode()
+	u := cfg.JitsiURL.ResolveReference(&url.URL{Path: room, RawQuery: q.Encode()})
 
 	return c.Redirect(http.StatusTemporaryRedirect, u.String())
 }
