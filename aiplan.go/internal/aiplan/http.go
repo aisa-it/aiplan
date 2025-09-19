@@ -57,7 +57,6 @@ import (
 	"github.com/labstack/echo-contrib/echoprometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/minio/minio-go/v7"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/pbkdf2"
 	"gorm.io/gorm"
@@ -137,87 +136,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	dao.FileStorage = storage
 
-	{
-		var attachmentsCopied int
-		var oldAttachments []dao.IssueAttachment
-		db.Preload("Workspace").FindInBatches(&oldAttachments, 100, func(tx *gorm.DB, batch int) error {
-			for _, attach := range oldAttachments {
-				if attach.AssetOld == "" {
-					continue
-				}
-				fileAsset := dao.FileAsset{
-					Id:          dao.GenUUID(),
-					CreatedAt:   attach.CreatedAt,
-					CreatedById: attach.CreatedById,
-					WorkspaceId: &attach.WorkspaceId,
-					Name:        attach.Attributes["name"].(string),
-					FileSize:    int(attach.Attributes["size"].(float64)),
-				}
-
-				if err := storage.CopyOld(attach.AssetOld, fileAsset.Id, nil); err != nil {
-					errResponse := minio.ToErrorResponse(err)
-					if errResponse.Code == "NoSuchKey" {
-						if err := tx.Where("id = ?", attach.Id).Delete(&dao.IssueAttachment{}).Error; err != nil {
-							slog.Error("Remove not found attach", "id", attach.Id, "err", err)
-						}
-						slog.Warn("Attachment not found on minio", "asset", attach.AssetOld)
-						continue
-					}
-					slog.Error("Copy minio file attach", "old", attach.AssetOld, "new", fileAsset.Id, "err", err)
-					continue
-				}
-
-				if err := tx.Create(&fileAsset).Error; err != nil {
-					slog.Error("Create attach file asset", "attachId", attach.Id, "err", err)
-					continue
-				}
-
-				if err := tx.Model(&dao.IssueAttachment{}).Where("id = ?", attach.Id).UpdateColumns(map[string]interface{}{"asset_id": fileAsset.Id, "asset": ""}).Error; err != nil {
-					slog.Error("Update attach fields", "id", attach.Id, "err", err)
-					continue
-				}
-				attachmentsCopied++
-			}
-			return nil
-		})
-		slog.Info("Old attachments copied", "count", attachmentsCopied)
-
-		var workspaces []dao.Workspace
-		db.FindInBatches(&workspaces, 100, func(tx *gorm.DB, batch int) error {
-			for _, workspace := range workspaces {
-				if workspace.Logo == nil || *workspace.Logo == "" {
-					continue
-				}
-				fileAsset := dao.FileAsset{
-					Id:          dao.GenUUID(),
-					CreatedAt:   workspace.CreatedAt,
-					CreatedById: &workspace.CreatedById,
-					WorkspaceId: &workspace.ID,
-				}
-				if err := storage.CopyOld(*workspace.Logo, fileAsset.Id, nil); err != nil {
-					errResponse := minio.ToErrorResponse(err)
-					if errResponse.Code != "NoSuchKey" {
-						slog.Error("Copy minio file workspace logo", "old", workspace.Logo, "new", fileAsset.Id, "err", err)
-						continue
-					}
-				}
-
-				if err := tx.Create(&fileAsset).Error; err != nil {
-					slog.Error("Create workspace logo file asset", "workspaceId", workspace.ID, "err", err)
-					continue
-				}
-
-				workspace.LogoId = uuid.NullUUID{Valid: true, UUID: fileAsset.Id}
-				workspace.Logo = nil
-				if err := tx.Save(&workspace).Error; err != nil {
-					slog.Error("Save workspace", "workspaceId", workspace.ID, "err", err)
-					continue
-				}
-			}
-			return nil
-		})
-	}
-
+	slog.Info("Migrate old activities")
 	activityMigrate(db) //TODO migrate to newActivities
 
 	// Query counter

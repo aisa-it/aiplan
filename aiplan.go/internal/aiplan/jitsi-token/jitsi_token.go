@@ -18,11 +18,11 @@ func NewJitsiTokenIssuer(signKey, appID string) *JitsiTokenIssuer {
 
 func (jti *JitsiTokenIssuer) IssueToken(user *dao.User, isModerator bool, room string) (string, error) {
 	claims := jwt.MapClaims{
-		"exp": jwt.NewNumericDate(time.Now().Add(time.Hour * 24)),
+		"exp": jwt.NewNumericDate(time.Now().Add(time.Minute)),
 		"iss": jti.appID,
 		"aud": "jitsi",
-		"context": map[string]interface{}{
-			"user": map[string]interface{}{
+		"context": map[string]any{
+			"user": map[string]any{
 				"avatar":    user.Avatar,
 				"name":      user.GetName(),
 				"email":     user.Email,

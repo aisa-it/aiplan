@@ -40,12 +40,11 @@ type Config struct {
 	EmailFrom             string `env:"EMAIL_FROM"`
 	EmailWorkers          int    `env:"EMAIL_WORKERS"`
 
-	WebURLRaw string `env:"WEB_URL"`
-	WebURL    *url.URL
+	WebURL *url.URL `env:"WEB_URL"`
 
-	JitsiURL       string `env:"JITSI_URL"`
-	JitsiJWTSecret string `env:"JITSI_JWT_SECRET"`
-	JitsiAppID     string `env:"JITSI_APP_ID"`
+	JitsiURL       *url.URL `env:"JITSI_URL"`
+	JitsiJWTSecret string   `env:"JITSI_JWT_SECRET"`
+	JitsiAppID     string   `env:"JITSI_APP_ID"`
 
 	FrontFilesPath string `env:"FRONT_PATH"`
 
@@ -71,16 +70,9 @@ func ReadConfig() *Config {
 	envConfig("env", config)
 
 	// Check required envs
-	if config.WebURLRaw == "" {
+	if config.WebURL == nil {
 		slog.Error("WEB_URL is required")
 		os.Exit(1)
-	} else {
-		var err error
-		config.WebURL, err = url.Parse(config.WebURLRaw)
-		if err != nil {
-			slog.Error("WEB_URL incorrect", "err", err)
-			os.Exit(1)
-		}
 	}
 
 	if config.NotificationsSleep <= 0 || config.NotificationsSleep > 59 {
@@ -134,6 +126,8 @@ func envConfig(key string, s interface{}) {
 			v.Field(i).SetInt(int64(GetIntEnv(fEnvTag)))
 		case bool:
 			v.Field(i).SetBool(GetBoolEnv(fEnvTag))
+		case *url.URL:
+			v.Field(i).Set(reflect.ValueOf(GetURLEnv(fEnvTag)))
 		}
 	}
 }
