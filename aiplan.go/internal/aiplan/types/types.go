@@ -630,9 +630,7 @@ type WorkspaceMemberNS struct {
 	DisableDocAttachment bool `json:"disable_doc_attachment"`
 	DisableDocComment    bool `json:"disable_doc_comment"`
 
-	DisableDocEditor   bool `json:"disable_doc_editor"`
 	DisableDocWatchers bool `json:"disable_doc_watchers"`
-	DisableDocReader   bool `json:"disable_doc_reader"`
 	DisableDocCreate   bool `json:"disable_doc_create"`
 	DisableDocDelete   bool `json:"disable_doc_delete"`
 	DisableDocMove     bool `json:"disable_doc_move"`
@@ -701,7 +699,7 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceDesc
 		}
-	case "reader_role", "editor_role":
+	case "reader_role", "editor_role", "editors", "readers":
 		if isDoc {
 			return !ns.DisableDocRole
 		}
@@ -713,18 +711,9 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 		if isDoc {
 			return !ns.DisableDocComment
 		}
-
-	case "editors":
-		if isDoc {
-			return !ns.DisableDocEditor
-		}
 	case "watchers":
 		if isDoc {
 			return !ns.DisableDocWatchers
-		}
-	case "readers":
-		if isDoc {
-			return !ns.DisableDocReader
 		}
 	case "doc":
 		if isDoc {
