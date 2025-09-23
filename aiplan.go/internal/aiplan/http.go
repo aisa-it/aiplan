@@ -306,7 +306,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			return !(ext == ".md" || ext == ".jpg" || ext == ".png" || ext == ".json")
 		},
 	}))
-	//apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
+	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
 	authGroup.GET("queryLog/", ql.CountEndpoint)
 	s.AddFormServices(authGroup) // todo
