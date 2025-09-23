@@ -612,7 +612,9 @@ func (s *Services) getIssueList(c echo.Context) error {
 		}
 
 		if filters.SearchQuery != "" {
-			query = query.Joins("join projects p on p.id = issues.project_id").Where(dao.Issue{}.FullTextSearch(s.db, filters.SearchQuery))
+			query = query.Joins("join projects p on p.id = issues.project_id").
+				Where("p.deleted_at IS NULL").
+				Where(dao.Issue{}.FullTextSearch(s.db, filters.SearchQuery))
 		}
 	}
 

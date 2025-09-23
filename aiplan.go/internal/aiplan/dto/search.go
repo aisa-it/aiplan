@@ -17,12 +17,12 @@ import (
 type SearchLightweightResponse struct {
 	ID uuid.UUID `json:"id"`
 
-	WorkspaceId string         `json:"workspace"`
-	Workspace   WorkspaceLight `json:"workspace_detail"`
+	WorkspaceId string          `json:"workspace"`
+	Workspace   *WorkspaceLight `json:"workspace_detail"`
 
-	ProjectId  string       `json:"project"`
-	Project    ProjectLight `json:"project_detail"`
-	SequenceId int          `json:"sequence_id"`
+	ProjectId  string        `json:"project"`
+	Project    *ProjectLight `json:"project_detail"`
+	SequenceId int           `json:"sequence_id"`
 
 	Name     string  `json:"name"`
 	Priority *string `json:"priority" extensions:"x-nullable"`
