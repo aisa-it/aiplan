@@ -186,9 +186,9 @@ func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightResponse {
 	ii := dto.SearchLightweightResponse{
 		ID:          i.ID,
 		WorkspaceId: i.WorkspaceId,
-		Workspace:   *i.Workspace.ToLightDTO(),
+		Workspace:   i.Workspace.ToLightDTO(),
 		ProjectId:   i.ProjectId,
-		Project:     *i.Project.ToLightDTO(),
+		Project:     i.Project.ToLightDTO(),
 		SequenceId:  i.SequenceId,
 		Name:        i.Name,
 		Priority:    i.Priority,
