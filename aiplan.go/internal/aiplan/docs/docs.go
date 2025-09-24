@@ -15526,6 +15526,12 @@ const docTemplate = `{
                 "short_url": {
                     "type": "string"
                 },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintLight"
+                    }
+                },
                 "start_date": {
                     "type": "string",
                     "x-nullable": true
@@ -16772,6 +16778,12 @@ const docTemplate = `{
                 "short_url": {
                     "type": "string"
                 },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintLight"
+                    }
+                },
                 "start_date": {
                     "type": "string",
                     "x-nullable": true
@@ -16964,6 +16976,12 @@ const docTemplate = `{
                 },
                 "short_url": {
                     "type": "string"
+                },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintLight"
+                    }
                 },
                 "state": {
                     "type": "string",
@@ -17179,6 +17197,12 @@ const docTemplate = `{
                 },
                 "short_url": {
                     "type": "string"
+                },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintLight"
+                    }
                 },
                 "start_date": {
                     "type": "string",
@@ -17675,6 +17699,35 @@ const docTemplate = `{
                 },
                 "short_url": {
                     "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.SprintLight": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sequence_id": {
+                    "type": "integer"
+                },
+                "short_url": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "stats": {
+                    "$ref": "#/definitions/types.SprintStats"
                 },
                 "url": {
                     "type": "string"
@@ -18667,6 +18720,26 @@ const docTemplate = `{
                 "notify_before_deadline": {
                     "type": "integer",
                     "x-nullable": true
+                }
+            }
+        },
+        "types.SprintStats": {
+            "type": "object",
+            "properties": {
+                "all_issues": {
+                    "type": "integer"
+                },
+                "cancelled": {
+                    "type": "integer"
+                },
+                "completed": {
+                    "type": "integer"
+                },
+                "in_progress": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
                 }
             }
         },

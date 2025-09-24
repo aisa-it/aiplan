@@ -9,7 +9,7 @@ import (
 
 func (s *Services) SprintPermissionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		has, err := s.hasDocPermissions(c)
+		has, err := s.hasSprintPermissions(c)
 		if err != nil {
 			return EError(c, err)
 		}

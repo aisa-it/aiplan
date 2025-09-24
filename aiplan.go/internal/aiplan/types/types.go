@@ -11,6 +11,7 @@ package types
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -67,6 +68,16 @@ func (d *TargetDate) Scan(value interface{}) error {
 
 func (d TargetDate) String() string {
 	return d.Time.String()
+}
+
+func (td *TargetDate) ToNullTime() sql.NullTime {
+	if td == nil {
+		return sql.NullTime{Valid: false}
+	}
+	return sql.NullTime{
+		Time:  td.Time,
+		Valid: true,
+	}
 }
 
 // TimeZone type
@@ -801,4 +812,30 @@ func (u *JsonURL) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 	return []byte("\"" + u.Url.String() + "\""), nil
+}
+
+type IssueStatus int
+
+const (
+	Pending IssueStatus = iota
+	InProgress
+	Completed
+	Cancelled
+)
+
+func (is IssueStatus) String() string {
+	return [...]string{"Pending", "InProgress", "Completed", "Cancelled"}[is]
+}
+
+type IssueProcess struct {
+	Status  IssueStatus `json:"status"`
+	Overdue bool        `json:"overdue"`
+}
+
+type SprintStats struct {
+	AllIssues  int `json:"all_issues"`
+	Pending    int `json:"pending"`
+	InProgress int `json:"in_progress"`
+	Completed  int `json:"completed"`
+	Cancelled  int `json:"cancelled"`
 }
