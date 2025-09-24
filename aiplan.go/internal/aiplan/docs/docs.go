@@ -8399,6 +8399,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/me/notifications/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет настройки уведомлений для текущего участника пространства.",
+                "tags": [
+                    "Workspace"
+                ],
+                "summary": "Пространство (участники): обновление настроек уведомлений текущего участника",
+                "operationId": "updateMyWorkspaceNotifications",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Настройки уведомлений",
+                        "name": "notificationSettings",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.workspaceNotificationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Настройки успешно обновлены"
+                    },
+                    "400": {
+                        "description": "Ошибка при обновлении настроек уведомлений",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/members": {
             "get": {
                 "security": [
@@ -16062,6 +16112,29 @@ const docTemplate = `{
             "properties": {
                 "role": {
                     "type": "integer"
+                }
+            }
+        },
+        "aiplan.workspaceNotificationRequest": {
+            "type": "object",
+            "properties": {
+                "notification_author_settings_app": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_author_settings_email": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_author_settings_tg": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_app": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_email": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_tg": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
                 }
             }
         },

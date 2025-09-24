@@ -451,7 +451,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Validate grouped by
-	if groupByParam != "" && slices.Contains(issueGroupFields, groupByParam) {
+	if groupByParam != "" && !slices.Contains(issueGroupFields, groupByParam) {
 		return EErrorDefined(c, apierrors.ErrUnsupportedGroup)
 	}
 
