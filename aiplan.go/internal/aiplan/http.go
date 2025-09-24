@@ -384,7 +384,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			return !(ext == ".md" || ext == ".jpg" || ext == ".png" || ext == ".json")
 		},
 	}))
-	//apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
+	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
 	authGroup.GET("queryLog/", ql.CountEndpoint)
 	s.AddFormServices(authGroup) // todo
@@ -398,6 +398,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
 	s.AddDocServices(authGroup)
+	s.AddSprintServices(authGroup)
 
 	// services without auth
 	s.AddUserWithoutAuthServices(apiGroup)
