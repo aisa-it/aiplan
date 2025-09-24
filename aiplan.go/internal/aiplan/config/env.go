@@ -2,6 +2,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"strconv"
 )
@@ -36,4 +37,13 @@ func GetBoolEnv(key string) bool {
 		return false
 	}
 	return v
+}
+
+func GetURLEnv(key string) *url.URL {
+	val, _ := os.LookupEnv(key)
+	u, err := url.Parse(val)
+	if err != nil {
+		return nil
+	}
+	return u
 }

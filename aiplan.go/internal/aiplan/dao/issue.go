@@ -1730,6 +1730,7 @@ type IssueActivityExtendFields struct {
 	IssueLinkedExtendFields
 	BlockIssueExtendFields
 	BlockingIssueExtendFields
+	ProjectExtendFields
 }
 
 type IssueEntityI interface {

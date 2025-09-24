@@ -22,7 +22,6 @@ import (
 	"sheff.online/aiplan/internal/aiplan/types"
 
 	"github.com/gofrs/uuid"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
@@ -123,7 +122,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.PATCH("/members/:memberId/", s.updateWorkspaceMember)
 	workspaceGroup.PATCH("/members/:memberId/set-email/", s.updateUserEmail)
 	workspaceGroup.DELETE("/members/:memberId/", s.deleteWorkspaceMember)
-
+	workspaceGroup.POST("/me/notifications/", s.updateMyWorkspaceNotifications)
 	workspaceGroup.GET("/members/activities/", s.getWorkspaceMembersActivityList)
 
 	workspaceGroup.POST("/members/message/", s.createMessageForWorkspaceMember)
@@ -1562,27 +1561,13 @@ func (s *Services) getWorkspaceJitsiToken(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	claims := jwt.MapClaims{
-		"exp":  jwt.NewNumericDate(time.Now().Add(time.Hour * 24)),
-		"iss":  "aiplan",
-		"room": workspace.Slug,
-		"context": map[string]interface{}{
-			"user": map[string]interface{}{
-				"avatar":    user.Avatar,
-				"name":      user.GetName(),
-				"email":     user.Email,
-				"id":        user.ID,
-				"moderator": false,
-			},
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	ret, err := token.SignedString([]byte(cfg.JitsiSecretKey))
+	token, err := s.jitsiTokenIss.IssueToken(user, false, workspace.Slug)
 	if err != nil {
 		return EError(c, err)
 	}
+
 	return c.JSON(http.StatusOK, map[string]string{
-		"jitsi_token": ret,
+		"jitsi_token": token,
 	})
 }
 
@@ -1823,6 +1808,49 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+// updateMyWorkspaceNotifications godoc
+// @id updateMyWorkspaceNotifications
+// @Summary Пространство (участники): обновление настроек уведомлений текущего участника
+// @Description Обновляет настройки уведомлений для текущего участника пространства.
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param notificationSettings body workspaceNotificationRequest true "Настройки уведомлений"
+// @Success 204 "Настройки успешно обновлены"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка при обновлении настроек уведомлений"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/me/notifications/ [post]
+func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
+	wm := c.(WorkspaceContext).WorkspaceMember
+	var req workspaceNotificationRequest
+	fields, err := BindData(c, "", &req)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	for _, field := range fields {
+		switch field {
+		case "notification_settings_app":
+			wm.NotificationSettingsApp = req.NotificationSettingsApp
+		case "notification_author_settings_app":
+			wm.NotificationAuthorSettingsApp = req.NotificationAuthorSettingsApp
+		case "notification_settings_tg":
+			wm.NotificationSettingsTG = req.NotificationSettingsTG
+		case "notification_author_settings_tg":
+			wm.NotificationAuthorSettingsTG = req.NotificationAuthorSettingsTG
+		case "notification_settings_email":
+			wm.NotificationSettingsEmail = req.NotificationSettingsEmail
+		case "notification_author_settings_email":
+			wm.NotificationAuthorSettingsEmail = req.NotificationAuthorSettingsEmail
+		}
+	}
+
+	if err := s.db.Select(fields).Updates(&wm).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
 // ******* RESPONSE *******
 
 type responseLastWorkspace struct {
@@ -1856,4 +1884,13 @@ type requestMessage struct {
 	Msg     string    `json:"msg"`
 	SendAt  time.Time `json:"send_at,omitempty"`
 	Members []string  `json:"members,omitempty"`
+}
+
+type workspaceNotificationRequest struct {
+	NotificationSettingsTG          types.WorkspaceMemberNS `json:"notification_settings_tg"`
+	NotificationAuthorSettingsTG    types.WorkspaceMemberNS `json:"notification_author_settings_tg"`
+	NotificationSettingsEmail       types.WorkspaceMemberNS `json:"notification_settings_email"`
+	NotificationAuthorSettingsEmail types.WorkspaceMemberNS `json:"notification_author_settings_email"`
+	NotificationSettingsApp         types.WorkspaceMemberNS `json:"notification_settings_app"`
+	NotificationAuthorSettingsApp   types.WorkspaceMemberNS `json:"notification_author_settings_app"`
 }

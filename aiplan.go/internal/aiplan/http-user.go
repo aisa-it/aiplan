@@ -110,10 +110,11 @@ func (s *Services) AddUserServices(g *echo.Group) {
 	releaseNoteGroup.GET(":noteId/", s.getRecentReleaseNoteList)
 
 	g.GET("jitsi-url/", func(c echo.Context) error {
-		if cfg.JitsiURL == "" {
-			cfg.JitsiURL = "meet.jit.si" // fallback to jitsi instance
+		u := "meet.jit.si" // fallback to jitsi instance
+		if cfg.JitsiURL != nil {
+			u = cfg.JitsiURL.Host
 		}
-		return c.JSON(http.StatusOK, map[string]string{"url": cfg.JitsiURL})
+		return c.JSON(http.StatusOK, map[string]string{"url": u})
 	})
 }
 

@@ -50,6 +50,10 @@ func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
 	}
 	workspaceMember := workspaceContext.WorkspaceMember
 
+	if strings.HasSuffix(c.Path(), "/me/notifications/") && c.Request().Method == http.MethodPost {
+		return true, nil
+	}
+
 	if strings.Contains(c.Path(), "/backups/") && workspaceMember.Role != 15 && workspaceContext.Workspace.OwnerId != workspaceContext.User.ID {
 		return false, nil
 	}
