@@ -198,6 +198,20 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 		}
 	}
 
+	{ // delete sprint
+		if err := tx.Where("workspace_id = ?", workspace.ID).Delete(SprintWatcher{}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("workspace_id = ?", workspace.ID).Delete(SprintIssue{}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(Sprint{}).Error; err != nil {
+			return err
+		}
+	}
+
 	// delete members
 	var members []WorkspaceMember
 	if err := tx.Where("workspace_id = ?", workspace.ID).Find(&members).Error; err != nil {

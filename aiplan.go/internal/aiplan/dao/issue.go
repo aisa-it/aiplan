@@ -84,6 +84,7 @@ type Issue struct {
 	Assignees *[]User      `json:"assignee_details,omitempty" gorm:"many2many:issue_assignees;foreignKey:id;joinForeignKey:issue_id;References:id;joinReferences:assignee_id;- :migration" extensions:"x-nullable"`
 	Watchers  *[]User      `json:"watcher_details,omitempty" gorm:"many2many:issue_watchers;foreignKey:id;joinForeignKey:issue_id;References:id;joinReferences:watcher_id;- :migration" extensions:"x-nullable"`
 	Labels    *[]Label     `json:"label_details" gorm:"many2many:issue_labels;foreignKey:id;joinForeignKey:issue_id;References:id;joinReferences:label_id;- :migration" extensions:"x-nullable"`
+	Sprints   *[]Sprint    `json:"sprints,omitempty" gorm:"many2many:sprint_issues;joinForeignKey:IssueId;joinReferences:SprintId"`
 	Links     *[]IssueLink `json:"issue_link" gorm:"foreignKey:issue_id" extensions:"x-nullable"`
 	Author    *User        `json:"author_detail" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
 
@@ -97,7 +98,8 @@ type Issue struct {
 	BlockerIssuesIDs []IssueBlocker `json:"blocker_issues" gorm:"-"`
 	BlockedIssuesIDs []IssueBlocker `json:"blocked_issues" gorm:"-"`
 
-	FullLoad bool `json:"-" gorm:"-"` // Загрузка SubIssuesCount, LinkCount, AttachmentCount, BlockerIssuesIDs и BlockedIssuesIDs полей отдельными запросами
+	FullLoad      bool               `json:"-" gorm:"-"` // Загрузка SubIssuesCount, LinkCount, AttachmentCount, BlockerIssuesIDs и BlockedIssuesIDs полей отдельными запросами
+	IssueProgress types.IssueProcess `json:"-" gorm:"-"`
 }
 
 // SubIssueExtendFields
@@ -247,6 +249,9 @@ func (i *Issue) ToLightDTO() *dto.IssueLight {
 		StateId:    i.StateId,
 		State:      i.State.ToLightDTO(),
 		Priority:   i.Priority,
+		Sprints: utils.SliceToSlice(i.Sprints, func(t *Sprint) dto.SprintLight {
+			return *t.ToLightDTO()
+		}),
 	}
 }
 
@@ -398,6 +403,25 @@ func (Issue) TableName() string { return "issues" }
 // Возвращает:
 //   - error: ошибка, если произошла ошибка во время обработки.
 func (issue *Issue) AfterFind(tx *gorm.DB) error {
+	_, issueStatus := tx.Get("issueProgress")
+	if issueStatus {
+		if issue.State != nil && issue.State.Group == "cancelled" {
+			issue.IssueProgress.Status = types.Cancelled
+		} else {
+			if issue.StartDate == nil {
+				issue.IssueProgress.Status = types.Pending
+			} else if issue.StartDate != nil && issue.CompletedAt == nil {
+				issue.IssueProgress.Status = types.InProgress
+			} else if issue.CompletedAt != nil {
+				issue.IssueProgress.Status = types.Completed
+			}
+
+			if issue.TargetDate != nil && time.Now().After(issue.TargetDate.Time) {
+				issue.IssueProgress.Overdue = true
+			}
+		}
+	}
+
 	if issue.Assignees != nil && len(*issue.Assignees) > 0 {
 		var ids []string
 		for _, assignee := range *issue.Assignees {
@@ -503,6 +527,11 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 
 	// Delete deferredNotification
 	if err := tx.Where("issue_id = ?", issue.ID).Delete(&DeferredNotifications{}).Error; err != nil {
+		return err
+	}
+
+	// Delete sprintIssues
+	if err := tx.Where("issue_id = ?", issue.ID).Delete(&SprintIssue{}).Error; err != nil {
 		return err
 	}
 

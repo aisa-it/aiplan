@@ -156,6 +156,13 @@ var (
 	ErrDocParentRoleTooLow   = DefinedError{Code: 3412, StatusCode: http.StatusBadRequest, Err: "parent doc role must not be lower than any child", RuErr: "Роль родительского документа не может быть ниже дочернего"}
 	ErrDocMoveIntoOwnChild   = DefinedError{Code: 3413, StatusCode: http.StatusBadRequest, Err: "cannot move document into its own child", RuErr: "Невозможно переместить документ в его же дочерний"}
 
+	// 36** - sprint errors
+	ErrSprintNotFound        = DefinedError{Code: 3601, StatusCode: http.StatusNotFound, Err: "sprint not found", RuErr: "Спринт не найден"}
+	ErrSprintUpdateForbidden = DefinedError{Code: 3602, StatusCode: http.StatusForbidden, Err: "insufficient permissions or not the author", RuErr: "У вас недостаточно прав для внесения изменения в спринт"}
+	ErrSprintForbidden       = DefinedError{Code: 3603, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}
+	ErrSprintBadRequest      = DefinedError{Code: 3604, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
+	ErrSprintRequestValidate = DefinedError{Code: 3605, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
+
 	// 4*** - issue errors
 	ErrIssueNotFound                   = DefinedError{Code: 4001, StatusCode: http.StatusNotFound, Err: "issue not found", RuErr: "Задача не найдена"}
 	ErrDeleteIssueForbidden            = DefinedError{Code: 4002, StatusCode: http.StatusForbidden, Err: "only admin and author can delete issue", RuErr: "У вас недостаточно прав для удаления задачи"}
