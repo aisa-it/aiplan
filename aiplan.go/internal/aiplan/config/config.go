@@ -42,6 +42,7 @@ type Config struct {
 
 	WebURL *url.URL `env:"WEB_URL"`
 
+	JitsiDisabled  bool     `env:"JITSI_DISABLED"`
 	JitsiURL       *url.URL `env:"JITSI_URL"`
 	JitsiJWTSecret string   `env:"JITSI_JWT_SECRET"`
 	JitsiAppID     string   `env:"JITSI_APP_ID"`

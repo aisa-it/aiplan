@@ -8,6 +8,10 @@ import (
 )
 
 func (s *Services) redirectToJitsiConf(c echo.Context) error {
+	if cfg.JitsiDisabled {
+		return c.NoContent(http.StatusNotFound)
+	}
+
 	user := c.(AuthContext).User
 	room := c.Param("room")
 
