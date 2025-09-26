@@ -333,6 +333,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			"demo":    cfg.Demo,
 			"ny":      cfg.NYEnable,
 			"captcha": !cfg.CaptchaDisabled,
+			"jitsi":   !cfg.JitsiDisabled,
 		})
 	})
 
