@@ -136,7 +136,13 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	dao.FileStorage = storage
 
-	slog.Info("Merge users with same emails")
+	tr := tracker.NewActivitiesTracker(db)
+
+	slog.Info("Populate users table FKs")
+	bl := business.NewBL(db, tr)
+	if err := bl.PopulateUserFKs(); err != nil {
+		slog.Error("Fail to populate users FKs. Users merge will not working", "err", err)
+	}
 
 	slog.Info("Migrate old activities")
 	activityMigrate(db) //TODO migrate to newActivities
@@ -150,10 +156,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		slog.Error("Register query callback", "err", err)
 	}
 
-	tr := tracker.NewActivitiesTracker(db)
 	sm := sessions.NewSessionsManager(cfg, types.RefreshTokenExpiresPeriod+time.Hour)
 	es := notifications.NewEmailService(cfg, db)
-	bl := business.NewBL(db, tr)
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
