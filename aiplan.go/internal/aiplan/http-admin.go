@@ -625,9 +625,10 @@ func (s *Services) updateUser(c echo.Context) error {
 func (s *Services) deleteUser(c echo.Context) error {
 	userId := c.Param("userId")
 
-	if err := s.db.Where("id = ?", userId).Where("is_integration = false").Delete(&dao.User{}).Error; err != nil {
+	if err := s.business.DeleteUser(userId); err != nil {
 		return EError(c, err)
 	}
+
 	return c.NoContent(http.StatusOK)
 }
 

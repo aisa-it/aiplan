@@ -38,7 +38,7 @@ func TestReplace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := b.ReplaceUser("bb3828d2-1aa6-451d-9666-43a9f7aa0939", "44361aa5-b325-48bf-8c10-e9477615d219"); err != nil {
+	if err := b.ReplaceUser(b.db, "bb3828d2-1aa6-451d-9666-43a9f7aa0939", "44361aa5-b325-48bf-8c10-e9477615d219"); err != nil {
 		t.Fatal(err)
 	}
 

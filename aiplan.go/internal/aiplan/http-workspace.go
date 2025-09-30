@@ -789,6 +789,8 @@ func (s *Services) updateUserEmail(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	req.Email = strings.ToLower(req.Email)
+
 	if !ValidateEmail(req.Email) {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail)
 	}
@@ -1059,7 +1061,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 	var createMemberLog []memberTracker
 
 	for _, invite := range req.Emails {
-		invite.Email = strings.TrimSpace(invite.Email)
+		invite.Email = strings.ToLower(strings.TrimSpace(invite.Email))
 		if !ValidateEmail(invite.Email) {
 			return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(invite.Email))
 		}
