@@ -35,6 +35,7 @@ require (
 	github.com/coder/websocket v1.8.13
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
+	github.com/jackc/pgconn v1.14.3
 	github.com/nao1215/markdown v0.8.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/ollama/ollama v0.9.6
@@ -72,6 +73,9 @@ require (
 	github.com/go-openapi/spec v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
+	github.com/jackc/pgio v1.0.0 // indirect
+	github.com/jackc/pgproto3/v2 v2.3.3 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/minio/crc64nvme v1.1.0 // indirect
