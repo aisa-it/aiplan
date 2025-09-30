@@ -4,10 +4,13 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 var (
 	userFKs []userFK
+
+	deletedServiceUser *dao.User
 )
 
 type userFK struct {
@@ -15,8 +18,8 @@ type userFK struct {
 	Field string
 }
 
-func (b *Business) ReplaceUser(origUserId string, newUserId string) error {
-	return b.db.Transaction(func(tx *gorm.DB) error {
+func (b *Business) ReplaceUser(tx *gorm.DB, origUserId string, newUserId string) error {
+	return tx.Transaction(func(tx *gorm.DB) error {
 		for _, fk := range userFKs {
 			tx.SavePoint("preUpdate")
 			if err := tx.Table(fk.Table).
@@ -34,6 +37,18 @@ func (b *Business) ReplaceUser(origUserId string, newUserId string) error {
 			}
 		}
 		return nil
+	})
+}
+
+func (b *Business) DeleteUser(userId string) error {
+	return b.db.Transaction(func(tx *gorm.DB) error {
+		// Replace all users records to deleted user
+		if err := b.ReplaceUser(tx, userId, deletedServiceUser.ID); err != nil {
+			return err
+		}
+
+		// Hard delete user
+		return tx.Unscoped().Where("id = ?", userId).Delete(&dao.User{}).Error
 	})
 }
 

@@ -1160,6 +1160,8 @@ func (s *Services) signUp(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	req.Email = strings.ToLower(req.Email)
+
 	if !ValidateEmail(req.Email) {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(req.Email))
 	}
