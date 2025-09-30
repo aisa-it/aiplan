@@ -1859,7 +1859,7 @@ func (rl *RulesLog) ToDTO() *dto.RulesLog {
 	}
 }
 
-func GetIssuesGroupsSize(db *gorm.DB, groupByParam string, projectId string) (map[string]int, error) {
+func GetIssuesGroupsSize(db *gorm.DB, groupByParam string, projectId string, onlyActive bool) (map[string]int, error) {
 	query := db.Session(&gorm.Session{})
 	switch groupByParam {
 	case "priority":
@@ -1876,6 +1876,9 @@ func GetIssuesGroupsSize(db *gorm.DB, groupByParam string, projectId string) (ma
 			Joins("LEFT JOIN issues on states.id = issues.state_id and issues.project_id = ?", projectId).
 			Where("states.project_id = ?", projectId).
 			Select("count(issues.state_id) as Count, states.id as \"Key\"")
+		if onlyActive {
+			query = query.Where("states.\"group\" <> ?", "cancelled").Where("states.\"group\" <> ?", "completed")
+		}
 	case "labels":
 		query = query.Raw(`select count(i.id) as Count, l.id as Key from labels l
 left join issue_labels il on il.label_id = l.id

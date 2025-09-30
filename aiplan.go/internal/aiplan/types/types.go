@@ -315,7 +315,6 @@ type IssuesListFilters struct {
 	AssignedToMe bool `json:"assigned_to_me"`
 	WatchedByMe  bool `json:"watched_by_me"`
 	AuthoredByMe bool `json:"authored_by_me"`
-	OnlyActive   bool `json:"only_active"`
 
 	SearchQuery string `json:"search_query"`
 }
