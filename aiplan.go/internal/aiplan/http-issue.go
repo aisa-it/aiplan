@@ -425,6 +425,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	limit := 100
 	desc := true
 	lightSearch := false
+	onlyActive := false
 
 	if err := echo.QueryParamsBinder(c).
 		Bool("show_sub_issues", &showSubIssues).
@@ -436,6 +437,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		Bool("desc", &desc).
 		Bool("only_count", &onlyCount).
 		Bool("light", &lightSearch).
+		Bool("only_active", &onlyActive).
 		BindError(); err != nil {
 		return EError(c, err)
 	}
@@ -604,7 +606,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 			query = query.Where("issues.created_by_id = ?", user.ID)
 		}
 
-		if filters.OnlyActive {
+		if onlyActive {
 			query = query.Where("issues.state_id in (?)", s.db.Model(&dao.State{}).
 				Select("id").
 				Where("\"group\" <> ?", "cancelled").
@@ -729,7 +731,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 
 	// Get groups
 	if groupByParam != "" {
-		groupSize, err := dao.GetIssuesGroupsSize(s.db, groupByParam, projectMember.ProjectId)
+		groupSize, err := dao.GetIssuesGroupsSize(s.db, groupByParam, projectMember.ProjectId, onlyActive)
 		if err != nil {
 			return EError(c, err)
 		}
