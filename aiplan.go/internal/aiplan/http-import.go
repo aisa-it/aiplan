@@ -10,11 +10,11 @@ package aiplan
 import (
 	"net/http"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/errors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/errors"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )

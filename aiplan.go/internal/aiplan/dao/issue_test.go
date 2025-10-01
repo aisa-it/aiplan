@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"testing"
 
-	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 )
 
 // TestHTMLSanitizer проверяет корректность работы функции Sanitize для различных типов HTML-контента.

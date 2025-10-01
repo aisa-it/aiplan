@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"

@@ -11,10 +11,10 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan"
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/gormlogger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/gormlogger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 

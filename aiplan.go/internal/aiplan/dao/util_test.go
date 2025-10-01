@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/gofrs/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

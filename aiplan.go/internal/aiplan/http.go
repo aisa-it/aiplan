@@ -40,27 +40,27 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/business"
-	jitsi_token "github.com/aisa-it/aiplan/internal/aiplan/jitsi-token"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/cronmanager"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/nfnt/resize"
 
 	"image/jpeg"
 	_ "image/png"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/internal/aiplan/integrations"
-	issues_import "github.com/aisa-it/aiplan/internal/aiplan/issues-import"
-	"github.com/aisa-it/aiplan/internal/aiplan/maintenance"
-	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
-	"github.com/aisa-it/aiplan/internal/aiplan/sessions"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/integrations"
+	issues_import "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/maintenance"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/sessions"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo-contrib/echoprometheus"
@@ -70,7 +70,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 	"gorm.io/gorm"
 
-	_ "github.com/aisa-it/aiplan/internal/aiplan/docs"
+	_ "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/docs"
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
 

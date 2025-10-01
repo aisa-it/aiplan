@@ -14,9 +14,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"

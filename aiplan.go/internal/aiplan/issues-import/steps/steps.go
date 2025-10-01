@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/context"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/errors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/context"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/errors"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )

@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/utils"
 	"github.com/andygrunwald/go-jira"
 	"github.com/gofrs/uuid"
 	"golang.org/x/net/html"

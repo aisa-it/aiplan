@@ -13,10 +13,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
-	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

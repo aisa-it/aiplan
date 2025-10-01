@@ -9,7 +9,7 @@ package rules
 import (
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 )
 
 type IRulesError interface {

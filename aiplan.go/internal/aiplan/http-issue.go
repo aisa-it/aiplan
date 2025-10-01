@@ -25,21 +25,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
-	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/export"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/internal/aiplan/rules"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	tusd "github.com/tus/tusd/v2/pkg/handler"

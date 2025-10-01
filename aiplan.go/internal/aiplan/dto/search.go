@@ -10,7 +10,7 @@ package dto
 import (
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 )
 

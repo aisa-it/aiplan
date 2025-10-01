@@ -23,8 +23,8 @@ import (
 	_ "embed"
 
 	"codeberg.org/go-pdf/fpdf"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/editor"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor"
 )
 
 var (

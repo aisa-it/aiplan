@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/exp/slog"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"

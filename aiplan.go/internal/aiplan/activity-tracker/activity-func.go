@@ -11,8 +11,8 @@ package tracker
 import (
 	"fmt"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	ErrStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 )
 
 const (

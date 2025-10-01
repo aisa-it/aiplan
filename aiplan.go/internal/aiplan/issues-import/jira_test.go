@@ -11,10 +11,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/context"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/context"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

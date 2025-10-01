@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/context"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/context"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
