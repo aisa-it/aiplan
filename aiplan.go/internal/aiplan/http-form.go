@@ -21,25 +21,25 @@ import (
 	"net/http"
 	"net/url"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
 
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
+	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
+	types2 "github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
-	types2 "sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
 
 	"strconv"
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
 )
 
 type FormContext struct {

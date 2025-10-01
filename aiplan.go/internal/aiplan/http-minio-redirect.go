@@ -9,10 +9,10 @@ package aiplan
 import (
 	"net/http"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 // redirectToMinioFile godoc

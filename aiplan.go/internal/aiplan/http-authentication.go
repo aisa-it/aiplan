@@ -21,16 +21,16 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/internal/aiplan/sessions"
 	"github.com/altcha-org/altcha-lib-go"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/notifications"
-	"sheff.online/aiplan/internal/aiplan/sessions"
 )
 
 type Authentication struct {

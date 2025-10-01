@@ -11,11 +11,12 @@ package utils
 import (
 	"encoding/base64"
 	"errors"
-	"github.com/gofrs/uuid"
 	"iter"
 	"net/http"
 	"net/url"
-	"sheff.online/aiplan/internal/aiplan/dto"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/gofrs/uuid"
 )
 
 var (

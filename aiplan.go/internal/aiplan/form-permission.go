@@ -11,9 +11,9 @@ package aiplan
 import (
 	"errors"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 func (s *Services) FormPermissionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

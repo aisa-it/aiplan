@@ -7,8 +7,9 @@
 package rules
 
 import (
-	"sheff.online/aiplan/internal/aiplan/apierrors"
 	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
 )
 
 type IRulesError interface {

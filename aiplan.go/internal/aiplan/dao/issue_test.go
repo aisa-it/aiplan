@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"testing"
 
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
+	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
 )
 
 // TestHTMLSanitizer проверяет корректность работы функции Sanitize для различных типов HTML-контента.
@@ -31,7 +31,7 @@ func TestHTMLSanitizer(t *testing.T) {
 </p>`
 
 		mentionHTML = `<p>
-  <span 
+  <span
   class="mention"
   data-type="mention"
   data-id="Grigoriy"

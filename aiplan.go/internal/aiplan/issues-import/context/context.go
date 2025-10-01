@@ -16,17 +16,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/atomic"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/counters"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/errors"
+	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/andygrunwald/go-jira"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/issues-import/atomic"
-	"sheff.online/aiplan/internal/aiplan/issues-import/counters"
-	"sheff.online/aiplan/internal/aiplan/issues-import/entity"
-	"sheff.online/aiplan/internal/aiplan/issues-import/errors"
-	"sheff.online/aiplan/internal/aiplan/notifications"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 // ImportContext - контекст с данными для импорта задач жиры в аиплан. Содержит поля статусов для отслеживания процесса импорта.

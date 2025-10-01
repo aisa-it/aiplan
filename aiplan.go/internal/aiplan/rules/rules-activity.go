@@ -9,10 +9,11 @@
 package rules
 
 import (
+	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"time"
 )
 
 func AddLog(tx *gorm.DB, logs []dao.RulesLog) error {

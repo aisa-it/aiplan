@@ -2,13 +2,14 @@ package notifications
 
 import (
 	"fmt"
-	"gorm.io/gorm"
 	"log/slog"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/business"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/types"
+
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/business"
+	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"gorm.io/gorm"
 )
 
 type Notification struct {

@@ -7,9 +7,10 @@
 package dto
 
 import (
-	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/types"
 	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 )
 
 type WorkspaceLight struct {

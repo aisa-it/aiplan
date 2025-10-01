@@ -23,14 +23,14 @@ import (
 
 	"github.com/lib/pq"
 
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 // Задачи

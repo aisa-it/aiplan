@@ -9,12 +9,13 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
-	"gorm.io/gorm/clause"
 	"log"
 	"time"
 
+	"gorm.io/gorm/clause"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 // Constant for the maximum number of retry attempts

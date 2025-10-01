@@ -1,4 +1,4 @@
-module sheff.online/aiplan
+module github.com/aisa-it/aiplan
 
 go 1.24.0
 

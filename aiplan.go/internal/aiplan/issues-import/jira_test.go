@@ -11,12 +11,12 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/context"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/issues-import/context"
-	"sheff.online/aiplan/internal/aiplan/issues-import/entity"
 )
 
 func TestSingleIssue(t *testing.T) {

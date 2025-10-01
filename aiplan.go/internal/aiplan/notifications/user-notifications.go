@@ -11,13 +11,14 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"time"
 )
 
 type NotificationCleaner struct {

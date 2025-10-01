@@ -9,9 +9,10 @@ package rules
 
 import (
 	"fmt"
-	lua "github.com/yuin/gopher-lua"
-	"sheff.online/aiplan/internal/aiplan/dao"
 	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	lua "github.com/yuin/gopher-lua"
 )
 
 var (

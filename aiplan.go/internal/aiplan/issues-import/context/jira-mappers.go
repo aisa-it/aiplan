@@ -13,14 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/issues-import/entity"
-	"sheff.online/aiplan/internal/aiplan/issues-import/utils"
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/utils"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"github.com/andygrunwald/go-jira"
 	"github.com/gofrs/uuid"
 	"golang.org/x/sync/errgroup"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 type MapperContext struct {

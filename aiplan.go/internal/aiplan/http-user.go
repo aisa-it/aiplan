@@ -18,21 +18,21 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 
-	"sheff.online/aiplan/internal/aiplan/notifications"
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 type UserUpdateRequest struct {
@@ -660,6 +660,17 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 		BindError(); err != nil {
 		return EError(c, err)
 	}
+
+	// If email provided
+	if _, err := uuid.FromString(userId); err != nil {
+		if err := s.db.Select("id").Where("email = ?", userId).Model(&dao.User{}).Find(&userId).Error; err != nil {
+			return EError(c, err)
+		}
+		if userId == "" {
+			return EErrorDefined(c, apierrors.ErrUserNotFound)
+		}
+	}
+
 	var issue dao.IssueActivity
 	issue.UnionCustomFields = "'issue' AS entity_type"
 	var project dao.ProjectActivity

@@ -9,10 +9,10 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
 )
 
 type AssetsCleaner struct {

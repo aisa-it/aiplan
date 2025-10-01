@@ -3,9 +3,10 @@ package tracker
 
 import (
 	"fmt"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/utils"
 )
 
 // issueAssigneesUpdate Обновляет список назначенных пользователей для сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.

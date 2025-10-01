@@ -16,10 +16,10 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 // Content of workspace backup. Don't change order of fields(import will insert in this order)!!!

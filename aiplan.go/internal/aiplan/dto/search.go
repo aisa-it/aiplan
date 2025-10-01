@@ -4,14 +4,14 @@
 //   - Представление структуры данных ответа поиска с использованием упрощенных типов.
 //   - Поддержка nullable полей через `*string` и `*types.TargetDate`.
 //   - Использование `uuid.UUID` для идентификаторов.
-//   - Интеграция с типами данных из пакета `sheff.online/aiplan/internal/aiplan/types`.
+//   - Интеграция с типами данных из пакета `github.com/aisa-it/aiplan/internal/aiplan/types`.
 package dto
 
 import (
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 type SearchLightweightResponse struct {

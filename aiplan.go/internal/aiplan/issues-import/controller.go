@@ -13,17 +13,17 @@ import (
 	"os"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/atomic"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/context"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
 	"github.com/glebarez/sqlite"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/issues-import/atomic"
-	"sheff.online/aiplan/internal/aiplan/issues-import/context"
-	"sheff.online/aiplan/internal/aiplan/issues-import/entity"
-	"sheff.online/aiplan/internal/aiplan/notifications"
 )
 
 // Текущие импорты в системе по проектам(key проекта жиры)

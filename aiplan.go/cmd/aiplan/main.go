@@ -11,12 +11,12 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan"
+	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/gormlogger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/gormlogger"
 
 	"ariga.io/atlas-go-sdk/atlasexec"
 )

@@ -9,7 +9,7 @@ package dto
 import (
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 )
 
 type FormLight struct {

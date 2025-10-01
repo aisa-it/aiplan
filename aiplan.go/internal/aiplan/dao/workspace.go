@@ -18,12 +18,12 @@ import (
 
 	"github.com/lib/pq"
 
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dto"
 )
 
 // Рабочие пространства

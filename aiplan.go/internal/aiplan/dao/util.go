@@ -20,17 +20,18 @@ import (
 	"log/slog"
 	"math/big"
 	"regexp"
-	"sheff.online/aiplan/internal/aiplan/utils"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"github.com/sethvargo/go-password/password"
 	"golang.org/x/crypto/pbkdf2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 // -migration
@@ -428,7 +429,7 @@ type UserPrivilegesOverDoc struct {
 
 func GetUserPrivilegesOverIssue(issueId string, userId string, db *gorm.DB) (*UserPrivilegesOverIssue, error) {
 	var priv UserPrivilegesOverIssue
-	if err := db.Raw(`select wm.member_id as "user_id", i.id as "issue_id", wm.role as "workspace_role", pm.role as "project_role", i.created_by_id = ? as "is_author", ia.id is not null as "is_assigner", iw.id is not null as "is_watcher" from issues i 
+	if err := db.Raw(`select wm.member_id as "user_id", i.id as "issue_id", wm.role as "workspace_role", pm.role as "project_role", i.created_by_id = ? as "is_author", ia.id is not null as "is_assigner", iw.id is not null as "is_watcher" from issues i
 left join issue_assignees ia on i.id = ia.issue_id and ia.assignee_id = ?
 left join issue_watchers iw on i.id = iw.issue_id and iw.watcher_id = ?
 left join workspace_members wm on i.workspace_id = wm.workspace_id and wm.member_id = ?
@@ -441,15 +442,15 @@ where i.id = ?`, userId, userId, userId, userId, userId, issueId).First(&priv).E
 
 func GetUserPrivilegesOverDoc(docId string, userId string, db *gorm.DB) (*UserPrivilegesOverDoc, error) {
 	var priv UserPrivilegesOverDoc
-	if err := db.Raw(`select 
-	wm.member_id as "user_id", 
-  d.id as "doc_id", 
-  wm.role as "workspace_role", 
-  d.created_by_id = ? as "is_author", 
-  de.id is not null or wm.role >= d.editor_role as "is_editor", 
-  dr.id is not null or wm.role >= d.reader_role as "is_reader", 
-  dw.id is not null as "is_watcher" 
-from docs d 
+	if err := db.Raw(`select
+	wm.member_id as "user_id",
+  d.id as "doc_id",
+  wm.role as "workspace_role",
+  d.created_by_id = ? as "is_author",
+  de.id is not null or wm.role >= d.editor_role as "is_editor",
+  dr.id is not null or wm.role >= d.reader_role as "is_reader",
+  dw.id is not null as "is_watcher"
+from docs d
 left join doc_editors de on d.id = de.doc_id and de.editor_id = ?
 left join doc_readers dr on d.id = dr.doc_id and dr.reader_id = ?
 left join doc_watchers dw on d.id = dw.doc_id and dw.watcher_id = ?

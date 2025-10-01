@@ -11,8 +11,9 @@
 package dto
 
 import (
-	"sheff.online/aiplan/internal/aiplan/types"
 	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 )
 
 type EntityActivityLight struct {

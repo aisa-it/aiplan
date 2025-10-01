@@ -12,14 +12,14 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/context"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/entity"
+	importErrors "github.com/aisa-it/aiplan/internal/aiplan/issues-import/errors"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/steps"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/steps/db"
+	"github.com/aisa-it/aiplan/internal/aiplan/issues-import/utils"
 	jira "github.com/andygrunwald/go-jira"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/issues-import/context"
-	"sheff.online/aiplan/internal/aiplan/issues-import/entity"
-	importErrors "sheff.online/aiplan/internal/aiplan/issues-import/errors"
-	"sheff.online/aiplan/internal/aiplan/issues-import/steps"
-	"sheff.online/aiplan/internal/aiplan/issues-import/steps/db"
-	"sheff.online/aiplan/internal/aiplan/issues-import/utils"
 
 	"github.com/hashicorp/go-retryablehttp"
 )
