@@ -105,16 +105,19 @@ func (np *NotificationProcessor) handleNotification(notification *dao.DeferredNo
 		return
 	}
 	var success bool
-
-	switch notification.DeliveryMethod {
-	case "telegram":
-		success = np.sendToTelegram(notification, sender)
-	case "email":
-		success = np.sendToEmail(notification, sender)
-	case "app":
-		success = np.sendToApp(notification, sender)
-	default:
-		return
+	if notification.User.IsNotify(notification.DeliveryMethod) {
+		switch notification.DeliveryMethod {
+		case "telegram":
+			success = np.sendToTelegram(notification, sender)
+		case "email":
+			success = np.sendToEmail(notification, sender)
+		case "app":
+			success = np.sendToApp(notification, sender)
+		default:
+			return
+		}
+	} else {
+		success = true
 	}
 
 	// Update the record depending on the delivery result
