@@ -180,7 +180,7 @@ func (es *EmailService) worker(emailChan <-chan mail) error {
 				return nil
 			}
 			if err := es.sendEmail(e); err != nil {
-				slog.Error("email send err", e.To, err)
+				slog.Error("email send", "to", e.To, "err", err)
 			}
 		}
 	}
