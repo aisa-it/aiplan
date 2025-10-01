@@ -13,15 +13,15 @@ import (
 	"time"
 	"unicode"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/business"
-	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/gofrs/uuid"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
 )

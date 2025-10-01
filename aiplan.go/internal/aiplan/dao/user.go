@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
-	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )

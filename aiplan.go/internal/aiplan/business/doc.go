@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 )
 

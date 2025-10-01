@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

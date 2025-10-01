@@ -8,7 +8,7 @@ package maintenance
 import (
 	"log/slog"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"gorm.io/gorm"
 )
 

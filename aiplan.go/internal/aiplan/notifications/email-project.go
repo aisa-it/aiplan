@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"gorm.io/gorm"
 )
 

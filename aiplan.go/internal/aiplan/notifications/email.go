@@ -18,8 +18,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/microcosm-cc/bluemonday"
 	"gopkg.in/gomail.v2"
 	"gorm.io/gorm"

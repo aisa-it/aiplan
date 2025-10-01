@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
 )
 

@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
-	"github.com/aisa-it/aiplan/internal/aiplan/sessions"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/sessions"
 	"github.com/altcha-org/altcha-lib-go"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"

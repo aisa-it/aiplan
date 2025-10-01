@@ -3,7 +3,7 @@ package jitsi_token
 import (
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/golang-jwt/jwt/v4"
 )
 

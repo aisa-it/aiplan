@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	types2 "github.com/aisa-it/aiplan/internal/aiplan/types"
+	types2 "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 )
 

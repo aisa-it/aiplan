@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
 )

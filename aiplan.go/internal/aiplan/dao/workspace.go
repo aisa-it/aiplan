@@ -18,9 +18,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

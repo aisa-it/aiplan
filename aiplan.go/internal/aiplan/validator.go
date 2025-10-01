@@ -12,7 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/go-playground/validator"
 )
 

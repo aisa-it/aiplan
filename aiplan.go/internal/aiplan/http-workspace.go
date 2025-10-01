@@ -12,17 +12,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
-	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
-	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"

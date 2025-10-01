@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 )
 
 // CreateIssueComment создает новый комментарий к задаче. Метод принимает задачу, пользователя, текст комментария, комментарий для базы данных, ID для ответа на комментарий и дополнительные метаданные. Возвращает ошибку, если произошла ошибка.

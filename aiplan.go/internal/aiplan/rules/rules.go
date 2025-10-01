@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	lua "github.com/yuin/gopher-lua"
 )
 

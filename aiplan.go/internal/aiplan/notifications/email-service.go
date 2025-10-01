@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 )
 
 func (es *EmailService) getHTML(title string, body string) (string, error) {

@@ -11,9 +11,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
 )
 

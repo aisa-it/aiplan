@@ -8,9 +8,9 @@ package tracker
 import (
 	"fmt"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	ErrStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 )
 
 // entityFieldUpdate Обновляет значение поля сущности, либо добавляет/удаляет сущности из списка.  Обрабатывает как отдельные обновления, так и массовые изменения нескольких сущностей.

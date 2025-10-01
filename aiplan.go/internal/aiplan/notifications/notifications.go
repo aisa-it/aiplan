@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/business"
-	"github.com/aisa-it/aiplan/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"gorm.io/gorm"
 )
 

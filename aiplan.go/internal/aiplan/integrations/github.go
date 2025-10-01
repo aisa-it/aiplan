@@ -14,13 +14,13 @@ import (
 	"regexp"
 	"strings"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/business"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )

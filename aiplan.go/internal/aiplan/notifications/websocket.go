@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/gofrs/uuid"

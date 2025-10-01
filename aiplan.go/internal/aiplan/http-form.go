@@ -21,15 +21,15 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/internal/aiplan/dto"
-	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
-	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
-	types2 "github.com/aisa-it/aiplan/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	types2 "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
@@ -39,7 +39,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 )
 
 type FormContext struct {

@@ -3,11 +3,11 @@ package business
 import (
 	"time"
 
-	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
-	"github.com/aisa-it/aiplan/internal/aiplan/dao"
-	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/internal/aiplan/utils"
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
