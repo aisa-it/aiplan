@@ -2,14 +2,15 @@ package notifications
 
 import (
 	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"log/slog"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
-	"strings"
 )
 
 type TgNotifyProject struct {

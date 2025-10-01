@@ -7,8 +7,9 @@ import (
 	htmlTemplate "html/template"
 	"log/slog"
 	"net/url"
-	"sheff.online/aiplan/internal/aiplan/dao"
 	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 )
 
 func (es *EmailService) getHTML(title string, body string) (string, error) {

@@ -19,16 +19,16 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 var (

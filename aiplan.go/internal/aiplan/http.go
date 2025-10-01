@@ -40,18 +40,27 @@ import (
 	"syscall"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/business"
-	jitsi_token "sheff.online/aiplan/internal/aiplan/jitsi-token"
+	"github.com/aisa-it/aiplan/internal/aiplan/business"
+	jitsi_token "github.com/aisa-it/aiplan/internal/aiplan/jitsi-token"
 
-	"sheff.online/aiplan/internal/aiplan/cronmanager"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/internal/aiplan/cronmanager"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 
 	"github.com/nfnt/resize"
 
 	"image/jpeg"
 	_ "image/png"
 
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/internal/aiplan/integrations"
+	issues_import "github.com/aisa-it/aiplan/internal/aiplan/issues-import"
+	"github.com/aisa-it/aiplan/internal/aiplan/maintenance"
+	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/internal/aiplan/sessions"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo-contrib/echoprometheus"
@@ -60,18 +69,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/pbkdf2"
 	"gorm.io/gorm"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/integrations"
-	issues_import "sheff.online/aiplan/internal/aiplan/issues-import"
-	"sheff.online/aiplan/internal/aiplan/maintenance"
-	"sheff.online/aiplan/internal/aiplan/notifications"
-	"sheff.online/aiplan/internal/aiplan/sessions"
 
+	_ "github.com/aisa-it/aiplan/internal/aiplan/docs"
 	echoSwagger "github.com/swaggo/echo-swagger"
-	_ "sheff.online/aiplan/internal/aiplan/docs"
 )
 
 //go:generate go run github.com/swaggo/swag/cmd/swag@latest --version

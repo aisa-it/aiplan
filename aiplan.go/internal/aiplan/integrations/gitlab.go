@@ -12,17 +12,18 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/business"
 	"strings"
 
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/types"
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/business"
 
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/notifications"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/notifications"
 )
 
 var log *slog.Logger = slog.With(slog.String("integration", "gitlab"))

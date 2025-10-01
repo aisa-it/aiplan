@@ -12,8 +12,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 	"github.com/go-playground/validator"
-	"sheff.online/aiplan/internal/aiplan/utils"
 )
 
 type RequestValidator struct {

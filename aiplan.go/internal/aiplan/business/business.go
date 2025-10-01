@@ -3,9 +3,9 @@ package business
 import (
 	"log/slog"
 
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"gorm.io/gorm"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 type Business struct {

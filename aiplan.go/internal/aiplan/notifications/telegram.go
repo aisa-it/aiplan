@@ -3,26 +3,27 @@ package notifications
 
 import (
 	"fmt"
-	"github.com/gofrs/uuid"
 	"html"
 	"log"
 	"log/slog"
 	"net/url"
 	"os"
 	"regexp"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/business"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
 	"strings"
 	"time"
 	"unicode"
 
-	"sheff.online/aiplan/internal/aiplan/types"
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/business"
+	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
+	"github.com/gofrs/uuid"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 var fieldsTranslation map[string]string = map[string]string{

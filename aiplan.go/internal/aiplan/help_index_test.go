@@ -11,8 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/config"
 	"github.com/labstack/echo/v4"
-	"sheff.online/aiplan/internal/aiplan/config"
 )
 
 func TestSliceInsert(t *testing.T) {

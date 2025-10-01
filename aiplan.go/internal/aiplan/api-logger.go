@@ -15,10 +15,10 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 // Возврат ошибки 400 с универсальным сообщением

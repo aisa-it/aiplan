@@ -11,10 +11,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 var es *EmailService

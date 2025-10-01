@@ -12,22 +12,22 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
+	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/types"
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 func (s *Services) LastVisitedWorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

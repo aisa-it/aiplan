@@ -14,12 +14,12 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
 )
 
 type Doc struct {

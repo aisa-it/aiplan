@@ -13,12 +13,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
 )
 
 // Пользователи

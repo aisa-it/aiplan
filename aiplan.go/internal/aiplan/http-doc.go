@@ -9,20 +9,20 @@ import (
 	"net/url"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/internal/aiplan/apierrors"
+	errStack "github.com/aisa-it/aiplan/internal/aiplan/stack-error"
 
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	tracker "github.com/aisa-it/aiplan/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/internal/aiplan/utils"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/dto"
+	filestorage "github.com/aisa-it/aiplan/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 type DocContext struct {

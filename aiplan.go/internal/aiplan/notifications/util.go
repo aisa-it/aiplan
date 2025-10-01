@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
 	"github.com/microcosm-cc/bluemonday"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 func prepareHtmlBody(stripPolicy *bluemonday.Policy, html string) string {

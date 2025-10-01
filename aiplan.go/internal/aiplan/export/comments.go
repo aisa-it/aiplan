@@ -8,8 +8,8 @@ package export
 import (
 	"strings"
 
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/editor"
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/internal/aiplan/editor"
 )
 
 func (w *pdfWriter) writeComments() {

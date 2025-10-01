@@ -3,12 +3,13 @@ package notifications
 import (
 	"bytes"
 	"fmt"
-	"gorm.io/gorm"
 	"log/slog"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
-	"sheff.online/aiplan/internal/aiplan/types"
 	"time"
+
+	"github.com/aisa-it/aiplan/internal/aiplan/dao"
+	policy "github.com/aisa-it/aiplan/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/internal/aiplan/types"
+	"gorm.io/gorm"
 )
 
 type emailNotifyIssue struct {
