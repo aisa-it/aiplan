@@ -44,9 +44,9 @@ type Issue struct {
 	// priority character varying(30) COLLATE pg_catalog."default",
 	Priority *string `json:"priority" extensions:"x-nullable"`
 
-	StartDate   *types.TargetDate `json:"start_date" extensions:"x-nullable"`
-	TargetDate  *types.TargetDate `json:"target_date" extensions:"x-nullable"`
-	CompletedAt *types.TargetDate `json:"completed_at" extensions:"x-nullable"`
+	StartDate   *types.TargetDate      `json:"start_date" extensions:"x-nullable"`
+	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable"`
+	CompletedAt *types.TargetDate      `json:"completed_at" extensions:"x-nullable"`
 
 	SequenceId int `json:"sequence_id" gorm:"default:1;index:,where:deleted_at is not null"`
 	// created_by_id uuid,

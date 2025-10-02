@@ -11,9 +11,12 @@ package utils
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"iter"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
@@ -225,4 +228,46 @@ func Base64ToUUID(encoded string) (uuid.UUID, error) {
 	}
 
 	return uuid.FromBytes(data)
+}
+
+func FormatDateStr(dateStr, outFormat string, tz *types.TimeZone) (string, error) {
+	date, err := FormatDate(dateStr)
+	if err != nil {
+		return "", err
+	}
+
+	if tz != nil {
+		date = date.In((*time.Location)(tz))
+	}
+	return date.Format(outFormat), nil
+
+}
+
+func FormatDate(dateStr string) (time.Time, error) {
+	if dateStr == "" {
+		return time.Time{}, fmt.Errorf("empty date string")
+	}
+
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02",
+		"02.01.2006 15:04 MST",
+		"02.01.2006 15:04 -0700",
+		"02.01.2006",
+	}
+
+	var t time.Time
+	var err error
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, dateStr)
+		if err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsuported date format")
 }

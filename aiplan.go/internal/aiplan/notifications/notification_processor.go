@@ -347,7 +347,7 @@ func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, au
 	formatMsg := "❗Срок выполнения задачи\n[%s](%s)\nистекает *%s*"
 	var out []string
 
-	date, err := FormatDate(nd.Deadline.Format("02.01.2006 15:04 MST"), "02.01.2006", &notification.User.UserTimezone)
+	date, err := FormatDate(nd.Deadline.Format("02.01.2006 15:04 MST"), "02.01.2006 15:04 MST", &notification.User.UserTimezone)
 	if err != nil {
 		return 0, "", nil
 	}
