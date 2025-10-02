@@ -378,7 +378,7 @@ func (s *Services) updateUserOnBoard(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(&user).Select("first_name", "last_name", "username", "role", "is_onboarded").Updates(&user).Error; err != nil {
+	if err := s.db.Model(&user).Select("first_name", "last_name", "username", "role", "telegram_id", "is_onboarded").Updates(&user).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrUsernameConflict)
 		} else {
