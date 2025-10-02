@@ -94,3 +94,38 @@ docker-compose up -d
 | `SWAGGER_ENABLED`           | Включение Swagger API документации на адрес /api/swagger                   | bool   |
 | `NY_ENABLE`                 | Включение новогодней темы                                                  | bool   |
 | `CAPTCHA_DISABLED`          | Отключение капчи                                                           | bool   |
+### Пример настройки nginx SSL
+```
+server {
+    listen 80;
+    server_name aiplan.domain;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name aiplan.domain;
+
+    ssl_certificate     /etc/ssl/certs/fullchain.pem;
+    ssl_certificate_key /etc/ssl/private/privkey.pem;
+
+
+    # Увеличиваем лимит для вложений
+    client_max_body_size 50M;
+
+    location / {
+        #проксируем сразу в контейнер, если запуск был в том же docker-compose с той же сетью либо меняем на ip контейнера/машины/localhost
+        proxy_pass http://server:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Для WebSocket
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
