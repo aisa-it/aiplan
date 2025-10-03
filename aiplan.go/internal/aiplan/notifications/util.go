@@ -84,6 +84,7 @@ func FormatDate(dateStr, outFormat string, tz *types.TimeZone) (string, error) {
 		"02.01.2006 15:04 MST",
 		"02.01.2006 15:04 -0700",
 		"02.01.2006",
+		"2006-01-02 15:04:05Z07:00",
 	}
 
 	var t time.Time
