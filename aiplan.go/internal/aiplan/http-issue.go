@@ -396,6 +396,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Param limit query int false "Лимит записей" default(100)
 // @Param desc query bool false "Сортировка по убыванию" default(true)
 // @Param only_count query bool false "Вернуть только количество" default(false)
+// @Param only_active query bool false "Вернуть только активные задачи" default(false)
 // @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
 // @Success 200 {object} dto.IssueSearchResult "Результат поиска задач"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
