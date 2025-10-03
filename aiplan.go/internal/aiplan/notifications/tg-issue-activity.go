@@ -290,8 +290,8 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 						oldValue = capitalizeFirst(oldValue)
 						newValue = capitalizeFirst(newValue)
 					} else if *activity.Field == "target_date" {
-						newT, err := FormatDate(newValue, "02.01.2006", nil)
-						oldValue, _ = FormatDate(oldValue, "02.01.2006", nil)
+						newT, err := FormatDate(newValue, "02.01.2006 15:04 MST", nil)
+						oldValue, _ = FormatDate(oldValue, "02.01.2006 15:04 MST", nil)
 						if newValue == "<nil>" {
 							newValue = ""
 						}
