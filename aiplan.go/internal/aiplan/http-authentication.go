@@ -264,7 +264,7 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 
 	req.Email = strings.ToLower(req.Email)
 
-	if !CaptchaService.Validate(req.CaptchaPayload) {
+	if !cfg.CaptchaDisabled && !CaptchaService.Validate(req.CaptchaPayload) {
 		return EErrorDefined(c, apierrors.ErrCaptchaFail)
 	}
 
