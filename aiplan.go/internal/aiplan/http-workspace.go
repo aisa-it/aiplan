@@ -440,6 +440,58 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	{
+		// delete DeferredNotifications & activities
+		if err := s.db.
+			Where("workspace_id = ?", workspace.ID).
+			Unscoped().
+			Delete(&dao.DeferredNotifications{}).Error; err != nil {
+			return err
+		}
+
+		activityTables := []dao.UnionableTable{
+			&dao.WorkspaceActivity{},
+			&dao.DocActivity{},
+			&dao.FormActivity{},
+			&dao.ProjectActivity{},
+			&dao.IssueActivity{},
+		}
+
+		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
+			tn := strings.Split((*a).TableName(), "_")
+			return tn[0] + "_activity_id"
+		})
+
+		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
+
+		var queries []interface{}
+
+		for _, model := range activityTables {
+			queries = append(queries, s.db.Select("id").
+				Where("workspace_id = ?", workspace.ID).
+				Model(&model))
+		}
+
+		if err := s.db.Where(queryString, queries...).
+			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
+			return err
+		}
+
+		for _, model := range activityTables {
+			if err := s.db.
+				Where("workspace_id = ?", workspace.ID).
+				Unscoped().
+				Delete(model).Error; err != nil {
+				return err
+			}
+		}
+
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := s.db.Model(&dao.RootActivity{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
 	// Soft-delete projects
 	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Project{}).Error; err != nil {
 		return EError(c, err)
