@@ -286,6 +286,8 @@ func (s *Services) updateForm(c echo.Context) error {
 		} else {
 			reqEndDate = v
 		}
+	} else {
+		requestMap["end_date"] = nil
 	}
 
 	if form.EndDate != nil {
@@ -1062,6 +1064,8 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 						if err != nil {
 							return nil, fmt.Errorf("end_date")
 						}
+					} else if value == nil {
+						form.EndDate = nil
 					} else {
 						return nil, fmt.Errorf("end_date")
 					}
