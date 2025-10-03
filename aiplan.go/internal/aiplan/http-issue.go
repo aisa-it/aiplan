@@ -1015,14 +1015,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var targetDate *string
 	if val, ok := data["target_date"]; ok {
 		if issue.TargetDate != nil {
-			if date, err := notifications.FormatDate(issue.TargetDate.String(), "2006-01-02", nil); err != nil {
+			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "02.01.2006 15:04 -0700", nil); err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			} else {
 				issueMapOld["target_date_activity_val"] = date
 			}
 		}
 		if val != nil {
-			date, err := notifications.FormatDate(val.(string), "2006-01-02", nil)
+			date, err := utils.FormatDateStr(val.(string), "02.01.2006 15:04 -0700", nil)
 			if err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			}
@@ -1420,7 +1420,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 				err := notifications.CreateDeadlineNotification(tx, &issue, targetDate, notifyUserIds)
 				if err != nil {
-					return EErrorDefined(c, apierrors.ErrGeneric)
+					return err
 				}
 			}
 
