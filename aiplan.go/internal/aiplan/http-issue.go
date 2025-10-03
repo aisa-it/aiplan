@@ -1016,14 +1016,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var targetDate *string
 	if val, ok := data["target_date"]; ok {
 		if issue.TargetDate != nil {
-			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "02.01.2006 15:04 -0700", nil); err != nil {
+			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "2006-01-02 15:04:05Z07:00", nil); err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			} else {
 				issueMapOld["target_date_activity_val"] = date
 			}
 		}
 		if val != nil {
-			date, err := utils.FormatDateStr(val.(string), "02.01.2006 15:04 -0700", nil)
+			date, err := utils.FormatDateStr(val.(string), "2006-01-02 15:04:05Z07:00", nil)
 			if err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			}
