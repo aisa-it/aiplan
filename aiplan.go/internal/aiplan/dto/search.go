@@ -27,9 +27,9 @@ type SearchLightweightResponse struct {
 	Name     string  `json:"name"`
 	Priority *string `json:"priority" extensions:"x-nullable"`
 
-	StartDate   *types.TargetDate `json:"start_date" extensions:"x-nullable" swaggertype:"string"`
-	TargetDate  *types.TargetDate `json:"target_date" extensions:"x-nullable" swaggertype:"string"`
-	CompletedAt *types.TargetDate `json:"completed_at" extensions:"x-nullable" swaggertype:"string"`
+	StartDate   *types.TargetDate      `json:"start_date" extensions:"x-nullable" swaggertype:"string"`
+	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable" swaggertype:"string"`
+	CompletedAt *types.TargetDate      `json:"completed_at" extensions:"x-nullable" swaggertype:"string"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

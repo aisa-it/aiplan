@@ -2,3 +2,4 @@ replace time.Duration int64
 replace github.com/aisa-it/aiplan/internal/aiplan/types.JsonURL string
 replace github.com/aisa-it/aiplan/internal/aiplan/types.TargetDate string
 replace github.com/aisa-it/aiplan/internal/aiplan/types.RedactorHTML string
+replace github.com/aisa-it/aiplan/internal/aiplan/types.TargetDateTimeZ string

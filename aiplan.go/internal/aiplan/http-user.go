@@ -224,6 +224,25 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 		}
 	}
 
+	if v, ok := updateMap["settings"]; ok {
+		settings := v.(types.UserSettings)
+		if settings.DeadlineNotification != user.Settings.DeadlineNotification {
+			diff := user.Settings.DeadlineNotification - settings.DeadlineNotification
+
+			err := s.db.
+				Model(&dao.DeferredNotifications{}).
+				Where("user_id = ?", user.ID).
+				Where("sent_at IS NULL").
+				Where("attempt_count < ?", 3).
+				Where("notification_type = ?", "deadline_notification").
+				Update("time_send", gorm.Expr("time_send + ?", diff)).Error
+
+			if err != nil {
+				return EError(c, err)
+			}
+		}
+	}
+
 	if req.Status != nil && req.StatusEmoji != nil && req.StatusEndDate == nil {
 		user.StatusEndDate.Valid = false
 		user.StatusEndDate.Time = time.Time{}
