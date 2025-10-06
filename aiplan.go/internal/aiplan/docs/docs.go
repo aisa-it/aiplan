@@ -3327,6 +3327,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Вернуть только активные задачи",
+                        "name": "only_active",
+                        "in": "query"
+                    },
+                    {
                         "description": "Фильтры для поиска задач",
                         "name": "filters",
                         "in": "body",
