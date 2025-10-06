@@ -85,6 +85,6 @@ docker-compose up -d
 | `SESSIONS_DB_PATH`            | Path to the session database file                                          | string |
 | `SIGN_UP_ENABLE`              | Enabling registration in the                                               | bool   |
 | `DEMO`                        | Demo mode                                                                  | bool   |
-| `SWAGGER_ENABLED`             | Enabling the Swagger API documentation at /api/swagger                     | bool   |
+| `SWAGGER`             | Enabling the Swagger API documentation at /api/swagger                     | bool   |
 | `NY_ENABLE`                   | Enabling the New Year theme                                                | bool   |
 | `CAPTCHA_DISABLED`            | Disabling captcha                                                          | bool   |
