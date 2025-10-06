@@ -4243,6 +4243,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/users/me/change-email/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Позволяет текущему пользователю изменить свой Email. В случае успеха отправляет код верификации на новую почту.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи (управление доступом): смена email текущего пользователя",
+                "operationId": "changeMyEmail",
+                "parameters": [
+                    {
+                        "description": "Новые данные email",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.EmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Проверочный код отправлен"
+                    },
+                    "400": {
+                        "description": "Ошибка",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "429": {
+                        "description": "Слишком частые запросы",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/users/me/feedback/": {
             "get": {
                 "security": [
@@ -4824,6 +4885,61 @@ const docTemplate = `{
                 "responses": {
                     "201": {
                         "description": "Новый токен создан"
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/users/me/verification-email/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Позволяет текущему пользователю изменить свой Email. Сравнивает код верификации отправленый на новый Email.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи (управление доступом): Верификация Email",
+                "operationId": "verifyMyEmail",
+                "parameters": [
+                    {
+                        "description": "Новые данные email",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.EmailVerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Email пользователя изменен"
+                    },
+                    "400": {
+                        "description": "Oшибка",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
                     },
                     "401": {
                         "description": "Необходима авторизация",
@@ -15410,6 +15526,32 @@ const docTemplate = `{
                 }
             }
         },
+        "aiplan.EmailRequest": {
+            "type": "object",
+            "required": [
+                "new_email"
+            ],
+            "properties": {
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
+        "aiplan.EmailVerifyRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "new_email"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
         "aiplan.FilterParams": {
             "type": "object",
             "properties": {
@@ -15490,7 +15632,11 @@ const docTemplate = `{
                     }
                 },
                 "completed_at": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "created_at": {
@@ -15574,10 +15720,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "start_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "state": {
@@ -15593,7 +15743,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "target_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDateTimeZ"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -15604,7 +15758,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -15993,10 +16147,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "description": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.RedactorHTML"
                 },
                 "end_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "fields": {
@@ -16289,7 +16447,7 @@ const docTemplate = `{
                     }
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "title": {
                     "type": "string"
@@ -16301,7 +16459,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/dto.UserLight"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_ids": {
                     "type": "array",
@@ -16371,7 +16529,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -16405,13 +16563,13 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "title": {
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -16583,7 +16741,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -16681,7 +16839,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -16765,7 +16923,11 @@ const docTemplate = `{
                     }
                 },
                 "completed_at": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "created_at": {
@@ -16843,10 +17005,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "start_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "state": {
@@ -16862,7 +17028,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "target_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDateTimeZ"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -16873,7 +17043,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -16995,7 +17165,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace_id": {
                     "type": "string"
@@ -17015,7 +17185,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -17036,7 +17206,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "state": {
                     "type": "string",
@@ -17051,7 +17221,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -17161,7 +17331,11 @@ const docTemplate = `{
                     }
                 },
                 "completed_at": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "created_at": {
@@ -17251,10 +17425,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "start_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "state": {
@@ -17273,7 +17451,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "target_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDateTimeZ"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -17284,7 +17466,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -17416,7 +17598,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -17522,7 +17704,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -17721,10 +17903,10 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -17747,10 +17929,10 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18012,7 +18194,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "description": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.RedactorHTML"
                 },
                 "id": {
                     "type": "string"
@@ -18045,7 +18227,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18088,7 +18270,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18165,7 +18347,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "description": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.RedactorHTML"
                 },
                 "id": {
                     "type": "string"
@@ -18207,7 +18389,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18594,9 +18776,6 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "only_active": {
-                    "type": "boolean"
-                },
                 "priorities": {
                     "type": "array",
                     "items": {
@@ -18638,6 +18817,14 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "types.JsonURL": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "$ref": "#/definitions/url.URL"
                 }
             }
         },
@@ -18743,6 +18930,33 @@ const docTemplate = `{
                 }
             }
         },
+        "types.RedactorHTML": {
+            "type": "object",
+            "properties": {
+                "already_sanitized": {
+                    "type": "boolean"
+                },
+                "body": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.TargetDate": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.TargetDateTimeZ": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
         "types.Theme": {
             "type": "object",
             "properties": {
@@ -18799,6 +19013,12 @@ const docTemplate = `{
         "types.ViewFilters": {
             "type": "object",
             "properties": {
+                "assignedToMe": {
+                    "type": "boolean"
+                },
+                "authoredToMe": {
+                    "type": "boolean"
+                },
                 "group_by": {
                     "type": "string"
                 },
@@ -18819,6 +19039,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "watchedToMe": {
+                    "type": "boolean"
                 },
                 "workspaces": {
                     "type": "array",
@@ -18918,13 +19141,7 @@ const docTemplate = `{
                 "disable_doc_desc": {
                     "type": "boolean"
                 },
-                "disable_doc_editor": {
-                    "type": "boolean"
-                },
                 "disable_doc_move": {
-                    "type": "boolean"
-                },
-                "disable_doc_reader": {
                     "type": "boolean"
                 },
                 "disable_doc_role": {
@@ -18970,6 +19187,61 @@ const docTemplate = `{
                     "type": "boolean"
                 }
             }
+        },
+        "url.URL": {
+            "type": "object",
+            "properties": {
+                "force_query": {
+                    "description": "append a query ('?') even if RawQuery is empty",
+                    "type": "boolean"
+                },
+                "fragment": {
+                    "description": "fragment for references, without '#'",
+                    "type": "string"
+                },
+                "host": {
+                    "description": "host or host:port (see Hostname and Port methods)",
+                    "type": "string"
+                },
+                "omit_host": {
+                    "description": "do not emit empty host (authority)",
+                    "type": "boolean"
+                },
+                "opaque": {
+                    "description": "encoded opaque data",
+                    "type": "string"
+                },
+                "path": {
+                    "description": "path (relative paths may omit leading slash)",
+                    "type": "string"
+                },
+                "raw_fragment": {
+                    "description": "encoded fragment hint (see EscapedFragment method)",
+                    "type": "string"
+                },
+                "raw_path": {
+                    "description": "encoded path hint (see EscapedPath method)",
+                    "type": "string"
+                },
+                "raw_query": {
+                    "description": "encoded query values, without '?'",
+                    "type": "string"
+                },
+                "scheme": {
+                    "type": "string"
+                },
+                "user": {
+                    "description": "username and password information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/url.Userinfo"
+                        }
+                    ]
+                }
+            }
+        },
+        "url.Userinfo": {
+            "type": "object"
         }
     },
     "securityDefinitions": {

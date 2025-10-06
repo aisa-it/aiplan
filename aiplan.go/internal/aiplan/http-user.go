@@ -61,6 +61,9 @@ func (s *Services) AddUserServices(g *echo.Group) {
 	g.POST("users/me/onboard/", s.updateUserOnBoard)
 	g.POST("users/me/view-props/", s.updateUserViewProps)
 
+	g.POST("users/me/change-email/", s.changeMyEmail)
+	g.POST("users/me/verification-email/", s.verifyMyEmail)
+
 	g.GET("users/me/activities/", s.getMyActivityList)
 	g.GET("users/:userId/activities/", s.getUserActivityList)
 	g.GET("users/me/activities/table/", s.getMyActivitiesTable)
@@ -836,6 +839,115 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// changeMyEmail godoc
+// @id changeMyEmail
+// @Summary Пользователи (управление доступом): смена email текущего пользователя
+// @Description Позволяет текущему пользователю изменить свой Email. В случае успеха отправляет код верификации на новую почту.
+// @Tags Users
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param data body EmailRequest true "Новые данные email"
+// @Success 200 "Проверочный код отправлен"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 429 {object} apierrors.DefinedError "Слишком частые запросы"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/users/me/change-email/ [post]
+func (s *Services) changeMyEmail(c echo.Context) error {
+	user := *c.(AuthContext).User
+
+	var data EmailRequest
+	if err := c.Bind(&data); err != nil {
+		return EError(c, err)
+	}
+
+	newEmail := strings.TrimSpace(strings.ToLower(data.NewEmail))
+
+	if newEmail == user.Email {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	if !ValidateEmail(newEmail) {
+		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
+	}
+
+	var exist bool
+	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("lower(email) = ?", newEmail).Find(&exist).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if exist {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	code := password.MustGenerate(6, 6, 0, false, true)
+
+	err := s.store.EmailChange.NewEmailChange(&user, newEmail, code)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	err = s.emailService.UserChangeEmailNotify(user, newEmail, code)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+// verifyMyEmail godoc
+// @id verifyMyEmail
+// @Summary Пользователи (управление доступом): Верификация Email
+// @Description Позволяет текущему пользователю изменить свой Email. Сравнивает код верификации отправленый на новый Email.
+// @Tags Users
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param data body EmailVerifyRequest true "Новые данные email"
+// @Success 200 "Email пользователя изменен"
+// @Failure 400 {object} apierrors.DefinedError "Oшибка"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/users/me/verification-email/ [post]
+func (s *Services) verifyMyEmail(c echo.Context) error {
+	user := *c.(AuthContext).User
+
+	var data EmailVerifyRequest
+	if err := c.Bind(&data); err != nil {
+		return EError(c, err)
+	}
+
+	newEmail := strings.TrimSpace(strings.ToLower(data.NewEmail))
+
+	if newEmail == user.Email {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	if !ValidateEmail(newEmail) {
+		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
+	}
+
+	var exist bool
+	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("lower(email) = ?", newEmail).Find(&exist).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if exist {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	if ok := s.store.EmailChange.ValidCodeEmail(&user, newEmail, data.Code); !ok {
+		return EErrorDefined(c, apierrors.ErrEmailVerify)
+	}
+	user.Email = newEmail
+
+	if err := s.db.Select("email").Updates(&user).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
 // resetPassword godoc
 // @id resetPassword
 // @Summary Пользователи (управление доступом): сброс пароля по ссылке из почты
@@ -1196,7 +1308,7 @@ func (s *Services) signUp(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(req.Email))
 	}
 
-	if !CaptchaService.Validate(req.CaptchaPayload) {
+	if !cfg.CaptchaDisabled && !CaptchaService.Validate(req.CaptchaPayload) {
 		return EErrorDefined(c, apierrors.ErrCaptchaFail)
 	}
 
@@ -2116,10 +2228,21 @@ type PostFeedbackRequest struct {
 	Feedback string `json:"feedback"`
 }
 
-// PostFeedbackRequest представляет структуру данных для запроса регистрации пользователя
+// PasswordRequest представляет структуру данных для запроса регистрации пользователя
 type PasswordRequest struct {
 	NewPassword     string `json:"new_password" validate:"required,min=8"`
 	ConfirmPassword string `json:"confirm_password" validate:"required,eqfield=NewPassword"`
+}
+
+// EmailRequest представляет структуру данных для смены почты пользователя
+type EmailRequest struct {
+	NewEmail string `json:"new_email" validate:"required"`
+}
+
+// EmailVerifyRequest представляет структуру данных для валидации почты пользователя
+type EmailVerifyRequest struct {
+	NewEmail string `json:"new_email" validate:"required"`
+	Code     string `json:"code" validate:"required"`
 }
 
 // PasswordResponse представляет структуру данных для успешного ответа регистрации пользователя
