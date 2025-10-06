@@ -178,6 +178,40 @@ func (es *EmailService) NewUserPasswordNotify(user dao.User, password string) er
 	})
 }
 
+func (es *EmailService) UserChangeEmailNotify(user dao.User, newEmail, code string) error {
+	subject := "Проверочный код для смены email"
+
+	context := struct {
+		Code string
+	}{
+		Code: code,
+	}
+
+	var template dao.Template
+	if err := es.db.Where("name = ?", "user_change_email").First(&template).Error; err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	if err := template.ParsedTemplate.Execute(&buf, context); err != nil {
+		return err
+	}
+
+	content, err := es.getHTML("Проверочный код для смены email", buf.String())
+	if err != nil {
+		return err
+	}
+
+	textContent := htmlStripPolicy.Sanitize(content)
+
+	return es.Send(mail{
+		To:          newEmail,
+		Subject:     subject,
+		Content:     content,
+		TextContent: textContent,
+	})
+}
+
 func (es *EmailService) UserPasswordForgotNotify(user dao.User, token string) error {
 	subject := "Сброс пароля для входа в АИПлан"
 	link := fmt.Sprintf("%s/reset-password?uidb64=%s&token=%s", es.cfg.WebURL, base64.StdEncoding.EncodeToString([]byte(user.ID)), token)

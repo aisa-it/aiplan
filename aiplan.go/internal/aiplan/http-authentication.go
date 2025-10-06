@@ -223,6 +223,8 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				EError(c, err)
 			}
 
+			user.Email = strings.ToLower(user.Email)
+
 			return next(AuthContext{c, user, accessToken, refreshToken, false})
 		}
 	}

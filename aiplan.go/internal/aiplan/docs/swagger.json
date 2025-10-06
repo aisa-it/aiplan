@@ -4235,6 +4235,67 @@
                 }
             }
         },
+        "/api/auth/users/me/change-email/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Позволяет текущему пользователю изменить свой Email. В случае успеха отправляет код верификации на новую почту.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи (управление доступом): смена email текущего пользователя",
+                "operationId": "changeMyEmail",
+                "parameters": [
+                    {
+                        "description": "Новые данные email",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.EmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Проверочный код отправлен"
+                    },
+                    "400": {
+                        "description": "Ошибка",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "429": {
+                        "description": "Слишком частые запросы",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/users/me/feedback/": {
             "get": {
                 "security": [
@@ -4816,6 +4877,61 @@
                 "responses": {
                     "201": {
                         "description": "Новый токен создан"
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/users/me/verification-email/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Позволяет текущему пользователю изменить свой Email. Сравнивает код верификации отправленый на новый Email.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи (управление доступом): Верификация Email",
+                "operationId": "verifyMyEmail",
+                "parameters": [
+                    {
+                        "description": "Новые данные email",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.EmailVerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Email пользователя изменен"
+                    },
+                    "400": {
+                        "description": "Oшибка",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
                     },
                     "401": {
                         "description": "Необходима авторизация",
@@ -15402,6 +15518,32 @@
                 }
             }
         },
+        "aiplan.EmailRequest": {
+            "type": "object",
+            "required": [
+                "new_email"
+            ],
+            "properties": {
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
+        "aiplan.EmailVerifyRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "new_email"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
         "aiplan.FilterParams": {
             "type": "object",
             "properties": {
@@ -15482,7 +15624,11 @@
                     }
                 },
                 "completed_at": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "created_at": {
@@ -15566,10 +15712,14 @@
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "start_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "state": {
@@ -15585,7 +15735,11 @@
                     "x-nullable": true
                 },
                 "target_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDateTimeZ"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -15596,7 +15750,7 @@
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -15985,10 +16139,14 @@
                     "type": "boolean"
                 },
                 "description": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.RedactorHTML"
                 },
                 "end_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "fields": {
@@ -16281,7 +16439,7 @@
                     }
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "title": {
                     "type": "string"
@@ -16293,7 +16451,7 @@
                     "$ref": "#/definitions/dto.UserLight"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_ids": {
                     "type": "array",
@@ -16363,7 +16521,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -16397,13 +16555,13 @@
                     "type": "boolean"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "title": {
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -16575,7 +16733,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -16673,7 +16831,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -16757,7 +16915,11 @@
                     }
                 },
                 "completed_at": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "created_at": {
@@ -16835,10 +16997,14 @@
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "start_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "state": {
@@ -16854,7 +17020,11 @@
                     "x-nullable": true
                 },
                 "target_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDateTimeZ"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -16865,7 +17035,7 @@
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -16987,7 +17157,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace_id": {
                     "type": "string"
@@ -17007,7 +17177,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -17028,7 +17198,7 @@
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "state": {
                     "type": "string",
@@ -17043,7 +17213,7 @@
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -17153,7 +17323,11 @@
                     }
                 },
                 "completed_at": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "created_at": {
@@ -17243,10 +17417,14 @@
                     "type": "integer"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "start_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDate"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "state": {
@@ -17265,7 +17443,11 @@
                     "type": "integer"
                 },
                 "target_date": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TargetDateTimeZ"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -17276,7 +17458,7 @@
                     "x-nullable": true
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -17408,7 +17590,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -17514,7 +17696,7 @@
                     "type": "integer"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "workspace": {
                     "type": "string"
@@ -17713,10 +17895,10 @@
                     "type": "boolean"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -17739,10 +17921,10 @@
                     "type": "boolean"
                 },
                 "short_url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18004,7 +18186,7 @@
                     "x-nullable": true
                 },
                 "description": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.RedactorHTML"
                 },
                 "id": {
                     "type": "string"
@@ -18037,7 +18219,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18080,7 +18262,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18157,7 +18339,7 @@
                     "x-nullable": true
                 },
                 "description": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.RedactorHTML"
                 },
                 "id": {
                     "type": "string"
@@ -18199,7 +18381,7 @@
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.JsonURL"
                 }
             }
         },
@@ -18586,9 +18768,6 @@
                         "type": "string"
                     }
                 },
-                "only_active": {
-                    "type": "boolean"
-                },
                 "priorities": {
                     "type": "array",
                     "items": {
@@ -18630,6 +18809,14 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "types.JsonURL": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "$ref": "#/definitions/url.URL"
                 }
             }
         },
@@ -18735,6 +18922,33 @@
                 }
             }
         },
+        "types.RedactorHTML": {
+            "type": "object",
+            "properties": {
+                "already_sanitized": {
+                    "type": "boolean"
+                },
+                "body": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.TargetDate": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.TargetDateTimeZ": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
         "types.Theme": {
             "type": "object",
             "properties": {
@@ -18791,6 +19005,12 @@
         "types.ViewFilters": {
             "type": "object",
             "properties": {
+                "assignedToMe": {
+                    "type": "boolean"
+                },
+                "authoredToMe": {
+                    "type": "boolean"
+                },
                 "group_by": {
                     "type": "string"
                 },
@@ -18811,6 +19031,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "watchedToMe": {
+                    "type": "boolean"
                 },
                 "workspaces": {
                     "type": "array",
@@ -18910,13 +19133,7 @@
                 "disable_doc_desc": {
                     "type": "boolean"
                 },
-                "disable_doc_editor": {
-                    "type": "boolean"
-                },
                 "disable_doc_move": {
-                    "type": "boolean"
-                },
-                "disable_doc_reader": {
                     "type": "boolean"
                 },
                 "disable_doc_role": {
@@ -18962,6 +19179,61 @@
                     "type": "boolean"
                 }
             }
+        },
+        "url.URL": {
+            "type": "object",
+            "properties": {
+                "force_query": {
+                    "description": "append a query ('?') even if RawQuery is empty",
+                    "type": "boolean"
+                },
+                "fragment": {
+                    "description": "fragment for references, without '#'",
+                    "type": "string"
+                },
+                "host": {
+                    "description": "host or host:port (see Hostname and Port methods)",
+                    "type": "string"
+                },
+                "omit_host": {
+                    "description": "do not emit empty host (authority)",
+                    "type": "boolean"
+                },
+                "opaque": {
+                    "description": "encoded opaque data",
+                    "type": "string"
+                },
+                "path": {
+                    "description": "path (relative paths may omit leading slash)",
+                    "type": "string"
+                },
+                "raw_fragment": {
+                    "description": "encoded fragment hint (see EscapedFragment method)",
+                    "type": "string"
+                },
+                "raw_path": {
+                    "description": "encoded path hint (see EscapedPath method)",
+                    "type": "string"
+                },
+                "raw_query": {
+                    "description": "encoded query values, without '?'",
+                    "type": "string"
+                },
+                "scheme": {
+                    "type": "string"
+                },
+                "user": {
+                    "description": "username and password information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/url.Userinfo"
+                        }
+                    ]
+                }
+            }
+        },
+        "url.Userinfo": {
+            "type": "object"
         }
     },
     "securityDefinitions": {
