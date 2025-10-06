@@ -91,7 +91,7 @@ docker-compose up -d
 | `SESSIONS_DB_PATH`          | Путь до файла сессионной базы                                              | string |
 | `SIGN_UP_ENABLE`            | Включение регистрации в системе                                            | bool   |
 | `DEMO`                      | Демо режим                                                                 | bool   |
-| `SWAGGER_ENABLED`           | Включение Swagger API документации на адрес /api/swagger                   | bool   |
+| `SWAGGER`           | Включение Swagger API документации на адрес /api/swagger                   | bool   |
 | `NY_ENABLE`                 | Включение новогодней темы                                                  | bool   |
 | `CAPTCHA_DISABLED`          | Отключение капчи                                                           | bool   |
 ### Пример настройки nginx SSL
