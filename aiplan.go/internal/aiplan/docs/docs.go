@@ -15639,11 +15639,7 @@ const docTemplate = `{
                     }
                 },
                 "completed_at": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDate"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "created_at": {
@@ -15727,14 +15723,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "start_date": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDate"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "state": {
@@ -15750,11 +15742,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "target_date": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDateTimeZ"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -15765,7 +15753,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -16154,14 +16142,10 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "description": {
-                    "$ref": "#/definitions/types.RedactorHTML"
+                    "type": "string"
                 },
                 "end_date": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDate"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "fields": {
@@ -16454,7 +16438,7 @@ const docTemplate = `{
                     }
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "title": {
                     "type": "string"
@@ -16466,7 +16450,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/dto.UserLight"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "watcher_ids": {
                     "type": "array",
@@ -16536,7 +16520,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -16570,13 +16554,13 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "title": {
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -16748,7 +16732,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "workspace": {
                     "type": "string"
@@ -16846,7 +16830,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "workspace": {
                     "type": "string"
@@ -16930,11 +16914,7 @@ const docTemplate = `{
                     }
                 },
                 "completed_at": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDate"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "created_at": {
@@ -17012,14 +16992,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "start_date": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDate"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "state": {
@@ -17035,11 +17011,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "target_date": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDateTimeZ"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -17050,7 +17022,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -17172,7 +17144,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "workspace_id": {
                     "type": "string"
@@ -17192,7 +17164,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -17213,7 +17185,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "state": {
                     "type": "string",
@@ -17228,7 +17200,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -17338,11 +17310,7 @@ const docTemplate = `{
                     }
                 },
                 "completed_at": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDate"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "created_at": {
@@ -17432,14 +17400,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "start_date": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDate"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "state": {
@@ -17458,11 +17422,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "target_date": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TargetDateTimeZ"
-                        }
-                    ],
+                    "type": "string",
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -17473,7 +17433,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "watcher_details": {
                     "type": "array",
@@ -17605,7 +17565,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "workspace": {
                     "type": "string"
@@ -17711,7 +17671,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "workspace": {
                     "type": "string"
@@ -17910,10 +17870,10 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -17936,10 +17896,10 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "short_url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -18201,7 +18161,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "description": {
-                    "$ref": "#/definitions/types.RedactorHTML"
+                    "type": "string"
                 },
                 "id": {
                     "type": "string"
@@ -18234,7 +18194,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -18277,7 +18237,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -18354,7 +18314,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "description": {
-                    "$ref": "#/definitions/types.RedactorHTML"
+                    "type": "string"
                 },
                 "id": {
                     "type": "string"
@@ -18396,7 +18356,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "$ref": "#/definitions/types.JsonURL"
+                    "type": "string"
                 }
             }
         },
@@ -18827,14 +18787,6 @@ const docTemplate = `{
                 }
             }
         },
-        "types.JsonURL": {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "$ref": "#/definitions/url.URL"
-                }
-            }
-        },
         "types.ProjectMemberNS": {
             "type": "object",
             "properties": {
@@ -18934,33 +18886,6 @@ const docTemplate = `{
                 "notify_before_deadline": {
                     "type": "integer",
                     "x-nullable": true
-                }
-            }
-        },
-        "types.RedactorHTML": {
-            "type": "object",
-            "properties": {
-                "already_sanitized": {
-                    "type": "boolean"
-                },
-                "body": {
-                    "type": "string"
-                }
-            }
-        },
-        "types.TargetDate": {
-            "type": "object",
-            "properties": {
-                "time": {
-                    "type": "string"
-                }
-            }
-        },
-        "types.TargetDateTimeZ": {
-            "type": "object",
-            "properties": {
-                "time": {
-                    "type": "string"
                 }
             }
         },
@@ -19194,61 +19119,6 @@ const docTemplate = `{
                     "type": "boolean"
                 }
             }
-        },
-        "url.URL": {
-            "type": "object",
-            "properties": {
-                "force_query": {
-                    "description": "append a query ('?') even if RawQuery is empty",
-                    "type": "boolean"
-                },
-                "fragment": {
-                    "description": "fragment for references, without '#'",
-                    "type": "string"
-                },
-                "host": {
-                    "description": "host or host:port (see Hostname and Port methods)",
-                    "type": "string"
-                },
-                "omit_host": {
-                    "description": "do not emit empty host (authority)",
-                    "type": "boolean"
-                },
-                "opaque": {
-                    "description": "encoded opaque data",
-                    "type": "string"
-                },
-                "path": {
-                    "description": "path (relative paths may omit leading slash)",
-                    "type": "string"
-                },
-                "raw_fragment": {
-                    "description": "encoded fragment hint (see EscapedFragment method)",
-                    "type": "string"
-                },
-                "raw_path": {
-                    "description": "encoded path hint (see EscapedPath method)",
-                    "type": "string"
-                },
-                "raw_query": {
-                    "description": "encoded query values, without '?'",
-                    "type": "string"
-                },
-                "scheme": {
-                    "type": "string"
-                },
-                "user": {
-                    "description": "username and password information",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/url.Userinfo"
-                        }
-                    ]
-                }
-            }
-        },
-        "url.Userinfo": {
-            "type": "object"
         }
     },
     "securityDefinitions": {
