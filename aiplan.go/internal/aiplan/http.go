@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	store "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/memory-store"
 	"html/template"
 	"image"
 	"io"
@@ -94,6 +95,7 @@ type Services struct {
 	notificationsService *notifications.Notification
 
 	business *business.Business
+	store    *store.Store
 }
 
 var cfg *config.Config
@@ -209,6 +211,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		//wsNotificationService: ws,
 		notificationsService: ns,
 		business:             bl,
+		store:                store.NewStore(),
 		jitsiTokenIss:        jitsi_token.NewJitsiTokenIssuer(cfg.JitsiJWTSecret, cfg.JitsiAppID),
 	}
 

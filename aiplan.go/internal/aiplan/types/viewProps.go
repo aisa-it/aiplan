@@ -62,4 +62,8 @@ type ViewFilters struct {
 	States     []string `json:"states"`
 	Workspaces []string `json:"workspaces"`
 	Projects   []string `json:"projects"`
+
+	AssignedToMe bool `json:"assignedToMe"`
+	WatchedToMe  bool `json:"watchedToMe"`
+	AuthoredToMe bool `json:"authoredToMe"`
 }
