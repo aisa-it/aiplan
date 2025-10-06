@@ -396,6 +396,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Param limit query int false "Лимит записей" default(100)
 // @Param desc query bool false "Сортировка по убыванию" default(true)
 // @Param only_count query bool false "Вернуть только количество" default(false)
+// @Param only_active query bool false "Вернуть только активные задачи" default(false)
 // @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
 // @Success 200 {object} dto.IssueSearchResult "Результат поиска задач"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
@@ -1015,14 +1016,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var targetDate *string
 	if val, ok := data["target_date"]; ok {
 		if issue.TargetDate != nil {
-			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "02.01.2006 15:04 -0700", nil); err != nil {
+			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "2006-01-02 15:04:05Z07:00", nil); err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			} else {
 				issueMapOld["target_date_activity_val"] = date
 			}
 		}
 		if val != nil {
-			date, err := utils.FormatDateStr(val.(string), "02.01.2006 15:04 -0700", nil)
+			date, err := utils.FormatDateStr(val.(string), "2006-01-02 15:04:05Z07:00", nil)
 			if err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			}
