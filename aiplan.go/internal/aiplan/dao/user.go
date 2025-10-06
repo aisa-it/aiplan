@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -110,7 +109,7 @@ func (u *User) ToLightDTO() *dto.UserLight {
 	d := &dto.UserLight{
 		ID:           u.ID,
 		Username:     u.Username,
-		Email:        strings.ToLower(u.Email),
+		Email:        u.Email,
 		FirstName:    u.FirstName,
 		LastName:     u.LastName,
 		Avatar:       u.Avatar,

@@ -873,7 +873,7 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("lower(email) = ?", newEmail).Find(&exist).Error; err != nil {
+	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -929,7 +929,7 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("lower(email) = ?", newEmail).Find(&exist).Error; err != nil {
+	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
 		return EError(c, err)
 	}
 
