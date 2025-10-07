@@ -21,16 +21,16 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/sessions"
 	"github.com/altcha-org/altcha-lib-go"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/notifications"
-	"sheff.online/aiplan/internal/aiplan/sessions"
 )
 
 type Authentication struct {
@@ -223,6 +223,8 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				EError(c, err)
 			}
 
+			user.Email = strings.ToLower(user.Email)
+
 			return next(AuthContext{c, user, accessToken, refreshToken, false})
 		}
 	}
@@ -261,7 +263,10 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
-	if !CaptchaService.Validate(req.CaptchaPayload) {
+
+	req.Email = strings.ToLower(req.Email)
+
+	if !cfg.CaptchaDisabled && !CaptchaService.Validate(req.CaptchaPayload) {
 		return EErrorDefined(c, apierrors.ErrCaptchaFail)
 	}
 

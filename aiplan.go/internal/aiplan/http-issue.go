@@ -25,26 +25,26 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
-	"sheff.online/aiplan/internal/aiplan/export"
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 
-	"sheff.online/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/rules"
 )
 
 const (
@@ -397,6 +397,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Param limit query int false "Лимит записей" default(100)
 // @Param desc query bool false "Сортировка по убыванию" default(true)
 // @Param only_count query bool false "Вернуть только количество" default(false)
+// @Param only_active query bool false "Вернуть только активные задачи" default(false)
 // @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
 // @Success 200 {object} dto.IssueSearchResult "Результат поиска задач"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
@@ -426,6 +427,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	limit := 100
 	desc := true
 	lightSearch := false
+	onlyActive := false
 
 	if err := echo.QueryParamsBinder(c).
 		Bool("show_sub_issues", &showSubIssues).
@@ -437,6 +439,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		Bool("desc", &desc).
 		Bool("only_count", &onlyCount).
 		Bool("light", &lightSearch).
+		Bool("only_active", &onlyActive).
 		BindError(); err != nil {
 		return EError(c, err)
 	}
@@ -605,7 +608,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 			query = query.Where("issues.created_by_id = ?", user.ID)
 		}
 
-		if filters.OnlyActive {
+		if onlyActive {
 			query = query.Where("issues.state_id in (?)", s.db.Model(&dao.State{}).
 				Select("id").
 				Where("\"group\" <> ?", "cancelled").
@@ -613,7 +616,9 @@ func (s *Services) getIssueList(c echo.Context) error {
 		}
 
 		if filters.SearchQuery != "" {
-			query = query.Joins("join projects p on p.id = issues.project_id").Where(dao.Issue{}.FullTextSearch(s.db, filters.SearchQuery))
+			query = query.Joins("join projects p on p.id = issues.project_id").
+				Where("p.deleted_at IS NULL").
+				Where(dao.Issue{}.FullTextSearch(s.db, filters.SearchQuery))
 		}
 	}
 
@@ -728,7 +733,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 
 	// Get groups
 	if groupByParam != "" {
-		groupSize, err := dao.GetIssuesGroupsSize(s.db, groupByParam, projectMember.ProjectId)
+		groupSize, err := dao.GetIssuesGroupsSize(s.db, groupByParam, projectMember.ProjectId, onlyActive)
 		if err != nil {
 			return EError(c, err)
 		}
@@ -1012,14 +1017,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var targetDate *string
 	if val, ok := data["target_date"]; ok {
 		if issue.TargetDate != nil {
-			if date, err := notifications.FormatDate(issue.TargetDate.String(), "2006-01-02", nil); err != nil {
+			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "2006-01-02 15:04:05Z07:00", nil); err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			} else {
 				issueMapOld["target_date_activity_val"] = date
 			}
 		}
 		if val != nil {
-			date, err := notifications.FormatDate(val.(string), "2006-01-02", nil)
+			date, err := utils.FormatDateStr(val.(string), "2006-01-02 15:04:05Z07:00", nil)
 			if err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			}
@@ -1417,7 +1422,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 				err := notifications.CreateDeadlineNotification(tx, &issue, targetDate, notifyUserIds)
 				if err != nil {
-					return EErrorDefined(c, apierrors.ErrGeneric)
+					return err
 				}
 			}
 

@@ -3,9 +3,12 @@ package tracker
 
 import (
 	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/utils"
 )
 
 // issueAssigneesUpdate Обновляет список назначенных пользователей для сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -329,6 +332,15 @@ func entityColorUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityTargetDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
+	if v, ok := requestedData["target_date"]; ok && v != nil {
+		currentTZ := types.TimeZone(*time.Local)
+		d, _ := utils.FormatDateStr(v.(string), "02.01.2006 15:04 MST", &currentTZ)
+		requestedData["target_date"] = d
+	}
+	if v, ok := currentInstance["target_date"]; ok && v != nil {
+		d, _ := utils.FormatDateStr(v.(string), "02.01.2006 15:04 MST", nil)
+		currentInstance["target_date"] = d
+	}
 	return entityFieldUpdate[E, A]("target_date", nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 

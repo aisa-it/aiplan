@@ -11,13 +11,15 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"time"
 )
 
 type NotificationCleaner struct {
@@ -307,7 +309,7 @@ func CreateDeadlineNotification(tx *gorm.DB, issue *dao.Issue, deadlineTime *str
 		return nil
 	}
 
-	targetDate, err := time.Parse("2006-01-02", *deadlineTime)
+	targetDate, err := utils.FormatDate(*deadlineTime)
 	if err != nil {
 		return err
 	}
@@ -388,7 +390,7 @@ func createDeadlineDeferredNotification(targetDate time.Time, user dao.User, iss
 }
 
 func truncateToDay(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, t.Location())
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, t.Location())
 }
 
 type NotificationResponse struct {

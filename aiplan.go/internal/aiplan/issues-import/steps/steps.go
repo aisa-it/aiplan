@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/context"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/errors"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/issues-import/context"
-	"sheff.online/aiplan/internal/aiplan/issues-import/entity"
-	"sheff.online/aiplan/internal/aiplan/issues-import/errors"
 )
 
 // Количество горутин импорта задач

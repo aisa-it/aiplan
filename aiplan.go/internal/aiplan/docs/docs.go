@@ -3327,6 +3327,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Вернуть только активные задачи",
+                        "name": "only_active",
+                        "in": "query"
+                    },
+                    {
                         "description": "Фильтры для поиска задач",
                         "name": "filters",
                         "in": "body",
@@ -4243,6 +4250,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/users/me/change-email/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Позволяет текущему пользователю изменить свой Email. В случае успеха отправляет код верификации на новую почту.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи (управление доступом): смена email текущего пользователя",
+                "operationId": "changeMyEmail",
+                "parameters": [
+                    {
+                        "description": "Новые данные email",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.EmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Проверочный код отправлен"
+                    },
+                    "400": {
+                        "description": "Ошибка",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "429": {
+                        "description": "Слишком частые запросы",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/users/me/feedback/": {
             "get": {
                 "security": [
@@ -4824,6 +4892,61 @@ const docTemplate = `{
                 "responses": {
                     "201": {
                         "description": "Новый токен создан"
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/users/me/verification-email/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Позволяет текущему пользователю изменить свой Email. Сравнивает код верификации отправленый на новый Email.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи (управление доступом): Верификация Email",
+                "operationId": "verifyMyEmail",
+                "parameters": [
+                    {
+                        "description": "Новые данные email",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.EmailVerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Email пользователя изменен"
+                    },
+                    "400": {
+                        "description": "Oшибка",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
                     },
                     "401": {
                         "description": "Необходима авторизация",
@@ -15410,6 +15533,32 @@ const docTemplate = `{
                 }
             }
         },
+        "aiplan.EmailRequest": {
+            "type": "object",
+            "required": [
+                "new_email"
+            ],
+            "properties": {
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
+        "aiplan.EmailVerifyRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "new_email"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
         "aiplan.FilterParams": {
             "type": "object",
             "properties": {
@@ -18647,9 +18796,6 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "only_active": {
-                    "type": "boolean"
-                },
                 "priorities": {
                     "type": "array",
                     "items": {
@@ -18872,6 +19018,12 @@ const docTemplate = `{
         "types.ViewFilters": {
             "type": "object",
             "properties": {
+                "assignedToMe": {
+                    "type": "boolean"
+                },
+                "authoredToMe": {
+                    "type": "boolean"
+                },
                 "group_by": {
                     "type": "string"
                 },
@@ -18892,6 +19044,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "watchedToMe": {
+                    "type": "boolean"
                 },
                 "workspaces": {
                     "type": "array",
@@ -18991,13 +19146,7 @@ const docTemplate = `{
                 "disable_doc_desc": {
                     "type": "boolean"
                 },
-                "disable_doc_editor": {
-                    "type": "boolean"
-                },
                 "disable_doc_move": {
-                    "type": "boolean"
-                },
-                "disable_doc_reader": {
                     "type": "boolean"
                 },
                 "disable_doc_role": {

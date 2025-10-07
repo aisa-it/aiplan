@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 type CreateProjectRequest struct {

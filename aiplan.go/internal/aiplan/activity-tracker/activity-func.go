@@ -10,8 +10,9 @@ package tracker
 
 import (
 	"fmt"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	ErrStack "sheff.online/aiplan/internal/aiplan/stack-error"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 )
 
 const (

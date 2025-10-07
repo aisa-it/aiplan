@@ -1,16 +1,18 @@
 package business
 
 import (
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"log/slog"
+	"strings"
 
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 type ProjectCtx struct {
@@ -49,6 +51,56 @@ func (b *Business) DeleteProject() error {
 	}
 
 	// Soft-delete project
+	{
+		// delete DeferredNotifications & activities
+		if err := b.db.
+			Where("project_id = ?", b.projectCtx.project.ID).
+			Unscoped().
+			Delete(&dao.DeferredNotifications{}).Error; err != nil {
+			return err
+		}
+
+		activityTables := []dao.UnionableTable{
+			&dao.ProjectActivity{},
+			&dao.IssueActivity{},
+		}
+
+		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
+			tn := strings.Split((*a).TableName(), "_")
+			return tn[0] + "_activity_id"
+		})
+
+		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
+
+		var queries []interface{}
+
+		for _, model := range activityTables {
+			queries = append(queries, b.db.Select("id").
+				Where("project_id = ?", b.projectCtx.project.ID).
+				Model(&model))
+		}
+
+		if err := b.db.Where(queryString, queries...).
+			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
+			return err
+		}
+
+		for _, model := range activityTables {
+			if err := b.db.
+				Where("project_id = ?", b.projectCtx.project.ID).
+				Unscoped().
+				Delete(model).Error; err != nil {
+				return err
+			}
+		}
+
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := b.db.Model(&dao.WorkspaceActivity{}).Where("new_identifier = ? OR old_identifier = ?", b.projectCtx.project.ID, b.projectCtx.project.ID).Updates(cleanId).Error; err != nil {
+			return err
+		}
+
+	}
+
 	if err := b.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Delete(&b.projectCtx.project).Error; err != nil {
 		return err
 	}

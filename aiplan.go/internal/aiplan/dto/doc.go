@@ -10,7 +10,7 @@ package dto
 import (
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 )
 
 type Doc struct {

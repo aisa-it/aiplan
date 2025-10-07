@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
 )
 
 // TargetDate type
@@ -78,6 +78,52 @@ func (td *TargetDate) ToNullTime() sql.NullTime {
 		Time:  td.Time,
 		Valid: true,
 	}
+}
+
+// TargetDateTimeZ type
+type TargetDateTimeZ struct {
+	Time time.Time
+}
+
+func (d *TargetDateTimeZ) UnmarshalJSON(b []byte) error {
+	str := string(b)
+	if str != "" && str[0] == '"' && str[len(str)-1] == '"' {
+		str = str[1 : len(str)-1]
+	}
+	date, err := formatDate(str)
+	if err != nil {
+		return err
+	}
+	*d = TargetDateTimeZ{date}
+	return nil
+}
+
+func (d *TargetDateTimeZ) MarshalJSON() ([]byte, error) {
+	str, err := formatDateStr(d.Time.String(), time.RFC3339, nil)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(`"` + str + `"`), nil
+}
+
+func (d *TargetDateTimeZ) Value() (driver.Value, error) {
+	if d == nil {
+		return nil, nil
+	}
+	return d.Time, nil
+}
+
+func (d *TargetDateTimeZ) Scan(value interface{}) error {
+	t, ok := value.(time.Time)
+	if !ok {
+		return fmt.Errorf("error unmarshal time: %v", value)
+	}
+	*d = TargetDateTimeZ{t}
+	return nil
+}
+
+func (d TargetDateTimeZ) String() string {
+	return d.Time.String()
 }
 
 // TimeZone type
@@ -326,7 +372,6 @@ type IssuesListFilters struct {
 	AssignedToMe bool `json:"assigned_to_me"`
 	WatchedByMe  bool `json:"watched_by_me"`
 	AuthoredByMe bool `json:"authored_by_me"`
-	OnlyActive   bool `json:"only_active"`
 
 	SearchQuery string `json:"search_query"`
 }
@@ -827,4 +872,47 @@ type SprintStats struct {
 	InProgress int `json:"in_progress"`
 	Completed  int `json:"completed"`
 	Cancelled  int `json:"cancelled"`
+}
+
+// -----
+func formatDateStr(dateStr, outFormat string, tz *TimeZone) (string, error) {
+	date, err := formatDate(dateStr)
+	if err != nil {
+		return "", err
+	}
+
+	if tz != nil {
+		date = date.In((*time.Location)(tz))
+	}
+	return date.Format(outFormat), nil
+
+}
+
+func formatDate(dateStr string) (time.Time, error) {
+	if dateStr == "" {
+		return time.Time{}, fmt.Errorf("empty date string")
+	}
+
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02",
+		"02.01.2006 15:04 MST",
+		"02.01.2006 15:04 -0700",
+		"02.01.2006",
+	}
+
+	var t time.Time
+	var err error
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, dateStr)
+		if err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsuported date format")
 }

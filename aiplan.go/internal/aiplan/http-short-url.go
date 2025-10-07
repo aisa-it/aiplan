@@ -9,11 +9,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sheff.online/aiplan/internal/aiplan/utils"
 	"strings"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 func (s *Services) shortIssueURLRedirect(c echo.Context) error {

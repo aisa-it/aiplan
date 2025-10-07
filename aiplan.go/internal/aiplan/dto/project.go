@@ -9,8 +9,8 @@ package dto
 import (
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 type ProjectLight struct {

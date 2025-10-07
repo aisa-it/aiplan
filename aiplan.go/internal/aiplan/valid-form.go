@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
+	types2 "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
-	types2 "sheff.online/aiplan/internal/aiplan/types"
 )
 
 const (

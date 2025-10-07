@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 )
 
 func TestFPDF(t *testing.T) {

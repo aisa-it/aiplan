@@ -21,25 +21,25 @@ import (
 	"net/http"
 	"net/url"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	types2 "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
-	types2 "sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
 
 	"strconv"
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 )
 
 type FormContext struct {
@@ -286,6 +286,8 @@ func (s *Services) updateForm(c echo.Context) error {
 		} else {
 			reqEndDate = v
 		}
+	} else {
+		requestMap["end_date"] = nil
 	}
 
 	if form.EndDate != nil {
@@ -1062,6 +1064,8 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 						if err != nil {
 							return nil, fmt.Errorf("end_date")
 						}
+					} else if value == nil {
+						form.EndDate = nil
 					} else {
 						return nil, fmt.Errorf("end_date")
 					}

@@ -19,16 +19,16 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 var (
@@ -625,9 +625,10 @@ func (s *Services) updateUser(c echo.Context) error {
 func (s *Services) deleteUser(c echo.Context) error {
 	userId := c.Param("userId")
 
-	if err := s.db.Where("id = ?", userId).Where("is_integration = false").Delete(&dao.User{}).Error; err != nil {
+	if err := s.business.DeleteUser(userId); err != nil {
 		return EError(c, err)
 	}
+
 	return c.NoContent(http.StatusOK)
 }
 

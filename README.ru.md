@@ -62,34 +62,70 @@ docker-compose up -d
 
 ## Параметры приложения
 
-| Параметр                     | Описание                                                                   | Тип    |
-| ---------------------------- | -------------------------------------------------------------------------- | ------ |
-| `SECRET_KEY`                 | Ключ для генерации JWT токенов.                                            | string |
-| `AWS_REGION`                 | Регион minio                                                               | string |
-| `AWS_ACCESS_KEY_ID`          | Логин minio                                                                | string |
-| `AWS_SECRET_ACCESS_KEY`      | Пароль minio                                                               | string |
-| `AWS_S3_ENDPOINT_URL`        | Путь до minio                                                              | string |
-| `AWS_S3_BUCKET_NAME`         | Название бакета minio                                                      | string |
-| `DATABASE_URL`               | DSN базы данных                                                            | string |
-| `DEFAULT_EMAIL`              | Email стандартного пользователя(пароль `password123` при создании)         | string |
-| `EMAIL_ACTIVITY_DISABLED`    | Отключение отправки уведомлений на почту                                   | bool   |
-| `EMAIL_HOST`                 | Путь до почтового сервера                                                  | string |
-| `EMAIL_HOST_USER`            | Логин почтового сервера                                                    | string |
-| `EMAIL_HOST_PASSWORD`        | Пароль почтового сервера                                                   | string |
-| `EMAIL_PORT`                 | Порт почтового сервера                                                     | int    |
-| `EMAIL_FROM`                 | Email рассылки                                                             | string |
-| `EMAIL_WORKERS`              | Количество параллельных обработчиков почтовых уведомлений приложения       | int    |
-| `WEB_URL`                    | Внешний адрес приложения                                                   | string |
-| `JITSI_URL`                  | Адрес jitsi конференций                                                    | string |
-| `JITSI_JWT_SECRET`           | Ключ для генерации JWT токена авторизации в Jitsi                          | string |
-| `JITSI_APP_ID`               | Jitsi app ID для поля iss JWT токена авторизации в Jitsi                   | string |
-| `FRONT_PATH`                 | Путь до скомпилированного фронта(если указать, бек будет отдавать статику) | string |
-| `NOTIFICATIONS_PERIOD`       | Временной период пачки email уведомлений                                   | int    |
-| `TELEGRAM_BOT_TOKEN`         | Токен telegram бота                                                        | string |
+| Параметр                    | Описание                                                                   | Тип    |
+|-----------------------------|----------------------------------------------------------------------------|--------|
+| `SECRET_KEY`                | Ключ для генерации JWT токенов.                                            | string |
+| `AWS_REGION`                | Регион minio                                                               | string |
+| `AWS_ACCESS_KEY_ID`         | Логин minio                                                                | string |
+| `AWS_SECRET_ACCESS_KEY`     | Пароль minio                                                               | string |
+| `AWS_S3_ENDPOINT_URL`       | Путь до minio                                                              | string |
+| `AWS_S3_BUCKET_NAME`        | Название бакета minio                                                      | string |
+| `DATABASE_URL`              | DSN базы данных                                                            | string |
+| `DEFAULT_EMAIL`             | Email стандартного пользователя(пароль `password123` при создании)         | string |
+| `EMAIL_ACTIVITY_DISABLED`   | Отключение отправки уведомлений на почту                                   | bool   |
+| `EMAIL_HOST`                | Путь до почтового сервера                                                  | string |
+| `EMAIL_HOST_USER`           | Логин почтового сервера                                                    | string |
+| `EMAIL_HOST_PASSWORD`       | Пароль почтового сервера                                                   | string |
+| `EMAIL_PORT`                | Порт почтового сервера                                                     | int    |
+| `EMAIL_FROM`                | Email рассылки                                                             | string |
+| `EMAIL_WORKERS`             | Количество параллельных обработчиков почтовых уведомлений приложения       | int    |
+| `WEB_URL`                   | Внешний адрес приложения                                                   | string |
+| `JITSI_DISABLED`            | Отключение jitsi                                                           | bool   |
+| `JITSI_URL`                 | Адрес jitsi конференций                                                    | string |
+| `JITSI_JWT_SECRET`          | Ключ для генерации JWT токена авторизации в Jitsi                          | string |
+| `JITSI_APP_ID`              | Jitsi app ID для поля iss JWT токена авторизации в Jitsi                   | string |
+| `FRONT_PATH`                | Путь до скомпилированного фронта(если указать, бек будет отдавать статику) | string |
+| `NOTIFICATIONS_PERIOD`      | Временной период пачки email уведомлений                                   | int    |
+| `TELEGRAM_BOT_TOKEN`        | Токен telegram бота                                                        | string |
 | `TELEGRAM_COMMANDS_DISABLED` | Отключение команд телеграм бота                                            | bool   |
-| `SESSIONS_DB_PATH`           | Путь до файла сессионной базы                                              | string |
-| `SIGN_UP_ENABLE`             | Включение регистрации в системе                                            | bool   |
-| `DEMO`                       | Демо режим                                                                 | bool   |
-| `SWAGGER_ENABLED`            | Включение Swagger API документации на адрес /api/swagger                   | bool   |
-| `NY_ENABLE`                  | Включение новогодней темы                                                  | bool   |
-| `CAPTCHA_DISABLED`           | Отключение капчи                                                           | bool   |
+| `SESSIONS_DB_PATH`          | Путь до файла сессионной базы                                              | string |
+| `SIGN_UP_ENABLE`            | Включение регистрации в системе                                            | bool   |
+| `DEMO`                      | Демо режим                                                                 | bool   |
+| `SWAGGER`           | Включение Swagger API документации на адрес /api/swagger                   | bool   |
+| `NY_ENABLE`                 | Включение новогодней темы                                                  | bool   |
+| `CAPTCHA_DISABLED`          | Отключение капчи                                                           | bool   |
+### Пример настройки nginx SSL
+```
+server {
+    listen 80;
+    server_name aiplan.domain;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name aiplan.domain;
+
+    ssl_certificate     /etc/ssl/certs/fullchain.pem;
+    ssl_certificate_key /etc/ssl/private/privkey.pem;
+
+
+    # Увеличиваем лимит для вложений
+    client_max_body_size 50M;
+
+    location / {
+        #проксируем сразу в контейнер, если запуск был в том же docker-compose с той же сетью либо меняем на ip контейнера/машины/localhost
+        proxy_pass http://server:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Для WebSocket
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```

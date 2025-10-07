@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"strings"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
 	"github.com/labstack/echo/v4"
 )

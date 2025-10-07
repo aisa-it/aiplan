@@ -2,12 +2,13 @@ package notifications
 
 import (
 	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"log/slog"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"strings"
 )
 
 type TgNotifyDoc struct {

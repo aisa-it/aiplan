@@ -18,21 +18,21 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
-	"sheff.online/aiplan/internal/aiplan/notifications"
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 type UserUpdateRequest struct {
@@ -60,6 +60,9 @@ func (s *Services) AddUserServices(g *echo.Group) {
 
 	g.POST("users/me/onboard/", s.updateUserOnBoard)
 	g.POST("users/me/view-props/", s.updateUserViewProps)
+
+	g.POST("users/me/change-email/", s.changeMyEmail)
+	g.POST("users/me/verification-email/", s.verifyMyEmail)
 
 	g.GET("users/me/activities/", s.getMyActivityList)
 	g.GET("users/:userId/activities/", s.getUserActivityList)
@@ -224,6 +227,25 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 		}
 	}
 
+	if v, ok := updateMap["settings"]; ok {
+		settings := v.(types.UserSettings)
+		if settings.DeadlineNotification != user.Settings.DeadlineNotification {
+			diff := user.Settings.DeadlineNotification - settings.DeadlineNotification
+
+			err := s.db.
+				Model(&dao.DeferredNotifications{}).
+				Where("user_id = ?", user.ID).
+				Where("sent_at IS NULL").
+				Where("attempt_count < ?", 3).
+				Where("notification_type = ?", "deadline_notification").
+				Update("time_send", gorm.Expr("time_send + ?", diff)).Error
+
+			if err != nil {
+				return EError(c, err)
+			}
+		}
+	}
+
 	if req.Status != nil && req.StatusEmoji != nil && req.StatusEndDate == nil {
 		user.StatusEndDate.Valid = false
 		user.StatusEndDate.Time = time.Time{}
@@ -359,7 +381,7 @@ func (s *Services) updateUserOnBoard(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(&user).Select("first_name", "last_name", "username", "role", "is_onboarded").Updates(&user).Error; err != nil {
+	if err := s.db.Model(&user).Select("first_name", "last_name", "username", "role", "telegram_id", "is_onboarded").Updates(&user).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrUsernameConflict)
 		} else {
@@ -660,6 +682,17 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 		BindError(); err != nil {
 		return EError(c, err)
 	}
+
+	// If email provided
+	if _, err := uuid.FromString(userId); err != nil {
+		if err := s.db.Select("id").Where("email = ?", userId).Model(&dao.User{}).Find(&userId).Error; err != nil {
+			return EError(c, err)
+		}
+		if userId == "" {
+			return EErrorDefined(c, apierrors.ErrUserNotFound)
+		}
+	}
+
 	var issue dao.IssueActivity
 	issue.UnionCustomFields = "'issue' AS entity_type"
 	var project dao.ProjectActivity
@@ -804,6 +837,115 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, response)
+}
+
+// changeMyEmail godoc
+// @id changeMyEmail
+// @Summary Пользователи (управление доступом): смена email текущего пользователя
+// @Description Позволяет текущему пользователю изменить свой Email. В случае успеха отправляет код верификации на новую почту.
+// @Tags Users
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param data body EmailRequest true "Новые данные email"
+// @Success 200 "Проверочный код отправлен"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 429 {object} apierrors.DefinedError "Слишком частые запросы"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/users/me/change-email/ [post]
+func (s *Services) changeMyEmail(c echo.Context) error {
+	user := *c.(AuthContext).User
+
+	var data EmailRequest
+	if err := c.Bind(&data); err != nil {
+		return EError(c, err)
+	}
+
+	newEmail := strings.TrimSpace(strings.ToLower(data.NewEmail))
+
+	if newEmail == user.Email {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	if !ValidateEmail(newEmail) {
+		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
+	}
+
+	var exist bool
+	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if exist {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	code := password.MustGenerate(6, 6, 0, false, true)
+
+	err := s.store.EmailChange.NewEmailChange(&user, newEmail, code)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	err = s.emailService.UserChangeEmailNotify(user, newEmail, code)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+// verifyMyEmail godoc
+// @id verifyMyEmail
+// @Summary Пользователи (управление доступом): Верификация Email
+// @Description Позволяет текущему пользователю изменить свой Email. Сравнивает код верификации отправленый на новый Email.
+// @Tags Users
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param data body EmailVerifyRequest true "Новые данные email"
+// @Success 200 "Email пользователя изменен"
+// @Failure 400 {object} apierrors.DefinedError "Oшибка"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/users/me/verification-email/ [post]
+func (s *Services) verifyMyEmail(c echo.Context) error {
+	user := *c.(AuthContext).User
+
+	var data EmailVerifyRequest
+	if err := c.Bind(&data); err != nil {
+		return EError(c, err)
+	}
+
+	newEmail := strings.TrimSpace(strings.ToLower(data.NewEmail))
+
+	if newEmail == user.Email {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	if !ValidateEmail(newEmail) {
+		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
+	}
+
+	var exist bool
+	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if exist {
+		return EErrorDefined(c, apierrors.ErrEmailIsExist)
+	}
+
+	if ok := s.store.EmailChange.ValidCodeEmail(&user, newEmail, data.Code); !ok {
+		return EErrorDefined(c, apierrors.ErrEmailVerify)
+	}
+	user.Email = newEmail
+
+	if err := s.db.Select("email").Updates(&user).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
 }
 
 // resetPassword godoc
@@ -1160,11 +1302,13 @@ func (s *Services) signUp(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	req.Email = strings.ToLower(req.Email)
+
 	if !ValidateEmail(req.Email) {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(req.Email))
 	}
 
-	if !CaptchaService.Validate(req.CaptchaPayload) {
+	if !cfg.CaptchaDisabled && !CaptchaService.Validate(req.CaptchaPayload) {
 		return EErrorDefined(c, apierrors.ErrCaptchaFail)
 	}
 
@@ -2084,10 +2228,21 @@ type PostFeedbackRequest struct {
 	Feedback string `json:"feedback"`
 }
 
-// PostFeedbackRequest представляет структуру данных для запроса регистрации пользователя
+// PasswordRequest представляет структуру данных для запроса регистрации пользователя
 type PasswordRequest struct {
 	NewPassword     string `json:"new_password" validate:"required,min=8"`
 	ConfirmPassword string `json:"confirm_password" validate:"required,eqfield=NewPassword"`
+}
+
+// EmailRequest представляет структуру данных для смены почты пользователя
+type EmailRequest struct {
+	NewEmail string `json:"new_email" validate:"required"`
+}
+
+// EmailVerifyRequest представляет структуру данных для валидации почты пользователя
+type EmailVerifyRequest struct {
+	NewEmail string `json:"new_email" validate:"required"`
+	Code     string `json:"code" validate:"required"`
 }
 
 // PasswordResponse представляет структуру данных для успешного ответа регистрации пользователя

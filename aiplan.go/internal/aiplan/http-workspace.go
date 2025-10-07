@@ -12,22 +12,22 @@ import (
 	"strings"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	errStack "sheff.online/aiplan/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
-	"sheff.online/aiplan/internal/aiplan/types"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	tracker "sheff.online/aiplan/internal/aiplan/activity-tracker"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 func (s *Services) LastVisitedWorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -440,6 +440,58 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	{
+		// delete DeferredNotifications & activities
+		if err := s.db.
+			Where("workspace_id = ?", workspace.ID).
+			Unscoped().
+			Delete(&dao.DeferredNotifications{}).Error; err != nil {
+			return err
+		}
+
+		activityTables := []dao.UnionableTable{
+			&dao.WorkspaceActivity{},
+			&dao.DocActivity{},
+			&dao.FormActivity{},
+			&dao.ProjectActivity{},
+			&dao.IssueActivity{},
+		}
+
+		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
+			tn := strings.Split((*a).TableName(), "_")
+			return tn[0] + "_activity_id"
+		})
+
+		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
+
+		var queries []interface{}
+
+		for _, model := range activityTables {
+			queries = append(queries, s.db.Select("id").
+				Where("workspace_id = ?", workspace.ID).
+				Model(&model))
+		}
+
+		if err := s.db.Where(queryString, queries...).
+			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
+			return err
+		}
+
+		for _, model := range activityTables {
+			if err := s.db.
+				Where("workspace_id = ?", workspace.ID).
+				Unscoped().
+				Delete(model).Error; err != nil {
+				return err
+			}
+		}
+
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := s.db.Model(&dao.RootActivity{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
 	// Soft-delete projects
 	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Project{}).Error; err != nil {
 		return EError(c, err)
@@ -789,6 +841,8 @@ func (s *Services) updateUserEmail(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	req.Email = strings.ToLower(req.Email)
+
 	if !ValidateEmail(req.Email) {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail)
 	}
@@ -1059,7 +1113,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 	var createMemberLog []memberTracker
 
 	for _, invite := range req.Emails {
-		invite.Email = strings.TrimSpace(invite.Email)
+		invite.Email = strings.ToLower(strings.TrimSpace(invite.Email))
 		if !ValidateEmail(invite.Email) {
 			return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(invite.Email))
 		}

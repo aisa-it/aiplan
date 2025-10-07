@@ -9,12 +9,13 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
-	"gorm.io/gorm/clause"
 	"log"
 	"time"
 
+	"gorm.io/gorm/clause"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 // Constant for the maximum number of retry attempts
@@ -104,16 +105,19 @@ func (np *NotificationProcessor) handleNotification(notification *dao.DeferredNo
 		return
 	}
 	var success bool
-
-	switch notification.DeliveryMethod {
-	case "telegram":
-		success = np.sendToTelegram(notification, sender)
-	case "email":
-		success = np.sendToEmail(notification, sender)
-	case "app":
-		success = np.sendToApp(notification, sender)
-	default:
-		return
+	if notification.User.IsNotify(notification.DeliveryMethod) {
+		switch notification.DeliveryMethod {
+		case "telegram":
+			success = np.sendToTelegram(notification, sender)
+		case "email":
+			success = np.sendToEmail(notification, sender)
+		case "app":
+			success = np.sendToApp(notification, sender)
+		default:
+			return
+		}
+	} else {
+		success = true
 	}
 
 	// Update the record depending on the delivery result
@@ -346,7 +350,7 @@ func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, au
 	formatMsg := "❗Срок выполнения задачи\n[%s](%s)\nистекает *%s*"
 	var out []string
 
-	date, err := FormatDate(nd.Deadline.Format("02.01.2006 15:04 MST"), "02.01.2006", &notification.User.UserTimezone)
+	date, err := FormatDate(nd.Deadline.Format("02.01.2006 15:04 MST"), "02.01.2006 15:04 MST", &notification.User.UserTimezone)
 	if err != nil {
 		return 0, "", nil
 	}

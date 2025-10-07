@@ -23,14 +23,14 @@ import (
 
 	"github.com/lib/pq"
 
-	"sheff.online/aiplan/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 // Задачи
@@ -44,9 +44,9 @@ type Issue struct {
 	// priority character varying(30) COLLATE pg_catalog."default",
 	Priority *string `json:"priority" extensions:"x-nullable"`
 
-	StartDate   *types.TargetDate `json:"start_date" extensions:"x-nullable"`
-	TargetDate  *types.TargetDate `json:"target_date" extensions:"x-nullable"`
-	CompletedAt *types.TargetDate `json:"completed_at" extensions:"x-nullable"`
+	StartDate   *types.TargetDate      `json:"start_date" extensions:"x-nullable"`
+	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable"`
+	CompletedAt *types.TargetDate      `json:"completed_at" extensions:"x-nullable"`
 
 	SequenceId int `json:"sequence_id" gorm:"default:1;index:,where:deleted_at is not null"`
 	// created_by_id uuid,
@@ -188,9 +188,9 @@ func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightResponse {
 	ii := dto.SearchLightweightResponse{
 		ID:          i.ID,
 		WorkspaceId: i.WorkspaceId,
-		Workspace:   *i.Workspace.ToLightDTO(),
+		Workspace:   i.Workspace.ToLightDTO(),
 		ProjectId:   i.ProjectId,
-		Project:     *i.Project.ToLightDTO(),
+		Project:     i.Project.ToLightDTO(),
 		SequenceId:  i.SequenceId,
 		Name:        i.Name,
 		Priority:    i.Priority,
@@ -1888,22 +1888,26 @@ func (rl *RulesLog) ToDTO() *dto.RulesLog {
 	}
 }
 
-func GetIssuesGroupsSize(db *gorm.DB, groupByParam string, projectId string) (map[string]int, error) {
+func GetIssuesGroupsSize(db *gorm.DB, groupByParam string, projectId string, onlyActive bool) (map[string]int, error) {
 	query := db.Session(&gorm.Session{})
 	switch groupByParam {
 	case "priority":
 		query = query.Where("project_id = ?", projectId).Model(&Issue{}).Select("count(*) as Count, coalesce(priority, '') as \"Key\"")
 	case "author":
 		query = db.
-			Model(&User{}).
-			Joins("LEFT JOIN issues on users.id = issues.created_by_id and issues.project_id = ?", projectId).
-			Select("count(issues.created_by_id) as Count, users.id as \"Key\"")
+			Model(&ProjectMember{}).
+			Joins("LEFT JOIN issues on project_members.member_id = issues.created_by_id and issues.project_id = ?", projectId).
+			Where("project_members.project_id = ?", projectId).
+			Select("count(issues.created_by_id) as Count, project_members.member_id as \"Key\"")
 	case "state":
 		query = db.
 			Model(&State{}).
 			Joins("LEFT JOIN issues on states.id = issues.state_id and issues.project_id = ?", projectId).
 			Where("states.project_id = ?", projectId).
 			Select("count(issues.state_id) as Count, states.id as \"Key\"")
+		if onlyActive {
+			query = query.Where("states.\"group\" <> ?", "cancelled").Where("states.\"group\" <> ?", "completed")
+		}
 	case "labels":
 		query = query.Raw(`select count(i.id) as Count, l.id as Key from labels l
 left join issue_labels il on il.label_id = l.id

@@ -4,8 +4,8 @@ package maintenance
 import (
 	"log/slog"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 type WorkspacesCleaner struct {

@@ -10,11 +10,11 @@ package aiplan
 import (
 	"net/http"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 // Запрет методов, если включен демо-режим
