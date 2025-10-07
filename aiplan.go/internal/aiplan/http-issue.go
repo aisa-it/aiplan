@@ -607,7 +607,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 			query = query.Where("issues.created_by_id = ?", user.ID)
 		}
 
-		if onlyActive {
+		if onlyActive || filters.OnlyActive {
 			query = query.Where("issues.state_id in (?)", s.db.Model(&dao.State{}).
 				Select("id").
 				Where("\"group\" <> ?", "cancelled").
