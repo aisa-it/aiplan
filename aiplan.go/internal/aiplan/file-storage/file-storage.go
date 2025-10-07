@@ -14,11 +14,11 @@ import (
 
 	"golang.org/x/exp/slog"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"sheff.online/aiplan/internal/aiplan/config"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3config "github.com/aws/aws-sdk-go-v2/config"

@@ -3,12 +3,13 @@ package notifications
 import (
 	"bytes"
 	"fmt"
-	"gorm.io/gorm"
 	"log/slog"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
 	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"gorm.io/gorm"
 )
 
 type emailNotifyWorkspace struct {

@@ -9,14 +9,15 @@ package dao
 
 import (
 	"fmt"
+	"log/slog"
+	"reflect"
+	"strings"
+	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"log/slog"
-	"reflect"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	"strings"
-	"time"
 )
 
 const (

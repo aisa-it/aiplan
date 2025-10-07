@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
 )
 
 func (s *Services) getSwaggerJSON(c echo.Context) error {

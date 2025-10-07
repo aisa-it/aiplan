@@ -11,11 +11,12 @@ package tracker
 
 import (
 	"fmt"
+	"log/slog"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"log/slog"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	ErrStack "sheff.online/aiplan/internal/aiplan/stack-error"
 )
 
 type activityFunc func(map[string]interface{}, map[string]interface{}, string, string, *dao.Project, dao.User, *[]dao.EntityActivity) error

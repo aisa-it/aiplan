@@ -4,17 +4,18 @@ package dao
 import (
 	"database/sql"
 	"fmt"
+
 	"github.com/lib/pq"
 
 	"html"
 	"net/url"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 type Form struct {

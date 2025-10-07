@@ -14,9 +14,9 @@ import (
 
 	"slices"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/andygrunwald/go-jira"
 	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 type RawLinkedIssues struct {

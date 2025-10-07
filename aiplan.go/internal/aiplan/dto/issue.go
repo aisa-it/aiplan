@@ -11,7 +11,7 @@ package dto
 import (
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 )
 
 type LabelLight struct {
@@ -53,9 +53,9 @@ type Issue struct {
 
 	Priority *string `json:"priority" extensions:"x-nullable"`
 
-	StartDate   *types.TargetDate `json:"start_date" extensions:"x-nullable"`
-	TargetDate  *types.TargetDate `json:"target_date" extensions:"x-nullable"`
-	CompletedAt *types.TargetDate `json:"completed_at" extensions:"x-nullable"`
+	StartDate   *types.TargetDate      `json:"start_date" extensions:"x-nullable"`
+	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable"`
+	CompletedAt *types.TargetDate      `json:"completed_at" extensions:"x-nullable"`
 
 	ProjectId   string `json:"project"`
 	WorkspaceId string `json:"workspace"`

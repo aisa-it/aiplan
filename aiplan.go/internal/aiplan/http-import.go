@@ -10,13 +10,13 @@ package aiplan
 import (
 	"net/http"
 
-	"sheff.online/aiplan/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/errors"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/issues-import/entity"
-	"sheff.online/aiplan/internal/aiplan/issues-import/errors"
 )
 
 func (s *Services) AddImportServices(g *echo.Group) {

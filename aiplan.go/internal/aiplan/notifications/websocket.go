@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"sheff.online/aiplan/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 const (

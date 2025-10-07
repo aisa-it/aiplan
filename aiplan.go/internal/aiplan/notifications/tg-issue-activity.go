@@ -2,13 +2,14 @@ package notifications
 
 import (
 	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"log/slog"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/utils"
-	"strings"
 )
 
 type TgNotifyIssue struct {
@@ -289,8 +290,8 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 						oldValue = capitalizeFirst(oldValue)
 						newValue = capitalizeFirst(newValue)
 					} else if *activity.Field == "target_date" {
-						newT, err := FormatDate(newValue, "02.01.2006", nil)
-						oldValue, _ = FormatDate(oldValue, "02.01.2006", nil)
+						newT, err := FormatDate(newValue, "02.01.2006 15:04 MST", nil)
+						oldValue, _ = FormatDate(oldValue, "02.01.2006 15:04 MST", nil)
 						if newValue == "<nil>" {
 							newValue = ""
 						}

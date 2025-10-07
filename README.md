@@ -56,34 +56,70 @@ docker-compose up -d
 
 ## Application Parameters
 
-| Parameter                    | Description                                                                | Type   |
-| ---------------------------- | -------------------------------------------------------------------------- | ------ |
-| `SECRET_KEY`                 | The key for generating JWT tokens.                                         | string |
-| `AWS_REGION`                 | Minio region                                                               | string |
-| `AWS_ACCESS_KEY_ID`          | minio login                                                                | string |
-| `AWS_SECRET_ACCESS_KEY`      | minio password                                                             | string |
-| `AWS_S3_ENDPOINT_URL`        | Path to minio                                                              | string |
-| `AWS_S3_BUCKET_NAME`         | Name of the minio bucket                                                   | string |
-| `DATABASE_URL`               | DSN of the database                                                        | string |
-| `DEFAULT_EMAIL`              | Email of the standard user (password `password123` at creation)            | string |
-| `EMAIL_ACTIVITY_DISABLED`    | Disabling sending notifications to                                         | bool   |
-| `EMAIL_HOST`                 | Path to the mail server                                                    | string |
-| `EMAIL_HOST_USER`            | Mail server login                                                          | string |
-| `EMAIL_HOST_PASSWORD`        | Mail server password                                                       | string |
-| `EMAIL_PORT`                 | Mail server port                                                           | int    |
-| `EMAIL_FROM`                 | Mailing list email                                                         | string |
-| `EMAIL_WORKERS`              | Number of parallel mail notification handlers of the application           | int    |
-| `WEB_URL`                    | External address of the application                                        | string |
-| `JITSI_URL`                  | Address of the jitsi conferences                                           | string |
-| `JITSI_JWT_SECRET`           | Secret key for jitsi auth JWT token                                        | string |
-| `JITSI_APP_ID`               | Jitsi app ID for JWT iss field                                             | string |
-| `FRONT_PATH`                 | The path to the compiled front (if specified, the back will return static) | string |
-| `NOTIFICATIONS_PERIOD`       | Time period of a batch of email notifications                              | int    |
-| `TELEGRAM_BOT_TOKEN`         | Telegram bot token                                                         | string |
-| `TELEGRAM_COMMANDS_DISABLED` | Disabling telegram bot commands                                            | bool   |
-| `SESSIONS_DB_PATH`           | Path to the session database file                                          | string |
-| `SIGN_UP_ENABLE`             | Enabling registration in the                                               | bool   |
-| `DEMO`                       | Demo mode                                                                  | bool   |
-| `SWAGGER_ENABLED`            | Enabling the Swagger API documentation at /api/swagger                     | bool   |
-| `NY_ENABLE`                  | Enabling the New Year theme                                                | bool   |
-| `CAPTCHA_DISABLED`           | Disabling captcha                                                          | bool   |
+| Parameter                     | Description                                                                | Type   |
+|-------------------------------|----------------------------------------------------------------------------| ------ |
+| `SECRET_KEY`                  | The key for generating JWT tokens.                                         | string |
+| `AWS_REGION`                  | Minio region                                                               | string |
+| `AWS_ACCESS_KEY_ID`           | minio login                                                                | string |
+| `AWS_SECRET_ACCESS_KEY`       | minio password                                                             | string |
+| `AWS_S3_ENDPOINT_URL`         | Path to minio                                                              | string |
+| `AWS_S3_BUCKET_NAME`          | Name of the minio bucket                                                   | string |
+| `DATABASE_URL`                | DSN of the database                                                        | string |
+| `DEFAULT_EMAIL`               | Email of the standard user (password `password123` at creation)            | string |
+| `EMAIL_ACTIVITY_DISABLED`     | Disabling sending notifications to                                         | bool   |
+| `EMAIL_HOST`                  | Path to the mail server                                                    | string |
+| `EMAIL_HOST_USER`             | Mail server login                                                          | string |
+| `EMAIL_HOST_PASSWORD`         | Mail server password                                                       | string |
+| `EMAIL_PORT`                  | Mail server port                                                           | int    |
+| `EMAIL_FROM`                  | Mailing list email                                                         | string |
+| `EMAIL_WORKERS`               | Number of parallel mail notification handlers of the application           | int    |
+| `WEB_URL`                     | External address of the application                                        | string |
+| `JITSI_DISABLED`              | Disabling jitsi                                                            | bool   |
+| `JITSI_URL`                   | Address of the jitsi conferences                                           | string |
+| `JITSI_JWT_SECRET`            | Secret key for jitsi auth JWT token                                        | string |
+| `JITSI_APP_ID`                | Jitsi app ID for JWT iss field                                             | string |
+| `FRONT_PATH`                  | The path to the compiled front (if specified, the back will return static) | string |
+| `NOTIFICATIONS_PERIOD`        | Time period of a batch of email notifications                              | int    |
+| `TELEGRAM_BOT_TOKEN`          | Telegram bot token                                                         | string |
+| `TELEGRAM_COMMANDS_DISABLED`  | Disabling telegram bot commands                                            | bool   |
+| `SESSIONS_DB_PATH`            | Path to the session database file                                          | string |
+| `SIGN_UP_ENABLE`              | Enabling registration in the                                               | bool   |
+| `DEMO`                        | Demo mode                                                                  | bool   |
+| `SWAGGER`             | Enabling the Swagger API documentation at /api/swagger                     | bool   |
+| `NY_ENABLE`                   | Enabling the New Year theme                                                | bool   |
+| `CAPTCHA_DISABLED`            | Disabling captcha                                                          | bool   |
+
+### nginx SSL example
+```
+server {
+    listen 80;
+    server_name aiplan.domain;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name aiplan.domain;
+
+    ssl_certificate     /etc/ssl/certs/fullchain.pem;
+    ssl_certificate_key /etc/ssl/private/privkey.pem;
+
+
+    client_max_body_size 50M;
+
+    location / {
+        # we proxy directly to the container if it was launched in the same docker-compose with the same network, otherwise we change to the container IP/machine IP/localhost
+        proxy_pass http://server:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```

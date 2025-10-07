@@ -12,8 +12,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/boltdb/bolt"
-	"sheff.online/aiplan/internal/aiplan/config"
 )
 
 type SessionsManager struct {

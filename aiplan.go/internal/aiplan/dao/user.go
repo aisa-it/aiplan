@@ -13,12 +13,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	policy "sheff.online/aiplan/internal/aiplan/redactor-policy"
-	"sheff.online/aiplan/internal/aiplan/types"
-	"sheff.online/aiplan/internal/aiplan/utils"
 )
 
 // Пользователи
@@ -227,6 +227,18 @@ func (u *User) GetName() string {
 
 func (u *User) CanReceiveNotifications() bool {
 	return u.IsActive && !u.IsIntegration && !u.IsBot
+}
+
+func (u *User) IsNotify(typeMsg string) bool {
+	switch typeMsg {
+	case "email":
+		return !u.Settings.EmailNotificationMute
+	case "app":
+		return !u.Settings.AppNotificationMute
+	case "telegram":
+		return !u.Settings.TgNotificationMute
+	}
+	return false
 }
 
 func (User) TableName() string {

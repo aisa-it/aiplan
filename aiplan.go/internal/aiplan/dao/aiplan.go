@@ -13,16 +13,17 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"sheff.online/aiplan/internal/aiplan/types"
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dto"
-	filestorage "sheff.online/aiplan/internal/aiplan/file-storage"
 )
 
 // GenID генерирует уникальный идентификатор в формате UUID.

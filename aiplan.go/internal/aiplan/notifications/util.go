@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/microcosm-cc/bluemonday"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 func prepareHtmlBody(stripPolicy *bluemonday.Policy, html string) string {
@@ -84,6 +84,7 @@ func FormatDate(dateStr, outFormat string, tz *types.TimeZone) (string, error) {
 		"02.01.2006 15:04 MST",
 		"02.01.2006 15:04 -0700",
 		"02.01.2006",
+		"2006-01-02 15:04:05Z07:00",
 	}
 
 	var t time.Time

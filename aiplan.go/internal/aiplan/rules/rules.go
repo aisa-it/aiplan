@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	lua "github.com/yuin/gopher-lua"
-	"sheff.online/aiplan/internal/aiplan/dao"
 )
 
 func BeforeStatusChange(issuer dao.User, currentIssue dao.Issue, newState dao.State) (LuaResp, []LuaOut, IRulesError) {

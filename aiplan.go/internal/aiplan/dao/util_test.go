@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/gofrs/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/config"
 )
 
 var db *gorm.DB

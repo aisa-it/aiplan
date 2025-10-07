@@ -217,6 +217,9 @@ var (
 	ErrUnsupportedAvatarType    = DefinedError{Code: 6011, StatusCode: http.StatusUnsupportedMediaType, Err: "unsupported avatar file type", RuErr: "Данный тип файла не поддерживается для установки аватара"}
 	ErrFilterBadRequest         = DefinedError{Code: 6012, StatusCode: http.StatusBadRequest, Err: "incorrect format of transmitted data", RuErr: "Не верный формат переданных данных"}
 	ErrBadTimezone              = DefinedError{Code: 6013, StatusCode: http.StatusBadRequest, Err: "wrong timezone ", RuErr: "Временная зона не поддерживается"}
+	ErrEmailIsExist             = DefinedError{Code: 6014, StatusCode: http.StatusBadRequest, Err: "email is exist", RuErr: "Пользователь с таким Email уже существует"}
+	ErrEmailChangeLimit         = DefinedError{Code: 6015, StatusCode: http.StatusTooManyRequests, Err: "the code was sent less than a minute ago", RuErr: "Запрос нового кода верификации можно делать раз в минуту"}
+	ErrEmailVerify              = DefinedError{Code: 6016, StatusCode: http.StatusBadRequest, Err: "invalid or expired code", RuErr: "Неверный или просроченный код"}
 
 	// 7*** - integration errors
 	ErrInvalidEventType      = DefinedError{Code: 7001, StatusCode: http.StatusBadRequest, Err: "invalid event type", RuErr: "Указан неверный тип события"}

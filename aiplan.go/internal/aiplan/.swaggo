@@ -1,4 +1,5 @@
 replace time.Duration int64
-replace sheff.online/aiplan/internal/aiplan/types.JsonURL string
-replace sheff.online/aiplan/internal/aiplan/types.TargetDate string
-replace sheff.online/aiplan/internal/aiplan/types.RedactorHTML string
+replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.JsonURL string
+replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.TargetDate string
+replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.RedactorHTML string
+replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.TargetDateTimeZ string

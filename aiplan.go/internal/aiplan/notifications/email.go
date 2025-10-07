@@ -18,11 +18,11 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/microcosm-cc/bluemonday"
 	"gopkg.in/gomail.v2"
 	"gorm.io/gorm"
-	"sheff.online/aiplan/internal/aiplan/config"
-	"sheff.online/aiplan/internal/aiplan/dao"
 
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/html"
@@ -180,7 +180,7 @@ func (es *EmailService) worker(emailChan <-chan mail) error {
 				return nil
 			}
 			if err := es.sendEmail(e); err != nil {
-				slog.Error("email send err", e.To, err)
+				slog.Error("email send", "to", e.To, "err", err)
 			}
 		}
 	}

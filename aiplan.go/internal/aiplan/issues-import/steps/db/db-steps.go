@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"slices"
 
-	"sheff.online/aiplan/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/context"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"sheff.online/aiplan/internal/aiplan/dao"
-	"sheff.online/aiplan/internal/aiplan/issues-import/context"
 )
 
 var dbSteps []func(*context.ImportContext, *gorm.DB) error = []func(*context.ImportContext, *gorm.DB) error{
