@@ -8,9 +8,9 @@
 //   - Поддержка различных типов данных и форматов.
 package aiplan
 
-// @title My API
+// @title AIPlan API
 // @version 1.0
-// @description This is a sample server.
+// @description AIPlan - open-source project management system with task management, document collaboration, forms, video conferencing, and calendar features.
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name Authorization
