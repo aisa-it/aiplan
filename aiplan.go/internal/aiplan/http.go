@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	store "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/memory-store"
 	"html/template"
 	"image"
 	"io"
@@ -40,6 +39,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	store "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/memory-store"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
@@ -458,7 +459,7 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	accessCookie.Name = "access_token"
 	accessCookie.Value = accessToken.SignedString
 	accessCookie.HttpOnly = true
-	accessCookie.Secure = true
+	accessCookie.Secure = cfg.WebURL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
 	accessCookie.Expires = time.Now().Add(types.TokenExpiresPeriod)
@@ -468,7 +469,7 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	refreshCookie.Name = "refresh_token"
 	refreshCookie.Value = refreshToken.SignedString
 	refreshCookie.HttpOnly = true
-	refreshCookie.Secure = true
+	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
 	refreshCookie.Expires = time.Now().Add(types.RefreshTokenExpiresPeriod)
@@ -480,7 +481,7 @@ func clearAuthCookies(c echo.Context) {
 	accessCookie.Name = "access_token"
 	accessCookie.Value = ""
 	accessCookie.HttpOnly = true
-	accessCookie.Secure = true
+	accessCookie.Secure = cfg.WebURL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
 	accessCookie.MaxAge = -1
@@ -490,7 +491,7 @@ func clearAuthCookies(c echo.Context) {
 	refreshCookie.Name = "refresh_token"
 	refreshCookie.Value = ""
 	refreshCookie.HttpOnly = true
-	refreshCookie.Secure = true
+	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
 	refreshCookie.MaxAge = -1
