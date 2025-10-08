@@ -237,7 +237,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		tr.RegisterHandler(notifications.NewIssueNotification(ns))
 		tr.RegisterHandler(notifications.NewProjectNotification(ns))
 		tr.RegisterHandler(notifications.NewDocNotification(ns))
-		//tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
+		tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
 	}
 
 	{ // register handler telegram activity
