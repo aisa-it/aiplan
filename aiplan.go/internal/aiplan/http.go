@@ -462,6 +462,9 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	accessCookie.Secure = cfg.WebURL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		accessCookie.SameSite = http.SameSiteLaxMode
+	}
 	accessCookie.Expires = time.Now().Add(types.TokenExpiresPeriod)
 	c.SetCookie(accessCookie)
 
@@ -472,6 +475,9 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		refreshCookie.SameSite = http.SameSiteLaxMode
+	}
 	refreshCookie.Expires = time.Now().Add(types.RefreshTokenExpiresPeriod)
 	c.SetCookie(refreshCookie)
 }
@@ -484,6 +490,9 @@ func clearAuthCookies(c echo.Context) {
 	accessCookie.Secure = cfg.WebURL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		accessCookie.SameSite = http.SameSiteLaxMode
+	}
 	accessCookie.MaxAge = -1
 	c.SetCookie(accessCookie)
 
@@ -494,6 +503,9 @@ func clearAuthCookies(c echo.Context) {
 	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		refreshCookie.SameSite = http.SameSiteLaxMode
+	}
 	refreshCookie.MaxAge = -1
 	c.SetCookie(refreshCookie)
 }

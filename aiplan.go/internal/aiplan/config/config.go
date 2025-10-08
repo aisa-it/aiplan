@@ -113,7 +113,13 @@ func envConfig(key string, s interface{}) {
 			}
 			logValue += pass[len(pass)-1]
 
+		} else if u, err := url.Parse(GetEnv(fEnvTag)); err == nil {
+			if _, ok := u.User.Password(); ok {
+				u.User = url.UserPassword(u.User.Username(), "SECRET")
+			}
+			logValue = u.String()
 		}
+
 		slog.Info("Set config value",
 			slog.String("key", typeParam.Name()+"."+fName),
 			slog.String("value", logValue),
