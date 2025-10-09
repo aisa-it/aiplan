@@ -8,9 +8,9 @@
 //   - Поддержка различных типов данных и форматов.
 package aiplan
 
-// @title My API
+// @title AIPlan API
 // @version 1.0
-// @description This is a sample server.
+// @description AIPlan - open-source project management system with task management, document collaboration, forms, video conferencing, and calendar features.
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name Authorization
@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	store "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/memory-store"
 	"html/template"
 	"image"
 	"io"
@@ -40,6 +39,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	store "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/memory-store"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
@@ -237,7 +238,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		tr.RegisterHandler(notifications.NewIssueNotification(ns))
 		tr.RegisterHandler(notifications.NewProjectNotification(ns))
 		tr.RegisterHandler(notifications.NewDocNotification(ns))
-		//tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
+		tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
 	}
 
 	{ // register handler telegram activity
@@ -459,9 +460,12 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	accessCookie.Name = "access_token"
 	accessCookie.Value = accessToken.SignedString
 	accessCookie.HttpOnly = true
-	accessCookie.Secure = true
+	accessCookie.Secure = cfg.WebURL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		accessCookie.SameSite = http.SameSiteLaxMode
+	}
 	accessCookie.Expires = time.Now().Add(types.TokenExpiresPeriod)
 	c.SetCookie(accessCookie)
 
@@ -469,9 +473,12 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	refreshCookie.Name = "refresh_token"
 	refreshCookie.Value = refreshToken.SignedString
 	refreshCookie.HttpOnly = true
-	refreshCookie.Secure = true
+	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		refreshCookie.SameSite = http.SameSiteLaxMode
+	}
 	refreshCookie.Expires = time.Now().Add(types.RefreshTokenExpiresPeriod)
 	c.SetCookie(refreshCookie)
 }
@@ -481,9 +488,12 @@ func clearAuthCookies(c echo.Context) {
 	accessCookie.Name = "access_token"
 	accessCookie.Value = ""
 	accessCookie.HttpOnly = true
-	accessCookie.Secure = true
+	accessCookie.Secure = cfg.WebURL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		accessCookie.SameSite = http.SameSiteLaxMode
+	}
 	accessCookie.MaxAge = -1
 	c.SetCookie(accessCookie)
 
@@ -491,9 +501,12 @@ func clearAuthCookies(c echo.Context) {
 	refreshCookie.Name = "refresh_token"
 	refreshCookie.Value = ""
 	refreshCookie.HttpOnly = true
-	refreshCookie.Secure = true
+	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
+	if cfg.WebURL.Scheme != "https" {
+		refreshCookie.SameSite = http.SameSiteLaxMode
+	}
 	refreshCookie.MaxAge = -1
 	c.SetCookie(refreshCookie)
 }
