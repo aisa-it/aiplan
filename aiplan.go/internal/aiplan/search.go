@@ -13,6 +13,7 @@ import (
 
 func FetchIssuesByGroups(
 	groupSize map[string]int,
+	db *gorm.DB, // Clean session cause gorm reset not working
 	groupSelectQuery *gorm.DB,
 	groupByParam string,
 	filters types.IssuesListFilters,
@@ -20,8 +21,6 @@ func FetchIssuesByGroups(
 	groupMap := make(map[string]IssuesGroupResponse, len(groupSize))
 
 	totalCount := 0
-
-	db := groupSelectQuery.Session(&gorm.Session{Initialized: true}) // Clean session without filters
 
 	for group, size := range groupSize {
 		totalCount += size
@@ -89,16 +88,10 @@ func FetchIssuesByGroups(
 			if len(filters.AssigneeIds) > 0 && !slices.Contains(filters.AssigneeIds, group) {
 				continue
 			}
-			qq := db.Where("issues.id in (?)", db.
-				Model(&dao.IssueAssignee{}).
-				Select("issue_id").
-				Where("assignee_id = ?", group))
+			q := q.Where("exists (select 1 from issue_assignees where assignee_id = ? and issues_id = issues.id)", group)
 			if group == "" {
-				qq = qq.Or("issues.id not in (?)", db.
-					Select("issue_id").
-					Model(&dao.IssueAssignee{}))
+				q = q.Where("not exists (select 1 from issue_assignees where issues_id = issues.id)")
 			}
-			q = q.Where(qq)
 			if group != "" {
 				var u dao.User
 				if err := db.Where("id = ?", group).First(&u).Error; err != nil {
