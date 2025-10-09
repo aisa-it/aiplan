@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -50,7 +49,7 @@ import (
 const (
 	commentsCooldown = time.Second * 5
 
-	descriptionLockTime = time.Minute * 5
+	descriptionLockTime = time.Minute * 15
 )
 
 type IssueContext struct {
@@ -497,7 +496,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Filters
-	if groupByParam == "" {
+	{
 		if len(filters.AuthorIds) > 0 {
 			query = query.Where("issues.created_by_id in (?)", filters.AuthorIds)
 		}
@@ -737,123 +736,10 @@ func (s *Services) getIssueList(c echo.Context) error {
 		if err != nil {
 			return EError(c, err)
 		}
-		groupMap := make(map[string]IssuesGroupResponse, len(groupSize))
 
-		totalCount := 0
-
-		for group, size := range groupSize {
-			totalCount += size
-
-			q := groupSelectQuery.Session(&gorm.Session{})
-
-			var entity any
-			switch groupByParam {
-			case "priority":
-				if group != "" {
-					q = q.Where("issues.priority = ?", group)
-				} else {
-					q = q.Where("issues.priority is null")
-				}
-				entity = group
-			case "author":
-				q = q.Where("created_by_id = ?", group)
-				if size == 0 {
-					var user dao.User
-					if err := s.db.Where("id = ?", group).First(&user).Error; err != nil {
-						return EError(c, err)
-					}
-					entity = user.ToLightDTO()
-				}
-			case "state":
-				q = q.Where("state_id = ?", group)
-				if size == 0 {
-					var state dao.State
-					if err := s.db.Where("id = ?", group).First(&state).Error; err != nil {
-						return EError(c, err)
-					}
-					entity = state.ToLightDTO()
-				}
-			case "labels":
-				qq := s.db.Where("issues.id in (?)", s.db.
-					Model(&dao.IssueLabel{}).
-					Select("issue_id").
-					Where("label_id = ?", group))
-				if group == "" {
-					qq = qq.Or("issues.id not in (?)", s.db.
-						Select("issue_id").
-						Model(&dao.IssueLabel{}))
-				}
-				q = q.Where(qq)
-				if group != "" {
-					var label dao.Label
-					if err := s.db.Where("id = ?", group).First(&label).Error; err != nil {
-						return EError(c, err)
-					}
-					entity = label.ToLightDTO()
-				}
-			case "assignees":
-				qq := s.db.Where("issues.id in (?)", s.db.
-					Model(&dao.IssueAssignee{}).
-					Select("issue_id").
-					Where("assignee_id = ?", group))
-				if group == "" {
-					qq = qq.Or("issues.id not in (?)", s.db.
-						Select("issue_id").
-						Model(&dao.IssueAssignee{}))
-				}
-				q = q.Where(qq)
-				if group != "" {
-					var u dao.User
-					if err := s.db.Where("id = ?", group).First(&u).Error; err != nil {
-						return EError(c, err)
-					}
-					entity = u.ToLightDTO()
-				}
-			case "watchers":
-				qq := s.db.Where("issues.id in (?)", s.db.
-					Model(&dao.IssueWatcher{}).
-					Select("issue_id").
-					Where("watcher_id = ?", group))
-				if group == "" {
-					qq = qq.Or("issues.id not in (?)", s.db.
-						Select("issue_id").
-						Model(&dao.IssueWatcher{}))
-				}
-				q = q.Where(qq)
-				if group != "" {
-					var u dao.User
-					if err := s.db.Where("id = ?", group).First(&u).Error; err != nil {
-						return EError(c, err)
-					}
-					entity = u.ToLightDTO()
-				}
-			}
-
-			if size == 0 {
-				groupMap[group] = IssuesGroupResponse{
-					Entity: entity,
-					Count:  size,
-				}
-				continue
-			}
-
-			var issues []dao.IssueWithCount
-			if err := q.Find(&issues).Error; err != nil {
-				return EError(c, err)
-			}
-
-			switch groupByParam {
-			case "author":
-				entity = issues[0].Author.ToLightDTO()
-			case "state":
-				entity = issues[0].State.ToLightDTO()
-			}
-
-			groupMap[group] = IssuesGroupResponse{
-				Entity: entity,
-				Count:  size,
-				Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) *dto.IssueWithCount { return i.ToDTO() }),
-			}
+		totalCount, groupMap, err := FetchIssuesByGroups(groupSize, s.db, groupSelectQuery, groupByParam, filters)
+		if err != nil {
+			return EError(c, err)
 		}
 
 		return c.JSON(http.StatusOK, IssuesGroupedResponse{
@@ -3716,50 +3602,4 @@ type IssuesGroupResponse struct {
 	Entity any                   `json:"entity"`
 	Count  int                   `json:"count"`
 	Issues []*dto.IssueWithCount `json:"issues"`
-}
-
-func SortIssuesGroups(groupByParam string, issuesGroups map[string]IssuesGroupResponse) []IssuesGroupResponse {
-	return slices.SortedFunc(maps.Values(issuesGroups), func(e1, e2 IssuesGroupResponse) int {
-		switch groupByParam {
-		case "priority":
-			entity1, _ := e1.Entity.(string) // use _ for nil transform into empty string
-			entity2, _ := e2.Entity.(string)
-			return utils.PrioritiesSortValues[entity1] - utils.PrioritiesSortValues[entity2]
-		case "author":
-			entity1 := e1.Entity.(*dto.UserLight)
-			entity2 := e2.Entity.(*dto.UserLight)
-			return utils.CompareUsers(entity1, entity2)
-		case "state":
-			entity1, _ := e1.Entity.(*dto.StateLight)
-			entity2, _ := e2.Entity.(*dto.StateLight)
-			if entity1 == entity2 {
-				return 0
-			}
-			if entity1 == nil || (entity2 != nil && entity1.Name > entity2.Name) {
-				return 1
-			} else {
-				return -1
-			}
-		case "labels":
-			entity1, _ := e1.Entity.(*dto.LabelLight)
-			entity2, _ := e2.Entity.(*dto.LabelLight)
-			if entity1 == entity2 {
-				return 0
-			}
-			if entity1 == nil || (entity2 != nil && entity1.Name > entity2.Name) {
-				return 1
-			} else {
-				return -1
-			}
-		case "assignees":
-			entity1, _ := e1.Entity.(*dto.UserLight)
-			entity2, _ := e2.Entity.(*dto.UserLight)
-			return utils.CompareUsers(entity1, entity2)
-		case "watchers":
-			entity1, _ := e1.Entity.(*dto.UserLight)
-			entity2, _ := e2.Entity.(*dto.UserLight)
-			return utils.CompareUsers(entity1, entity2)
-		}
-		return 0
-	})
 }
