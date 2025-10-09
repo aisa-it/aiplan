@@ -67,16 +67,11 @@ func FetchIssuesByGroups(
 			if len(filters.Labels) > 0 && !slices.Contains(filters.Labels, group) {
 				continue
 			}
-			qq := db.Where("issues.id in (?)", db.
-				Model(&dao.IssueLabel{}).
-				Select("issue_id").
-				Where("label_id = ?", group))
 			if group == "" {
-				qq = qq.Or("issues.id not in (?)", db.
-					Select("issue_id").
-					Model(&dao.IssueLabel{}))
+				q = q.Where("not exists (select 1 from issue_labels where issue_id = issues.id)")
+			} else {
+				q = q.Where("exists (select 1 from issue_labels where label_id = ? and issue_id = issues.id)", group)
 			}
-			q = q.Where(qq)
 			if group != "" {
 				var label dao.Label
 				if err := db.Where("id = ?", group).First(&label).Error; err != nil {
@@ -88,9 +83,10 @@ func FetchIssuesByGroups(
 			if len(filters.AssigneeIds) > 0 && !slices.Contains(filters.AssigneeIds, group) {
 				continue
 			}
-			q := q.Where("exists (select 1 from issue_assignees where assignee_id = ? and issues_id = issues.id)", group)
 			if group == "" {
-				q = q.Where("not exists (select 1 from issue_assignees where issues_id = issues.id)")
+				q = q.Where("not exists (select 1 from issue_assignees where issue_id = issues.id)")
+			} else {
+				q = q.Where("exists (select 1 from issue_assignees where assignee_id = ? and issue_id = issues.id)", group)
 			}
 			if group != "" {
 				var u dao.User
@@ -103,16 +99,11 @@ func FetchIssuesByGroups(
 			if len(filters.WatcherIds) > 0 && !slices.Contains(filters.WatcherIds, group) {
 				continue
 			}
-			qq := db.Where("issues.id in (?)", db.
-				Model(&dao.IssueWatcher{}).
-				Select("issue_id").
-				Where("watcher_id = ?", group))
 			if group == "" {
-				qq = qq.Or("issues.id not in (?)", db.
-					Select("issue_id").
-					Model(&dao.IssueWatcher{}))
+				q = q.Where("not exists (select 1 from issue_watchers where issue_id = issues.id)")
+			} else {
+				q = q.Where("exists (select 1 from issue_watchers where watcher_id = ? and issue_id = issues.id)", group)
 			}
-			q = q.Where(qq)
 			if group != "" {
 				var u dao.User
 				if err := db.Where("id = ?", group).First(&u).Error; err != nil {
