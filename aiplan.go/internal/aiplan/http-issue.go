@@ -49,7 +49,7 @@ import (
 const (
 	commentsCooldown = time.Second * 5
 
-	descriptionLockTime = time.Minute * 5
+	descriptionLockTime = time.Minute * 15
 )
 
 type IssueContext struct {
@@ -736,7 +736,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		totalCount, groupMap, err := FetchIssuesByGroups(groupSize, groupSelectQuery, groupByParam, filters)
+		totalCount, groupMap, err := FetchIssuesByGroups(groupSize, s.db, groupSelectQuery, groupByParam, filters)
 		if err != nil {
 			return EError(c, err)
 		}
