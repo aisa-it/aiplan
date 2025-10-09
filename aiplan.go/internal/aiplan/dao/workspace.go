@@ -198,20 +198,6 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 		}
 	}
 
-	{ // delete sprint
-		if err := tx.Where("workspace_id = ?", workspace.ID).Delete(SprintWatcher{}).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Where("workspace_id = ?", workspace.ID).Delete(SprintIssue{}).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(Sprint{}).Error; err != nil {
-			return err
-		}
-	}
-
 	// delete members
 	var members []WorkspaceMember
 	if err := tx.Where("workspace_id = ?", workspace.ID).Find(&members).Error; err != nil {
@@ -307,6 +293,18 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 
 	for i := range forms {
 		if err := tx.Delete(&forms[i]).Error; err != nil {
+			return err
+		}
+	}
+
+	//delete sprint
+	var sprint []Sprint
+	if err := tx.Where("workspace_id = ?", workspace.ID).Find(&sprint).Error; err != nil {
+		return err
+	}
+
+	for i := range sprint {
+		if err := tx.Delete(&sprint[i]).Error; err != nil {
 			return err
 		}
 	}
@@ -715,6 +713,7 @@ type WorkspaceActivityExtendFields struct {
 	ProjectExtendFields
 	DocExtendFields
 	FormExtendFields
+	SprintExtendFields
 	EntityMemberExtendFields
 	WorkspaceOwnerExtendFields
 }

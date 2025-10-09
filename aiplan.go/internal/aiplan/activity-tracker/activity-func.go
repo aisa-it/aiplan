@@ -32,6 +32,8 @@ const (
 	FIELD_ASSIGNEES        = "assignees_list"
 	FIELD_READERS          = "readers_list"
 	FIELD_EDITORS          = "editors_list"
+	FIELD_ISSUES           = "issue_list"
+	FIELD_SPRINT           = "sprint"
 	FIELD_EMOJI            = "emoji"
 	FIELD_PUBLIC           = "public"
 	FIELD_IDENTIFIER       = "identifier"
