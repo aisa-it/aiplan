@@ -540,8 +540,10 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 	root.UnionCustomFields = "'root' AS entity_type"
 	var doc dao.DocActivity
 	doc.UnionCustomFields = "'doc' AS entity_type"
+	var sprint dao.SprintActivity
+	sprint.UnionCustomFields = "'sprint' AS entity_type"
 
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc)
+	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc, sprint)
 	query := unionTable.
 		Joins("Actor").
 		Joins("Project").
@@ -549,6 +551,7 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 		Joins("Issue").
 		Joins("Doc").
 		Joins("Form").
+		Joins("Sprint").
 		Order("fa.created_at desc").
 		Where("fa.actor_id = ?", user.ID).
 		//Where("field NOT IN (?)", []string{"start_date", "end_date"}). //TODO create & move to ActivitySkipper
@@ -627,8 +630,10 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 	root.UnionCustomFields = "'root' AS entity_type"
 	var doc dao.DocActivity
 	doc.UnionCustomFields = "'doc' AS entity_type"
+	var sprint dao.SprintActivity
+	sprint.UnionCustomFields = "'sprint' AS entity_type"
 
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc)
+	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc, sprint)
 	query := unionTable.
 		Where("fa.actor_id = ?", user.ID)
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper

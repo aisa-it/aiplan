@@ -1,4 +1,9 @@
-// Пакет предоставляет функции для обновления различных полей сущностей в системе отслеживания задач (tracker). Он включает в себя функции для обновления полей, связанных с назначением, наблюдателями, статусом, информацией о проекте и т.д.  Также предоставляет функции для работы с списками и связями между сущностями.  Функции используют общую логику обновления полей, абстрагируясь от конкретных типов сущностей.  Включает в себя функции для работы с блоками и блокирующими задачами, а также для обновления информации о датах и времени.
+// Package tracker
+// Пакет предоставляет функции для обновления различных полей сущностей в системе отслеживания задач (tracker).
+// Он включает в себя функции для обновления полей, связанных с назначением, наблюдателями, статусом, информацией о проекте и т.д.
+// Также предоставляет функции для работы со списками и связями между сущностями.
+// Функции используют общую логику обновления полей, абстрагируясь от конкретных типов сущностей.
+// Включает в себя функции для работы с блоками и блокирующими задачами, а также для обновления информации о датах и времени.
 package tracker
 
 import (
@@ -30,7 +35,7 @@ func issueAssigneesUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrack
 
 // entityWatchersUpdate Обновляет список наблюдателей для сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить.
 //   - currentInstance: карта с текущими данными сущности.
@@ -48,6 +53,20 @@ func entityWatchersUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrack
 func entityEditorsUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	requestedData["current_table"] = "users"
 	return entityFieldsListUpdate[E, A, dao.User]("editors", "editors_list", tracker, requestedData, currentInstance, entity, actor)
+}
+
+func entityIssuesUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
+	requestedData["current_table"] = "issues"
+	requestedData["field_log"] = "issue"
+
+	return entityFieldsListUpdate[E, A, dao.Issue]("issues", "issue_list", tracker, requestedData, currentInstance, entity, actor)
+}
+
+func entitySprintUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
+	requestedData["current_table"] = "issues"
+	requestedData["field_log"] = "issue"
+
+	return entityFieldsListUpdate[E, A, dao.Issue]("issues", "issue_list", tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityReadersUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
@@ -95,9 +114,9 @@ func issueBlocksListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrac
 	return updateEntityRelationsLog[E, A, dao.Issue]("blocks_list", "blocks_list", tracker, requestedData, currentInstance, entity, actor)
 }
 
-// issueBlockersListUpdate Обновляет список заблокированных сутностей.  Функция принимает объект ActivitiesTracker, данные для обновления, текущее состояние сущности, саму сущность и пользователя, выполняющего обновление. Возвращает список обновленных Activity и ошибку, если произошла ошибка.
+// issueBlockersListUpdate Обновляет список заблокированных сущностей.  Функция принимает объект ActivitiesTracker, данные для обновления, текущее состояние сущности, саму сущность и пользователя, выполняющего обновление. Возвращает список обновленных Activity и ошибку, если произошла ошибка.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить, включая список заблокированных сущностей.
 //   - currentInstance: карта с текущими данными сущности.
@@ -143,7 +162,7 @@ func entityDefaultAssigneesUpdate[E dao.Entity, A dao.Activity](tracker *Activit
 
 // entityDefaultWatchersUpdate Обновляет список дефолтных наблюдателей для сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить.
 //   - currentInstance: карта с текущими данными сущности.
@@ -192,7 +211,7 @@ func entityEmojiUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 
 // entityPublicUpdate Обновляет поле публичности сущности. Позволяет установить, видна ли сущность посторонним пользователям.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить.
 //   - currentInstance: карта с текущими данными сущности.
@@ -346,7 +365,7 @@ func entityTargetDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTra
 
 // entityStartDateUpdate Обновляет поле даты старта сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить, включая дату старта.
 //   - currentInstance: карта с текущими данными сущности.
@@ -358,15 +377,27 @@ func entityTargetDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTra
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityStartDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	format := func(str string) string {
-		if v, err := FormatDate(str, "02.01.2006 15:04 MST", nil); err != nil {
+		if dateStr, err := utils.FormatDateStr(str, "02.01.2006 15:04 MST", &actor.UserTimezone); err != nil {
 			return ""
 		} else {
-			return v
+			return dateStr
 		}
 	}
 
 	requestedData["start_date_func"] = format
 	currentInstance["start_date_func"] = format
+
+	if v, exists := requestedData["start_date"]; exists {
+		if startDate, ok := v.(map[string]interface{}); ok {
+			requestedData["start_date"] = startDate["Time"]
+		}
+	}
+
+	if v, exists := currentInstance["start_date"]; exists {
+		if startDate, ok := v.(map[string]interface{}); ok {
+			currentInstance["start_date"] = startDate["Time"]
+		}
+	}
 
 	return entityFieldUpdate[E, A]("start_date", nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
@@ -388,7 +419,7 @@ func entityCompletedAtUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 
 // entityEndDateUpdate Обновляет поле даты окончания сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить, включая дату окончания.
 //   - currentInstance: карта с текущими данными сущности.
@@ -399,12 +430,35 @@ func entityCompletedAtUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityEndDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
+	format := func(str string) string {
+		if dateStr, err := utils.FormatDateStr(str, "02.01.2006 15:04 MST", &actor.UserTimezone); err != nil {
+			return ""
+		} else {
+			return dateStr
+		}
+	}
+
+	requestedData["end_date_func"] = format
+	currentInstance["end_date_func"] = format
+
+	if v, exists := requestedData["end_date"]; exists {
+		if startDate, ok := v.(map[string]interface{}); ok {
+			requestedData["end_date"] = startDate["Time"]
+		}
+	}
+
+	if v, exists := currentInstance["end_date"]; exists {
+		if startDate, ok := v.(map[string]interface{}); ok {
+			currentInstance["end_date"] = startDate["Time"]
+		}
+	}
+
 	return entityFieldUpdate[E, A]("end_date", nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityLabelUpdate Обновляет список тегов сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить.
 //   - currentInstance: карта с текущими данными сущности.
@@ -421,7 +475,7 @@ func entityLabelUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 
 // entityAuthRequireUpdate Обновляет поле авторизации сущности.  Устанавливает, требуется ли авторизация для доступа к сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить.
 //   - currentInstance: карта с текущими данными сущности.
@@ -474,7 +528,7 @@ func entityDefaultUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 
 // entityEstimatePointUpdate Обновляет поле оценки в сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить, включая значение оценки.
 //   - currentInstance: карта с текущими данными сущности.
@@ -490,7 +544,7 @@ func entityEstimatePointUpdate[E dao.Entity, A dao.Activity](tracker *Activities
 
 // entityUrlUpdate Обновляет URL сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить, включая URL.
 //   - currentInstance: карта с текущими данными сущности.
@@ -506,7 +560,7 @@ func entityUrlUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, r
 
 // entityCommentHtmlUpdate Обновляет поле HTML комментария сущности.  Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить, включая HTML комментарий.
 //   - currentInstance: карта с текущими данными сущности.
@@ -547,7 +601,7 @@ func entityStateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 
 // issueParentUpdate Обновляет поле родительской сущности.  Функция принимает объект ActivitiesTracker, данные для обновления, текущее состояние сущности, саму сущность и пользователя, выполняющего обновление.  Возвращает список обновленных Activity и ошибку, если таковая произошла.
 //
-// Парамметры:
+// Параметры:
 //   - tracker: экземпляр ActivitiesTracker для доступа к данным.
 //   - requestedData: карта с данными, которые необходимо обновить, включая ID родительской сущности.
 //   - currentInstance: карта с текущими данными сущности.
@@ -640,7 +694,7 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 	return result, nil
 }
 
-// Преобразует слайс сутностей в map, используя ID сущности в качестве ключа.
+// Преобразует слайс сущностей в map, используя ID сущности в качестве ключа.
 func mapEntity[T dao.IDaoAct](arr []T) map[string]T {
 	result := make(map[string]T, len(arr))
 	for _, a := range arr {

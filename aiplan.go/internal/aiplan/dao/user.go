@@ -380,6 +380,9 @@ type UserNotifications struct {
 	DocActivityId *string      `json:"doc_activity,omitempty"`
 	DocActivity   *DocActivity `json:"doc_activity_detail,omitempty" gorm:"foreignKey:DocActivityId" extensions:"x-nullable"`
 
+	SprintActivityId *string         `json:"sprint_activity,omitempty"`
+	SprintActivity   *SprintActivity `json:"sprint_activity_detail,omitempty" gorm:"foreignKey:SprintActivityId" extensions:"x-nullable"`
+
 	WorkspaceActivityId *string            `json:"workspace_activity,omitempty"`
 	WorkspaceActivity   *WorkspaceActivity `json:"workspace_activity_detail,omitempty" gorm:"foreignKey:WorkspaceActivityId" extensions:"x-nullable"`
 

@@ -291,6 +291,11 @@ func BuildUnionSubquery(tx *gorm.DB, alias string, tab UnionableTable, tables ..
 				t = "::" + f[1]
 			}
 
+			if field == "id" && table.TableName() == "sprint_activities" {
+				selectFields = append(selectFields, "id::text")
+				continue
+			}
+
 			if utils.CheckInSet(fieldSet, field) {
 				selectFields = append(selectFields, field)
 			} else {

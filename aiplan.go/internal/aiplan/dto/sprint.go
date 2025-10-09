@@ -1,8 +1,8 @@
 package dto
 
 import (
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
-	"sheff.online/aiplan/internal/aiplan/types"
 	"time"
 )
 
@@ -17,7 +17,7 @@ type SprintLight struct {
 	StartDate *time.Time `json:"start_date,omitempty"`
 	EndDate   *time.Time `json:"end_date,omitempty"`
 
-	Stats types.SprintStats `json:"stats"`
+	Stats *types.SprintStats `json:"stats,omitempty"`
 }
 
 type Sprint struct {

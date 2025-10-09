@@ -114,8 +114,8 @@ type SubIssueExtendFields struct {
 // IssueExtendFields
 // -migration
 type IssueExtendFields struct {
-	NewIssue *Issue `json:"-" gorm:"-" field:"issue" extensions:"x-nullable"`
-	OldIssue *Issue `json:"-" gorm:"-" field:"issue" extensions:"x-nullable"`
+	NewIssue *Issue `json:"-" gorm:"-" field:"issue::project" extensions:"x-nullable"`
+	OldIssue *Issue `json:"-" gorm:"-" field:"issue::project" extensions:"x-nullable"`
 }
 
 // BlockIssueExtendFields
@@ -508,8 +508,12 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-	tx.Where("new_identifier = ? AND (verb = ? OR verb = ? OR verb = ? OR verb = ?) AND field = ?", issue.ID, "created", "removed", "added", "copied", issue.GetEntityType()).
+	tx.Where("(new_identifier = ? OR old_identifier = ?) AND (verb = ? OR verb = ? OR verb = ? OR verb = ?) AND field = ?", issue.ID, issue.ID, "created", "removed", "added", "copied", issue.GetEntityType()).
 		Model(&ProjectActivity{}).
+		Updates(cleanId)
+
+	tx.Where("new_identifier = ? OR old_identifier = ?", issue.ID, issue.ID).
+		Model(&SprintActivity{}).
 		Updates(cleanId)
 
 	tx.Where("new_identifier = ? ", issue.ID).
@@ -1731,6 +1735,7 @@ type IssueActivityExtendFields struct {
 	BlockIssueExtendFields
 	BlockingIssueExtendFields
 	ProjectExtendFields
+	IssueSprintExtendFields
 }
 
 type IssueEntityI interface {

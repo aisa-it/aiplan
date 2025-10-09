@@ -2,9 +2,9 @@ package aiplan
 
 import (
 	"errors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
-	"sheff.online/aiplan/internal/aiplan/apierrors"
-	"sheff.online/aiplan/internal/aiplan/types"
 )
 
 func (s *Services) SprintPermissionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
