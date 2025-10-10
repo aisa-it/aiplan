@@ -2,6 +2,7 @@
 package notifications
 
 import (
+	"database/sql"
 	"fmt"
 	"html"
 	"log"
@@ -375,7 +376,15 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 type tgMsg struct {
 	titleTemplate string
 	titleFunc     func(activity interface{}) string
-	getIdFunc     func(tx *gorm.DB, activity interface{}) []int64
+	getIdFunc     func(tx *gorm.DB, activity interface{}) []userTg
+
+	oldValTime sql.NullTime
+	newValTime sql.NullTime
+}
+
+type userTg struct {
+	id  int64
+	loc types.TimeZone
 }
 
 func (tg *tgMsg) SetTitleTemplate(activity interface{}) {
@@ -386,7 +395,7 @@ func (tg *tgMsg) Title(title string) string {
 	return fmt.Sprintf(tg.titleTemplate, escapeCharacters(title))
 }
 
-func (tg *tgMsg) GetIdsToSend(tx *gorm.DB, activity interface{}) []int64 {
+func (tg *tgMsg) GetIdsToSend(tx *gorm.DB, activity interface{}) []userTg {
 	return tg.getIdFunc(tx, activity)
 }
 
@@ -437,12 +446,15 @@ func NewTgActivity(entity string) *tgMsg {
 	return &res
 }
 
-func GetUserTgIdFromIssue(issue *dao.Issue) map[string]int64 {
+func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
 
-	userTgId := make(map[string]int64)
+	userTgId := make(map[string]userTg)
 	authorId := issue.Author.ID
 	if issue.Author.TelegramId != nil && issue.Author.CanReceiveNotifications() && !issue.Author.Settings.TgNotificationMute {
-		userTgId[authorId] = *issue.Author.TelegramId
+		userTgId[authorId] = userTg{
+			id:  *issue.Author.TelegramId,
+			loc: issue.Author.UserTimezone,
+		}
 	}
 
 	if issue.Assignees != nil {
@@ -451,7 +463,10 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[string]int64 {
 				continue
 			}
 			if assignee.TelegramId != nil && assignee.CanReceiveNotifications() && !assignee.Settings.TgNotificationMute {
-				userTgId[assignee.ID] = *assignee.TelegramId
+				userTgId[assignee.ID] = userTg{
+					id:  *assignee.TelegramId,
+					loc: assignee.UserTimezone,
+				}
 			}
 		}
 	}
@@ -462,15 +477,18 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[string]int64 {
 				continue
 			}
 			if watcher.TelegramId != nil && watcher.CanReceiveNotifications() && !watcher.Settings.TgNotificationMute {
-				userTgId[watcher.ID] = *watcher.TelegramId
+				userTgId[watcher.ID] = userTg{
+					id:  *watcher.TelegramId,
+					loc: watcher.UserTimezone,
+				}
 			}
 		}
 	}
 	return userTgId
 }
 
-func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[string]int64 {
-	userTgId := make(map[string]int64)
+func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[string]userTg {
+	userTgId := make(map[string]userTg)
 	rows, err := tx.Select("users.id, users.telegram_id").
 		Model(dao.ProjectMember{}).
 		Joins("JOIN users on users.id = project_members.member_id").
@@ -482,16 +500,20 @@ func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[string]int64 
 	} else {
 		for rows.Next() {
 			var res struct {
-				Id         string
-				TelegramId int64
-				Settings   types.UserSettings
+				Id           string
+				TelegramId   int64
+				UserTimezone types.TimeZone
+				Settings     types.UserSettings
 			}
 			if err := tx.ScanRows(rows, &res); err != nil {
 				slog.Error("Scan default watchers row", "err", err)
 				break
 			}
 			if res.TelegramId != 0 && !res.Settings.TgNotificationMute {
-				userTgId[res.Id] = res.TelegramId
+				userTgId[res.Id] = userTg{
+					id:  res.TelegramId,
+					loc: res.UserTimezone,
+				}
 			}
 		}
 		rows.Close()

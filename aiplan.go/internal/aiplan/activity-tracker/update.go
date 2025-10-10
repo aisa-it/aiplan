@@ -3,9 +3,6 @@ package tracker
 
 import (
 	"fmt"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"time"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
@@ -333,12 +330,11 @@ func entityColorUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityTargetDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	if v, ok := requestedData["target_date"]; ok && v != nil {
-		currentTZ := types.TimeZone(*time.Local)
-		d, _ := utils.FormatDateStr(v.(string), "02.01.2006 15:04 MST", &currentTZ)
+		d, _ := utils.FormatDateStr(v.(string), "2006-01-02T15:04:05Z07:00", nil)
 		requestedData["target_date"] = d
 	}
 	if v, ok := currentInstance["target_date"]; ok && v != nil {
-		d, _ := utils.FormatDateStr(v.(string), "02.01.2006 15:04 MST", nil)
+		d, _ := utils.FormatDateStr(v.(string), "2006-01-02T15:04:05Z07:00", nil)
 		currentInstance["target_date"] = d
 	}
 	return entityFieldUpdate[E, A]("target_date", nil, nil, tracker, requestedData, currentInstance, entity, actor)
