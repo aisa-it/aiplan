@@ -9,6 +9,7 @@
 package utils
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -239,7 +240,8 @@ func FormatDateStr(dateStr, outFormat string, tz *types.TimeZone) (string, error
 	if tz != nil {
 		date = date.In((*time.Location)(tz))
 	}
-	return date.Format(outFormat), nil
+	sss := date.Format(outFormat)
+	return sss, nil
 
 }
 
@@ -262,6 +264,7 @@ func FormatDate(dateStr string) (time.Time, error) {
 		"02.01.2006",
 		"2006-01-02 15:04:05-07",
 		"2006-01-02 15:04:05 -0700",
+		"2006-01-02T15:04:05+07:00",
 	}
 
 	var t time.Time
@@ -273,4 +276,15 @@ func FormatDate(dateStr string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("unsuported date format")
+}
+
+func FormatDateToSqlNullTime(dateStr string) sql.NullTime {
+	if dateStr == "" {
+		return sql.NullTime{}
+	}
+	date, err := FormatDate(dateStr)
+	if err != nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Valid: true, Time: date}
 }

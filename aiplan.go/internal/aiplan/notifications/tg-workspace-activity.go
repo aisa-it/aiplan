@@ -152,9 +152,9 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 		if act != nil {
 			var msgIds []int64
 
-			ids := act.GetIdsToSend(tnw.db, &activity)
-			for _, id := range ids {
-				msg.ChatID = id
+			usersTelegram := act.GetIdsToSend(tnw.db, &activity)
+			for _, ut := range usersTelegram {
+				msg.ChatID = ut.id
 				msg.DisableWebPagePreview = true
 				r, err := tnw.bot.Send(msg)
 				if err != nil && err.Error() != "Bad Request: chat not found" {
@@ -171,33 +171,36 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 
 }
 
-func getUserTgIdWorkspaceActivity(tx *gorm.DB, activity interface{}) []int64 {
+func getUserTgIdWorkspaceActivity(tx *gorm.DB, activity interface{}) []userTg {
 	var act *dao.WorkspaceActivity
 	if v, ok := activity.(*dao.WorkspaceActivity); ok {
 		act = v
 	} else {
-		return []int64{}
+		return []userTg{}
 	}
 
 	var wm []dao.WorkspaceMember
 	if err := tx.Joins("Member").
 		Where("workspace_id = ?", act.WorkspaceId).
 		Where("workspace_members.role = ?", types.AdminRole).Find(&wm).Error; err != nil {
-		return []int64{}
+		return []userTg{}
 	}
 
-	workspaceAdminMap := make(map[string]int64)
+	workspaceAdminMap := make(map[string]userTg)
 	for _, member := range wm {
 		if member.Member.TelegramId != nil && member.Member.CanReceiveNotifications() && !member.Member.Settings.TgNotificationMute {
-			workspaceAdminMap[member.MemberId] = *member.Member.TelegramId
+			workspaceAdminMap[member.MemberId] = userTg{
+				id:  *member.Member.TelegramId,
+				loc: member.Member.UserTimezone,
+			}
 		}
 	}
 
 	return filterWorkspaceTgIdIsNotify(wm, *act.ActorId, workspaceAdminMap, act.Field, act.Verb)
 }
 
-func filterWorkspaceTgIdIsNotify(wm []dao.WorkspaceMember, authorId string, userTgId map[string]int64, field *string, verb string) []int64 {
-	res := make([]int64, 0)
+func filterWorkspaceTgIdIsNotify(wm []dao.WorkspaceMember, authorId string, userTgId map[string]userTg, field *string, verb string) []userTg {
+	res := make([]userTg, 0)
 	for _, member := range wm {
 		if member.MemberId == authorId {
 			if member.NotificationAuthorSettingsTG.IsNotify(field, "workspace", verb, member.Role) {

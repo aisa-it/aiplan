@@ -11,6 +11,7 @@ package dao
 
 import (
 	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -454,6 +455,35 @@ func (ea EntityActivity) GetOldIdentifier() string {
 //   - error: ошибка, если при выполнении каких-либо операций произошла ошибка.
 func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 	aI, ok := any(*activity).(ActivityI)
+
+	targetField := aI.GetField()
+	switch targetField {
+	case "target_date":
+		if v, ok := any(*activity).(FullActivity); ok {
+			if v.NewValue != "" {
+				if formatted, err := utils.FormatDateStr(v.NewValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
+					v.NewValue = formatted
+				} else {
+					slog.Error("format error", err)
+				}
+			}
+
+			if v.OldValue != nil && *v.OldValue != "" {
+				if formatted, err := utils.FormatDateStr(*v.OldValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
+					v.OldValue = &formatted
+				} else {
+					slog.Error("format error", err)
+				}
+			}
+			//date, err := utils.FormatDateStr(v.NewValue, "2006-01-02T15:04:05Z07:00", nil)
+			//if err != nil {
+			//  return err
+			//}
+			//v.NewValue = date
+			*activity = any(v).(A)
+		}
+	}
+
 	if !ok || aI.SkipPreload() {
 		return nil
 	}
@@ -468,7 +498,6 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 	val := reflect.ValueOf(activity).Elem()
 	typ := val.Type()
 
-	targetField := aI.GetField()
 	targetFieldExt := fmt.Sprintf("%s::%s", targetField, aI.GetEntity())
 
 	//var affectedUser *User

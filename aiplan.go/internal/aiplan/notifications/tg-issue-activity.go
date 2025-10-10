@@ -2,14 +2,13 @@ package notifications
 
 import (
 	"fmt"
-	"log/slog"
-	"strings"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
+	"log/slog"
+	"strings"
 )
 
 type TgNotifyIssue struct {
@@ -229,6 +228,41 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					targetIssue.FullIssueName(),
 					targetIssue.URL,
 				)
+			case "target_date":
+				oldValue := ""
+				newValue := activity.NewValue
+				if activity.OldValue != nil && *activity.OldValue != "<nil>" {
+					oldValue = *activity.OldValue
+				}
+
+				act.newValTime = utils.FormatDateToSqlNullTime(newValue)
+				act.oldValTime = utils.FormatDateToSqlNullTime(oldValue)
+
+				if newValue == "<nil>" {
+					newValue = ""
+				} else if act.newValTime.Valid {
+					newValue = "$$$$TargetDateTimeZ$$$$new$$$$"
+				}
+
+				if act.oldValTime.Valid {
+					oldValue = "$$$$TargetDateTimeZ$$$$old$$$$"
+				}
+
+				if oldValue != "" {
+					msg.Text = act.Title("изменил(-a)")
+					msg.Text += Stelegramf("*%s*: ~%s~ %s",
+						fieldsTranslation[*activity.Field],
+						oldValue,
+						newValue,
+					)
+				} else {
+					msg.Text = act.Title("изменил(-a)")
+					msg.Text += Stelegramf("*%s*: %s",
+						fieldsTranslation[*activity.Field],
+						newValue,
+					)
+				}
+
 			case "parent":
 				msg.Text = act.Title("изменил(-a)")
 				var newName, newUrl, oldName, oldUrl string
@@ -289,15 +323,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 						}
 						oldValue = capitalizeFirst(oldValue)
 						newValue = capitalizeFirst(newValue)
-					} else if *activity.Field == "target_date" {
-						newT, err := FormatDate(newValue, "02.01.2006 15:04 MST", nil)
-						oldValue, _ = FormatDate(oldValue, "02.01.2006 15:04 MST", nil)
-						if newValue == "<nil>" {
-							newValue = ""
-						}
-						if err == nil {
-							newValue = newT
-						}
+
 					} else if *activity.Field == "start_date" || *activity.Field == "completed_at" {
 						newT, err := FormatDate(newValue, "02.01.2006 15:04 MST", nil)
 						oldValue, _ = FormatDate(oldValue, "02.01.2006 15:04 MST", nil)
@@ -372,14 +398,14 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 		if act != nil {
 			var msgIds []int64
 
-			ids := act.GetIdsToSend(tni.db, &activity)
-			for _, id := range ids {
-				if activity.ActivitySender.SenderTg == id {
+			usersTelegram := act.GetIdsToSend(tni.db, &activity)
+
+			for _, ut := range usersTelegram {
+				if activity.ActivitySender.SenderTg == ut.id {
 					continue
 				}
-				msg.ChatID = id
-				msg.DisableWebPagePreview = true
-				r, err := tni.bot.Send(msg)
+
+				r, err := tni.bot.Send(MsgWithUser(msg, ut, act))
 				if err != nil && err.Error() != "Bad Request: chat not found" {
 					slog.Error("Telegram send error", "issueActivities", err, "activityId", activity.Id)
 
@@ -394,12 +420,12 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 	}()
 }
 
-func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []int64 {
+func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 	var act *dao.IssueActivity
 	if v, ok := activity.(*dao.IssueActivity); ok {
 		act = v
 	} else {
-		return []int64{}
+		return []userTg{}
 	}
 
 	issueUserTgId := GetUserTgIdFromIssue(act.Issue)
@@ -415,7 +441,10 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []int64 {
 			if act.NewIssueComment.OriginalComment.Actor.TelegramId != nil &&
 				act.NewIssueComment.OriginalComment.Actor.CanReceiveNotifications() &&
 				!act.NewIssueComment.OriginalComment.Actor.Settings.TgNotificationMute {
-				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID] = *act.NewIssueComment.OriginalComment.Actor.TelegramId
+				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID] = userTg{
+					id:  *act.NewIssueComment.OriginalComment.Actor.TelegramId,
+					loc: act.NewIssueComment.OriginalComment.Actor.UserTimezone,
+				}
 			}
 		}
 	}
@@ -430,14 +459,14 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []int64 {
 
 	var projectMembers []dao.ProjectMember
 	if err := tx.Where("project_id = ?", act.ProjectId).Where("member_id IN (?)", userIds).Find(&projectMembers).Error; err != nil {
-		return []int64{}
+		return []userTg{}
 	}
 
 	return filterIssueTgIdIsNotify(projectMembers, authorId, resMap, act.Field, act.Verb)
 }
 
-func filterIssueTgIdIsNotify(projectMembers []dao.ProjectMember, authorId string, userTgId map[string]int64, field *string, verb string) []int64 {
-	res := make([]int64, 0)
+func filterIssueTgIdIsNotify(projectMembers []dao.ProjectMember, authorId string, userTgId map[string]userTg, field *string, verb string) []userTg {
+	res := make([]userTg, 0)
 	for _, member := range projectMembers {
 		if member.MemberId == authorId {
 			if member.NotificationAuthorSettingsTG.IsNotify(field, "issue", verb, member.Role) {

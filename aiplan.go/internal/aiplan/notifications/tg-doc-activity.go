@@ -193,12 +193,12 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 		if act != nil {
 			var msgIds []int64
 
-			ids := act.GetIdsToSend(tnd.db, &activity)
-			for _, id := range ids {
-				if activity.ActivitySender.SenderTg == id {
+			usersTelegram := act.GetIdsToSend(tnd.db, &activity)
+			for _, ut := range usersTelegram {
+				if activity.ActivitySender.SenderTg == ut.id {
 					continue
 				}
-				msg.ChatID = id
+				msg.ChatID = ut.id
 				msg.DisableWebPagePreview = true
 				r, err := tnd.bot.Send(msg)
 				if err != nil && err.Error() != "Bad Request: chat not found" {
@@ -215,12 +215,12 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 
 }
 
-func getUserTgIdDocActivity(tx *gorm.DB, activity interface{}) []int64 {
+func getUserTgIdDocActivity(tx *gorm.DB, activity interface{}) []userTg {
 	var act *dao.DocActivity
 	if v, ok := activity.(*dao.DocActivity); ok {
 		act = v
 	} else {
-		return []int64{}
+		return []userTg{}
 	}
 
 	doc := act.Doc
@@ -236,21 +236,24 @@ func getUserTgIdDocActivity(tx *gorm.DB, activity interface{}) []int64 {
 	if err := tx.Joins("Member").
 		Where("workspace_id = ?", act.WorkspaceId).
 		Where("workspace_members.member_id IN (?)", userIds).Find(&workspaceMembers).Error; err != nil {
-		return []int64{}
+		return []userTg{}
 	}
 
-	memberMap := make(map[string]int64)
+	memberMap := make(map[string]userTg)
 	for _, member := range workspaceMembers {
 		if member.Member.TelegramId != nil && member.Member.CanReceiveNotifications() && !member.Member.Settings.TgNotificationMute {
-			memberMap[member.MemberId] = *member.Member.TelegramId
+			memberMap[member.MemberId] = userTg{
+				id:  *member.Member.TelegramId,
+				loc: member.Member.UserTimezone,
+			}
 		}
 	}
 
 	return filterDocTgIdIsNotify(workspaceMembers, *act.ActorId, memberMap, act.Field, act.Verb)
 }
 
-func filterDocTgIdIsNotify(wm []dao.WorkspaceMember, authorId string, userTgId map[string]int64, field *string, verb string) []int64 {
-	res := make([]int64, 0)
+func filterDocTgIdIsNotify(wm []dao.WorkspaceMember, authorId string, userTgId map[string]userTg, field *string, verb string) []userTg {
+	res := make([]userTg, 0)
 	for _, member := range wm {
 		if member.MemberId == authorId {
 			if member.NotificationAuthorSettingsTG.IsNotify(field, "doc", verb, member.Role) {
