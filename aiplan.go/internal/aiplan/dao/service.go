@@ -9,7 +9,6 @@ package dao
 
 import (
 	"fmt"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -149,7 +148,7 @@ func (a *TemplateActivity) BuildProjectActivity(entity ProjectEntityI) ProjectAc
 }
 
 func (a *TemplateActivity) BuildSprintActivity(entity SprintEntityI) SprintActivity {
-	id, _ := utils.UuidFromId(a.IdActivity)
+	id := uuid.Must(uuid.FromString(a.IdActivity))
 	return SprintActivity{
 		Id:            id,
 		Verb:          a.Verb,

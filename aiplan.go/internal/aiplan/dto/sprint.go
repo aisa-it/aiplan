@@ -7,9 +7,10 @@ import (
 )
 
 type SprintLight struct {
-	Id         uuid.UUID `json:"id"`
-	Name       string    `json:"name"`
-	SequenceId int       `json:"sequence_id"`
+	Id          uuid.UUID          `json:"id"`
+	Name        string             `json:"name"`
+	SequenceId  int                `json:"sequence_id"`
+	Description types.RedactorHTML `json:"description"`
 
 	Url      types.JsonURL `json:"url,omitempty"`
 	ShortUrl types.JsonURL `json:"short_url,omitempty"`
@@ -22,8 +23,6 @@ type SprintLight struct {
 
 type Sprint struct {
 	SprintLight
-
-	Description types.RedactorHTML `json:"description"`
 
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`

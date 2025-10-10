@@ -249,9 +249,6 @@ func (i *Issue) ToLightDTO() *dto.IssueLight {
 		StateId:    i.StateId,
 		State:      i.State.ToLightDTO(),
 		Priority:   i.Priority,
-		Sprints: utils.SliceToSlice(i.Sprints, func(t *Sprint) dto.SprintLight {
-			return *t.ToLightDTO()
-		}),
 	}
 }
 
@@ -302,6 +299,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 		InlineAttachments:   utils.SliceToSlice(&i.InlineAttachments, func(fa *FileAsset) dto.FileAsset { return *fa.ToDTO() }),
 		BlockerIssuesIDs:    utils.SliceToSlice(&i.BlockerIssuesIDs, func(ib *IssueBlocker) dto.IssueBlockerLight { return *ib.ToLightDTO() }),
 		BlockedIssuesIDs:    utils.SliceToSlice(&i.BlockedIssuesIDs, func(ib *IssueBlocker) dto.IssueBlockerLight { return *ib.ToLightDTO() }),
+		Sprints:             utils.SliceToSlice(i.Sprints, func(t *Sprint) dto.SprintLight { return *t.ToLightDTO() }),
 	}
 }
 

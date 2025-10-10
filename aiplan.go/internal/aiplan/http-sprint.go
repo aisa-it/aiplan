@@ -315,19 +315,12 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 
 	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID.String() })
 
-	workspaceUUID, err := utils.UuidFromId(workspace.ID)
-	if err != nil {
-		return EError(c, err)
-	}
-
-	userUUID, err := utils.UuidFromId(user.ID)
-	if err != nil {
-		return EError(c, err)
-	}
+	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
+	userUUID := uuid.Must(uuid.FromString(user.ID))
 
 	var req requestIssueIdList
 
-	err = c.Bind(&req)
+	err := c.Bind(&req)
 	if err != nil {
 		return EError(c, apierrors.ErrSprintBadRequest)
 	}
@@ -368,10 +361,8 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		var sprintIssues []dao.SprintIssue
 		for i, issue := range issues {
 
-			projectUUID, err := utils.UuidFromId(issue.ProjectId)
-			if err != nil {
-				return err
-			}
+			projectUUID := uuid.Must(uuid.FromString(issue.ProjectId))
+
 			sprintIssues = append(sprintIssues, dao.SprintIssue{
 				Id: dao.GenUUID(),
 
@@ -508,19 +499,12 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 
 	oldMemberIds := utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID })
 
-	workspaceUUID, err := utils.UuidFromId(workspace.ID)
-	if err != nil {
-		return EError(c, err)
-	}
-
-	userUUID, err := utils.UuidFromId(user.ID)
-	if err != nil {
-		return EError(c, err)
-	}
+	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
+	userUUID := uuid.Must(uuid.FromString(user.ID))
 
 	var req requestUserIdList
 
-	err = c.Bind(&req)
+	err := c.Bind(&req)
 	if err != nil {
 		return EError(c, apierrors.ErrSprintBadRequest)
 	}
@@ -551,10 +535,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 
 		var sprintWatchers []dao.SprintWatcher
 		for _, member := range workspaceMembers {
-			memberUUID, err := utils.UuidFromId(member.MemberId)
-			if err != nil {
-				return err
-			}
+			memberUUID := uuid.Must(uuid.FromString(member.MemberId))
 			sprintWatchers = append(sprintWatchers, dao.SprintWatcher{
 				Id:          dao.GenUUID(),
 				CreatedById: userUUID,
@@ -691,15 +672,8 @@ func (rs *requestSprint) toDao(ctx echo.Context) (*dao.Sprint, error) {
 		workspace = v.Workspace
 	}
 
-	userUUID, err := utils.UuidFromId(workspaceMember.MemberId)
-	if err != nil {
-		return nil, err
-	}
-
-	workspaceUUID, err := utils.UuidFromId(workspace.ID)
-	if err != nil {
-		return nil, err
-	}
+	userUUID := uuid.Must(uuid.FromString(workspaceMember.MemberId))
+	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
 
 	return &dao.Sprint{
 		Id:          dao.GenUUID(),
