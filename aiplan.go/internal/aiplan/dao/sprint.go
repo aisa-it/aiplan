@@ -24,7 +24,7 @@ type Sprint struct {
 
 	CreatedById uuid.UUID     `gorm:"type:uuid"`
 	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
-	WorkspaceId uuid.UUID     `gorm:"type:uuid; index:issue_template,priority:1"`
+	WorkspaceId uuid.UUID     `gorm:"type:uuid; uniqueIndex:sprint_uniq_idx,priority:1,where:deleted_at is NULL"`
 
 	CreatedBy User
 	UpdatedBy *User
@@ -32,7 +32,7 @@ type Sprint struct {
 
 	Name        string             `json:"name"`
 	NameTokens  types.TsVector     `gorm:"index:sprint_name_tokens,type:gin"`
-	SequenceId  int                `json:"sequence_id" gorm:"default:1;index:,where:deleted_at is not null"`
+	SequenceId  int                `json:"sequence_id" gorm:"default:1;uniqueIndex:sprint_uniq_idx,priority:2,where:deleted_at is NULL"`
 	Description types.RedactorHTML `json:"description"`
 
 	StartDate sql.NullTime `json:"start_date" gorm:"index"`
@@ -91,7 +91,6 @@ func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
 	var lastId sql.NullInt64
 	row := tx.Model(Sprint{}).
 		Select("max(sequence_id)").
-		Unscoped().
 		Where("workspace_id = ?", s.WorkspaceId).
 		Row()
 	if err := row.Scan(&lastId); err != nil {
@@ -148,9 +147,10 @@ func (s *Sprint) ToLightDTO() *dto.SprintLight {
 		return nil
 	}
 	return &dto.SprintLight{
-		Id:         s.Id,
-		Name:       s.Name,
-		SequenceId: s.SequenceId,
+		Id:          s.Id,
+		Name:        s.Name,
+		SequenceId:  s.SequenceId,
+		Description: s.Description,
 		//Url:        types.JsonURL{},
 		//ShortUrl:   types.JsonURL{},
 		StartDate: utils.SqlNullTimeToPointerTime(s.StartDate),
@@ -165,7 +165,6 @@ func (s *Sprint) ToDTO() *dto.Sprint {
 	}
 	return &dto.Sprint{
 		SprintLight: *s.ToLightDTO(),
-		Description: s.Description,
 		CreatedAt:   s.CreatedAt,
 		UpdatedAt:   &s.UpdatedAt,
 		CreatedBy:   s.CreatedBy.ToLightDTO(),
@@ -185,13 +184,13 @@ type SprintIssue struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	SprintId    uuid.UUID `gorm:"type:uuid;not null;index:idx_sprint_issue,priority:1"`
-	IssueId     uuid.UUID `gorm:"type:text;index:idx_sprint_issue,priority:2"`
-	ProjectId   uuid.UUID `gorm:"type:uuid;index:,type:hash"`
-	WorkspaceId uuid.UUID `gorm:"type:uuid;index:,type:hash"`
+	SprintId    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:sprint_issue_uniq_idx,priority:3"`
+	IssueId     uuid.UUID `gorm:"type:text;uniqueIndex:sprint_issue_uniq_idx,priority:4"`
+	ProjectId   uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:2"`
+	WorkspaceId uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:1"`
 	CreatedById uuid.UUID `gorm:"type:uuid"`
 
-	Position int `json:"position" gorm:"default:0"`
+	Position int `json:"position" gorm:"default:0;index"`
 
 	Sprint    *Sprint    `gorm:"foreignKey:SprintId;references:Id"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId;references:ID"`
@@ -228,7 +227,7 @@ type SprintWatcherExtendFields struct {
 
 type SprintActivity struct {
 	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time `json:"created_at" gorm:"index:sprint_activities_sprint_index,sort:desc,type:btree,priority:2;index:sprint_activities_actor_index,sort:desc,type:btree,priority:2;index:sprint_activities_mail_index,type:btree,where:notified = false"`
+	CreatedAt time.Time `json:"created_at" gorm:"index:sprint_activities_sprint_index,sort:desc,priority:2;index:sprint_activities_actor_index,sort:desc,priority:2;index:sprint_activities_mail_index,where:notified = false"`
 	// verb character varying IS_NULL:NO
 	Verb string `json:"verb"`
 	// field character varying IS_NULL:YES
@@ -239,7 +238,7 @@ type SprintActivity struct {
 	NewValue string `json:"new_value" `
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
-	// project_id uuid IS_NULL:YES
+	// sprint_id uuid IS_NULL:YES
 	SprintId string `json:"sprint_id" gorm:"index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId string `json:"workspace"`

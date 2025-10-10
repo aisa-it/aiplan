@@ -28,10 +28,9 @@ type IssueLight struct {
 	Url        types.JsonURL `json:"url,omitempty"`
 	ShortUrl   types.JsonURL `json:"short_url,omitempty"`
 
-	StateId  *string       `json:"state" extensions:"x-nullable"`
-	State    *StateLight   `json:"state_detail" extensions:"x-nullable"`
-	Sprints  []SprintLight `json:"sprints"`
-	Priority *string       `json:"priority" extensions:"x-nullable"`
+	StateId  *string     `json:"state" extensions:"x-nullable"`
+	State    *StateLight `json:"state_detail" extensions:"x-nullable"`
+	Priority *string     `json:"priority" extensions:"x-nullable"`
 }
 
 type IssueLinkLight struct {
@@ -82,6 +81,7 @@ type Issue struct {
 
 	BlockerIssuesIDs []IssueBlockerLight `json:"blocker_issues,omitempty"`
 	BlockedIssuesIDs []IssueBlockerLight `json:"blocked_issues,omitempty" `
+	Sprints          []SprintLight       `json:"sprints"`
 }
 
 type IssueCommentLight struct {

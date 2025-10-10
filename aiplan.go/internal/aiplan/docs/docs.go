@@ -17887,12 +17887,6 @@ const docTemplate = `{
                 "short_url": {
                     "type": "string"
                 },
-                "sprints": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.SprintLight"
-                    }
-                },
                 "state": {
                     "type": "string",
                     "x-nullable": true
@@ -18682,6 +18676,9 @@ const docTemplate = `{
         "dto.SprintLight": {
             "type": "object",
             "properties": {
+                "description": {
+                    "type": "string"
+                },
                 "end_date": {
                     "type": "string"
                 },
@@ -19547,6 +19544,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "only_active": {
+                    "type": "boolean"
                 },
                 "priorities": {
                     "type": "array",

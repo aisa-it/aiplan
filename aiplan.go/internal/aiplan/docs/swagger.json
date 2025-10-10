@@ -17879,12 +17879,6 @@
                 "short_url": {
                     "type": "string"
                 },
-                "sprints": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.SprintLight"
-                    }
-                },
                 "state": {
                     "type": "string",
                     "x-nullable": true
@@ -18674,6 +18668,9 @@
         "dto.SprintLight": {
             "type": "object",
             "properties": {
+                "description": {
+                    "type": "string"
+                },
                 "end_date": {
                     "type": "string"
                 },
@@ -19539,6 +19536,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "only_active": {
+                    "type": "boolean"
                 },
                 "priorities": {
                     "type": "array",
