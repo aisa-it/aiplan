@@ -111,6 +111,10 @@ func entityFieldUpdate[E dao.Entity, A dao.Activity](
 		field = fieldLog.(string)
 	}
 
+	if old != nil && *old == newV {
+		return result, nil
+	}
+
 	templateActivity := dao.NewTemplateActivity(dao.ACTIVITY_UPDATED, &field, old, newV, newIdentifier, oldIdentifier, &actor, valToComment)
 
 	if newAct, err := CreateActivity[E, A](entity, templateActivity); err != nil {
@@ -120,7 +124,7 @@ func entityFieldUpdate[E dao.Entity, A dao.Activity](
 	}
 }
 
-// entityFiieldsListUpdate Обновляет список сутностей по указанному полю.  Выполняет массовые изменения (добавление и удаление) сутностей, связанных с данным полем.  Использует данные из `requestedData` для обновления или добавления/удаления сутностей.  Работает с несколькими сутностями одновременно.
+// entityFieldsListUpdate Обновляет список сутностей по указанному полю.  Выполняет массовые изменения (добавление и удаление) сутностей, связанных с данным полем.  Использует данные из `requestedData` для обновления или добавления/удаления сутностей.  Работает с несколькими сутностями одновременно.
 func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 	field string,
 	requestedName string,
@@ -143,14 +147,18 @@ func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 	query := tracker.db
 
-	if cm, ok := requestedData["current_table"]; ok {
-		query = query.Table(fmt.Sprint(cm))
+	ct, ok := requestedData["current_table"]
+	if ok {
+		query = query.Table(fmt.Sprint(ct))
 	} else {
 		query = query.Model(&entity)
 	}
 
-	if _, ok := any(new(T)).(*dao.Issue); ok {
+	if _, ok2 := any(new(T)).(*dao.Issue); ok2 {
 		query = query.Where("issues.id in (?)", changes.InvolvedIds).Joins("Project")
+		//} else if ct != "" {
+		//  query = query.Where("issues.id in (?)", changes.InvolvedIds).Joins("Project")
+
 	} else {
 		query = query.Where("id in (?)", changes.InvolvedIds)
 	}

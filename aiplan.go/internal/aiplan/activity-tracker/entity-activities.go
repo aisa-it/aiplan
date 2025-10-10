@@ -62,6 +62,10 @@ func getFuncUpdate[E dao.Entity, A dao.Activity](field string) activityFuncGen[E
 		return entityReadersUpdate[E, A]
 	case FIELD_EDITORS:
 		return entityEditorsUpdate[E, A]
+	case FIELD_ISSUES:
+		return entityIssuesUpdate[E, A]
+	case FIELD_SPRINT:
+		return entitySprintUpdate[E, A]
 	case FIELD_NAME: // issue(+)
 		return entityNameUpdate[E, A]
 	case FIELD_TEMPLATE:
@@ -192,7 +196,15 @@ func CreateActivity[E dao.Entity, A dao.Activity](entity E, template dao.Templat
 					AddContext("activity", fmt.Sprintf("%T", a))
 		}
 		result = any(template.BuildWorkspaceActivity(we)).(A)
-
+	case dao.SprintActivity:
+		se, ok := any(entity).(dao.SprintEntityI)
+		if !ok {
+			return nil,
+				ErrStack.TrackErrorStack(fmt.Errorf("not support entity type (%T) for activity (%T)", entity, a)).
+					AddContext("entity", fmt.Sprintf("%T", entity)).
+					AddContext("activity", fmt.Sprintf("%T", a))
+		}
+		result = any(template.BuildSprintActivity(se)).(A)
 	case dao.ProjectActivity:
 		pe, ok := any(entity).(dao.ProjectEntityI)
 		if !ok {

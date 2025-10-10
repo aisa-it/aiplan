@@ -556,8 +556,10 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 	form.UnionCustomFields = "'form' AS entity_type"
 	var doc dao.DocActivity
 	doc.UnionCustomFields = "'doc' AS entity_type"
+	var sprint dao.SprintActivity
+	sprint.UnionCustomFields = "'sprint' AS entity_type"
 
-	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, issue, project, workspace, form, doc)
+	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, issue, project, workspace, form, doc, sprint)
 	query := unionTable.
 		Joins("Project").
 		Joins("Workspace").
@@ -565,6 +567,7 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 		Joins("Issue").
 		Joins("Doc").
 		Joins("Form").
+		Joins("Sprint").
 		Order("union_activities.created_at desc").
 		Where("union_activities.workspace_id = ?", workspaceId)
 

@@ -44,6 +44,7 @@ type EntityActivityFull struct {
 	Project   *ProjectLight   `json:"project_detail,omitempty" extensions:"x-nullable"`
 	Form      *FormLight      `json:"form_detail,omitempty"  extensions:"x-nullable"`
 	Doc       *DocLight       `json:"doc_detail,omitempty" extensions:"x-nullable"`
+	Sprint    *SprintLight    `json:"sprint_detail,omitempty" extensions:"x-nullable"`
 
 	NewIdentifier *string `json:"new_identifier,omitempty" extensions:"x-nullable"`
 	OldIdentifier *string `json:"old_identifier,omitempty" extensions:"x-nullable"`
