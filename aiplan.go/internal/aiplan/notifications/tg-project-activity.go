@@ -267,9 +267,9 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 		if act != nil {
 			var msgIds []int64
 
-			ids := act.GetIdsToSend(tnp.db, &activity)
-			for _, id := range ids {
-				msg.ChatID = id
+			usersTelegram := act.GetIdsToSend(tnp.db, &activity)
+			for _, ut := range usersTelegram {
+				msg.ChatID = ut.id
 				msg.DisableWebPagePreview = true
 				r, err := tnp.bot.Send(msg)
 				if err != nil && err.Error() != "Bad Request: chat not found" {
@@ -286,14 +286,14 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 
 }
 
-func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []int64 {
+func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 	var act *dao.ProjectActivity
 	if v, ok := activity.(*dao.ProjectActivity); ok {
 		act = v
 	} else {
-		return []int64{}
+		return []userTg{}
 	}
-	var issueUserTgId, defaultWatcherUserTgId map[string]int64
+	var issueUserTgId, defaultWatcherUserTgId map[string]userTg
 
 	query := tx.Joins("Member").
 		Where("project_id = ?", act.ProjectId)
@@ -317,19 +317,22 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []int64 {
 	var projectMembers []dao.ProjectMember
 
 	if err := query.Find(&projectMembers).Error; err != nil {
-		return []int64{}
+		return []userTg{}
 	}
 
 	iMember := utils.MergeMaps(defaultWatcherUserTgId, issueUserTgId)
 	adminMemberIssue := make(map[string]struct{})
 
-	projMap := make(map[string]int64)
+	projMap := make(map[string]userTg)
 	for _, member := range projectMembers {
 		if _, ok := iMember[member.MemberId]; ok {
 			adminMemberIssue[member.MemberId] = struct{}{}
 		}
 		if member.Member.TelegramId != nil && member.Member.CanReceiveNotifications() && !member.Member.Settings.TgNotificationMute {
-			projMap[member.MemberId] = *member.Member.TelegramId
+			projMap[member.MemberId] = userTg{
+				id:  *member.Member.TelegramId,
+				loc: member.Member.UserTimezone,
+			}
 		}
 	}
 
@@ -338,8 +341,8 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []int64 {
 	return filterProjectTgIdIsNotify(projectMembers, *act.ActorId, resMap, act.Field, act.Verb, adminMemberIssue)
 }
 
-func filterProjectTgIdIsNotify(wm []dao.ProjectMember, authorId string, userTgId map[string]int64, field *string, verb string, adminMembers map[string]struct{}) []int64 {
-	res := make([]int64, 0)
+func filterProjectTgIdIsNotify(wm []dao.ProjectMember, authorId string, userTgId map[string]userTg, field *string, verb string, adminMembers map[string]struct{}) []userTg {
+	res := make([]userTg, 0)
 	for _, member := range wm {
 		if member.Role == types.AdminRole && field != nil && *field == "issue" && authorId != member.MemberId {
 			if _, ok := adminMembers[member.MemberId]; !ok {
