@@ -617,10 +617,10 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		}
 
 		if field == "target_date" {
-			newT, errNew := FormatDate(activity.NewValue, "02.01.2006", &targetUser.UserTimezone)
+			newT, errNew := FormatDate(activity.NewValue, "02.01.2006 15:04", &targetUser.UserTimezone)
 
 			if activity.OldValue != nil {
-				if oldT, errOld := FormatDate(*activity.OldValue, "02.01.2006", &targetUser.UserTimezone); errOld == nil {
+				if oldT, errOld := FormatDate(*activity.OldValue, "02.01.2006 15:04", &targetUser.UserTimezone); errOld == nil {
 					activity.OldValue = &oldT
 				}
 			}
