@@ -130,6 +130,25 @@ CREATE OR REPLACE TRIGGER insert_or_update_projects
   FOR EACH ROW
   EXECUTE PROCEDURE gen_project_name_tokens();
 
+-- Sprint name tokens
+CREATE OR REPLACE FUNCTION gen_sprint_name_tokens()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name) THEN
+        UPDATE sprints SET name_tokens=to_tsvector('russian', lower(name)) WHERE id = NEW.id;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER insert_or_update_sprints
+    AFTER INSERT OR UPDATE
+    ON sprints
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_sprint_name_tokens();
+
 -- Issues triggers
 CREATE OR REPLACE FUNCTION gen_issue_vectors()
    RETURNS TRIGGER

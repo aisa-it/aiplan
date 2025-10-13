@@ -31,12 +31,13 @@ type Entity interface {
 		Workspace | WorkspaceMember |
 		Project | ProjectMember | Label | State | IssueTemplate |
 		Issue | IssueLink | IssueComment | IssueAttachment |
+		Sprint |
 		Doc | DocComment | DocAttachment |
 		Form
 }
 
 type Activity interface {
-	IssueActivity | ProjectActivity | FormActivity | WorkspaceActivity | DocActivity | EntityActivity | FullActivity | RootActivity
+	IssueActivity | SprintActivity | ProjectActivity | FormActivity | WorkspaceActivity | DocActivity | EntityActivity | FullActivity | RootActivity
 }
 
 type IDaoAct interface {
@@ -146,6 +147,25 @@ func (a *TemplateActivity) BuildProjectActivity(entity ProjectEntityI) ProjectAc
 	}
 }
 
+func (a *TemplateActivity) BuildSprintActivity(entity SprintEntityI) SprintActivity {
+	id := uuid.Must(uuid.FromString(a.IdActivity))
+	return SprintActivity{
+		Id:            id,
+		Verb:          a.Verb,
+		Field:         a.Field,
+		OldValue:      a.OldValue,
+		NewValue:      a.NewValue,
+		Comment:       a.Comment,
+		WorkspaceId:   entity.GetWorkspaceId(),
+		SprintId:      entity.GetSprintId(),
+		ActorId:       &a.Actor.ID,
+		NewIdentifier: a.NewIdentifier,
+		OldIdentifier: a.OldIdentifier,
+		Notified:      false,
+		Actor:         a.Actor,
+	}
+}
+
 func (a *TemplateActivity) BuildIssueActivity(entity IssueEntityI) IssueActivity {
 	return IssueActivity{
 		Id:            a.IdActivity,
@@ -235,6 +255,7 @@ type FullActivity struct {
 	FormId      *string
 	ActorId     *string
 	DocId       uuid.NullUUID
+	SprintId    uuid.NullUUID
 	//AffectedUserId *string
 
 	NewIdentifier *string
@@ -247,6 +268,7 @@ type FullActivity struct {
 	Project   *Project   `gorm:"foreignKey:ProjectId"`
 	Form      *Form      `gorm:"foreignKey:FormId"`
 	Doc       *Doc       `gorm:"foreignKey:DocId"`
+	Sprint    *Sprint    `gorm:"foreignKey:SprintId"`
 
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -260,7 +282,7 @@ type FullActivity struct {
 	DocActivityExtendFields
 	WorkspaceActivityExtendFields
 	RootActivityExtendFields
-
+	SprintActivityExtendFields
 	ActivitySender
 }
 
@@ -302,6 +324,7 @@ func (FullActivity) GetFields() []string {
 		"form_id",
 		"actor_id",
 		"doc_id::uuid",
+		"sprint_id::uuid",
 		"affected_user_id",
 		"new_identifier",
 		"old_identifier",
@@ -352,6 +375,7 @@ func (e *FullActivity) ToDTO() *dto.EntityActivityFull {
 		Project:             e.Project.ToLightDTO(),
 		Form:                e.Form.ToLightDTO(),
 		Doc:                 e.Doc.ToLightDTO(),
+		Sprint:              e.Sprint.ToLightDTO(),
 		NewIdentifier:       e.NewIdentifier,
 		OldIdentifier:       e.OldIdentifier,
 	}

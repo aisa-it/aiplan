@@ -330,6 +330,7 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 			Joins("Workspace").
 			Joins("State").
 			Joins("Project").
+			Preload("Sprints").
 			Preload("Assignees").
 			Preload("Watchers").
 			Preload("Labels").

@@ -1128,7 +1128,7 @@ type ProjectActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// project_id uuid IS_NULL:YES
-	ProjectId string `json:"project_id" gorm:"index:project_activities_issue_index,priority:1" extensions:"x-nullable"`
+	ProjectId string `json:"project_id" gorm:"index:project_activities_project_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId string `json:"workspace"`
 	// actor_id uuid IS_NULL:YES
