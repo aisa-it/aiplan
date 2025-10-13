@@ -297,6 +297,18 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 		}
 	}
 
+	//delete sprint
+	var sprint []Sprint
+	if err := tx.Where("workspace_id = ?", workspace.ID).Find(&sprint).Error; err != nil {
+		return err
+	}
+
+	for i := range sprint {
+		if err := tx.Delete(&sprint[i]).Error; err != nil {
+			return err
+		}
+	}
+
 	// remove from last workspaces
 	return tx.Model(&User{}).Where("last_workspace_id = ?", workspace.ID).Update("last_workspace_id", nil).Error
 }
@@ -701,6 +713,7 @@ type WorkspaceActivityExtendFields struct {
 	ProjectExtendFields
 	DocExtendFields
 	FormExtendFields
+	SprintExtendFields
 	EntityMemberExtendFields
 	WorkspaceOwnerExtendFields
 }

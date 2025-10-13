@@ -327,6 +327,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
 	s.AddDocServices(authGroup)
+	s.AddSprintServices(authGroup)
 
 	// services without auth
 	s.AddUserWithoutAuthServices(apiGroup)
