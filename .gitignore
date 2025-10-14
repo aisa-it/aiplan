@@ -102,3 +102,4 @@ kuber/aiplan/values/*.dec
 *.db
 
 api_tests/
+release/
