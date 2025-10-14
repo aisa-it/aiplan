@@ -146,7 +146,7 @@ func (s *Services) getUser(c echo.Context) error {
 	userId := c.Param("userId")
 
 	var user dao.User
-	if err := s.db.Where("id = ?", userId).First(&user).Error; err != nil {
+	if err := s.db.Where("id = ? or email = ?", userId, userId).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrUserNotFound)
 		}
