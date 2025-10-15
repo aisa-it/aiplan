@@ -58,7 +58,7 @@ jobs:
         run: |
           cd aiplan-api-ts
           git checkout main
-          npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/internal/aiplan/docs/swagger.json -o ./src/ -n aiplan-api.ts --templates templates/default
+          npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/internal/aiplan/docs/swagger.json -o ./src/ -n aiplan-api.ts
           git add .
           git commit -m "new generated API version" || echo "No changes to commit"
           yarn version --minor
