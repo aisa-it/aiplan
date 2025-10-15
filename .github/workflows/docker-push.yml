@@ -36,13 +36,14 @@ jobs:
         with:
           submodules: "true"
           token: ${{ secrets.GIT_PAT }}
+          fetch-depth: 0
 
       - name: Config Git
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           git config pull.rebase false
-          git pull origin main
+          git pull origin main --allow-unrelated-histories
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
