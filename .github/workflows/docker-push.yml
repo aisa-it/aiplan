@@ -71,8 +71,8 @@ jobs:
           cd aiplan-api-ts
           echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Update main repository with new submodule reference
-        run: |
-          git add aiplan-api-ts
-          git commit -m "Update api ts submodule to ${{ steps.submodule_commit.outputs.commit_hash }}"
-          git push origin HEAD:main
+      #- name: Update main repository with new submodule reference
+      #  run: |
+      #    git add aiplan-api-ts
+      #    git commit -m "Update api ts submodule to ${{ steps.submodule_commit.outputs.commit_hash }}"
+      #    git push origin HEAD:main
