@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/limiter"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -290,8 +291,8 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-		return EError(c, apierrors.ErrAssetsNotAllowed)
+	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(workspace.ID))) {
+		return EError(c, apierrors.ErrAssetsLimitExceed)
 	}
 
 	file, err := c.FormFile("file")
@@ -1336,19 +1337,8 @@ func (s *Services) getProductUpdateList(c echo.Context) error {
 func (s *Services) createWorkspace(c echo.Context) error {
 	user := *c.(AuthContext).User
 
-	// Tariffication
-	if user.Tariffication != nil {
-		var count int64
-		if err := s.db.Model(&dao.Workspace{}).
-			Where("created_by_id = ? or owner_id = ?", user.ID, user.ID).
-			Or("id in (?)", s.db.Select("workspace_id").Where("member_id = ?", user.ID).Model(&dao.WorkspaceMember{})).
-			Count(&count).Error; err != nil {
-			return EError(c, err)
-		}
-
-		if count > int64(user.Tariffication.WorkspacesLimit) {
-			return EErrorDefined(c, apierrors.ErrWorkspaceLimitExceed)
-		}
+	if limiter.Limiter.CanCreateWorkspace(uuid.Must(uuid.FromString(user.ID))) {
+		return EErrorDefined(c, apierrors.ErrWorkspaceLimitExceed)
 	}
 
 	var workspace dao.Workspace

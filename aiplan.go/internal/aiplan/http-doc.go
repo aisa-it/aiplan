@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/limiter"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
@@ -1439,8 +1440,8 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 	doc := c.(DocContext).Doc
 	workspace := c.(DocContext).Workspace
 
-	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-		return EError(c, apierrors.ErrAssetsNotAllowed)
+	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(workspace.ID))) {
+		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 
 	asset, err := c.FormFile("asset")
