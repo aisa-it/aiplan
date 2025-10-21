@@ -15,6 +15,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/gormlogger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/limiter"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -23,7 +24,7 @@ import (
 
 var version string = "DEV"
 
-var models = []any{&dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Doc{}, &dao.DocActivity{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocEditor{}, &dao.DocFavorites{}, &dao.DocReader{}, &dao.DocWatcher{}, &dao.EntityActivity{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.Form{}, &dao.FormActivity{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueActivity{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.Project{}, &dao.ProjectActivity{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ReleaseNote{}, &dao.RootActivity{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintActivity{}, &dao.SprintIssue{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Tariffication{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserFeedback{}, &dao.UserNotifications{}, &dao.Workspace{}, &dao.WorkspaceActivity{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}}
+var models = []any{&dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Doc{}, &dao.DocActivity{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocEditor{}, &dao.DocFavorites{}, &dao.DocReader{}, &dao.DocWatcher{}, &dao.EntityActivity{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.Form{}, &dao.FormActivity{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueActivity{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.Project{}, &dao.ProjectActivity{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ReleaseNote{}, &dao.RootActivity{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintActivity{}, &dao.SprintIssue{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserFeedback{}, &dao.UserNotifications{}, &dao.Workspace{}, &dao.WorkspaceActivity{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}}
 
 //go:embed triggers.sql
 var triggersSQL string
@@ -39,6 +40,7 @@ func main() {
 	paramQueries := flag.Bool("paramQueries", true, "Mask queries params in log")
 	noMigration := flag.Bool("noMigration", false, "Turn off DB migration")
 	trace := flag.Bool("trace", false, "Verbose logs and sql trace")
+	limiterPlugin := flag.String("limiterPlugin", "", "Path to limiter plugin file")
 	flag.Parse()
 
 	PrintBanner()
@@ -54,6 +56,8 @@ func main() {
 	if version != "DEV" {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})))
 	}
+
+	limiter.Init(*limiterPlugin)
 
 	slog.Info("AIPlan start.")
 

@@ -78,18 +78,6 @@ type StateLight struct {
 	Default     bool   `json:"default"`
 }
 
-type Tariffication struct {
-	UserId string `json:"user_id"`
-
-	WorkspacesLimit  int  `json:"workspaces_limit"`
-	ProjectsLimit    int  `json:"projects_limit"`
-	IssuesLimit      int  `json:"issues_limit"`
-	UsersLimit       int  `json:"users_limit"`
-	AttachmentsAllow bool `json:"attachments_allow"`
-
-	User *UserLight ` json:"user_detail,omitempty"`
-}
-
 type HistoryBodyLight struct {
 	Id       string    `json:"Id"`
 	CratedAt time.Time `json:"crated_at"`

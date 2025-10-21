@@ -174,7 +174,7 @@ var (
 	ErrInvalidReaction                 = DefinedError{Code: 4009, StatusCode: http.StatusBadRequest, Err: "invalid reaction", RuErr: "Выбрана недопустимая реакция"}
 	ErrTooManyComments                 = DefinedError{Code: 4010, StatusCode: http.StatusTooManyRequests, Err: "too many comments creation requests", RuErr: "Попытка отправить несколько комментариев подряд"}
 	ErrIssueLimitExceed                = DefinedError{Code: 4011, StatusCode: http.StatusPaymentRequired, Err: "issue limit exceed", RuErr: "Количество ваших задач достигло лимита бесплатной версии"}
-	ErrAssetsNotAllowed                = DefinedError{Code: 4012, StatusCode: http.StatusPaymentRequired, Err: "attachment uploads are not available in the free version", RuErr: "Загрузка вложений недоступна в бесплатной версии"}
+	ErrAssetsLimitExceed               = DefinedError{Code: 4012, StatusCode: http.StatusPaymentRequired, Err: "attachment limit exceed", RuErr: "Количество ваших вложений достигло лимита вашего плана"}
 	ErrIssueNameEmpty                  = DefinedError{Code: 4013, StatusCode: http.StatusBadRequest, Err: "Empty issue name", RuErr: "Передано пустое имя задачи"}
 	ErrPermissionParentIssue           = DefinedError{Code: 4081, StatusCode: http.StatusConflict, Err: "the task was not created by the current user", RuErr: "Выбранная задача не может быть преобразована в подзадачу. Выбранная задача не вашего авторства"}
 	ErrIssueForbidden                  = DefinedError{Code: 4014, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}

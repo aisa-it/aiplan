@@ -86,8 +86,6 @@ type User struct {
 	LastWorkspace *Workspace `json:"-" gorm:"foreignKey:LastWorkspaceId" extensions:"x-nullable"`
 
 	SearchFilters []SearchFilter `json:"-" gorm:"constraint:OnDelete:CASCADE;many2many:user_search_filters"`
-
-	Tariffication *Tariffication `json:"-"`
 }
 
 func (u User) GetId() string {
@@ -166,10 +164,6 @@ func (u *User) ToDTO() *dto.User {
 	}
 	if u.LastWorkspace != nil {
 		userDto.LastWorkspaceSlug = &u.LastWorkspace.Slug
-	}
-
-	if u.Tariffication != nil {
-		userDto.AttachmentsAllow = &u.Tariffication.AttachmentsAllow
 	}
 
 	return &userDto
