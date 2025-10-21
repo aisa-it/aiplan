@@ -22,7 +22,7 @@ import (
 	"net/url"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/limiter"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"github.com/gofrs/uuid"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"

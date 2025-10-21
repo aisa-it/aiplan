@@ -15,7 +15,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/gormlogger"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/limiter"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
