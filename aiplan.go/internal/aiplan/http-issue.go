@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/limiter"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
