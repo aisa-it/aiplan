@@ -2,60 +2,69 @@ package limiter
 
 import (
 	"log/slog"
-	"plugin"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
 )
 
 type LimiterInt interface {
+	GetWorkspaceLimitInfo(creatorId uuid.UUID, workspaceId uuid.UUID) dto.WorkspaceLimitsInfo
+
 	CanCreateWorkspace(userId uuid.UUID) bool
-	CanCreateProject(userId uuid.UUID, workspaceId uuid.UUID) bool
-	CanAddWorkspaceMember(userId uuid.UUID, workspaceId uuid.UUID) bool
-	CanAddAttachment(userId uuid.UUID, workspaceId uuid.UUID) bool
+	CanCreateProject(workspaceId uuid.UUID) bool
+	CanAddWorkspaceMember(workspaceId uuid.UUID) bool
+	CanAddAttachment(workspaceId uuid.UUID) bool
+
+	GetRemainingWorkspaces(userId uuid.UUID) int
+	GetRemainingProjects(workspaceId uuid.UUID) int
+	GetRemainingInvites(workspaceId uuid.UUID) int
+	GetRemainingAttachments(workspaceId uuid.UUID) int
 }
 
 var Limiter LimiterInt = CommunityLimiter{}
 
-func Init(pluginPath string) {
-	if pluginPath == "" {
+func Init(cfg *config.Config) {
+	if cfg.ExternalLimiter == nil {
 		slog.Info("Using Community limiter")
 		return
 	}
-	p, err := plugin.Open(pluginPath)
-	if err != nil {
-		slog.Error("Fail open limiter plugin, backoff to Community limiter", "err", err)
-		return
-	}
-
-	limiterSymbol, err := p.Lookup("LimiterPlugin")
-	if err != nil {
-		slog.Error("Fail lookup LimiterPlugin symbol, backoff to Community limiter", "err", err)
-		return
-	}
-
-	var ok bool
-	Limiter, ok = limiterSymbol.(LimiterInt)
-	if !ok {
-		slog.Error("Plugin doesn't implement LimiterInt interface, backoff to Community limiter")
-		Limiter = CommunityLimiter{}
-		return
-	}
+	Limiter = NewExternalLimiter(cfg.ExternalLimiter)
 }
 
 type CommunityLimiter struct{}
+
+func (c CommunityLimiter) GetWorkspaceLimitInfo(creatorId uuid.UUID, workspaceId uuid.UUID) dto.WorkspaceLimitsInfo {
+	return dto.WorkspaceLimitsInfo{
+		TariffName: "community",
+	}
+}
 
 func (c CommunityLimiter) CanCreateWorkspace(userId uuid.UUID) bool {
 	return true
 }
 
-func (c CommunityLimiter) CanCreateProject(userId uuid.UUID, workspaceId uuid.UUID) bool {
+func (c CommunityLimiter) CanCreateProject(workspaceId uuid.UUID) bool {
 	return true
 }
 
-func (c CommunityLimiter) CanAddWorkspaceMember(userId uuid.UUID, workspaceId uuid.UUID) bool {
+func (c CommunityLimiter) CanAddWorkspaceMember(workspaceId uuid.UUID) bool {
 	return true
 }
 
-func (c CommunityLimiter) CanAddAttachment(userId uuid.UUID, workspaceId uuid.UUID) bool {
+func (c CommunityLimiter) CanAddAttachment(workspaceId uuid.UUID) bool {
 	return true
+}
+
+func (c CommunityLimiter) GetRemainingWorkspaces(userId uuid.UUID) int {
+	return 99999999
+}
+func (c CommunityLimiter) GetRemainingProjects(workspaceId uuid.UUID) int {
+	return 99999999
+}
+func (c CommunityLimiter) GetRemainingInvites(workspaceId uuid.UUID) int {
+	return 99999999
+}
+func (c CommunityLimiter) GetRemainingAttachments(workspaceId uuid.UUID) int {
+	return 99999999999999
 }

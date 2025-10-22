@@ -1440,7 +1440,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 	doc := c.(DocContext).Doc
 	workspace := c.(DocContext).Workspace
 
-	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(workspace.ID))) {
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 

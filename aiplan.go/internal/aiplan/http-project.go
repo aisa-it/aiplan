@@ -409,7 +409,7 @@ func (s *Services) createProject(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if limiter.Limiter.CanCreateProject(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(workspace.ID))) {
+	if !limiter.Limiter.CanCreateProject(uuid.Must(uuid.FromString(workspace.ID))) {
 		return EErrorDefined(c, apierrors.ErrProjectLimitExceed)
 	}
 
@@ -1601,7 +1601,7 @@ func (s *Services) createIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(workspace.ID))) {
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -2946,7 +2946,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 
-	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(project.WorkspaceId))) {
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 

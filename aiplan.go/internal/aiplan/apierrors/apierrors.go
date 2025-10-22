@@ -91,6 +91,7 @@ var (
 	ErrIntegrationNotFound               = DefinedError{Code: 2033, StatusCode: http.StatusNotFound, Err: "integration not found", RuErr: "Запрашиваемой интеграции не существует"}
 	ErrChangeWorkspaceOwner              = DefinedError{Code: 2034, StatusCode: http.StatusBadRequest, Err: "error change of workspace owner", RuErr: "Не получилось изменить владельца пространства"}
 	ErrDeleteLastWorkspaceMember         = DefinedError{Code: 2035, StatusCode: http.StatusBadRequest, Err: "cannot delete the last workspace member", RuErr: "Невозможно удалить последнего участника пространства"}
+	ErrInvitesExceed                     = DefinedError{Code: 2036, StatusCode: http.StatusPaymentRequired, Err: "you invites limit exceed", RuErr: "Лимит на участников пространства исчерпан. Обновите ваш тарифный план для подключения дополнительный участников"}
 
 	// 3*** - project errors
 	ErrProjectConflict                   = DefinedError{Code: 3001, StatusCode: http.StatusConflict, Err: "project already exists", RuErr: "Такой проект уже существует"}

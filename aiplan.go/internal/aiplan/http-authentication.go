@@ -106,7 +106,6 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				var user dao.User
 				if err := config.DB.
 					Joins("LastWorkspace").
-					Joins("Tariffication").
 					Where("users.auth_token = ?", accessToken.SignedString).
 					First(&user).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
@@ -175,7 +174,6 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				if err := config.DB.
 					Joins("LastWorkspace").
 					Joins("AvatarAsset").
-					Joins("Tariffication").
 					First(user).Error; err != nil {
 					return EErrorDefined(c, apierrors.ErrTokenInvalid)
 				}
@@ -381,7 +379,6 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	if err := a.DB.
 		Joins("LastWorkspace").
 		Joins("AvatarAsset").
-		Joins("Tariffication").
 		Where("users.id = ?", claims["user_id"].(string)).
 		First(&user).Error; err != nil {
 		return nil, nil, EErrorDefined(c, apierrors.ErrTokenInvalid)

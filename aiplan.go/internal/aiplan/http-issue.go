@@ -875,7 +875,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(project.WorkspaceId))) {
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -2452,7 +2452,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(project.WorkspaceId))) {
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -2670,7 +2670,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(issue.WorkspaceId))) {
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(issue.WorkspaceId))) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -3108,7 +3108,7 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 	project := c.(IssueContext).Project
 	issue := c.(IssueContext).Issue
 
-	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(project.WorkspaceId))) {
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 
