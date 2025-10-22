@@ -291,7 +291,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(workspace.ID))) {
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
 		return EError(c, apierrors.ErrAssetsLimitExceed)
 	}
 
@@ -1111,12 +1111,22 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 	type memberTracker struct {
 		pm   dao.ProjectMember
-		data map[string]interface{}
+		data map[string]any
 	}
 
 	var createMemberLog []memberTracker
 
-	for _, invite := range req.Emails {
+	remainInvites := limiter.Limiter.GetRemainingInvites(uuid.Must(uuid.FromString(workspace.ID)))
+
+	if remainInvites == 0 {
+		return EErrorDefined(c, apierrors.ErrInvitesExceed)
+	}
+
+	for i, invite := range req.Emails {
+		if i >= remainInvites {
+			break
+		}
+
 		invite.Email = strings.ToLower(strings.TrimSpace(invite.Email))
 		if !ValidateEmail(invite.Email) {
 			return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(invite.Email))
@@ -1337,7 +1347,7 @@ func (s *Services) getProductUpdateList(c echo.Context) error {
 func (s *Services) createWorkspace(c echo.Context) error {
 	user := *c.(AuthContext).User
 
-	if limiter.Limiter.CanCreateWorkspace(uuid.Must(uuid.FromString(user.ID))) {
+	if !limiter.Limiter.CanCreateWorkspace(uuid.Must(uuid.FromString(user.ID))) {
 		return EErrorDefined(c, apierrors.ErrWorkspaceLimitExceed)
 	}
 

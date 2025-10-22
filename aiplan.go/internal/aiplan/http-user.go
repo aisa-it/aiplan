@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -279,10 +278,6 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 // @Router /api/auth/users/me/avatar/ [post]
 func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 	user := *c.(AuthContext).User
-
-	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Nil) {
-		return EError(c, apierrors.ErrAssetsLimitExceed)
-	}
 
 	file, err := c.FormFile("file")
 	if err != nil {

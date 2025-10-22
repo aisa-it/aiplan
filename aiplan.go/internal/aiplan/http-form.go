@@ -753,7 +753,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 	user := *c.(AnswerFormContext).User
 	form := c.(AnswerFormContext).Form
 
-	if limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(user.ID)), uuid.Must(uuid.FromString(form.WorkspaceId))) {
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(form.WorkspaceId))) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 	const maxFileSize = 50 * 1024 * 1024 // 50 МБ

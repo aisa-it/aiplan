@@ -40,7 +40,6 @@ func main() {
 	paramQueries := flag.Bool("paramQueries", true, "Mask queries params in log")
 	noMigration := flag.Bool("noMigration", false, "Turn off DB migration")
 	trace := flag.Bool("trace", false, "Verbose logs and sql trace")
-	limiterPlugin := flag.String("limiterPlugin", "", "Path to limiter plugin file")
 	flag.Parse()
 
 	PrintBanner()
@@ -57,7 +56,7 @@ func main() {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})))
 	}
 
-	limiter.Init(*limiterPlugin)
+	limiter.Init(cfg)
 
 	slog.Info("AIPlan start.")
 

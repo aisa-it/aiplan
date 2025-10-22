@@ -111,3 +111,13 @@ type Attachment struct {
 	CreatedAt time.Time  `json:"created_at"`
 	Asset     *FileAsset `json:"asset"`
 }
+
+type WorkspaceLimitsInfo struct {
+	TariffName        string `json:"tariff_name"`
+	ProjectsRemains   int    `json:"projects_remains,omitempty"`
+	ProjcetsMax       int    `json:"projects_max,omitempty"`
+	InvitesRemains    int    `json:"invites_remains,omitempty"`
+	InvitesMax        int    `json:"invites_max,omitempty"`
+	AttachmentsRemain int    `json:"attachments_remains,omitempty"`
+	AttachmentsMax    int    `json:"attachments_max,omitempty"`
+}
