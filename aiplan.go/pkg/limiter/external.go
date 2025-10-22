@@ -1,6 +1,7 @@
 package limiter
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -18,13 +19,20 @@ func NewExternalLimiter(host *url.URL) *ExternalLimiter {
 	return &ExternalLimiter{host: host}
 }
 
-func (c ExternalLimiter) GetWorkspaceLimitInfo(creatorId uuid.UUID, workspaceId uuid.UUID) dto.WorkspaceLimitsInfo {
-	return dto.WorkspaceLimitsInfo{
-		TariffName:        "community",
-		ProjectsRemains:   c.GetRemainingProjects(workspaceId),
-		InvitesRemains:    c.GetRemainingInvites(workspaceId),
-		AttachmentsRemain: c.GetRemainingAttachments(workspaceId),
+func (c ExternalLimiter) GetWorkspaceLimitInfo(workspaceId uuid.UUID) *dto.WorkspaceLimitsInfo {
+	resp, err := http.Get(c.host.ResolveReference(&url.URL{Path: "/tariff/" + workspaceId.String()}).String())
+	if err != nil {
+		slog.Error("Request tariff info", "workspace", workspaceId, "err", err)
+		return nil
 	}
+	defer resp.Body.Close()
+
+	var info dto.WorkspaceLimitsInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		slog.Error("Parse tariff info", "workspace", workspaceId, "err", err)
+		return nil
+	}
+	return &info
 }
 
 func (c ExternalLimiter) CanCreateWorkspace(userId uuid.UUID) bool {

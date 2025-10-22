@@ -142,6 +142,8 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.GET("/integrations/", s.getIntegrationList)
 	workspaceGroup.POST("/integrations/add/:name/", s.addIntegrationToWorkspace)
 	workspaceGroup.DELETE("/integrations/:name/", s.deleteIntegrationFromWorkspace)
+
+	workspaceGroup.GET("/tariff/", s.getWorkspaceTariff)
 }
 
 // getWorkspaceMemberMe godoc
@@ -1906,6 +1908,20 @@ func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+// getWorkspaceTariff godoc
+// @id getWorkspaceTariff
+// @Summary Пространство (участники): получение текущего тарифа пространства
+// @Description Возвращает текущий тариф и лимиты пространства. Community тариф всегда возвращает нулевые цифры
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceLimitsInfo "Текущий тариф"
+// @Router /api/auth/workspaces/{workspaceSlug}/tariff/ [get]
+func (s *Services) getWorkspaceTariff(c echo.Context) error {
+	workspace := c.(WorkspaceContext).Workspace
+	return c.JSON(http.StatusOK, limiter.Limiter.GetWorkspaceLimitInfo(uuid.Must(uuid.FromString(workspace.ID))))
 }
 
 // ******* RESPONSE *******
