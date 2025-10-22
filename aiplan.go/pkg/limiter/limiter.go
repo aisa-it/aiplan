@@ -9,7 +9,7 @@ import (
 )
 
 type LimiterInt interface {
-	GetWorkspaceLimitInfo(creatorId uuid.UUID, workspaceId uuid.UUID) dto.WorkspaceLimitsInfo
+	GetWorkspaceLimitInfo(workspaceId uuid.UUID) *dto.WorkspaceLimitsInfo
 
 	CanCreateWorkspace(userId uuid.UUID) bool
 	CanCreateProject(workspaceId uuid.UUID) bool
@@ -34,8 +34,8 @@ func Init(cfg *config.Config) {
 
 type CommunityLimiter struct{}
 
-func (c CommunityLimiter) GetWorkspaceLimitInfo(creatorId uuid.UUID, workspaceId uuid.UUID) dto.WorkspaceLimitsInfo {
-	return dto.WorkspaceLimitsInfo{
+func (c CommunityLimiter) GetWorkspaceLimitInfo(workspaceId uuid.UUID) *dto.WorkspaceLimitsInfo {
+	return &dto.WorkspaceLimitsInfo{
 		TariffName: "community",
 	}
 }
