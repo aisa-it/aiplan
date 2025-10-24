@@ -95,7 +95,6 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	projectAdminGroup := projectGroup.Group("", s.ProjectAdminPermissionMiddleware)
 
-	// ../front/services/project.service.ts
 	workspaceGroup.GET("/projects/", s.getProjectList)
 	workspaceGroup.POST("/projects/", s.createProject)
 
