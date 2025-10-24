@@ -27,6 +27,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -884,9 +885,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		// Tariffication
-		if len(form.File["files"]) > 0 && user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-			return EError(c, apierrors.ErrAssetsNotAllowed)
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
 
@@ -2462,9 +2462,8 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		// Tariffication
-		if len(form.File["files"]) > 0 && user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-			return EError(c, apierrors.ErrAssetsNotAllowed)
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
 
@@ -2681,9 +2680,8 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		// Tariffication
-		if len(form.File["files"]) > 0 && user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-			return EError(c, apierrors.ErrAssetsNotAllowed)
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(issue.WorkspaceId))) {
+			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
 
@@ -3120,8 +3118,8 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 	project := c.(IssueContext).Project
 	issue := c.(IssueContext).Issue
 
-	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-		return EError(c, apierrors.ErrAssetsNotAllowed)
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 
 	asset, err := c.FormFile("asset")

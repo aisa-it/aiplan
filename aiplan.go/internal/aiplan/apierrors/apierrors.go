@@ -91,6 +91,7 @@ var (
 	ErrIntegrationNotFound               = DefinedError{Code: 2033, StatusCode: http.StatusNotFound, Err: "integration not found", RuErr: "Запрашиваемой интеграции не существует"}
 	ErrChangeWorkspaceOwner              = DefinedError{Code: 2034, StatusCode: http.StatusBadRequest, Err: "error change of workspace owner", RuErr: "Не получилось изменить владельца пространства"}
 	ErrDeleteLastWorkspaceMember         = DefinedError{Code: 2035, StatusCode: http.StatusBadRequest, Err: "cannot delete the last workspace member", RuErr: "Невозможно удалить последнего участника пространства"}
+	ErrInvitesExceed                     = DefinedError{Code: 2036, StatusCode: http.StatusPaymentRequired, Err: "you invites limit exceed", RuErr: "Лимит на участников пространства исчерпан. Обновите ваш тарифный план для подключения дополнительный участников"}
 
 	// 3*** - project errors
 	ErrProjectConflict                   = DefinedError{Code: 3001, StatusCode: http.StatusConflict, Err: "project already exists", RuErr: "Такой проект уже существует"}
@@ -174,7 +175,7 @@ var (
 	ErrInvalidReaction                 = DefinedError{Code: 4009, StatusCode: http.StatusBadRequest, Err: "invalid reaction", RuErr: "Выбрана недопустимая реакция"}
 	ErrTooManyComments                 = DefinedError{Code: 4010, StatusCode: http.StatusTooManyRequests, Err: "too many comments creation requests", RuErr: "Попытка отправить несколько комментариев подряд"}
 	ErrIssueLimitExceed                = DefinedError{Code: 4011, StatusCode: http.StatusPaymentRequired, Err: "issue limit exceed", RuErr: "Количество ваших задач достигло лимита бесплатной версии"}
-	ErrAssetsNotAllowed                = DefinedError{Code: 4012, StatusCode: http.StatusPaymentRequired, Err: "attachment uploads are not available in the free version", RuErr: "Загрузка вложений недоступна в бесплатной версии"}
+	ErrAssetsLimitExceed               = DefinedError{Code: 4012, StatusCode: http.StatusPaymentRequired, Err: "attachment limit exceed", RuErr: "Количество ваших вложений достигло лимита вашего плана"}
 	ErrIssueNameEmpty                  = DefinedError{Code: 4013, StatusCode: http.StatusBadRequest, Err: "Empty issue name", RuErr: "Передано пустое имя задачи"}
 	ErrPermissionParentIssue           = DefinedError{Code: 4081, StatusCode: http.StatusConflict, Err: "the task was not created by the current user", RuErr: "Выбранная задача не может быть преобразована в подзадачу. Выбранная задача не вашего авторства"}
 	ErrIssueForbidden                  = DefinedError{Code: 4014, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}

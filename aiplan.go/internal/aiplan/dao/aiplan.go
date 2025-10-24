@@ -11,11 +11,12 @@ package dao
 
 import (
 	"fmt"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"log/slog"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
@@ -647,27 +648,6 @@ func (DeferredNotifications) TableName() string {
 	return "deferred_notifications"
 }
 
-type Tariffication struct {
-	UserId      string    `gorm:"primaryKey" json:"user_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	CreatedById string    `json:"created_by_id"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	UpdatedById string    `json:"updated_by_id"`
-
-	WorkspacesLimit  int  `json:"workspaces_limit"`
-	ProjectsLimit    int  `json:"projects_limit"`
-	IssuesLimit      int  `json:"issues_limit"`
-	UsersLimit       int  `json:"users_limit"`
-	AttachmentsAllow bool `json:"attachments_allow"`
-
-	User *User `gorm:"foreignKey:UserId" json:"user_detail,omitempty"`
-}
-
-// Возвращает имя таблицы для данного типа структуры.
-func (Tariffication) TableName() string {
-	return "tariffication"
-}
-
 type RootActivity struct {
 	Id        string    `json:"id" gorm:"primaryKey"`
 	CreatedAt time.Time `json:"created_at" gorm:"index:activities_actor_index,sort:desc,type:btree,priority:2;index:activities_mail_index,type:btree,where:notified = false"`
@@ -753,24 +733,4 @@ func (ra RootActivity) GetOldIdentifier() string {
 
 func (ra RootActivity) GetId() string {
 	return ra.Id
-}
-
-//func (ra RootActivity) SetAffectedUser(user *User) {
-//}
-
-// Преобразует объект Tariffication в его DTO представление для упрощенной передачи данных в интерфейс.
-func (t *Tariffication) ToDTO() *dto.Tariffication {
-	if t == nil {
-		return nil
-	}
-
-	return &dto.Tariffication{
-		UserId:           t.UserId,
-		WorkspacesLimit:  t.WorkspacesLimit,
-		ProjectsLimit:    t.ProjectsLimit,
-		IssuesLimit:      t.IssuesLimit,
-		UsersLimit:       t.UsersLimit,
-		AttachmentsAllow: t.AttachmentsAllow,
-		User:             t.User.ToLightDTO(),
-	}
 }

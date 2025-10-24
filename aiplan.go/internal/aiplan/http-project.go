@@ -21,6 +21,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
@@ -407,19 +408,8 @@ func (s *Services) createProject(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	// Tariffication
-	if user.Tariffication != nil {
-		var count int64
-		if err := s.db.Model(&dao.Project{}).
-			Where("workspace_id = ?", workspace.ID).
-			Where("id in (?) or created_by_id = ?", s.db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{}), user.ID).
-			Count(&count).Error; err != nil {
-			return EError(c, err)
-		}
-
-		if count > int64(user.Tariffication.ProjectsLimit) {
-			return EErrorDefined(c, apierrors.ErrProjectLimitExceed)
-		}
+	if !limiter.Limiter.CanCreateProject(uuid.Must(uuid.FromString(workspace.ID))) {
+		return EErrorDefined(c, apierrors.ErrProjectLimitExceed)
 	}
 
 	project := dao.Project{
@@ -1592,21 +1582,6 @@ func (s *Services) createIssue(c echo.Context) error {
 	workspace := c.(ProjectContext).Workspace
 	project := c.(ProjectContext).Project
 
-	// Tariffication
-	if user.Tariffication != nil {
-		var count int64
-		if err := s.db.Model(&dao.Issue{}).
-			Where("project_id = ?", project.ID).
-			Where("created_by_id = ?", user.ID).
-			Count(&count).Error; err != nil {
-			return EError(c, err)
-		}
-
-		if count > int64(user.Tariffication.IssuesLimit) {
-			return EErrorDefined(c, apierrors.ErrIssueLimitExceed)
-		}
-	}
-
 	var issue IssueCreateRequest
 	form, _ := c.MultipartForm()
 
@@ -1625,9 +1600,8 @@ func (s *Services) createIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		// Tariffication
-		if len(form.File["files"]) > 0 && user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-			return EError(c, apierrors.ErrAssetsNotAllowed)
+		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
+			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
 	if len(strings.TrimSpace(issue.Name)) == 0 {
@@ -2971,8 +2945,8 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 
-	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-		return EError(c, apierrors.ErrAssetsNotAllowed)
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 
 	file, err := c.FormFile("file")

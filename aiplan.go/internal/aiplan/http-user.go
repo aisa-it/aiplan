@@ -279,10 +279,6 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 	user := *c.(AuthContext).User
 
-	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-		return EError(c, apierrors.ErrAssetsNotAllowed)
-	}
-
 	file, err := c.FormFile("file")
 	if err != nil {
 		return EError(c, err)
