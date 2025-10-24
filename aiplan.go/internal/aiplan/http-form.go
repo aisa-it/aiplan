@@ -22,6 +22,8 @@ import (
 	"net/url"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
+	"github.com/gofrs/uuid"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -751,8 +753,8 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 	user := *c.(AnswerFormContext).User
 	form := c.(AnswerFormContext).Form
 
-	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-		return EError(c, apierrors.ErrAssetsNotAllowed)
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(form.WorkspaceId))) {
+		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 	const maxFileSize = 50 * 1024 * 1024 // 50 МБ
 

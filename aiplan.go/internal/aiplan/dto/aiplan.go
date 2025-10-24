@@ -78,18 +78,6 @@ type StateLight struct {
 	Default     bool   `json:"default"`
 }
 
-type Tariffication struct {
-	UserId string `json:"user_id"`
-
-	WorkspacesLimit  int  `json:"workspaces_limit"`
-	ProjectsLimit    int  `json:"projects_limit"`
-	IssuesLimit      int  `json:"issues_limit"`
-	UsersLimit       int  `json:"users_limit"`
-	AttachmentsAllow bool `json:"attachments_allow"`
-
-	User *UserLight ` json:"user_detail,omitempty"`
-}
-
 type HistoryBodyLight struct {
 	Id       string    `json:"Id"`
 	CratedAt time.Time `json:"crated_at"`
@@ -122,4 +110,14 @@ type Attachment struct {
 	Id        string     `json:"id"`
 	CreatedAt time.Time  `json:"created_at"`
 	Asset     *FileAsset `json:"asset"`
+}
+
+type WorkspaceLimitsInfo struct {
+	TariffName        string `json:"tariff_name"`
+	ProjectsRemains   int    `json:"projects_remains,omitempty"`
+	ProjcetsMax       int    `json:"projects_max,omitempty"`
+	InvitesRemains    int    `json:"invites_remains,omitempty"`
+	InvitesMax        int    `json:"invites_max,omitempty"`
+	AttachmentsRemain int    `json:"attachments_remains,omitempty"`
+	AttachmentsMax    int    `json:"attachments_max,omitempty"`
 }

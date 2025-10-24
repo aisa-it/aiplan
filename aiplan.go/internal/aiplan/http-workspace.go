@@ -14,6 +14,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -141,6 +142,8 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.GET("/integrations/", s.getIntegrationList)
 	workspaceGroup.POST("/integrations/add/:name/", s.addIntegrationToWorkspace)
 	workspaceGroup.DELETE("/integrations/:name/", s.deleteIntegrationFromWorkspace)
+
+	workspaceGroup.GET("/tariff/", s.getWorkspaceTariff)
 }
 
 // getWorkspaceMemberMe godoc
@@ -290,8 +293,8 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if user.Tariffication != nil && !user.Tariffication.AttachmentsAllow {
-		return EError(c, apierrors.ErrAssetsNotAllowed)
+	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
+		return EError(c, apierrors.ErrAssetsLimitExceed)
 	}
 
 	file, err := c.FormFile("file")
@@ -1110,12 +1113,22 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 	type memberTracker struct {
 		pm   dao.ProjectMember
-		data map[string]interface{}
+		data map[string]any
 	}
 
 	var createMemberLog []memberTracker
 
-	for _, invite := range req.Emails {
+	remainInvites := limiter.Limiter.GetRemainingInvites(uuid.Must(uuid.FromString(workspace.ID)))
+
+	if remainInvites == 0 {
+		return EErrorDefined(c, apierrors.ErrInvitesExceed)
+	}
+
+	for i, invite := range req.Emails {
+		if i >= remainInvites {
+			break
+		}
+
 		invite.Email = strings.ToLower(strings.TrimSpace(invite.Email))
 		if !ValidateEmail(invite.Email) {
 			return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(invite.Email))
@@ -1336,19 +1349,8 @@ func (s *Services) getProductUpdateList(c echo.Context) error {
 func (s *Services) createWorkspace(c echo.Context) error {
 	user := *c.(AuthContext).User
 
-	// Tariffication
-	if user.Tariffication != nil {
-		var count int64
-		if err := s.db.Model(&dao.Workspace{}).
-			Where("created_by_id = ? or owner_id = ?", user.ID, user.ID).
-			Or("id in (?)", s.db.Select("workspace_id").Where("member_id = ?", user.ID).Model(&dao.WorkspaceMember{})).
-			Count(&count).Error; err != nil {
-			return EError(c, err)
-		}
-
-		if count > int64(user.Tariffication.WorkspacesLimit) {
-			return EErrorDefined(c, apierrors.ErrWorkspaceLimitExceed)
-		}
+	if !limiter.Limiter.CanCreateWorkspace(uuid.Must(uuid.FromString(user.ID))) {
+		return EErrorDefined(c, apierrors.ErrWorkspaceLimitExceed)
 	}
 
 	var workspace dao.Workspace
@@ -1906,6 +1908,20 @@ func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+// getWorkspaceTariff godoc
+// @id getWorkspaceTariff
+// @Summary Пространство (участники): получение текущего тарифа пространства
+// @Description Возвращает текущий тариф и лимиты пространства. Community тариф всегда возвращает нулевые цифры
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceLimitsInfo "Текущий тариф"
+// @Router /api/auth/workspaces/{workspaceSlug}/tariff/ [get]
+func (s *Services) getWorkspaceTariff(c echo.Context) error {
+	workspace := c.(WorkspaceContext).Workspace
+	return c.JSON(http.StatusOK, limiter.Limiter.GetWorkspaceLimitInfo(uuid.Must(uuid.FromString(workspace.ID))))
 }
 
 // ******* RESPONSE *******
