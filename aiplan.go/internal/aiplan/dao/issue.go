@@ -75,7 +75,8 @@ type Issue struct {
 	URL           *url.URL `json:"-" gorm:"-" extensions:"x-nullable"`
 	ShortURL      *url.URL `json:"-" gorm:"-" extensions:"x-nullable"`
 
-	Draft bool `json:"draft"`
+	Draft  bool `json:"draft"`
+	Pinned bool `gorm:"index"`
 
 	Parent    *Issue       `json:"parent_detail" gorm:"foreignKey:ParentId" extensions:"x-nullable"`
 	Workspace *Workspace   `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
