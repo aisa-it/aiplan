@@ -3002,6 +3002,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Вернуть только закрепленные задачи",
+                        "name": "only_pinned",
+                        "in": "query"
+                    },
+                    {
                         "description": "Фильтры для поиска задач",
                         "name": "filters",
                         "in": "body",
@@ -12278,6 +12285,72 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/pin": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "tags": [
+                    "Issues"
+                ],
+                "summary": "Задачи: Открепление задачи",
+                "operationId": "issueUnpin",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Задача успешно откреплена"
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/sub-issues": {
             "get": {
                 "security": [
@@ -14884,6 +14957,38 @@ const docTemplate = `{
                         "description": "Внутренняя ошибка сервера",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/tariff/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает текущий тариф и лимиты пространства. Community тариф всегда возвращает нулевые цифры",
+                "tags": [
+                    "Workspace"
+                ],
+                "summary": "Пространство (участники): получение текущего тарифа пространства",
+                "operationId": "getWorkspaceTariff",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Текущий тариф",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WorkspaceLimitsInfo"
                         }
                     }
                 }
@@ -18681,6 +18786,32 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.WorkspaceLimitsInfo": {
+            "type": "object",
+            "properties": {
+                "attachments_max": {
+                    "type": "integer"
+                },
+                "attachments_remains": {
+                    "type": "integer"
+                },
+                "invites_max": {
+                    "type": "integer"
+                },
+                "invites_remains": {
+                    "type": "integer"
+                },
+                "projects_max": {
+                    "type": "integer"
+                },
+                "projects_remains": {
+                    "type": "integer"
+                },
+                "tariff_name": {
                     "type": "string"
                 }
             }
