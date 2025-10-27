@@ -928,7 +928,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			if d, err := utils.FormatDate(date); err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			} else {
-				if time.Now().UTC().After(d) {
+				if time.Now().After(d) {
 					return EErrorDefined(c, apierrors.ErrIssueTargetDateExp)
 				}
 			}
