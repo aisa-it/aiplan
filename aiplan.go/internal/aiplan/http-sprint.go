@@ -292,8 +292,8 @@ func (s *Services) updateSprint(c echo.Context) error {
 
 // sprintIssuesUpdate godoc
 // @id sprintIssuesUpdate
-// @Summary Спринты: Добавить задачи к спринту
-// @Description Добавляет задачи к спринту.
+// @Summary Спринты: Изменяет задачи в спринте
+// @Description Изменяет список задач в спринте.
 // @Tags Sprint
 // @Accept json
 // @Produce json
@@ -307,7 +307,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
 // @Failure 404 {object} apierrors.DefinedError "Спринт не найден"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/issues/add/ [post]
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/issues/ [post]
 func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	workspace := c.(SprintContext).Workspace
 	sprint := c.(SprintContext).Sprint

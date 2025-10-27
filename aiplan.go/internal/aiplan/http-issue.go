@@ -924,6 +924,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 			if err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			}
+
+			if d, err := utils.FormatDate(date); err != nil {
+				return EErrorDefined(c, apierrors.ErrGeneric)
+			} else {
+				if time.Now().After(d) {
+					return EErrorDefined(c, apierrors.ErrIssueTargetDateExp)
+				}
+			}
 			data["target_date"] = date
 			targetDate = &date
 		}
