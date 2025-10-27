@@ -116,6 +116,9 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	issueGroup.POST("/description-lock/", s.issueDescriptionLock)
 	issueGroup.POST("/description-unlock/", s.issueDescriptionUnlock)
 
+	issueGroup.POST("/pin/", s.issuePin)
+	issueGroup.POST("/unpin/", s.issueUnpin)
+
 	g.Any("attachments/tus/*", s.storage.GetTUSHandler(cfg, "/api/auth/attachments/tus/", s.attachmentsUploadValidator, s.attachmentsPostUploadHook))
 }
 
@@ -398,6 +401,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Param desc query bool false "Сортировка по убыванию" default(true)
 // @Param only_count query bool false "Вернуть только количество" default(false)
 // @Param only_active query bool false "Вернуть только активные задачи" default(false)
+// @Param only_pinned query bool false "Вернуть только закрепленные задачи" default(false)
 // @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
 // @Success 200 {object} dto.IssueSearchResult "Результат поиска задач"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
@@ -428,6 +432,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	desc := true
 	lightSearch := false
 	onlyActive := false
+	onlyPinned := false
 
 	if err := echo.QueryParamsBinder(c).
 		Bool("show_sub_issues", &showSubIssues).
@@ -440,6 +445,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		Bool("only_count", &onlyCount).
 		Bool("light", &lightSearch).
 		Bool("only_active", &onlyActive).
+		Bool("only_pinned", &onlyPinned).
 		BindError(); err != nil {
 		return EError(c, err)
 	}
@@ -613,6 +619,10 @@ func (s *Services) getIssueList(c echo.Context) error {
 				Select("id").
 				Where("\"group\" <> ?", "cancelled").
 				Where("\"group\" <> ?", "completed"))
+		}
+
+		if onlyPinned {
+			query = query.Where("issues.pinned = true")
 		}
 
 		if filters.SearchQuery != "" {
@@ -913,6 +923,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 			date, err := utils.FormatDateStr(val.(string), "2006-01-02T15:04:05Z07:00", nil)
 			if err != nil {
 				return EErrorDefined(c, apierrors.ErrGeneric)
+			}
+
+			if d, err := utils.FormatDate(date); err != nil {
+				return EErrorDefined(c, apierrors.ErrGeneric)
+			} else {
+				if time.Now().After(d) {
+					return EErrorDefined(c, apierrors.ErrIssueTargetDateExp)
+				}
 			}
 			data["target_date"] = date
 			targetDate = &date
@@ -3559,6 +3577,52 @@ func (s *Services) issueDescriptionUnlock(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueDescriptionNotLockedByUser)
 	}
 
+	return c.NoContent(http.StatusOK)
+}
+
+// issuePin godoc
+// @id issuePin
+// @Summary Задачи: Закрепление задачи
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Success 200 "Задача успешно закреплена"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/pin [post]
+func (s *Services) issuePin(c echo.Context) error {
+	issue := c.(IssueContext).Issue
+
+	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+// issueUnpin godoc
+// @id issueUnpin
+// @Summary Задачи: Открепление задачи
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Success 200 "Задача успешно откреплена"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/pin [post]
+func (s *Services) issueUnpin(c echo.Context) error {
+	issue := c.(IssueContext).Issue
+
+	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
+		return EError(c, err)
+	}
 	return c.NoContent(http.StatusOK)
 }
 
