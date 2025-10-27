@@ -874,7 +874,13 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
+	if err := s.db.Model(&dao.User{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.User{}).
+				Select("1").
+				Where("email = ?", newEmail),
+		).
+		Find(&exist).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -930,7 +936,13 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
+	if err := s.db.Model(&dao.User{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.User{}).
+				Select("1").
+				Where("email = ?", newEmail),
+		).
+		Find(&exist).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1314,7 +1326,13 @@ func (s *Services) signUp(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Select("count(*) > 0").Model(&dao.User{}).Where("email = ?", req.Email).Find(&exist).Error; err != nil {
+	if err := s.db.Model(&dao.User{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.User{}).
+				Select("1").
+				Where("email = ?", req.Email),
+		).
+		Find(&exist).Error; err != nil {
 		return EError(c, err)
 	}
 	if exist {

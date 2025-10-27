@@ -51,7 +51,13 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
 			var exist bool
-			if err := s.db.Model(&dao.Project{}).Select("count(*) > 0").Where("encode(hash, 'hex') = ?", etag).Find(&exist).Error; err != nil {
+			if err := s.db.Model(&dao.Project{}).
+				Select("EXISTS(?)",
+					s.db.Model(&dao.Project{}).
+						Select("1").
+						Where("encode(hash, 'hex') = ?", etag),
+				).
+				Find(&exist).Error; err != nil {
 				return EError(c, err)
 			}
 
@@ -209,8 +215,12 @@ func (s *Services) getProjectList(c echo.Context) error {
 		Preload("ProjectLead").
 		Select("*,(?) as total_members, (?) as is_favorite",
 			s.db.Model(&dao.ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id"),
-			s.db.Model(&dao.ProjectFavorites{}).Select("count(*) > 0").Where("project_favorites.project_id = projects.id").Where("user_id = ?", user.ID),
-		).
+			s.db.Model(&dao.ProjectFavorites{}).Select("EXISTS(?)",
+				s.db.Model(&dao.ProjectFavorites{}).
+					Select("1").
+					Where("project_favorites.project_id = projects.id").
+					Where("user_id = ?", user.ID),
+					)).
 		Set("userId", user.ID). // Check if project favorite for this user and get memberships
 		Where("workspace_id = ?", workspace.ID).
 		Order("is_favorite desc, lower(name)")
@@ -794,12 +804,14 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 	}
 
 	var isWorkspaceAdmin bool
-	if err := s.db.
-		Select("count(*) > 0").
-		Where("role = ?", types.AdminRole).
-		Where("workspace_id = ?", project.WorkspaceId).
-		Where("member_id = ?", requestedProjectMember.MemberId).
-		Model(&dao.WorkspaceMember{}).
+	if err := s.db.Model(&dao.WorkspaceMember{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.WorkspaceMember{}).
+				Select("1").
+				Where("role = ?", types.AdminRole).
+				Where("workspace_id = ?", project.WorkspaceId).
+				Where("member_id = ?", requestedProjectMember.MemberId),
+		).
 		Find(&isWorkspaceAdmin).Error; err != nil {
 		return EError(c, err)
 	}
@@ -967,10 +979,13 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 
 	// Check if the user is already member of project
 	var exists bool
-	if err := s.db.Table("project_members").
-		Where("member_id = ?", projectMember.MemberId).
-		Where("project_id = ?", project.ID).
-		Select("count(*) > 0").
+	if err := s.db.Model(&dao.ProjectMember{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.ProjectMember{}).
+				Select("1").
+				Where("member_id = ?", projectMember.MemberId).
+				Where("project_id = ?", project.ID),
+		).
 		Find(&exists).Error; err != nil {
 		return EError(c, err)
 	}
@@ -2432,8 +2447,11 @@ func (s *Services) deleteState(c echo.Context) error {
 
 	var issueExists bool
 	if err := s.db.Model(&dao.Issue{}).
-		Select("count(id) > 0").
-		Where("state_id = ?", state.ID).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.Issue{}).
+				Select("1").
+				Where("state_id = ?", state.ID),
+		).
 		Find(&issueExists).Error; err != nil {
 		return EError(c, err)
 	}

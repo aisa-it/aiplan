@@ -460,7 +460,13 @@ func GetUsers(db *gorm.DB) []User {
 
 func UserExists(db *gorm.DB, id string) (bool, error) {
 	var exists bool
-	if err := db.Model(&User{}).Select("count(*) > 0").Where("id = ?", id).Find(&exists).Error; err != nil {
+	if err := db.Model(&User{}).
+		Select("EXISTS(?)",
+			db.Model(&User{}).
+				Select("1").
+				Where("id = ?", id),
+		).
+		Find(&exists).Error; err != nil {
 		return false, err
 	}
 	return exists, nil

@@ -184,9 +184,12 @@ func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNoti
 	un := send.getUserNotification()
 
 	var exist bool
-	if err := np.db.Select("count(*) > 0").
-		Where("id = ?", un.ID).
-		Model(dao.UserNotifications{}).
+	if err := np.db.Model(&dao.UserNotifications{}).
+		Select("EXISTS(?)",
+			np.db.Model(&dao.UserNotifications{}).
+				Select("1").
+				Where("id = ?", un.ID),
+		).
 		Find(&exist).Error; err != nil {
 		return nil, 0, err
 	}

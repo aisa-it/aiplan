@@ -136,7 +136,14 @@ func (ghi *GithubIntegration) RegisterWebhook(g *echo.Group) {
 func (ghi *GithubIntegration) GithubPushEvent(event GithubPushEvent, workspace dao.Workspace) {
 	for _, commit := range event.Commits {
 		var exist bool
-		if err := ghi.db.Select("count(*) > 0").Model(&dao.IssueComment{}).Where("actor_id = ?", ghi.User.ID).Where("integration_meta = ?", commit.Id).Find(&exist).Error; err != nil {
+		if err := ghi.db.Model(&dao.IssueComment{}).
+			Select("EXISTS(?)",
+				ghi.db.Model(&dao.IssueComment{}).
+					Select("1").
+					Where("actor_id = ?", ghi.User.ID).
+					Where("integration_meta = ?", commit.Id),
+			).
+			Find(&exist).Error; err != nil {
 			logGithub.Error("Check commit comment exists")
 			continue
 		}

@@ -133,14 +133,6 @@ func GetIssueRoot(issue Issue, db *gorm.DB) *Issue {
 	return getParent(issue)
 }
 
-func IsUserExist(db *gorm.DB, email string) (bool, error) {
-	var exists bool
-	if err := db.Select("count(*) > 0").Where("email = ?", email).Model(&User{}).Find(&exists).Error; err != nil {
-		return false, err
-	}
-	return exists, nil
-}
-
 func GenPassword() string {
 	return password.MustGenerate(12, 6, 0, false, false)
 }
