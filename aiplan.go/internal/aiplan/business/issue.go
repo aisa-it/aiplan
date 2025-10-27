@@ -14,15 +14,19 @@ import (
 // CreateIssueComment создает новый комментарий к задаче. Метод принимает задачу, пользователя, текст комментария, комментарий для базы данных, ID для ответа на комментарий и дополнительные метаданные. Возвращает ошибку, если произошла ошибка.
 func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text string, replyToId *string, fromTg bool, meta ...string) error {
 	// Check rights
-	var permited bool
-	if err := b.db.Select("count(*) > 0").
-		Model(&dao.ProjectMember{}).
-		Where("project_id = ?", issue.ProjectId).
-		Where("member_id = ? and role > ?", user.ID, types.GuestRole).
-		Find(&permited).Error; err != nil {
+	var permitted bool
+	if err := b.db.Model(&dao.ProjectMember{}).
+		Select("EXISTS(?)",
+			b.db.Model(&dao.ProjectMember{}).
+				Select("1").
+				Where("project_id = ?", issue.ProjectId).
+				Where("member_id = ?", user.ID).
+				Where("role > ?", types.GuestRole),
+		).
+		Find(&permitted).Error; err != nil {
 		return err
 	}
-	if !user.IsSuperuser && !permited {
+	if !user.IsSuperuser && !permitted {
 		return errors.New("create comment forbidden")
 	}
 

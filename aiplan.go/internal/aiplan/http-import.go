@@ -101,11 +101,14 @@ func (s *Services) startJiraImport(c echo.Context) error {
 	}
 
 	var workspaceExist bool
-	if err := s.db.Select("count(*) > 0").
-		Where("workspace_id = ?", req.TargetWorkspaceID).
-		Where("member_id = ?", user.ID).
-		Where("role = 15").
-		Model(&dao.WorkspaceMember{}).
+	if err := s.db.Model(&dao.WorkspaceMember{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.WorkspaceMember{}).
+				Select("1").
+				Where("workspace_id = ?", req.TargetWorkspaceID).
+				Where("member_id = ?", user.ID).
+				Where("role = 15"),
+		).
 		Find(&workspaceExist).Error; err != nil {
 		return EError(c, err)
 	}
@@ -114,10 +117,13 @@ func (s *Services) startJiraImport(c echo.Context) error {
 	}
 
 	var projectExist bool
-	if err := s.db.Select("count(*) > 0").
-		Where("workspace_id = ?", req.TargetWorkspaceID).
-		Where("identifier = ?", projectKey).
-		Model(&dao.Project{}).
+	if err := s.db.Model(&dao.Project{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.Project{}).
+				Select("1").
+				Where("workspace_id = ?", req.TargetWorkspaceID).
+				Where("identifier = ?", projectKey),
+		).
 		Find(&projectExist).Error; err != nil {
 		return EError(c, err)
 	}

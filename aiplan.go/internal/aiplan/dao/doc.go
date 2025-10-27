@@ -105,10 +105,13 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 	d.SetUrl()
 
 	if userId, ok := tx.Get("member_id"); ok {
-		if err := tx.Select("count(*) > 0").
-			Model(&DocFavorites{}).
-			Where("user_id = ?", userId).
-			Where("doc_id = ?", d.ID).
+		if err := tx.Model(&DocFavorites{}).
+			Select("EXISTS(?)",
+				tx.Model(&DocFavorites{}).
+					Select("1").
+					Where("user_id = ?", userId).
+					Where("doc_id = ?", d.ID),
+			).
 			Find(&d.IsFavorite).Error; err != nil {
 			return err
 		}

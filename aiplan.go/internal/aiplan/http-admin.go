@@ -1094,9 +1094,12 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 		var existsWorkspaceMember bool
 
 		if err := tx.Model(&dao.WorkspaceMember{}).
-			Select("count(*) > 0").
-			Where("workspace_id = ?", workspaceId).
-			Where("member_id = ?", userId).
+			Select("EXISTS(?)",
+				tx.Model(&dao.WorkspaceMember{}).
+					Select("1").
+					Where("workspace_id = ?", workspaceId).
+					Where("member_id = ?", userId),
+			).
 			Find(&existsWorkspaceMember).Error; err != nil {
 			return apierrors.ErrGeneric
 		}
