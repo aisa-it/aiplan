@@ -12,6 +12,7 @@ package aiplan
 
 import (
 	"encoding/base64"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -873,15 +874,6 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
 	}
 
-	var exist bool
-	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
-		return EError(c, err)
-	}
-
-	if exist {
-		return EErrorDefined(c, apierrors.ErrEmailIsExist)
-	}
-
 	code := password.MustGenerate(6, 6, 0, false, true)
 
 	err := s.store.EmailChange.NewEmailChange(&user, newEmail, code)
@@ -929,23 +921,52 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
 	}
 
-	var exist bool
-	if err := s.db.Model(&dao.User{}).Select("count(*) > 0").Where("email = ?", newEmail).Find(&exist).Error; err != nil {
+	var existUser dao.User
+	if err := s.db.Where("email = ?", newEmail).Find(&existUser).Error; err != nil {
 		return EError(c, err)
-	}
-
-	if exist {
-		return EErrorDefined(c, apierrors.ErrEmailIsExist)
 	}
 
 	if ok := s.store.EmailChange.ValidCodeEmail(&user, newEmail, data.Code); !ok {
 		return EErrorDefined(c, apierrors.ErrEmailVerify)
 	}
-	user.Email = newEmail
 
-	if err := s.db.Select("email").Updates(&user).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if existUser.ID != "" {
+			if err := s.business.ReplaceUser(tx, user.ID, existUser.ID); err != nil {
+				return err
+			}
+
+			//Reset all old user sessions
+			if err := dao.ResetUserSessions(tx, &user); err != nil {
+				return err
+			}
+			s.notificationsService.Ws.CloseUserSessions(user.ID)
+
+			if !c.(AuthContext).TokenAuth {
+				if err := s.sessionsManager.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+					return EError(c, err)
+				}
+
+				if err := s.sessionsManager.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+					return EError(c, err)
+				}
+
+				clearAuthCookies(c)
+			}
+
+			if err := tx.Where("id = ?", user.ID).Delete(&dao.User{}).Error; err != nil {
+				return err
+			}
+
+			return nil
+		}
+		fmt.Println("shit")
+		user.Email = newEmail
+		return tx.Select("email").Updates(&user).Error
+	}); err != nil {
 		return EError(c, err)
 	}
+
 	return c.NoContent(http.StatusOK)
 }
 
