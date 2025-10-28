@@ -128,19 +128,17 @@ func (asset *FileAsset) BeforeDelete(tx *gorm.DB) error {
 // Возвращает:
 //   - bool: true, если запись может быть удалена, false в противном случае.
 func (asset *FileAsset) CanBeDeleted(tx *gorm.DB) (bool, error) {
-	var count int
-	if err := tx.Raw(`select (select count(*) from issue_attachments where asset_id = ?)
-+
-(select count(*) from doc_attachments where asset_id = ?)
-+
-(select count(*) from form_attachments where asset_id = ?)
-+
-(select count(*) from users where avatar_id = ?)
-+
-(select count(*) from workspaces where logo_id = ?)`, asset.Id, asset.Id, asset.Id, asset.Id, asset.Id).Scan(&count).Error; err != nil {
+	var exists bool
+	if err := tx.Raw(`
+        SELECT EXISTS(SELECT 1 FROM issue_attachments WHERE asset_id = ?)
+           OR EXISTS(SELECT 1 FROM doc_attachments WHERE asset_id = ?)
+           OR EXISTS(SELECT 1 FROM form_attachments WHERE asset_id = ?)
+           OR EXISTS(SELECT 1 FROM users WHERE avatar_id = ?)
+           OR EXISTS(SELECT 1 FROM workspaces WHERE logo_id = ?)`,
+		asset.Id, asset.Id, asset.Id, asset.Id, asset.Id).Scan(&exists).Error; err != nil {
 		return false, err
 	}
-	return count <= 0, nil
+	return !exists, nil
 }
 
 // Преобразует объект FileAsset в его DTO-представление для упрощенной передачи данных в интерфейс.

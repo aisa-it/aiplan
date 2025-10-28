@@ -15,15 +15,19 @@ import (
 // CreateDocComment создает новый комментарий к документу. Метод принимает задачу, пользователя, текст комментария, комментарий для базы данных, ID для ответа на комментарий и дополнительные метаданные. Возвращает ошибку, если произошла ошибка.
 func (b *Business) CreateDocComment(doc dao.Doc, user dao.User, text string, replyToId uuid.NullUUID, fromTg bool, meta ...string) error {
 	// Check rights
-	var permited bool
-	if err := b.db.Select("count(*) > 0").
-		Model(&dao.WorkspaceMember{}).
-		Where("workspace_id = ?", doc.WorkspaceId).
-		Where("member_id = ? and role > ?", user.ID, types.GuestRole).
-		Find(&permited).Error; err != nil {
+	var permitted bool
+	if err := b.db.Model(&dao.WorkspaceMember{}).
+		Select("EXISTS(?)",
+			b.db.Model(&dao.WorkspaceMember{}).
+				Select("1").
+				Where("workspace_id = ?", doc.WorkspaceId).
+				Where("member_id = ?", user.ID).
+				Where("role > ?", types.GuestRole),
+		).
+		Find(&permitted).Error; err != nil {
 		return err
 	}
-	if !user.IsSuperuser && !permited {
+	if !user.IsSuperuser && !permitted {
 		return errors.New("create comment forbidden")
 	}
 

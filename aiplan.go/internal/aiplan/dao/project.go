@@ -14,6 +14,7 @@
 package dao
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -307,10 +308,13 @@ func (project *Project) AfterCreate(tx *gorm.DB) error {
 //   - error: ошибка, если произошла ошибка при обновлении статуса участника проекта.
 func (project *Project) AfterFind(tx *gorm.DB) error {
 	if userId, ok := tx.Get("userId"); ok {
-		if err := tx.Select("count(*) > 0").
-			Model(&ProjectFavorites{}).
-			Where("user_id = ?", userId).
-			Where("project_id = ?", project.ID).
+		if err := tx.Model(&ProjectFavorites{}).
+			Select("EXISTS(?)",
+				tx.Model(&ProjectFavorites{}).
+					Select("1").
+					Where("user_id = ?", userId).
+					Where("project_id = ?", project.ID),
+			).
 			Find(&project.IsFavorite).Error; err != nil {
 			return err
 		}
@@ -318,7 +322,7 @@ func (project *Project) AfterFind(tx *gorm.DB) error {
 		if err := tx.Where("member_id = ?", userId).
 			Where("project_id = ?", project.ID).
 			First(&project.CurrentUserMembership).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				project.CurrentUserMembership = nil
 			} else {
 				return err
@@ -671,10 +675,15 @@ func (pf *ProjectFavorites) ToDTO() *dto.ProjectFavorites {
 // Возвращает:
 //   - *gorom.DB: экземпляр базы данных GORM для дальнейшей обработки результатов.
 func AllProjects(db *gorm.DB, user string) *gorm.DB {
-	project_members := db.Table("project_members").Select("count(*)").Where("project_members.project_id = projects.id")
-	is_favorite := db.Table("project_favorites").Select("count(*) > 0").Where("project_favorites.project_id = projects.id").Where("user_id = ?", user)
+	projectMembers := db.Model(&ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id")
+	isFavorite := db.Model(&ProjectFavorites{}).Select("EXISTS(?)",
+		db.Model(&ProjectFavorites{}).
+			Select("1").
+			Where("project_favorites.project_id = projects.id").
+			Where("user_id = ?", user),
+	)
 	return db.Preload("Workspace").Preload("Workspace.Owner").
-		Select("*,(?) as total_members, (?) as is_favorite", project_members, is_favorite)
+		Select("*,(?) as total_members, (?) as is_favorite", projectMembers, isFavorite)
 }
 
 // GetProject возвращает объект проекта по его идентификатору, рабочему пространству и идентификатору пользователя.  Функция выполняет фильтрацию по рабочему пространству и пользователю, а также предварительно загружает связанные данные, такие как рабочее пространство и lead проекта.
@@ -715,7 +724,7 @@ func GetProjects(db *gorm.DB, slug string, user string) ([]Project, error) {
 
 	err := AllProjects(db, user).
 		Where("workspace_id in (?)", db.Model(&Workspace{}).Select("id").Where("slug = ?", slug)).
-		Where("id in (?) or network = 2", db.Table("project_members").Select("project_id").Where("member_id = ?", user)).
+		Where("id in (?) or network = 2", db.Model(&ProjectMember{}).Select("project_id").Where("member_id = ?", user)).
 		Set("userId", user).
 		Find(&ret).Error
 
@@ -1315,10 +1324,13 @@ func IsProjectMember(tx *gorm.DB, userId string, projectId string) (int, bool) {
 // Возвращает:
 //   - bool: true, если пользователь является участником рабочего пространства, false в противном случае.
 func IsWorkspaceMember(tx *gorm.DB, userId string, workspaceId string) (exist bool) {
-	tx.Select("count(*) > 0").
-		Model(&WorkspaceMember{}).
-		Where("workspace_id = ?", workspaceId).
-		Where("member_id = ?", userId).
+	tx.Model(&WorkspaceMember{}).
+		Select("EXISTS(?)",
+			tx.Model(&WorkspaceMember{}).
+				Select("1").
+				Where("workspace_id = ?", workspaceId).
+				Where("member_id = ?", userId),
+		).
 		Find(&exist)
 	return exist
 }

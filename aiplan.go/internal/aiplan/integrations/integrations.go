@@ -115,10 +115,13 @@ func (is *IntegrationsService) GetIntegrations(workspaceId string) []Integration
 	integrations := make([]Integration, len(is.integrations))
 	for i, integration := range is.integrations {
 		integrations[i] = integration.GetInfo()
-		if err := is.db.Select("count(*) > 0").
-			Where("member_id = ?", integration.GetInfo().User.ID).
-			Where("workspace_id = ?", workspaceId).
-			Model(&dao.WorkspaceMember{}).Find(&integrations[i].Added).Error; err != nil {
+		if err := is.db.Model(&dao.WorkspaceMember{}).
+			Select("EXISTS(?)",
+				is.db.Model(&dao.WorkspaceMember{}).
+					Select("1").
+					Where("member_id = ?", integration.GetInfo().User.ID).
+					Where("workspace_id = ?", workspaceId),
+			).Find(&integrations[i].Added).Error; err != nil {
 			slog.Error("Check if integration connected to workspace", "integration", integrations[i].Name, "workspaceId", workspaceId, "err", err)
 		}
 	}

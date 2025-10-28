@@ -437,10 +437,13 @@ func (wm *WorkspaceMember) AfterCreate(tx *gorm.DB) error {
 
 func (wm *WorkspaceMember) AfterFind(tx *gorm.DB) error {
 	var editable bool
-	if err := tx.Select("count(*) < 1").
-		Model(&WorkspaceMember{}).
-		Where("member_id = ?", wm.MemberId).
-		Where("id != ?", wm.ID).
+	if err := tx.Model(&WorkspaceMember{}).
+		Select("NOT EXISTS(?)",
+			tx.Model(&WorkspaceMember{}).
+				Select("1").
+				Where("member_id = ?", wm.MemberId).
+				Where("id != ?", wm.ID),
+		).
 		Find(&editable).Error; err != nil {
 		return err
 	}
