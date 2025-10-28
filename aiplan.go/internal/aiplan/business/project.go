@@ -119,12 +119,14 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 	var isWorkspaceAdmin bool
 
 	if actor.MemberId != requestedMember.MemberId {
-		if err := b.db.
-			Select("count(*) > 0").
-			Where("role = ?", types.AdminRole).
-			Where("workspace_id = ?", actor.WorkspaceId).
-			Where("member_id = ?", requestedMember.MemberId).
-			Model(&dao.WorkspaceMember{}).
+		if err := b.db.Model(&dao.WorkspaceMember{}).
+			Select("EXISTS(?)",
+				b.db.Model(&dao.WorkspaceMember{}).
+					Select("1").
+					Where("role = ?", types.AdminRole).
+					Where("workspace_id = ?", actor.WorkspaceId).
+					Where("member_id = ?", requestedMember.MemberId),
+			).
 			Find(&isWorkspaceAdmin).Error; err != nil {
 			return err
 		}

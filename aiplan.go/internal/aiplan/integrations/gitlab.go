@@ -126,7 +126,14 @@ func (gi GitlabIntegration) RegisterWebhook(g *echo.Group) {
 func (gi *GitlabIntegration) GitlabPushEvent(event GitlabPushEvent, workspace dao.Workspace) {
 	for _, commit := range event.Commits {
 		var exist bool
-		if err := gi.db.Select("count(*) > 0").Model(&dao.IssueComment{}).Where("actor_id = ?", gi.User.ID).Where("integration_meta = ?", commit.ID).Find(&exist).Error; err != nil {
+		if err := gi.db.Model(&dao.IssueComment{}).
+			Select("EXISTS(?)",
+				gi.db.Model(&dao.IssueComment{}).
+					Select("1").
+					Where("actor_id = ?", gi.User.ID).
+					Where("integration_meta = ?", commit.ID),
+			).
+			Find(&exist).Error; err != nil {
 			log.Error("Check commit comment exists")
 			continue
 		}

@@ -816,11 +816,14 @@ func (issue *Issue) FetchLinkedIssues(tx *gorm.DB) error {
 //   - error: ошибка, если при добавлении связи произошла ошибка.
 func (issue *Issue) AddLinkedIssue(tx *gorm.DB, id uuid.UUID) error {
 	var sameProject bool
-	if err := tx.Select("count(*) > 0").
-		Where("id = ?", id).
-		Where("project_id = ?", issue.ProjectId).
-		Where("workspace_id = ?", issue.WorkspaceId).
-		Model(&Issue{}).
+	if err := tx.Model(&Issue{}).
+		Select("EXISTS(?)",
+			tx.Model(&Issue{}).
+				Select("1").
+				Where("id = ?", id).
+				Where("project_id = ?", issue.ProjectId).
+				Where("workspace_id = ?", issue.WorkspaceId),
+		).
 		Find(&sameProject).Error; err != nil {
 		return err
 	}

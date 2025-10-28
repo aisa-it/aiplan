@@ -895,10 +895,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 			delete(data, "description_html")
 		} else {
 			var locked bool
-			if err := s.db.
-				Select("count(*) > 0").
-				Where("issue_id = ? and user_id <> ? and locked_until > NOW()", issue.ID, user.ID).
-				Model(&dao.IssueDescriptionLock{}).
+			if err := s.db.Model(&dao.IssueDescriptionLock{}).
+				Select("EXISTS(?)",
+					s.db.Model(&dao.IssueDescriptionLock{}).
+						Select("1").
+						Where("issue_id = ?", issue.ID).
+						Where("user_id <> ?", user.ID).
+						Where("locked_until > NOW()"),
+				).
 				Find(&locked).Error; err != nil {
 				return EError(c, err)
 			}
@@ -2475,6 +2479,10 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		}
 	}
 
+	if comment.CommentHtml.StripTags() == "" {
+		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
+	}
+
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		comment.Id = dao.GenID()
 		comment.ProjectId = project.ID
@@ -2695,6 +2703,10 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 
 	if commentOld.CommentHtml.Body == comment.CommentHtml.Body {
 		return c.JSON(http.StatusOK, commentOld)
+	}
+
+	if comment.CommentHtml.StripTags() == "" {
+		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
