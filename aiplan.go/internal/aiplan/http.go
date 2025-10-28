@@ -62,7 +62,6 @@ import (
 	issues_import "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/maintenance"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/sessions"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo-contrib/echoprometheus"
@@ -71,6 +70,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/pbkdf2"
 	"gorm.io/gorm"
+
+	mem "github.com/aisa-it/aiplan-mem/api"
 
 	_ "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/docs"
 	echoSwagger "github.com/swaggo/echo-swagger"
@@ -88,7 +89,7 @@ type Services struct {
 	tracker             *tracker.ActivitiesTracker
 	storage             filestorage.FileStorage
 	emailService        *notifications.EmailService
-	sessionsManager     *sessions.SessionsManager
+	memDB               *mem.AIPlanMemAPI
 	integrationsService *integrations.IntegrationsService
 	importService       *issues_import.ImportService
 	jitsiTokenIss       *jitsi_token.JitsiTokenIssuer
@@ -151,7 +152,11 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		slog.Error("Register query callback", "err", err)
 	}
 
-	sm := sessions.NewSessionsManager(cfg, types.RefreshTokenExpiresPeriod+time.Hour)
+	memDB, err := mem.NewClient(true, "session.db")
+	if err != nil {
+		slog.Error("Connect to AIPlan MemDB", "err", err)
+		os.Exit(1)
+	}
 	es := notifications.NewEmailService(cfg, db)
 	tr := tracker.NewActivitiesTracker(db)
 	bl, err := business.NewBL(db, tr)
@@ -207,8 +212,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		storage:      storage,
 		emailService: es,
 		//telegramService:       ts,
-		sessionsManager: sm,
-		importService:   issues_import.NewImportService(db, storage, es),
+		memDB:         memDB,
+		importService: issues_import.NewImportService(db, storage, es),
 		//wsNotificationService: ws,
 		notificationsService: ns,
 		business:             bl,
@@ -289,7 +294,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	e.Validator = NewRequestValidator()
 
-	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), sm, ns.Tg, es)
+	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es)
 
 	//services with auth
 	apiGroup := e.Group("/api/")
@@ -298,9 +303,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	authGroup := apiGroup.Group("auth/",
 		AuthMiddleware(AuthConfig{
-			Secret:         []byte(cfg.SecretKey),
-			DB:             db,
-			SessionManager: sm,
+			Secret: []byte(cfg.SecretKey),
+			DB:     db,
+			MemDB:  memDB,
 		}),
 	)
 
