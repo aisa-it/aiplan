@@ -130,20 +130,15 @@ func (asset *FileAsset) BeforeDelete(tx *gorm.DB) error {
 func (asset *FileAsset) CanBeDeleted(tx *gorm.DB) (bool, error) {
 	var exists bool
 	if err := tx.Raw(`
-        SELECT NOT EXISTS(
-            SELECT 1 FROM issue_attachments WHERE asset_id = ?
-            UNION ALL
-            SELECT 1 FROM doc_attachments WHERE asset_id = ?
-            UNION ALL
-            SELECT 1 FROM form_attachments WHERE asset_id = ?
-            UNION ALL
-            SELECT 1 FROM users WHERE avatar_id = ?
-            UNION ALL
-            SELECT 1 FROM workspaces WHERE logo_id = ?
-        )`, asset.Id, asset.Id, asset.Id, asset.Id, asset.Id).Scan(&exists).Error; err != nil {
+        SELECT EXISTS(SELECT 1 FROM issue_attachments WHERE asset_id = ?)
+           OR EXISTS(SELECT 1 FROM doc_attachments WHERE asset_id = ?)
+           OR EXISTS(SELECT 1 FROM form_attachments WHERE asset_id = ?)
+           OR EXISTS(SELECT 1 FROM users WHERE avatar_id = ?)
+           OR EXISTS(SELECT 1 FROM workspaces WHERE logo_id = ?)`,
+		asset.Id, asset.Id, asset.Id, asset.Id, asset.Id).Scan(&exists).Error; err != nil {
 		return false, err
 	}
-	return exists, nil
+	return !exists, nil
 }
 
 // Преобразует объект FileAsset в его DTO-представление для упрощенной передачи данных в интерфейс.
