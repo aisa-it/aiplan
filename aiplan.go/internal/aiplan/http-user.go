@@ -813,7 +813,7 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 
 	//Blacklist token
 	if accessToken.JWT != nil {
-		if err := s.sessionsManager.BlacklistToken(accessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(accessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 	} else {
@@ -943,11 +943,11 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 			s.notificationsService.Ws.CloseUserSessions(user.ID)
 
 			if !c.(AuthContext).TokenAuth {
-				if err := s.sessionsManager.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+				if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
 					return EError(c, err)
 				}
 
-				if err := s.sessionsManager.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+				if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
 					return EError(c, err)
 				}
 
@@ -1065,11 +1065,11 @@ func (s *Services) signOut(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(refreshToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(refreshToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
@@ -1111,11 +1111,11 @@ func (s *Services) signOutEverywhere(c echo.Context) error {
 			return c.NoContent(http.StatusOK)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(refreshToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(refreshToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
