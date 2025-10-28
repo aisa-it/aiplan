@@ -110,7 +110,7 @@ func main() {
 	var usersExist bool
 	if err := db.Model(&dao.User{}).
 		Select("EXISTS(?)",
-			db.Model(&dao.User{}).Select("1").Limit(1),
+			db.Model(&dao.User{}).Select("1"),
 		).
 		Find(&usersExist).Error; err != nil {
 		slog.Error("Fail count users in DB", "err", err)
