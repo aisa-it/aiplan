@@ -7,9 +7,6 @@ const (
 	TokenExpiresPeriod        = time.Minute
 	RefreshTokenExpiresPeriod = 24 * 265 * time.Hour // Year
 
-	EmailCodeLifeTime time.Duration = time.Minute * 5
-	EmailCodeLimitReq               = time.Minute
-
 	GuestRole  = 5
 	MemberRole = 10
 	AdminRole  = 15

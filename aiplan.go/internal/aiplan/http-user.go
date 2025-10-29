@@ -12,6 +12,7 @@ package aiplan
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	uuid5 "github.com/gofrs/uuid/v5"
 	"log"
@@ -28,6 +29,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
+	memErr "github.com/aisa-it/aiplan-mem/apierror"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -875,20 +877,15 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
 	}
 
-	code := password.MustGenerate(6, 6, 0, false, true)
-
-	if codeResp, err := s.memDB.GetEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID))); err == nil && codeResp != nil {
-		if time.Now().Sub(codeResp.CreatedAt) < types.EmailCodeLimitReq {
-			return apierrors.ErrEmailChangeLimit
-		}
-	}
-
-	err := s.memDB.SaveEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail, code, types.EmailCodeLifeTime)
+	res, err := s.memDB.SaveEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail)
 	if err != nil {
+		if errors.Is(err, memErr.ErrLimitEmailCodeReached) {
+			return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
+		}
 		return EError(c, err)
 	}
 
-	err = s.emailService.UserChangeEmailNotify(user, newEmail, code)
+	err = s.emailService.UserChangeEmailNotify(user, newEmail, res.Code)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -933,51 +930,53 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	code, err := s.memDB.GetEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)))
-	if err != nil || code == nil {
+	code, err := s.memDB.VerifyEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail, data.Code)
+	if err != nil {
+		if errors.Is(err, memErr.ErrVerification) {
+			return EErrorDefined(c, apierrors.ErrEmailVerify)
+		}
 		return EError(c, err)
 	}
 
-	if code.Code == data.Code && code.NewEmail == data.NewEmail && code.ExpiresAt.After(time.Now()) {
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
-			if existUser.ID != "" {
-				if err := s.business.ReplaceUser(tx, user.ID, existUser.ID); err != nil {
-					return err
-				}
-
-				//Reset all old user sessions
-				if err := dao.ResetUserSessions(tx, &user); err != nil {
-					return err
-				}
-				s.notificationsService.Ws.CloseUserSessions(user.ID)
-
-				if !c.(AuthContext).TokenAuth {
-					if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
-						return err
-					}
-
-					if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
-						return err
-					}
-
-					clearAuthCookies(c)
-				}
-
-				if err := tx.Where("id = ?", user.ID).Delete(&dao.User{}).Error; err != nil {
-					return err
-				}
-
-				return nil
-			}
-			fmt.Println("shit")
-			user.Email = newEmail
-			return tx.Select("email").Updates(&user).Error
-		}); err != nil {
-			return EError(c, err)
-		}
-	} else {
+	if !code {
 		return EErrorDefined(c, apierrors.ErrEmailVerify)
+	}
 
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if existUser.ID != "" {
+			if err := s.business.ReplaceUser(tx, user.ID, existUser.ID); err != nil {
+				return err
+			}
+
+			//Reset all old user sessions
+			if err := dao.ResetUserSessions(tx, &user); err != nil {
+				return err
+			}
+			s.notificationsService.Ws.CloseUserSessions(user.ID)
+
+			if !c.(AuthContext).TokenAuth {
+				if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+					return err
+				}
+
+				if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+					return err
+				}
+
+				clearAuthCookies(c)
+			}
+
+			if err := tx.Where("id = ?", user.ID).Delete(&dao.User{}).Error; err != nil {
+				return err
+			}
+
+			return nil
+		}
+		fmt.Println("shit")
+		user.Email = newEmail
+		return tx.Select("email").Updates(&user).Error
+	}); err != nil {
+		return EError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
