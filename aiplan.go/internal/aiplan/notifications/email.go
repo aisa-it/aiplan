@@ -105,9 +105,9 @@ func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
 		for _, file := range dir {
 			var exist bool
 			name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-			if err := tx.Table("templates").
+			if err := tx.Model(&dao.Template{}).
 				Select("EXISTS(?)",
-					tx.Table("templates").
+					tx.Model(&dao.Template{}).
 						Select("1").
 						Where("name = ?", name),
 				).
