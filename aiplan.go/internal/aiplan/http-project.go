@@ -214,13 +214,8 @@ func (s *Services) getProjectList(c echo.Context) error {
 		Preload("Workspace.Owner").
 		Preload("ProjectLead").
 		Select("*,(?) as total_members, (?) as is_favorite",
-			s.db.Model(&dao.ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id"),
-			s.db.Model(&dao.ProjectFavorites{}).Select("EXISTS(?)",
-				s.db.Model(&dao.ProjectFavorites{}).
-					Select("1").
-					Where("project_favorites.project_id = projects.id").
-					Where("user_id = ?", user.ID),
-					)).
+					s.db.Model(&dao.ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id"),
+					s.db.Raw("EXISTS(SELECT 1 FROM project_favorites WHERE project_favorites.project_id = projects.id AND user_id = ?)", user.ID)).
 		Set("userId", user.ID). // Check if project favorite for this user and get memberships
 		Where("workspace_id = ?", workspace.ID).
 		Order("is_favorite desc, lower(name)")
