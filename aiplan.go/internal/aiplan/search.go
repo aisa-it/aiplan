@@ -156,14 +156,21 @@ func SortIssuesGroups(groupByParam string, issuesGroups map[string]IssuesGroupRe
 		case "state":
 			entity1, _ := e1.Entity.(*dto.StateLight)
 			entity2, _ := e2.Entity.(*dto.StateLight)
-			if entity1 == entity2 {
-				return 0
-			}
-			if entity1 == nil || (entity2 != nil && entity1.Name > entity2.Name) {
-				return 1
-			} else {
+
+			groupOrder1 := getStateGroupOrder(entity1)
+			groupOrder2 := getStateGroupOrder(entity2)
+
+			if groupOrder1 == groupOrder2 {
+				// Compare state names
+				if entity1 == nil || (entity2 != nil && entity1.Name > entity2.Name) {
+					return 1
+				}
 				return -1
 			}
+			if groupOrder1 > groupOrder2 {
+				return 1
+			}
+			return -1
 		case "labels":
 			entity1, _ := e1.Entity.(*dto.LabelLight)
 			entity2, _ := e2.Entity.(*dto.LabelLight)
@@ -186,4 +193,23 @@ func SortIssuesGroups(groupByParam string, issuesGroups map[string]IssuesGroupRe
 		}
 		return 0
 	})
+}
+
+func getStateGroupOrder(state *dto.StateLight) int {
+	if state == nil {
+		return 0
+	}
+	switch state.Group {
+	case "backlog":
+		return 1
+	case "unstarted":
+		return 2
+	case "started":
+		return 3
+	case "completed":
+		return 4
+	case "cancelled":
+		return 5
+	}
+	return 0
 }
