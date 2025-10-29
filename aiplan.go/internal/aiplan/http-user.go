@@ -13,6 +13,7 @@ package aiplan
 import (
 	"encoding/base64"
 	"fmt"
+	uuid5 "github.com/gofrs/uuid/v5"
 	"log"
 	"log/slog"
 	"net/http"
@@ -876,7 +877,13 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 
 	code := password.MustGenerate(6, 6, 0, false, true)
 
-	err := s.store.EmailChange.NewEmailChange(&user, newEmail, code)
+	if codeResp, err := s.memDB.GetEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID))); err == nil && codeResp != nil {
+		if time.Now().Sub(codeResp.CreatedAt) < types.EmailCodeLimitReq {
+			return apierrors.ErrEmailChangeLimit
+		}
+	}
+
+	err := s.memDB.SaveEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail, code, types.EmailCodeLifeTime)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -926,45 +933,51 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if ok := s.store.EmailChange.ValidCodeEmail(&user, newEmail, data.Code); !ok {
-		return EErrorDefined(c, apierrors.ErrEmailVerify)
+	code, err := s.memDB.GetEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)))
+	if err != nil || code == nil {
+		return EError(c, err)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if existUser.ID != "" {
-			if err := s.business.ReplaceUser(tx, user.ID, existUser.ID); err != nil {
-				return err
-			}
-
-			//Reset all old user sessions
-			if err := dao.ResetUserSessions(tx, &user); err != nil {
-				return err
-			}
-			s.notificationsService.Ws.CloseUserSessions(user.ID)
-
-			if !c.(AuthContext).TokenAuth {
-				if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+	if code.Code == data.Code && code.NewEmail == data.NewEmail && code.ExpiresAt.After(time.Now()) {
+		if err := s.db.Transaction(func(tx *gorm.DB) error {
+			if existUser.ID != "" {
+				if err := s.business.ReplaceUser(tx, user.ID, existUser.ID); err != nil {
 					return err
 				}
 
-				if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+				//Reset all old user sessions
+				if err := dao.ResetUserSessions(tx, &user); err != nil {
+					return err
+				}
+				s.notificationsService.Ws.CloseUserSessions(user.ID)
+
+				if !c.(AuthContext).TokenAuth {
+					if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+						return err
+					}
+
+					if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+						return err
+					}
+
+					clearAuthCookies(c)
+				}
+
+				if err := tx.Where("id = ?", user.ID).Delete(&dao.User{}).Error; err != nil {
 					return err
 				}
 
-				clearAuthCookies(c)
+				return nil
 			}
-
-			if err := tx.Where("id = ?", user.ID).Delete(&dao.User{}).Error; err != nil {
-				return err
-			}
-
-			return nil
+			fmt.Println("shit")
+			user.Email = newEmail
+			return tx.Select("email").Updates(&user).Error
+		}); err != nil {
+			return EError(c, err)
 		}
-		fmt.Println("shit")
-		user.Email = newEmail
-		return tx.Select("email").Updates(&user).Error
-	}); err != nil {
-		return EError(c, err)
+	} else {
+		return EErrorDefined(c, apierrors.ErrEmailVerify)
+
 	}
 
 	return c.NoContent(http.StatusOK)
