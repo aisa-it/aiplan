@@ -34,21 +34,21 @@ type userFK struct {
 	Field string
 }
 
-func (b *Business) ReplaceUser(tx *gorm.DB, origUserId string, newUserId string) error {
-	return tx.Transaction(func(txx *gorm.DB) error {
+func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId string, newUserId string) error {
+	return mainTx.Transaction(func(tx *gorm.DB) error {
 		for _, fk := range userFKs {
-			txx.SavePoint("preUpdate")
-			if err := txx.Table(fk.Table).
+			tx.SavePoint("preUpdate")
+			if err := tx.Table(fk.Table).
 				Where(fk.Field+"=?", origUserId).
 				Update(fk.Field, newUserId).Error; err != nil {
 				if err == gorm.ErrDuplicatedKey {
-					txx.RollbackTo("preUpdate")
+					tx.RollbackTo("preUpdate")
 				} else {
 					return err
 				}
 			}
 
-			if err := txx.Exec(fmt.Sprintf("delete from %s where %s=?", fk.Table, fk.Field), origUserId).Error; err != nil {
+			if err := tx.Exec(fmt.Sprintf("delete from %s where %s=?", fk.Table, fk.Field), origUserId).Error; err != nil {
 				return err
 			}
 		}
