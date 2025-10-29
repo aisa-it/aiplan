@@ -676,12 +676,8 @@ func (pf *ProjectFavorites) ToDTO() *dto.ProjectFavorites {
 //   - *gorom.DB: экземпляр базы данных GORM для дальнейшей обработки результатов.
 func AllProjects(db *gorm.DB, user string) *gorm.DB {
 	projectMembers := db.Model(&ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id")
-	isFavorite := db.Model(&ProjectFavorites{}).Select("EXISTS(?)",
-		db.Model(&ProjectFavorites{}).
-			Select("1").
-			Where("project_favorites.project_id = projects.id").
-			Where("user_id = ?", user),
-	)
+	isFavorite := db.Raw("EXISTS(SELECT 1 FROM project_favorites WHERE project_favorites.project_id = projects.id AND user_id = ?)", user)
+
 	return db.Preload("Workspace").Preload("Workspace.Owner").
 		Select("*,(?) as total_members, (?) as is_favorite", projectMembers, isFavorite)
 }
