@@ -944,11 +944,11 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 
 			if !c.(AuthContext).TokenAuth {
 				if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
-					return EError(c, err)
+					return err
 				}
 
 				if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
-					return EError(c, err)
+					return err
 				}
 
 				clearAuthCookies(c)
