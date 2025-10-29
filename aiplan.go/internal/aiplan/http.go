@@ -111,6 +111,17 @@ func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+// PodHeader middleware adds a X-Pod-Name header with pod name to response for balancer debug
+func PodHeader(next echo.HandlerFunc) echo.HandlerFunc {
+	podName := os.Getenv("POD_NAME")
+	return func(c echo.Context) error {
+		if podName != "" {
+			c.Response().Header().Set("X-Pod-Name", podName)
+		}
+		return next(c)
+	}
+}
+
 func Server(db *gorm.DB, c *config.Config, version string) {
 	cfg = c
 	appVersion = version
@@ -255,6 +266,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// Global middlewares
 	e.Use(ServerHeader)
+	e.Use(PodHeader)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowCredentials: true,
 	}))

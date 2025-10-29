@@ -12,8 +12,8 @@ github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
 github.com/agext/levenshtein v1.2.3 h1:YB2fHEn0UJagG8T1rrWknE3ZQzWM06O8AMAatNn7lmo=
 github.com/agext/levenshtein v1.2.3/go.mod h1:JEDfjyjHDjOF/1e4FlBE/PkbqA9OfWu2ki2W0IB5558=
-github.com/aisa-it/aiplan-mem v1.0.2 h1:5bpGMZ2a8cbiBXcuRpEbvVZkP8XLoow34CLpNwg0vxU=
-github.com/aisa-it/aiplan-mem v1.0.2/go.mod h1:rfksR59sUzeol3ajLMrMBjsrlDk3gSaJv3YHYo/7N6E=
+github.com/aisa-it/aiplan-mem v1.0.3 h1:2A3Qn6oWr+ElJoSMyQoTDquy+WR00Z/anR2KTowF0TQ=
+github.com/aisa-it/aiplan-mem v1.0.3/go.mod h1:rfksR59sUzeol3ajLMrMBjsrlDk3gSaJv3YHYo/7N6E=
 github.com/altcha-org/altcha-lib-go v0.2.2 h1:KY7a7jFUf6tFKZF6MzuZMhSWuGMv0MtVkK/Kj4Oas38=
 github.com/altcha-org/altcha-lib-go v0.2.2/go.mod h1:I8ESLVWR9C58uvGufB/AJDPhaSU4+4Oh3DLpVtgwDAk=
 github.com/andygrunwald/go-jira v1.16.0 h1:PU7C7Fkk5L96JvPc6vDVIrd99vdPnYudHu4ju2c2ikQ=
