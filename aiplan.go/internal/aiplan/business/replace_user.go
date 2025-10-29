@@ -2,7 +2,6 @@ package business
 
 import (
 	"fmt"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"gorm.io/gorm"
 )
@@ -11,6 +10,23 @@ var (
 	userFKs []userFK
 
 	deletedServiceUser *dao.User
+
+	activitiesFk = []userFK{
+		{Table: dao.WorkspaceActivity{}.TableName(), Field: "new_identifier"},
+		{Table: dao.WorkspaceActivity{}.TableName(), Field: "old_identifier"},
+		{Table: dao.ProjectActivity{}.TableName(), Field: "new_identifier"},
+		{Table: dao.ProjectActivity{}.TableName(), Field: "old_identifier"},
+		{Table: dao.IssueActivity{}.TableName(), Field: "new_identifier"},
+		{Table: dao.IssueActivity{}.TableName(), Field: "old_identifier"},
+		{Table: dao.FormActivity{}.TableName(), Field: "new_identifier"},
+		{Table: dao.FormActivity{}.TableName(), Field: "old_identifier"},
+		{Table: dao.DocActivity{}.TableName(), Field: "new_identifier"},
+		{Table: dao.DocActivity{}.TableName(), Field: "old_identifier"},
+		{Table: dao.SprintActivity{}.TableName(), Field: "new_identifier"},
+		{Table: dao.SprintActivity{}.TableName(), Field: "old_identifier"},
+		{Table: dao.RootActivity{}.TableName(), Field: "new_identifier"},
+		{Table: dao.RootActivity{}.TableName(), Field: "old_identifier"},
+	}
 )
 
 type userFK struct {
@@ -18,8 +34,8 @@ type userFK struct {
 	Field string
 }
 
-func (b *Business) ReplaceUser(tx *gorm.DB, origUserId string, newUserId string) error {
-	return tx.Transaction(func(tx *gorm.DB) error {
+func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId string, newUserId string) error {
+	return mainTx.Transaction(func(tx *gorm.DB) error {
 		for _, fk := range userFKs {
 			tx.SavePoint("preUpdate")
 			if err := tx.Table(fk.Table).
@@ -53,7 +69,7 @@ func (b *Business) DeleteUser(userId string) error {
 }
 
 func (b *Business) PopulateUserFKs() error {
-	return b.db.Raw(`SELECT
+	if err := b.db.Raw(`SELECT
     tc.table_name as Table,
     kcu.column_name as Field
 FROM
@@ -65,5 +81,10 @@ FROM
 WHERE
     tc.constraint_type = 'FOREIGN KEY'
     AND ccu.table_name = 'users'
-    AND ccu.column_name = 'id'`).Find(&userFKs).Error
+    AND ccu.column_name = 'id'`).Find(&userFKs).Error; err != nil {
+		return err
+	}
+
+	userFKs = append(userFKs, activitiesFk...)
+	return nil
 }
