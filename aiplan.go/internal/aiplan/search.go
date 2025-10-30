@@ -11,12 +11,95 @@ import (
 	"gorm.io/gorm"
 )
 
+func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchParams *types.SearchParams) (map[string]int, error) {
+	query := db.Session(&gorm.Session{})
+	switch searchParams.GroupByParam {
+	case "priority":
+		query = query.Where("project_id = ?", projectId).Table("issues i").Select("count(*) as Count, coalesce(priority, '') as \"Key\"")
+	case "author":
+		query = db.
+			Model(&dao.ProjectMember{}).
+			Joins("LEFT JOIN issues i on project_members.member_id = i.created_by_id and i.project_id = ?", projectId).
+			Where("project_members.project_id = ?", projectId).
+			Select("count(i.created_by_id) as Count, project_members.member_id as \"Key\"")
+	case "state":
+		query = db.
+			Model(&dao.State{}).
+			Joins("LEFT JOIN issues i on states.id = i.state_id and i.project_id = ?", projectId).
+			Where("states.project_id = ?", projectId).
+			Select("count(i.state_id) as Count, states.id as \"Key\"")
+		if searchParams.OnlyActive {
+			query = query.Where("states.\"group\" <> ?", "cancelled").Where("states.\"group\" <> ?", "completed")
+		}
+		if len(searchParams.Filters.StateIds) > 0 {
+			query = query.Where("states.id in (?)", searchParams.Filters.StateIds)
+		}
+	case "labels":
+		query = query.Select("count(i.id) as Count, l.id as \"Key\"").
+			Table("labels l").
+			Joins("left join issue_labels il on il.label_id = l.id").
+			Joins("right join issues i on il.issue_id = i.id").
+			Where("(il.project_id = ? or il.project_id is null)", projectId).
+			Where("(i.project_id = ? or i.project_id is null)", projectId).
+			Where("(l.project_id = ? or l.project_id is null)", projectId)
+	case "assignees":
+		query = query.Select("count(i.id) as Count, u.id as \"Key\"").
+			Table("users u").
+			Joins("left join issue_assignees ia on ia.assignee_id = u.id").
+			Joins("right join issues i on ia.issue_id = i.id").
+			Where("(ia.project_id = ? or ia.project_id is null)", projectId).
+			Where("(i.project_id = ? or i.project_id is null)", projectId)
+	case "watchers":
+		query = query.Select("count(i.id) as Count, u.id as \"Key\"").
+			Table("users u").
+			Joins("left join issue_watchers iw on iw.watcher_id = u.id").
+			Joins("right join issues i on iw.issue_id = i.id").
+			Where("(iw.project_id = ? or iw.project_id is null)", projectId).
+			Where("(i.project_id = ? or i.project_id is null)", projectId)
+	}
+
+	if searchParams.Filters.AssignedToMe {
+		query = query.Where("i.id in (?)", db.Select("issue_id").Model(&dao.IssueAssignee{}).Where("assignee_id = ?", user.ID))
+	}
+
+	if searchParams.Filters.WatchedByMe {
+		query = query.Where("i.id in (?)", db.Select("issue_id").Model(&dao.IssueWatcher{}).Where("watcher_id = ?", user.ID))
+	}
+
+	if searchParams.Filters.AuthoredByMe {
+		query = query.Where("i.created_by_id = ?", user.ID)
+	}
+
+	if !searchParams.Draft {
+		query = query.Where("i.draft = false or i.draft is null")
+	}
+
+	if !searchParams.ShowSubIssues {
+		query = query.Where("i.parent_id is null")
+	}
+
+	query = query.Offset(-1).Limit(-1).Group("Key")
+
+	var count []struct {
+		Count int
+		Key   string
+	}
+	if err := query.Scan(&count).Error; err != nil {
+		return nil, err
+	}
+
+	res := make(map[string]int, len(count))
+	for _, c := range count {
+		res[c.Key] = c.Count
+	}
+	return res, nil
+}
+
 func FetchIssuesByGroups(
 	groupSize map[string]int,
 	db *gorm.DB, // Clean session cause gorm reset not working
 	groupSelectQuery *gorm.DB,
-	groupByParam string,
-	filters types.IssuesListFilters,
+	searchParams *types.SearchParams,
 ) (int, map[string]IssuesGroupResponse, error) {
 	groupMap := make(map[string]IssuesGroupResponse, len(groupSize))
 
@@ -28,9 +111,9 @@ func FetchIssuesByGroups(
 		q := groupSelectQuery.Session(&gorm.Session{})
 
 		var entity any
-		switch groupByParam {
+		switch searchParams.GroupByParam {
 		case "priority":
-			if len(filters.Priorities) > 0 && !slices.Contains(filters.Priorities, group) {
+			if len(searchParams.Filters.Priorities) > 0 && !slices.Contains(searchParams.Filters.Priorities, group) {
 				continue
 			}
 			if group != "" {
@@ -40,7 +123,7 @@ func FetchIssuesByGroups(
 			}
 			entity = group
 		case "author":
-			if len(filters.AuthorIds) > 0 && !slices.Contains(filters.AuthorIds, group) {
+			if len(searchParams.Filters.AuthorIds) > 0 && !slices.Contains(searchParams.Filters.AuthorIds, group) {
 				continue
 			}
 			q = q.Where("created_by_id = ?", group)
@@ -52,7 +135,7 @@ func FetchIssuesByGroups(
 				entity = user.ToLightDTO()
 			}
 		case "state":
-			if len(filters.StateIds) > 0 && !slices.Contains(filters.StateIds, group) {
+			if len(searchParams.Filters.StateIds) > 0 && !slices.Contains(searchParams.Filters.StateIds, group) {
 				continue
 			}
 			q = q.Where("state_id = ?", group)
@@ -64,7 +147,7 @@ func FetchIssuesByGroups(
 				entity = state.ToLightDTO()
 			}
 		case "labels":
-			if len(filters.Labels) > 0 && !slices.Contains(filters.Labels, group) {
+			if len(searchParams.Filters.Labels) > 0 && !slices.Contains(searchParams.Filters.Labels, group) {
 				continue
 			}
 			if group == "" {
@@ -80,7 +163,7 @@ func FetchIssuesByGroups(
 				entity = label.ToLightDTO()
 			}
 		case "assignees":
-			if len(filters.AssigneeIds) > 0 && !slices.Contains(filters.AssigneeIds, group) {
+			if len(searchParams.Filters.AssigneeIds) > 0 && !slices.Contains(searchParams.Filters.AssigneeIds, group) {
 				continue
 			}
 			if group == "" {
@@ -96,7 +179,7 @@ func FetchIssuesByGroups(
 				entity = u.ToLightDTO()
 			}
 		case "watchers":
-			if len(filters.WatcherIds) > 0 && !slices.Contains(filters.WatcherIds, group) {
+			if len(searchParams.Filters.WatcherIds) > 0 && !slices.Contains(searchParams.Filters.WatcherIds, group) {
 				continue
 			}
 			if group == "" {
@@ -126,7 +209,7 @@ func FetchIssuesByGroups(
 			return 0, nil, err
 		}
 
-		switch groupByParam {
+		switch searchParams.GroupByParam {
 		case "author":
 			entity = issues[0].Author.ToLightDTO()
 		case "state":
