@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-	"github.com/gofrs/uuid/v5"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -116,7 +115,6 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				if err := dao.UpdateUserLastActivityTime(config.DB, &user); err != nil {
 					EError(c, err)
 				}
-				config.MemDB.SaveUserLastSeenTime(uuid.FromStringOrNil(user.ID))
 				return next(AuthContext{c, &user, accessToken, nil, true})
 			}
 
@@ -222,8 +220,6 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 			if err := dao.UpdateUserLastActivityTime(config.DB, user); err != nil {
 				EError(c, err)
 			}
-
-			config.MemDB.SaveUserLastSeenTime(uuid.FromStringOrNil(user.ID))
 
 			user.Email = strings.ToLower(user.Email)
 
