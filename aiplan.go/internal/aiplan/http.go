@@ -162,11 +162,16 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		slog.Error("Register query callback", "err", err)
 	}
 
-	memDB, err := mem.NewClient(true, "session.db")
+	memDBConn := "session.db"
+	if cfg.ExternalMemDB != nil {
+		memDBConn = cfg.ExternalMemDB.String()
+	}
+	memDB, err := mem.NewClient(cfg.ExternalMemDB == nil, memDBConn)
 	if err != nil {
 		slog.Error("Connect to AIPlan MemDB", "err", err)
 		os.Exit(1)
 	}
+
 	es := notifications.NewEmailService(cfg, db)
 	tr := tracker.NewActivitiesTracker(db)
 	bl, err := business.NewBL(db, tr)
