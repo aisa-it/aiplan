@@ -21,12 +21,17 @@ import (
 	"strings"
 )
 
+const (
+	nodeVersion = "node:22.18.0"
+	goVersion   = "golang:alpine"
+)
+
 type Aiplan struct{}
 
 func (m *Aiplan) GoBuildEnv(source *dagger.Directory) *dagger.Container {
 	goCache := dag.CacheVolume("go")
 	return dag.Container().
-		From("golang:alpine").
+		From(goVersion).
 		WithDirectory("/src", source.Directory("aiplan.go/")).
 		WithWorkdir("/src").
 		WithEnvVariable("GOOS", "linux").
@@ -40,7 +45,7 @@ func (m *Aiplan) FrontBuildEnv(version string, source *dagger.Directory) *dagger
 	quasarCache := dag.CacheVolume("next")
 
 	return dag.Container().
-		From("node:20.8.0").
+		From(nodeVersion).
 		WithDirectory("/src", source).
 		WithWorkdir("/src").
 		WithMountedCache("/src/node_modules", nodeCache).
