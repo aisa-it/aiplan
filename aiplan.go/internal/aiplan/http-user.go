@@ -877,15 +877,15 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
 	}
 
-	res, err := s.memDB.SaveEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail)
+	code, err := s.memDB.SaveEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail)
 	if err != nil {
-		if errors.Is(err, memErr.ErrLimitEmailCodeReached) {
+		if errors.Is(err, memErr.ErrEmailCodeTooSoon) {
 			return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
 		}
 		return EError(c, err)
 	}
 
-	err = s.emailService.UserChangeEmailNotify(user, newEmail, res.Code)
+	err = s.emailService.UserChangeEmailNotify(user, newEmail, code)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -930,13 +930,7 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	code, err := s.memDB.VerifyEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail, data.Code)
-	if err != nil {
-		if errors.Is(err, memErr.ErrVerification) {
-			return EErrorDefined(c, apierrors.ErrEmailVerify)
-		}
-		return EError(c, err)
-	}
+	code, _ := s.memDB.VerifyEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail, data.Code)
 
 	if !code {
 		return EErrorDefined(c, apierrors.ErrEmailVerify)
