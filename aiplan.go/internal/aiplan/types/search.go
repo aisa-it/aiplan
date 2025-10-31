@@ -16,6 +16,7 @@ type SearchParams struct {
 	LightSearch   bool
 	OnlyActive    bool
 	OnlyPinned    bool
+	Stream        bool
 
 	Filters IssuesListFilters
 }
@@ -34,6 +35,7 @@ func ParseSearchParams(c echo.Context) (*SearchParams, error) {
 		Bool("light", &sp.LightSearch).
 		Bool("only_active", &sp.OnlyActive).
 		Bool("only_pinned", &sp.OnlyPinned).
+		Bool("stream", &sp.Stream).
 		BindError(); err != nil {
 		return nil, err
 	}
