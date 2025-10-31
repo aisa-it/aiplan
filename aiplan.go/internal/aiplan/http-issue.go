@@ -402,6 +402,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Param only_count query bool false "Вернуть только количество" default(false)
 // @Param only_active query bool false "Вернуть только активные задачи" default(false)
 // @Param only_pinned query bool false "Вернуть только закрепленные задачи" default(false)
+// @Param stream query bool false "Ответ ввиде стриминга json сгруппированных таблиц, работает только при группировке" default(false)
 // @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
 // @Success 200 {object} dto.IssueSearchResult "Результат поиска задач"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
@@ -720,9 +721,35 @@ func (s *Services) getIssueList(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		totalCount, groupMap, err := FetchIssuesByGroups(groupSize, s.db, groupSelectQuery, searchParams)
+		// Write stream status code and headers first
+		if searchParams.Stream {
+			c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			c.Response().WriteHeader(http.StatusOK)
+		}
+
+		enc := json.NewEncoder(c.Response())
+
+		var groupMap []IssuesGroupResponse
+
+		totalCount, err := FetchIssuesByGroups(groupSize, s.db, groupSelectQuery, searchParams, func(group IssuesGroupResponse) error {
+			if !searchParams.Stream {
+				groupMap = append(groupMap, group)
+				return nil
+			}
+
+			if err := enc.Encode(group); err != nil {
+				return err
+			}
+			c.Response().Flush()
+			return nil
+		})
 		if err != nil {
 			return EError(c, err)
+		}
+
+		// Close stream
+		if searchParams.Stream {
+			return nil
 		}
 
 		return c.JSON(http.StatusOK, IssuesGroupedResponse{
@@ -730,7 +757,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 			Offset:  searchParams.Offset,
 			Limit:   searchParams.Limit,
 			GroupBy: searchParams.GroupByParam,
-			Issues:  SortIssuesGroups(searchParams.GroupByParam, groupMap),
+			Issues:  groupMap,
 		})
 	}
 
