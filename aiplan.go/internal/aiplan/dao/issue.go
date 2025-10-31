@@ -52,7 +52,7 @@ type Issue struct {
 	// created_by_id uuid,
 	CreatedById string `json:"created_by"`
 	// parent_id uuid,
-	ParentId uuid.NullUUID `json:"parent" gorm:"type:text;index:,type:hash;index:issue_sort_order_index,priority:1"`
+	ParentId uuid.NullUUID `json:"parent" gorm:"type:text;index;index:issue_sort_order_index,priority:1"`
 	// project_id uuid NOT NULL,
 	ProjectId string `json:"project" gorm:"index:,type:hash,where:deleted_at is not null"`
 	// state_id uuid,
