@@ -128,6 +128,11 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e := echo.New()
 	e.HideBanner = true
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		// Ignore brone pipe errors
+		if strings.Contains(err.Error(), "broken pipe") {
+			return
+		}
+
 		code := http.StatusInternalServerError
 		if he, ok := err.(*echo.HTTPError); ok {
 			code = he.Code
@@ -337,14 +342,13 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
 	authGroup.GET("queryLog/", ql.CountEndpoint)
-	s.AddFormServices(authGroup) // todo
+	s.AddFormServices(authGroup)
 	s.AddProjectServices(authGroup)
 	s.AddWorkspaceServices(authGroup)
 	s.AddUserServices(authGroup)
 	s.AddIssueServices(authGroup)
 	s.AddBackupServices(authGroup)
 	s.AddAdminServices(authGroup)
-	//AddProfileServices(authGroup)
 	AddProfileServices(e.Group("/"))
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
