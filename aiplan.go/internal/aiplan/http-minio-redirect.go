@@ -48,6 +48,14 @@ func (s *Services) redirectToMinioFile(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	exist, err := s.storage.Exist(fileAsset.Id)
+	if err != nil {
+		return EError(c, err)
+	}
+	if !exist {
+		return c.NoContent(http.StatusNotFound)
+	}
+
 	r, err := s.storage.LoadReader(fileAsset.Id)
 	if err != nil {
 		return EError(c, err)
