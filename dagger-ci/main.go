@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	nodeVersion = "node:22.18.0"
+	nodeVersion = "node:21"
 	goVersion   = "golang:alpine"
 )
 
