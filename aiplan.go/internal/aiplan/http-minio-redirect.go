@@ -7,6 +7,7 @@
 package aiplan
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -59,6 +60,10 @@ func (s *Services) redirectToMinioFile(c echo.Context) error {
 	r, err := s.storage.LoadReader(fileAsset.Id)
 	if err != nil {
 		return EError(c, err)
+	}
+
+	if closer, ok := r.(io.Closer); ok {
+		defer closer.Close()
 	}
 
 	return c.Stream(http.StatusOK, fileAsset.ContentType, r)
