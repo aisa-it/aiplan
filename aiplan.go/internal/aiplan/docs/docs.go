@@ -3009,6 +3009,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Ответ ввиде стриминга json сгруппированных таблиц, работает только при группировке",
+                        "name": "stream",
+                        "in": "query"
+                    },
+                    {
                         "description": "Фильтры для поиска задач",
                         "name": "filters",
                         "in": "body",
@@ -14741,14 +14748,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/issues/add/": {
+        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/issues/": {
             "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Добавляет задачи к спринту.",
+                "description": "Изменяет список задач в спринте.",
                 "consumes": [
                     "application/json"
                 ],
@@ -14758,7 +14765,7 @@ const docTemplate = `{
                 "tags": [
                     "Sprint"
                 ],
-                "summary": "Спринты: Добавить задачи к спринту",
+                "summary": "Спринты: Изменяет задачи в спринте",
                 "operationId": "sprintIssuesUpdate",
                 "parameters": [
                     {
