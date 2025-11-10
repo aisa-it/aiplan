@@ -60,6 +60,7 @@ func (s *Services) redirectToMinioFile(c echo.Context) error {
 	if err != nil {
 		return EError(c, err)
 	}
+	defer r.Close()
 
 	return c.Stream(http.StatusOK, fileAsset.ContentType, r)
 }

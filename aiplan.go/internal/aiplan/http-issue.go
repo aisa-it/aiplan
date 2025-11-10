@@ -3272,6 +3272,7 @@ func (s *Services) downloadIssueAttachments(c echo.Context) error {
 	for _, attachment := range attachments {
 		attachR, err := s.storage.LoadReader(attachment.AssetId)
 		if err != nil {
+			attachR.Close()
 			return EError(c, err)
 		}
 		attachW, err := w.CreateHeader(&zip.FileHeader{
@@ -3280,12 +3281,15 @@ func (s *Services) downloadIssueAttachments(c echo.Context) error {
 			Comment:  "Created by AIPlan. https://plan.aisa.ru",
 		})
 		if err != nil {
+			attachR.Close()
 			return EError(c, err)
 		}
 
 		if _, err := io.Copy(attachW, attachR); err != nil {
+			attachR.Close()
 			return EError(c, err)
 		}
+		attachR.Close()
 		c.Response().Flush()
 	}
 	w.Close()

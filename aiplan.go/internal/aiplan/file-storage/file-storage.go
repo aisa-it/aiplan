@@ -75,7 +75,7 @@ type FileStorage interface {
 	SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error
 	SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error
 	Load(name uuid.UUID) ([]byte, error)
-	LoadReader(name uuid.UUID) (io.Reader, error)
+	LoadReader(name uuid.UUID) (io.ReadCloser, error)
 	Delete(name uuid.UUID) error
 	CopyOld(name string, newName uuid.UUID, newMeta *Metadata) error
 	Exist(name uuid.UUID) (bool, error)
@@ -114,7 +114,7 @@ func (s *LocalStorage) Load(name uuid.UUID) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.rootDir, name.String()))
 }
 
-func (s *LocalStorage) LoadReader(name uuid.UUID) (io.Reader, error) {
+func (s *LocalStorage) LoadReader(name uuid.UUID) (io.ReadCloser, error) {
 	return os.Open(name.String())
 }
 
@@ -257,11 +257,12 @@ func (s *MinioStorage) Load(name uuid.UUID) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer obj.Close()
 
 	return io.ReadAll(obj)
 }
 
-func (s *MinioStorage) LoadReader(name uuid.UUID) (io.Reader, error) {
+func (s *MinioStorage) LoadReader(name uuid.UUID) (io.ReadCloser, error) {
 	return s.client.GetObject(context.Background(),
 		s.bucketName,
 		name.String(),
