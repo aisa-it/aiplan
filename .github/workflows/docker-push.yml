@@ -34,13 +34,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # submodules: "true"
+          submodules: "false"
           token: ${{ secrets.GIT_PAT }}
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Config Git
         run: |
-          git submodule update --init aiplan-api-ts
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
