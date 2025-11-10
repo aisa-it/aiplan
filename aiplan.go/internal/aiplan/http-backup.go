@@ -212,6 +212,7 @@ func (s *Services) importWorkspaceMinio(c echo.Context) error {
 	if err != nil {
 		return EError(c, err)
 	}
+	defer backupReader.Close()
 
 	gr, err := gzip.NewReader(backupReader)
 	if err != nil {

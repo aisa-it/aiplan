@@ -60,6 +60,44 @@ func (s *Services) redirectToMinioFile(c echo.Context) error {
 	if err != nil {
 		return EError(c, err)
 	}
+	defer r.Close()
+
+	return c.Stream(http.StatusOK, fileAsset.ContentType, r)
+}
+
+func (s *Services) redirectToMinioFileLegacy(c echo.Context) error {
+	name := c.Param("fileName")
+
+	query := s.db.
+		Select("id", "content_type")
+
+	if uuid, err := uuid.FromString(name); err == nil {
+		query = query.Where("id = ?", uuid)
+	} else {
+		query = query.Where("name = ?", name)
+	}
+
+	var fileAsset dao.FileAsset
+	if err := query.First(&fileAsset).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.NoContent(http.StatusNotFound)
+		}
+		return EError(c, err)
+	}
+
+	exist, err := s.storage.Exist(fileAsset.Id)
+	if err != nil {
+		return EError(c, err)
+	}
+	if !exist {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	r, err := s.storage.LoadReader(fileAsset.Id)
+	if err != nil {
+		return EError(c, err)
+	}
+	defer r.Close()
 
 	return c.Stream(http.StatusOK, fileAsset.ContentType, r)
 }
