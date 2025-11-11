@@ -839,7 +839,7 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 }
 
 type JsonURL struct {
-	Url *url.URL
+	Url *url.URL `swaggertype:"string" format:"uri"`
 }
 
 func (u *JsonURL) MarshalJSON() ([]byte, error) {

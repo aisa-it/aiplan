@@ -2630,6 +2630,115 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/git/config/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о состоянии Git конфигурации системы",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT"
+                ],
+                "summary": "Конфигурация: получение Git настроек",
+                "responses": {
+                    "200": {
+                        "description": "Информация о Git конфигурации",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GitConfigInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/git/repositories/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Создает новый bare Git репозиторий в указанном рабочем пространстве. Метаданные хранятся в файловой системе.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT"
+                ],
+                "summary": "Репозиторий: создание Git репозитория",
+                "parameters": [
+                    {
+                        "description": "Параметры создания репозитория",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateGitRepositoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Созданный репозиторий",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateGitRepositoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Git отключен или недостаточно прав",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "409": {
+                        "description": "Репозиторий с таким именем уже существует",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/import/jira/cancel/{importId}": {
             "post": {
                 "security": [
@@ -16834,6 +16943,69 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateGitRepositoryRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "workspace"
+            ],
+            "properties": {
+                "branch": {
+                    "description": "Branch - начальная ветка репозитория (необязательное поле, по умолчанию: main)",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Description - описание репозитория (необязательное поле)",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name - название репозитория (обязательное поле)\nДопустимые символы: a-z, A-Z, 0-9, дефис, подчеркивание, точка",
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1
+                },
+                "private": {
+                    "description": "Private - флаг приватности репозитория (необязательное поле, по умолчанию: false)",
+                    "type": "boolean"
+                },
+                "workspace": {
+                    "description": "Workspace - slug рабочего пространства (обязательное поле)",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CreateGitRepositoryResponse": {
+            "type": "object",
+            "properties": {
+                "branch": {
+                    "type": "string"
+                },
+                "clone_url": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "private": {
+                    "type": "boolean"
+                },
+                "workspace": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.Doc": {
             "type": "object",
             "properties": {
@@ -17307,6 +17479,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "workspace": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.GitConfigInfo": {
+            "type": "object",
+            "properties": {
+                "git_enabled": {
+                    "type": "boolean"
+                },
+                "git_repositories_path": {
                     "type": "string"
                 }
             }

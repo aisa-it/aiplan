@@ -16,6 +16,8 @@ package aiplan
 // @name Authorization
 // @BasePath /
 // @query.collection.format multi
+// @tag.name GIT
+// @tag.description Git repository integration endpoints
 import (
 	"bytes"
 	"context"
@@ -349,6 +351,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s.AddIssueServices(authGroup)
 	s.AddBackupServices(authGroup)
 	s.AddAdminServices(authGroup)
+	s.AddGitServices(authGroup)
 	AddProfileServices(e.Group("/"))
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)

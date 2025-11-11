@@ -242,6 +242,15 @@ var (
 	ErrTariffExist           = DefinedError{Code: 9006, StatusCode: http.StatusConflict, Err: "tariff for this user already exists", RuErr: "Данный пользователь уже тарифицируется"}
 	ErrTariffNotFound        = DefinedError{Code: 9007, StatusCode: http.StatusNotFound, Err: "tariff not found", RuErr: "Тариф не найден"}
 	ErrReleaseNoteEmptyBody  = DefinedError{Code: 9008, StatusCode: http.StatusBadRequest, Err: "the note content cannot be empty", RuErr: "Тело заметки к релизу не может быть пустым"}
+
+	// 10*** - git errors
+	ErrGitDisabled              = DefinedError{Code: 10001, StatusCode: http.StatusForbidden, Err: "git functionality is disabled", RuErr: "Функциональность Git отключена"}
+	ErrGitRepositoryExists      = DefinedError{Code: 10002, StatusCode: http.StatusConflict, Err: "repository with this name already exists", RuErr: "Репозиторий с таким именем уже существует"}
+	ErrGitInvalidRepositoryName = DefinedError{Code: 10003, StatusCode: http.StatusBadRequest, Err: "invalid repository name: only alphanumeric characters, hyphens, underscores and dots are allowed", RuErr: "Некорректное имя репозитория: допустимы только буквы, цифры, дефисы, подчеркивания и точки"}
+	ErrGitRepositoryNotFound    = DefinedError{Code: 10004, StatusCode: http.StatusNotFound, Err: "git repository not found", RuErr: "Git репозиторий не найден"}
+	ErrGitCommandFailed         = DefinedError{Code: 10005, StatusCode: http.StatusInternalServerError, Err: "git command failed: %s", RuErr: "Не удалось выполнить git команду: %s"}
+	ErrGitInvalidBranch         = DefinedError{Code: 10006, StatusCode: http.StatusBadRequest, Err: "invalid branch name", RuErr: "Некорректное имя ветки"}
+	ErrGitPathCreationFailed    = DefinedError{Code: 10007, StatusCode: http.StatusInternalServerError, Err: "failed to create repository directory", RuErr: "Не удалось создать директорию для репозитория"}
 )
 
 func (e DefinedError) WithFormattedMessage(args ...interface{}) DefinedError {
