@@ -1,0 +1,17 @@
+# Конфигурация Docker Compose для разработки
+# Этот файл переопределяет docker-compose.yaml для локальной сборки образов из исходников
+#
+# Использование:
+#   docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build
+#   или сокращенная форма:
+#   docker compose -f docker-compose.{yaml,dev.yaml} up --build
+#
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev
+    image: aiplan:local
