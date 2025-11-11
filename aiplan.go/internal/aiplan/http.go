@@ -393,8 +393,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.GET("sf/:base/", s.shortSearchFilterURLRedirect)
 
 	// Get minio file
-	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy
-	authGroup.GET("file/:fileName/", s.redirectToMinioFile)
+	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy, remove after front migration to new endpoint
+	authGroup.GET("file/:fileName/", s.assetsHandler)
 
 	// Jitsi conf redirect
 	authGroup.GET("conf/:room/", s.redirectToJitsiConf)

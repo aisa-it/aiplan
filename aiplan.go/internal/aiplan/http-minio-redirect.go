@@ -54,8 +54,8 @@ LEFT JOIN doc_editors de
 `
 )
 
-// redirectToMinioFile godoc
-// @id redirectToMinioFile
+// assetsHandler godoc
+// @id assetsHandler
 // @Summary Получение файла
 // @Description Эндпоинт для получения файла из MinIO хранилища. Проверяет права доступа пользователя к файлу и возвращает файл по его имени или идентификатору
 // @Tags Integrations
@@ -67,7 +67,7 @@ LEFT JOIN doc_editors de
 // @Failure 404 {object} apierrors.DefinedError "Файл не найден"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/file/{fileName} [get]
-func (s *Services) redirectToMinioFile(c echo.Context) error {
+func (s *Services) assetsHandler(c echo.Context) error {
 	user := c.(AuthContext).User
 	name := c.Param("fileName")
 
