@@ -129,3 +129,15 @@ server {
     }
 }
 ```
+
+## Разработка (собирает локально):
+
+```
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build
+```
+
+или:
+
+```
+docker compose -f docker-compose.{yaml,dev.yaml} up --build
+```
