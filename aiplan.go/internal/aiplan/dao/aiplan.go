@@ -35,10 +35,10 @@ func GenID() string {
 	return u2.String()
 }
 
-// GenUUID генерирует уникальный идентификатор в формате UUID. Не принимает параметров и возвращает строку, представляющую собой UUID.
+// GenUUID генерирует уникальный идентификатор в формате UUID. Не принимает параметров и возвращает UUID.
 //
 // Возвращает:
-//   - uuid.UUID: сгенерированный UUID.
+//   - uuid.UUID: UUID, представляющий собой уникальный идентификатор.
 func GenUUID() uuid.UUID {
 	u2, _ := uuid.NewV4()
 	return u2
@@ -83,13 +83,13 @@ type FileAsset struct {
 	CreatedById *string   `json:"created_by,omitempty" extensions:"x-nullable"`
 
 	WorkspaceId *string       `json:"workspace,omitempty"`
-	IssueId     uuid.NullUUID `json:"issue,omitempty" gorm:"foreignKey:ID"`
-	CommentId   *string       `json:"comment,omitempty" gorm:"foreignKey:IdActivity" extensions:"x-nullable"`
+	IssueId     uuid.NullUUID `json:"issue" gorm:"foreignKey:ID"`
+	CommentId   *uuid.UUID    `json:"comment,omitempty" gorm:"foreignKey:IdActivity" extensions:"x-nullable"`
 
-	DocId        uuid.NullUUID `json:"doc,omitempty" gorm:"foreignKey:ID;type:uuid"`
-	DocCommentId uuid.NullUUID `json:"doc_comment,omitempty" gorm:"type:uuid"`
+	DocId        uuid.NullUUID `json:"doc" gorm:"foreignKey:ID;type:uuid"`
+	DocCommentId uuid.NullUUID `json:"doc_comment" gorm:"type:uuid"`
 
-	FormId uuid.NullUUID `json:"form,omitempty" gorm:"foreignKey:ID;type:uuid"`
+	FormId uuid.NullUUID `json:"form" gorm:"foreignKey:ID;type:uuid"`
 
 	Name        string `json:"name" gorm:"index"`
 	FileSize    int    `json:"size"`

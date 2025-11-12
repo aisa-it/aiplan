@@ -11,8 +11,10 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -208,7 +210,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 			}
 
 			if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
-				notification.CommentId = a.NewIdentifier
+				if a.NewIdentifier != nil {
+					commentUUID := uuid.Must(uuid.FromString(*a.NewIdentifier))
+					notification.CommentId = &commentUUID
+				}
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {

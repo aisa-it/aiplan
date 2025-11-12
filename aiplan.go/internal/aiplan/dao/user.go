@@ -345,7 +345,7 @@ type UserNotifications struct {
 	EntityActivityId *string         `json:"entity_activity,omitempty"`
 	EntityActivity   *EntityActivity `json:"entity_activity_detail,omitempty" gorm:"foreignKey:EntityActivityId" extensions:"x-nullable"`
 
-	CommentId *string       `json:"comment_id,omitempty"`
+	CommentId *uuid.UUID    `json:"comment_id,omitempty"`
 	Comment   *IssueComment `json:"comment,omitempty" gorm:"foreignKey:CommentId" extensions:"x-nullable"`
 
 	WorkspaceId *string    `json:"workspace_id,omitempty"`
@@ -399,7 +399,7 @@ func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
 		Msg:              un.Msg,
 		AuthorId:         un.AuthorId,
 		EntityActivityId: un.EntityActivityId,
-		CommentId:        un.CommentId,
+		CommentId:        convertUUIDToStringPtr(un.CommentId),
 		WorkspaceId:      un.WorkspaceId,
 		IssueId:          un.IssueId,
 	}
@@ -451,6 +451,16 @@ func (un *UserNotifications) AfterFind(tx *gorm.DB) (err error) {
 
 	Filter *SearchFilter `json:"filter" gorm:"foreignKey:FilterId"`
 }*/
+
+// convertUUIDToStringPtr преобразует *uuid.UUID в *string.
+// Если входной указатель nil, возвращает nil.
+func convertUUIDToStringPtr(uuidPtr *uuid.UUID) *string {
+	if uuidPtr == nil {
+		return nil
+	}
+	str := uuidPtr.String()
+	return &str
+}
 
 func GetUsers(db *gorm.DB) []User {
 	var res []User

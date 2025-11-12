@@ -1,12 +1,14 @@
 package aiplan
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -98,6 +100,19 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 		if !searchParams.ShowSubIssues {
 			query = query.Where("i.parent_id is null")
 		}
+
+		if (searchParams.OnlyActive || len(searchParams.Filters.StateIds) > 0) && searchParams.GroupByParam != "state" {
+			query = query.Joins("left join states on i.state_id = states.id")
+			if searchParams.OnlyActive {
+				query = query.
+					Where("states.\"group\" <> ?", "cancelled").
+					Where("states.\"group\" <> ?", "completed")
+			}
+
+			if len(searchParams.Filters.StateIds) > 0 {
+				query = query.Where("states.id in (?)", searchParams.Filters.StateIds)
+			}
+		}
 	}
 
 	var count []SearchGroupSize
@@ -132,7 +147,7 @@ func FetchIssuesByGroups(
 			} else {
 				q = q.Where("issues.priority is null")
 			}
-			entity = group
+			entity = group.Key
 		case "author":
 			if len(searchParams.Filters.AuthorIds) > 0 && !slices.Contains(searchParams.Filters.AuthorIds, group.Key) {
 				continue
@@ -222,8 +237,16 @@ func FetchIssuesByGroups(
 			return 0, err
 		}
 
+		if err := FetchParentsDetails(db, issues); err != nil {
+			return 0, err
+		}
+
 		switch searchParams.GroupByParam {
 		case "author":
+			if len(issues) == 0 {
+				fmt.Println(group)
+				continue
+			}
 			entity = issues[0].Author.ToLightDTO()
 		case "state":
 			entity = issues[0].State.ToLightDTO()
@@ -238,6 +261,29 @@ func FetchIssuesByGroups(
 		}
 	}
 	return totalCount, nil
+}
+
+func FetchParentsDetails(db *gorm.DB, issues []dao.IssueWithCount) error {
+	var parentIds []uuid.NullUUID
+	for _, issue := range issues {
+		if issue.ParentId.Valid {
+			parentIds = append(parentIds, issue.ParentId)
+		}
+	}
+	var parents []dao.Issue
+	if err := db.Where("id in (?)", parentIds).Find(&parents).Error; err != nil {
+		return err
+	}
+	parentsMap := make(map[string]*dao.Issue)
+	for i := range parents {
+		parentsMap[parents[i].ID.String()] = &parents[i]
+	}
+	for i := range issues {
+		if issues[i].ParentId.Valid {
+			issues[i].Parent = parentsMap[issues[i].ParentId.UUID.String()]
+		}
+	}
+	return nil
 }
 
 func getStateGroupOrder(state *dto.StateLight) int {
