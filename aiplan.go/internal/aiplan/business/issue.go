@@ -9,10 +9,11 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 )
 
 // CreateIssueComment создает новый комментарий к задаче. Метод принимает задачу, пользователя, текст комментария, комментарий для базы данных, ID для ответа на комментарий и дополнительные метаданные. Возвращает ошибку, если произошла ошибка.
-func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text string, replyToId *string, fromTg bool, meta ...string) error {
+func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text string, replyToId uuid.UUID, fromTg bool, meta ...string) error {
 	// Check rights
 	var permitted bool
 	if err := b.db.Model(&dao.ProjectMember{}).
@@ -32,7 +33,7 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 
 	issueId := issue.ID.String()
 	comment := dao.IssueComment{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		WorkspaceId: issue.WorkspaceId,
 		ProjectId:   issue.ProjectId,
 		IssueId:     issueId,
@@ -42,8 +43,8 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 	if len(meta) > 0 {
 		comment.IntegrationMeta = strings.Join(meta, ",")
 	}
-	if replyToId != nil {
-		comment.ReplyToCommentId = replyToId
+	if !replyToId.IsNil() {
+		comment.ReplyToCommentId = &replyToId
 	}
 	if err := b.db.Create(&comment).Error; err != nil {
 		return err

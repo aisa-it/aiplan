@@ -585,7 +585,7 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	var commentId []string
+	var commentId []uuid.UUID
 
 	for _, comment := range comments {
 		commentId = append(commentId, comment.Id)
@@ -1281,7 +1281,7 @@ type IssueLabel struct {
 func (IssueLabel) TableName() string { return "issue_labels" }
 
 type IssueComment struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1299,7 +1299,7 @@ type IssueComment struct {
 	CommentStripped string             `json:"comment_stripped"`
 
 	IntegrationMeta  string        `json:"-" gorm:"index:integration,priority:2"`
-	ReplyToCommentId *string       `json:"reply_to_comment_id,omitempty" extensions:"x-nullable"`
+	ReplyToCommentId *uuid.UUID    `json:"reply_to_comment_id,omitempty" extensions:"x-nullable"`
 	OriginalComment  *IssueComment `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId" extensions:"x-nullable"`
 
 	// Id in system, from that comment was imported
@@ -1333,7 +1333,7 @@ type IssueCommentExtendFields struct {
 }
 
 func (i IssueComment) GetId() string {
-	return i.Id
+	return i.Id.String()
 }
 
 func (i IssueComment) GetString() string {
@@ -1369,7 +1369,7 @@ func (i *IssueComment) ToLightDTO() *dto.IssueCommentLight {
 	}
 	i.SetUrl()
 	return &dto.IssueCommentLight{
-		Id:              i.Id,
+		Id:              i.Id.String(),
 		CommentStripped: i.CommentStripped,
 		CommentHtml:     i.CommentHtml.Body,
 		URL:             types.JsonURL{i.URL},
@@ -1416,7 +1416,7 @@ type CommentReaction struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	UserId    string    `json:"user_id"`
-	CommentId string    `json:"comment_id" gorm:"index"`
+	CommentId uuid.UUID `json:"comment_id" gorm:"index"`
 	Reaction  string    `json:"reaction"`
 
 	User    *User         `json:"-" gorm:"foreignKey:UserId" extensions:"x-nullable"`
@@ -1445,7 +1445,7 @@ func (cr CommentReaction) ToDTO() *dto.CommentReaction {
 		Id:        cr.Id,
 		CreatedAt: cr.CreatedAt,
 		UpdatedAt: cr.UpdatedAt,
-		CommentId: cr.CommentId,
+		CommentId: cr.CommentId.String(),
 		UserId:    cr.UserId,
 		Reaction:  cr.Reaction,
 	}
