@@ -59,3 +59,47 @@ type DeleteGitRepositoryRequest struct {
 	// Name - название репозитория (обязательное поле)
 	Name string `json:"name" validate:"required"`
 }
+
+// ========================================
+// SSH Keys DTOs
+// ========================================
+
+// SSHKeyDTO - SSH ключ для ответов API (без публичного ключа для безопасности)
+type SSHKeyDTO struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	KeyType     string     `json:"key_type"`
+	Fingerprint string     `json:"fingerprint"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
+	Comment     string     `json:"comment,omitempty"`
+}
+
+// AddSSHKeyRequest - запрос на добавление SSH ключа
+type AddSSHKeyRequest struct {
+	Name      string `json:"name" validate:"required,min=1,max=255"`
+	PublicKey string `json:"public_key" validate:"required"`
+}
+
+// AddSSHKeyResponse - ответ при добавлении SSH ключа
+type AddSSHKeyResponse struct {
+	SSHKeyDTO
+}
+
+// ListSSHKeysResponse - список SSH ключей пользователя
+type ListSSHKeysResponse struct {
+	Keys  []SSHKeyDTO `json:"keys"`
+	Total int         `json:"total"`
+}
+
+// DeleteSSHKeyRequest - запрос на удаление SSH ключа (не используется, keyId в URL)
+type DeleteSSHKeyRequest struct {
+	KeyId string `json:"key_id" validate:"required"`
+}
+
+// SSHConfigResponse - конфигурация SSH сервера
+type SSHConfigResponse struct {
+	SSHEnabled bool   `json:"ssh_enabled"`
+	SSHHost    string `json:"ssh_host"`
+	SSHPort    int    `json:"ssh_port"`
+}

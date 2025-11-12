@@ -7,11 +7,14 @@ services:
     ports:
       - 8080:8080
       - 2112:2112 # Metrics
+      - 22222:22222 # SSH Git access
     env_file:
       - .env
     depends_on:
       - db
       - minio
+    volumes:
+      - ssh-host-key:/var/lib/aiplan:rw # SSH host key persistence
     networks:
       - aiplan-net
 
@@ -62,6 +65,7 @@ services:
 volumes:
   db-data:
   minio-data:
+  ssh-host-key: # SSH host key persistence for consistent server identity
 
 networks:
   aiplan-net:

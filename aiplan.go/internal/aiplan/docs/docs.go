@@ -2670,6 +2670,199 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/git/ssh-config/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает конфигурацию SSH сервера (host, port, enabled)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-SSH"
+                ],
+                "summary": "SSH Config: получить конфигурацию SSH",
+                "responses": {
+                    "200": {
+                        "description": "Конфигурация SSH сервера",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SSHConfigResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/git/ssh-keys/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список всех SSH ключей текущего пользователя",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-SSH"
+                ],
+                "summary": "SSH Keys: список SSH ключей",
+                "responses": {
+                    "200": {
+                        "description": "Список SSH ключей",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListSSHKeysResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Git или SSH отключены",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Добавляет новый SSH публичный ключ для текущего пользователя",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-SSH"
+                ],
+                "summary": "SSH Keys: добавить SSH ключ",
+                "parameters": [
+                    {
+                        "description": "SSH ключ",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddSSHKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Добавленный SSH ключ",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddSSHKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Git или SSH отключены",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "409": {
+                        "description": "SSH ключ с таким fingerprint уже существует",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/git/ssh-keys/{keyId}": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет SSH ключ по ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-SSH"
+                ],
+                "summary": "SSH Keys: удалить SSH ключ",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID SSH ключа (UUID)",
+                        "name": "keyId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "SSH ключ успешно удален"
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Git или SSH отключены",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "SSH ключ не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/git/{workspaceSlug}/repositories/": {
             "get": {
                 "security": [
@@ -17049,6 +17242,49 @@ const docTemplate = `{
                 "result": {}
             }
         },
+        "dto.AddSSHKeyRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "public_key"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                },
+                "public_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AddSSHKeyResponse": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "fingerprint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "key_type": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.Attachment": {
             "type": "object",
             "properties": {
@@ -18341,6 +18577,20 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ListSSHKeysResponse": {
+            "type": "object",
+            "properties": {
+                "keys": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SSHKeyDTO"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.Project": {
             "type": "object",
             "properties": {
@@ -18703,6 +18953,46 @@ const docTemplate = `{
                 },
                 "workspace_detail": {
                     "$ref": "#/definitions/dto.WorkspaceLight"
+                }
+            }
+        },
+        "dto.SSHConfigResponse": {
+            "type": "object",
+            "properties": {
+                "ssh_enabled": {
+                    "type": "boolean"
+                },
+                "ssh_host": {
+                    "type": "string"
+                },
+                "ssh_port": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.SSHKeyDTO": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "fingerprint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "key_type": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
