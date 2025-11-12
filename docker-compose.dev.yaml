@@ -20,3 +20,5 @@ services:
         required: true
       - path: ./.env.development.local
         required: false
+    volumes:
+      - ./git-data:/var/lib/aiplan/git-repositories

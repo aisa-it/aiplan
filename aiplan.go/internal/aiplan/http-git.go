@@ -17,8 +17,10 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
 )
 
 // @Summary Конфигурация: получение Git настроек
@@ -235,8 +237,212 @@ func validateBranchName(branch string) bool {
 	return true
 }
 
+// @Summary Репозиторий: список Git репозиториев
+// @Description Возвращает список всех Git репозиториев в указанном workspace
+// @Tags GIT
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspace query string true "Slug workspace"
+// @Success 200 {object} dto.ListGitRepositoriesResponse "Список репозиториев"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Git отключен или недостаточно прав"
+// @Failure 404 {object} apierrors.DefinedError "Workspace не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/git/repositories/ [get]
+func (s *Services) listGitRepositories(c echo.Context) error {
+	// 1. Проверка конфигурации Git
+	if !cfg.GitEnabled {
+		return EErrorDefined(c, apierrors.ErrGitDisabled)
+	}
+
+	// 2. Получение параметра workspace
+	workspaceSlug := c.QueryParam("workspace")
+	if workspaceSlug == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// 3. Получение пользователя
+	user := c.(AuthContext).User
+
+	// 4. Проверка существования workspace в БД
+	var workspace dao.Workspace
+	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+		}
+		slog.Error("Failed to load workspace", "slug", workspaceSlug, "err", err)
+		return EError(c, err)
+	}
+
+	// 5. Проверка прав доступа к workspace (любая роль - достаточно быть участником)
+	var member dao.WorkspaceMember
+	err := s.db.Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+		}
+		slog.Error("Failed to check workspace permissions", "user", user.ID, "workspace", workspace.ID, "err", err)
+		return EError(c, err)
+	}
+
+	// 6. Получение списка репозиториев из файловой системы
+	repos, err := ListGitRepositories(workspace.Slug, cfg.GitRepositoriesPath)
+	if err != nil {
+		slog.Error("Failed to list git repositories",
+			"workspace", workspace.Slug,
+			"path", cfg.GitRepositoriesPath,
+			"err", err)
+		return EError(c, err)
+	}
+
+	// 7. Преобразование в DTO
+	reposList := make([]dto.GitRepositoryLight, 0, len(repos))
+	for _, repo := range repos {
+		// Генерация clone URL
+		// Используем host из WebURL для формирования SSH clone URL
+		host := cfg.WebURL.Host
+		if host == "" {
+			host = "localhost"
+		}
+
+		cloneURL := fmt.Sprintf("git@%s:%s/%s.git", host, workspace.Slug, repo.Name)
+
+		reposList = append(reposList, dto.GitRepositoryLight{
+			Name:        repo.Name,
+			Workspace:   repo.Workspace,
+			Path:        repo.Path,
+			Branch:      repo.Branch,
+			Private:     repo.Private,
+			Description: repo.Description,
+			CloneURL:    cloneURL,
+			CreatedAt:   repo.CreatedAt,
+			CreatedBy:   repo.CreatedBy.String(),
+		})
+	}
+
+	// 8. Формирование ответа
+	response := dto.ListGitRepositoriesResponse{
+		Repositories: reposList,
+		Total:        len(reposList),
+	}
+
+	slog.Info("Listed git repositories",
+		"workspace", workspace.Slug,
+		"count", len(repos),
+		"user", user.Email)
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// @Summary Репозиторий: удаление Git репозитория
+// @Description Удаляет Git репозиторий из файловой системы. Требуется роль администратора workspace.
+// @Tags GIT
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body dto.DeleteGitRepositoryRequest true "Параметры удаления репозитория"
+// @Success 204 "Репозиторий успешно удален"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Git отключен или недостаточно прав (требуется роль администратора)"
+// @Failure 404 {object} apierrors.DefinedError "Workspace или репозиторий не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/git/repositories/ [delete]
+func (s *Services) deleteGitRepository(c echo.Context) error {
+	user := c.(AuthContext).User
+
+	// Проверяем, что Git функциональность включена
+	if !cfg.GitEnabled {
+		return EErrorDefined(c, apierrors.ErrGitDisabled)
+	}
+
+	// Проверяем наличие пути к репозиториям
+	if cfg.GitRepositoriesPath == "" {
+		slog.Error("GIT_REPOSITORIES_PATH is not configured")
+		return EErrorDefined(c, apierrors.ErrGitDisabled)
+	}
+
+	// Парсим входные данные
+	var req dto.DeleteGitRepositoryRequest
+	if err := c.Bind(&req); err != nil {
+		slog.Error("Failed to bind request", "err", err)
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Валидация обязательных полей
+	if req.Workspace == "" || req.Name == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Валидация имени репозитория (защита от path traversal)
+	if !ValidateRepositoryName(req.Name) {
+		return EErrorDefined(c, apierrors.ErrGitInvalidRepositoryName)
+	}
+
+	// Получаем workspace по slug
+	var workspace dao.Workspace
+	if err := s.db.
+		Where("slug = ?", req.Workspace).
+		First(&workspace).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+		}
+		slog.Error("Failed to load workspace", "slug", req.Workspace, "err", err)
+		return EError(c, err)
+	}
+
+	// Проверяем права пользователя на workspace
+	// Для удаления репозитория требуется роль администратора workspace
+	var workspaceMember dao.WorkspaceMember
+	if err := s.db.
+		Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).
+		First(&workspaceMember).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+		}
+		slog.Error("Failed to check workspace membership", "user", user.ID, "workspace", workspace.ID, "err", err)
+		return EError(c, err)
+	}
+
+	// Проверяем, что пользователь является администратором workspace
+	if workspaceMember.Role != types.AdminRole && !user.IsSuperuser {
+		slog.Warn("User attempted to delete repository without admin rights",
+			"user", user.Email,
+			"workspace", workspace.Slug,
+			"repo", req.Name,
+			"role", workspaceMember.Role)
+		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+	}
+
+	// Проверяем существование репозитория в файловой системе
+	if !GitRepositoryExists(workspace.Slug, req.Name, cfg.GitRepositoriesPath) {
+		return EErrorDefined(c, apierrors.ErrGitRepositoryNotFound)
+	}
+
+	// Удаляем репозиторий из файловой системы
+	if err := DeleteGitRepository(workspace.Slug, req.Name, cfg.GitRepositoriesPath); err != nil {
+		slog.Error("Failed to delete git repository",
+			"workspace", workspace.Slug,
+			"repo", req.Name,
+			"err", err)
+		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Failed to delete repository"))
+	}
+
+	slog.Info("Git repository deleted",
+		"workspace", workspace.Slug,
+		"repo", req.Name,
+		"user", user.Email,
+		"role", workspaceMember.Role)
+
+	return c.NoContent(http.StatusNoContent)
+}
+
 // AddGitServices регистрирует все эндпоинты для работы с GIT
 func (s *Services) AddGitServices(g *echo.Group) {
 	g.GET("git/config/", s.getGitConfig)
+	g.GET("git/repositories/", s.listGitRepositories)
 	g.POST("git/repositories/", s.createGitRepository)
+	g.DELETE("git/repositories/", s.deleteGitRepository)
 }

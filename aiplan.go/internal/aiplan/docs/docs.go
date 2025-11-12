@@ -2671,6 +2671,71 @@ const docTemplate = `{
             }
         },
         "/api/auth/git/repositories/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список всех Git репозиториев в указанном workspace",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT"
+                ],
+                "summary": "Репозиторий: список Git репозиториев",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspace",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список репозиториев",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListGitRepositoriesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Git отключен или недостаточно прав",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Workspace не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -2726,6 +2791,70 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Репозиторий с таким именем уже существует",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет Git репозиторий из файловой системы. Требуется роль администратора workspace.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT"
+                ],
+                "summary": "Репозиторий: удаление Git репозитория",
+                "parameters": [
+                    {
+                        "description": "Параметры удаления репозитория",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.DeleteGitRepositoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Репозиторий успешно удален"
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Git отключен или недостаточно прав (требуется роль администратора)",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Workspace или репозиторий не найден",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -17006,6 +17135,23 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.DeleteGitRepositoryRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "workspace"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Name - название репозитория (обязательное поле)",
+                    "type": "string"
+                },
+                "workspace": {
+                    "description": "Workspace - slug рабочего пространства (обязательное поле)",
+                    "type": "string"
+                }
+            }
+        },
         "dto.Doc": {
             "type": "object",
             "properties": {
@@ -17490,6 +17636,39 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "git_repositories_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.GitRepositoryLight": {
+            "type": "object",
+            "properties": {
+                "branch": {
+                    "type": "string"
+                },
+                "clone_url": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "UUID пользователя",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "private": {
+                    "type": "boolean"
+                },
+                "workspace": {
                     "type": "string"
                 }
             }
@@ -18141,6 +18320,20 @@ const docTemplate = `{
                 },
                 "project": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.ListGitRepositoriesResponse": {
+            "type": "object",
+            "properties": {
+                "repositories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.GitRepositoryLight"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
