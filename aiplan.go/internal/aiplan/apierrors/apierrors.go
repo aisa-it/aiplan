@@ -251,6 +251,15 @@ var (
 	ErrGitCommandFailed         = DefinedError{Code: 10005, StatusCode: http.StatusInternalServerError, Err: "git command failed: %s", RuErr: "Не удалось выполнить git команду: %s"}
 	ErrGitInvalidBranch         = DefinedError{Code: 10006, StatusCode: http.StatusBadRequest, Err: "invalid branch name", RuErr: "Некорректное имя ветки"}
 	ErrGitPathCreationFailed    = DefinedError{Code: 10007, StatusCode: http.StatusInternalServerError, Err: "failed to create repository directory", RuErr: "Не удалось создать директорию для репозитория"}
+
+	// 11*** - SSH errors
+	ErrSSHKeyInvalidData    = DefinedError{Code: 11001, StatusCode: http.StatusBadRequest, Err: "invalid SSH key data", RuErr: "Некорректные данные SSH ключа"}
+	ErrSSHKeyAlreadyExists  = DefinedError{Code: 11002, StatusCode: http.StatusConflict, Err: "SSH key with this fingerprint already exists", RuErr: "SSH ключ с таким отпечатком уже существует"}
+	ErrSSHKeyNotFound       = DefinedError{Code: 11003, StatusCode: http.StatusNotFound, Err: "SSH key not found", RuErr: "SSH ключ не найден"}
+	ErrSSHInvalidPublicKey  = DefinedError{Code: 11004, StatusCode: http.StatusBadRequest, Err: "invalid SSH public key format", RuErr: "Неверный формат SSH публичного ключа"}
+	ErrSSHAccessDenied      = DefinedError{Code: 11005, StatusCode: http.StatusForbidden, Err: "SSH access denied", RuErr: "SSH доступ запрещен"}
+	ErrSSHDisabled          = DefinedError{Code: 11006, StatusCode: http.StatusForbidden, Err: "SSH access is disabled", RuErr: "SSH доступ отключен"}
+	ErrSSHRateLimitExceeded = DefinedError{Code: 11007, StatusCode: http.StatusTooManyRequests, Err: "SSH rate limit exceeded", RuErr: "Превышен лимит SSH запросов"}
 )
 
 func (e DefinedError) WithFormattedMessage(args ...interface{}) DefinedError {

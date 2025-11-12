@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -453,10 +454,247 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// ========================================
+// SSH Keys Management Endpoints
+// ========================================
+
+// @Summary SSH Config: получить конфигурацию SSH
+// @Description Возвращает конфигурацию SSH сервера (host, port, enabled)
+// @Tags GIT-SSH
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} dto.SSHConfigResponse "Конфигурация SSH сервера"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Router /api/auth/git/ssh-config/ [get]
+func (s *Services) getGitSSHConfig(c echo.Context) error {
+	// Проверяем авторизацию (middleware уже проверил это)
+	_ = c.(AuthContext).User
+
+	// Получаем hostname из WebURL
+	sshHost := cfg.WebURL.Host
+	if sshHost == "" {
+		sshHost = "localhost"
+	}
+
+	response := dto.SSHConfigResponse{
+		SSHEnabled: cfg.SSHEnabled && cfg.GitEnabled,
+		SSHHost:    sshHost,
+		SSHPort:    cfg.SSHPort,
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// @Summary SSH Keys: добавить SSH ключ
+// @Description Добавляет новый SSH публичный ключ для текущего пользователя
+// @Tags GIT-SSH
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body dto.AddSSHKeyRequest true "SSH ключ"
+// @Success 201 {object} dto.AddSSHKeyResponse "Добавленный SSH ключ"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Git или SSH отключены"
+// @Failure 409 {object} apierrors.DefinedError "SSH ключ с таким fingerprint уже существует"
+// @Router /api/auth/git/ssh-keys/ [post]
+func (s *Services) addGitSSHKey(c echo.Context) error {
+	user := c.(AuthContext).User
+
+	// Проверяем, что Git функциональность включена
+	if !cfg.GitEnabled {
+		return EErrorDefined(c, apierrors.ErrGitDisabled)
+	}
+
+	// Проверяем, что SSH функциональность включена
+	if !cfg.SSHEnabled {
+		return EErrorDefined(c, apierrors.ErrSSHDisabled)
+	}
+
+	// Парсим входные данные
+	var req dto.AddSSHKeyRequest
+	if err := c.Bind(&req); err != nil {
+		slog.Error("Failed to bind AddSSHKeyRequest", "err", err)
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Валидация полей
+	if req.Name == "" || req.PublicKey == "" {
+		return EErrorDefined(c, apierrors.ErrSSHKeyInvalidData)
+	}
+
+	// Добавляем SSH ключ через файловую систему
+	keyMetadata, err := AddSSHKey(user.ID, user.Email, req.Name, req.PublicKey, cfg.GitRepositoriesPath)
+	if err != nil {
+		// Проверяем тип ошибки
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "invalid SSH key name") {
+			return EErrorDefined(c, apierrors.ErrSSHKeyInvalidData)
+		}
+		if strings.Contains(errMsg, "invalid SSH public key format") {
+			return EErrorDefined(c, apierrors.ErrSSHInvalidPublicKey)
+		}
+		if strings.Contains(errMsg, "already exists") {
+			return EErrorDefined(c, apierrors.ErrSSHKeyAlreadyExists)
+		}
+
+		slog.Error("Failed to add SSH key", "user", user.Email, "err", err)
+		return EError(c, err)
+	}
+
+	// Логируем успех
+	slog.Info("SSH key added",
+		"user", user.Email,
+		"key_id", keyMetadata.ID,
+		"key_name", keyMetadata.Name,
+		"key_type", keyMetadata.KeyType,
+		"fingerprint", keyMetadata.Fingerprint)
+
+	// Конвертируем в DTO (без публичного ключа!)
+	response := dto.AddSSHKeyResponse{
+		SSHKeyDTO: dto.SSHKeyDTO{
+			ID:          keyMetadata.ID,
+			Name:        keyMetadata.Name,
+			KeyType:     keyMetadata.KeyType,
+			Fingerprint: keyMetadata.Fingerprint,
+			CreatedAt:   keyMetadata.CreatedAt,
+			LastUsedAt:  keyMetadata.LastUsedAt,
+			Comment:     keyMetadata.Comment,
+		},
+	}
+
+	return c.JSON(http.StatusCreated, response)
+}
+
+// @Summary SSH Keys: список SSH ключей
+// @Description Возвращает список всех SSH ключей текущего пользователя
+// @Tags GIT-SSH
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} dto.ListSSHKeysResponse "Список SSH ключей"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Git или SSH отключены"
+// @Router /api/auth/git/ssh-keys/ [get]
+func (s *Services) listGitSSHKeys(c echo.Context) error {
+	user := c.(AuthContext).User
+
+	// Проверяем, что Git функциональность включена
+	if !cfg.GitEnabled {
+		return EErrorDefined(c, apierrors.ErrGitDisabled)
+	}
+
+	// Проверяем, что SSH функциональность включена
+	if !cfg.SSHEnabled {
+		return EErrorDefined(c, apierrors.ErrSSHDisabled)
+	}
+
+	// Загружаем SSH ключи пользователя
+	userKeys, err := LoadUserSSHKeys(user.ID, cfg.GitRepositoriesPath)
+	if err != nil {
+		// Если файл не найден, возвращаем пустой список
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusOK, dto.ListSSHKeysResponse{
+				Keys:  []dto.SSHKeyDTO{},
+				Total: 0,
+			})
+		}
+
+		slog.Error("Failed to load user SSH keys", "user", user.Email, "err", err)
+		return EError(c, err)
+	}
+
+	// Конвертируем в DTO (без публичных ключей!)
+	keysDTO := make([]dto.SSHKeyDTO, 0, len(userKeys.Keys))
+	for _, key := range userKeys.Keys {
+		keysDTO = append(keysDTO, dto.SSHKeyDTO{
+			ID:          key.ID,
+			Name:        key.Name,
+			KeyType:     key.KeyType,
+			Fingerprint: key.Fingerprint,
+			CreatedAt:   key.CreatedAt,
+			LastUsedAt:  key.LastUsedAt,
+			Comment:     key.Comment,
+		})
+	}
+
+	response := dto.ListSSHKeysResponse{
+		Keys:  keysDTO,
+		Total: len(keysDTO),
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// @Summary SSH Keys: удалить SSH ключ
+// @Description Удаляет SSH ключ по ID
+// @Tags GIT-SSH
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param keyId path string true "ID SSH ключа (UUID)"
+// @Success 204 "SSH ключ успешно удален"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Git или SSH отключены"
+// @Failure 404 {object} apierrors.DefinedError "SSH ключ не найден"
+// @Router /api/auth/git/ssh-keys/{keyId} [delete]
+func (s *Services) deleteGitSSHKey(c echo.Context) error {
+	user := c.(AuthContext).User
+
+	// Проверяем, что Git функциональность включена
+	if !cfg.GitEnabled {
+		return EErrorDefined(c, apierrors.ErrGitDisabled)
+	}
+
+	// Проверяем, что SSH функциональность включена
+	if !cfg.SSHEnabled {
+		return EErrorDefined(c, apierrors.ErrSSHDisabled)
+	}
+
+	// Получаем keyId из URL параметра
+	keyId := c.Param("keyId")
+	if keyId == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Валидация UUID формата (простая проверка)
+	if len(keyId) < 10 {
+		return EErrorDefined(c, apierrors.ErrSSHKeyInvalidData)
+	}
+
+	// Удаляем SSH ключ
+	err := DeleteSSHKey(user.ID, keyId, cfg.GitRepositoriesPath)
+	if err != nil {
+		// Проверяем тип ошибки
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "has no SSH keys") {
+			return EErrorDefined(c, apierrors.ErrSSHKeyNotFound)
+		}
+
+		slog.Error("Failed to delete SSH key", "user", user.Email, "key_id", keyId, "err", err)
+		return EError(c, err)
+	}
+
+	slog.Info("SSH key deleted",
+		"user", user.Email,
+		"key_id", keyId)
+
+	return c.NoContent(http.StatusNoContent)
+}
+
 // AddGitServices регистрирует все эндпоинты для работы с GIT
 func (s *Services) AddGitServices(g *echo.Group) {
+	// Existing Git endpoints
 	g.GET("git/config/", s.getGitConfig)
 	g.GET("git/:workspaceSlug/repositories/", s.listGitRepositories)
 	g.POST("git/:workspaceSlug/repositories/", s.createGitRepository)
 	g.DELETE("git/:workspaceSlug/repositories/", s.deleteGitRepository)
+
+	// NEW SSH endpoints
+	g.GET("git/ssh-config/", s.getGitSSHConfig)
+	g.POST("git/ssh-keys/", s.addGitSSHKey)
+	g.GET("git/ssh-keys/", s.listGitSSHKeys)
+	g.DELETE("git/ssh-keys/:keyId", s.deleteGitSSHKey)
 }

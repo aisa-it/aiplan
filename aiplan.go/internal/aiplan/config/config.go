@@ -68,6 +68,13 @@ type Config struct {
 
 	GitEnabled          bool   `env:"GIT_ENABLED"`
 	GitRepositoriesPath string `env:"GIT_REPOSITORIES_PATH"`
+
+	// SSH Git server configuration
+	SSHEnabled          bool   `env:"SSH_ENABLED"`
+	SSHHost             string `env:"SSH_HOST"`
+	SSHPort             int    `env:"SSH_PORT"`
+	SSHHostKeyPath      string `env:"SSH_HOST_KEY_PATH"`
+	SSHRateLimitEnabled bool   `env:"SSH_RATE_LIMIT_ENABLED"`
 }
 
 // ReadConfig загружает конфигурацию приложения из переменных окружения и выполняет валидацию. Возвращает структуру Config с загруженными параметрами. Если WebURL не задан, приложение завершает работу с ошибкой.  Обязательные переменные валидируются, типы данных преобразуются из строк, а секретные значения маскируются в логах.  Также обрабатываются ошибки при парсинге URL и предоставляются значения по умолчанию для некоторых параметров. Ограничение значений для некоторых параметров (например, NotificationsSleep, EmailWorkers) также выполняется в этой функции.  Возвращает указатель на структуру Config, заполненную данными из переменных окружения и обработанную в соответствии с заданными правилами.
