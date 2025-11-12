@@ -1742,6 +1742,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/file/{fileName}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Эндпоинт для получения файла из MinIO хранилища. Проверяет права доступа пользователя к файлу и возвращает файл по его имени или идентификатору",
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "*/*"
+                ],
+                "tags": [
+                    "Integrations"
+                ],
+                "summary": "Получение файла",
+                "operationId": "assetsHandler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Имя файла или ID файла",
+                        "name": "fileName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Успешный ответ с содержимым файла"
+                    },
+                    "404": {
+                        "description": "Файл не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/filters/": {
             "get": {
                 "security": [
@@ -15988,53 +16035,6 @@ const docTemplate = `{
                         "description": "Капча успешно создана",
                         "schema": {
                             "$ref": "#/definitions/altcha.Challenge"
-                        }
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка сервера",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/file/{fileName}": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Перенаправляет пользователя на файл, хранящийся в MinIO, по имени файла или ID",
-                "consumes": [
-                    "*/*"
-                ],
-                "produces": [
-                    "*/*"
-                ],
-                "tags": [
-                    "Integrations"
-                ],
-                "summary": "Интеграции: перенаправление на файл в MinIO",
-                "operationId": "redirectToMinioFile",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Имя файла или ID файла",
-                        "name": "fileName",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "307": {
-                        "description": "Перенаправление на URL файла в MinIO"
-                    },
-                    "404": {
-                        "description": "Файл не найден",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
                         }
                     },
                     "500": {

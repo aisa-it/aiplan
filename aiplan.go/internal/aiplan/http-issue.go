@@ -507,10 +507,6 @@ func (s *Services) getIssueList(c echo.Context) error {
 			query = query.Where(q)
 		}
 
-		if len(searchParams.Filters.StateIds) > 0 {
-			query = query.Where("issues.state_id in (?)", searchParams.Filters.StateIds)
-		}
-
 		if len(searchParams.Filters.Priorities) > 0 {
 			hasNull := false
 			var arr []any
@@ -587,11 +583,22 @@ func (s *Services) getIssueList(c echo.Context) error {
 			query = query.Where("issues.created_by_id = ?", user.ID)
 		}
 
-		if searchParams.OnlyActive {
-			query = query.Where("issues.state_id in (?)", s.db.Model(&dao.State{}).
-				Select("id").
-				Where("\"group\" <> ?", "cancelled").
-				Where("\"group\" <> ?", "completed"))
+		if searchParams.OnlyActive || len(searchParams.Filters.StateIds) > 0 {
+			subQuery := s.db.Model(&dao.State{}).
+				Select("id")
+
+			if searchParams.OnlyActive {
+				subQuery = subQuery.
+					Where("\"group\" <> ?", "cancelled").
+					Where("\"group\" <> ?", "completed")
+			}
+
+			if len(searchParams.Filters.StateIds) > 0 {
+				subQuery = subQuery.
+					Where("issues.state_id in (?)", searchParams.Filters.StateIds)
+			}
+
+			query = query.Where("issues.state_id in (?)", subQuery)
 		}
 
 		if searchParams.OnlyPinned {
@@ -712,7 +719,10 @@ func (s *Services) getIssueList(c echo.Context) error {
 		order.Column = clause.Column{Table: "issues", Name: searchParams.OrderByParam}
 	}
 
-	groupSelectQuery := query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(searchParams.Limit).Offset(searchParams.Offset).Session(&gorm.Session{})
+	if order != nil {
+		query = query.Order(*order)
+	}
+	query = query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(searchParams.Limit).Offset(searchParams.Offset)
 
 	// Get groups
 	if searchParams.GroupByParam != "" {
@@ -731,7 +741,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 
 		var groupMap []IssuesGroupResponse
 
-		totalCount, err := FetchIssuesByGroups(groupSize, s.db, groupSelectQuery, searchParams, func(group IssuesGroupResponse) error {
+		totalCount, err := FetchIssuesByGroups(groupSize, s.db, query.Session(&gorm.Session{}), searchParams, func(group IssuesGroupResponse) error {
 			if !searchParams.Stream {
 				groupMap = append(groupMap, group)
 				return nil
@@ -761,12 +771,8 @@ func (s *Services) getIssueList(c echo.Context) error {
 		})
 	}
 
-	if order != nil {
-		groupSelectQuery = groupSelectQuery.Order(*order)
-	}
-
 	var issues []dao.IssueWithCount
-	if err := groupSelectQuery.Find(&issues).Error; err != nil {
+	if err := query.Find(&issues).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -776,25 +782,8 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	if !searchParams.LightSearch {
-		// Fetch parents
-		var parentIds []uuid.NullUUID
-		for _, issue := range issues {
-			if issue.ParentId.Valid {
-				parentIds = append(parentIds, issue.ParentId)
-			}
-		}
-		var parents []dao.Issue
-		if err := s.db.Where("id in (?)", parentIds).Find(&parents).Error; err != nil {
+		if err := FetchParentsDetails(s.db, issues); err != nil {
 			return EError(c, err)
-		}
-		parentsMap := make(map[string]*dao.Issue)
-		for i := range parents {
-			parentsMap[parents[i].ID.String()] = &parents[i]
-		}
-		for i := range issues {
-			if issues[i].ParentId.Valid {
-				issues[i].Parent = parentsMap[issues[i].ParentId.UUID.String()]
-			}
 		}
 	}
 
@@ -2483,7 +2472,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		comment.Id = dao.GenID()
+		comment.Id = dao.GenUUID()
 		comment.ProjectId = project.ID
 		comment.Project = &project
 		comment.IssueId = issue.ID.String()
@@ -2530,12 +2519,12 @@ func (s *Services) createIssueComment(c echo.Context) error {
 
 		var authorOriginalComment *dao.User
 		var replyNotMember bool
-		if comment.ReplyToCommentId != nil {
+		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where(
 				"id = (?)", tx.
 					Select("actor_id").
 					Model(&dao.IssueComment{}).
-					Where("id = ?", comment.ReplyToCommentId)).
+					Where("id = ?", comment.ReplyToCommentId.UUID)).
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
@@ -2747,12 +2736,12 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 
 		var authorOriginalComment *dao.User
 		var replyNotMember bool
-		if comment.ReplyToCommentId != nil {
+		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where(
 				"id = (?)", tx.
 					Select("actor_id").
 					Model(&dao.IssueComment{}).
-					Where("id = ?", comment.ReplyToCommentId)).
+					Where("id = ?", comment.ReplyToCommentId.UUID)).
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
@@ -2773,7 +2762,8 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				replyNotMember = true
 			}
 			if !replyNotMember {
-				comment.Id = commentId
+				commentUUID := uuid.Must(uuid.FromString(commentId))
+				comment.Id = commentUUID
 				comment.IssueId = issue.ID.String()
 				comment.WorkspaceId = issue.WorkspaceId
 				comment.Issue = &issue
@@ -2924,11 +2914,12 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 	}
 
 	// Создаем новую реакцию
+	commentUUID := uuid.Must(uuid.FromString(commentId))
 	reaction := dao.CommentReaction{
 		Id:        dao.GenID(),
 		CreatedAt: time.Now(),
 		UserId:    user.ID,
-		CommentId: commentId,
+		CommentId: commentUUID,
 		Reaction:  reactionRequest.Reaction,
 	}
 
