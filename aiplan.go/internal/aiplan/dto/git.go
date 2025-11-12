@@ -50,3 +50,18 @@ type CreateGitRepositoryResponse struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	CreatedBy   *UserLight `json:"created_by,omitempty"`
 }
+
+// ListGitRepositoriesResponse - структура ответа со списком репозиториев
+type ListGitRepositoriesResponse struct {
+	Repositories []GitRepositoryLight `json:"repositories"`
+	Total        int                  `json:"total"`
+}
+
+// DeleteGitRepositoryRequest - структура запроса на удаление Git репозитория
+type DeleteGitRepositoryRequest struct {
+	// Workspace - slug рабочего пространства (обязательное поле)
+	Workspace string `json:"workspace" validate:"required"`
+
+	// Name - название репозитория (обязательное поле)
+	Name string `json:"name" validate:"required"`
+}

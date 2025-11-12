@@ -103,3 +103,4 @@ kuber/aiplan/values/*.dec
 
 api_tests/
 release/
+git-data
