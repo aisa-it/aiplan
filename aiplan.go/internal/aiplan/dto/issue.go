@@ -105,7 +105,7 @@ type IssueComment struct {
 	WorkspaceId string `json:"workspace_id"`
 	IssueId     string `json:"issue_id"`
 
-	ReplyToCommentId *uuid.UUID    `json:"reply_to_comment_id,omitempty" extensions:"x-nullable"`
+	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" extensions:"x-nullable"`
 	OriginalComment  *IssueComment `json:"original_comment,omitempty" extensions:"x-nullable"`
 
 	Actor *UserLight `json:"actor_detail" extensions:"x-nullable"`

@@ -44,7 +44,7 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 		comment.IntegrationMeta = strings.Join(meta, ",")
 	}
 	if !replyToId.IsNil() {
-		comment.ReplyToCommentId = &replyToId
+		comment.ReplyToCommentId = uuid.NullUUID{UUID: replyToId, Valid: true}
 	}
 	if err := b.db.Create(&comment).Error; err != nil {
 		return err

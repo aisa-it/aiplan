@@ -1299,7 +1299,7 @@ type IssueComment struct {
 	CommentStripped string             `json:"comment_stripped"`
 
 	IntegrationMeta  string        `json:"-" gorm:"index:integration,priority:2"`
-	ReplyToCommentId *uuid.UUID    `json:"reply_to_comment_id,omitempty" extensions:"x-nullable"`
+	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" extensions:"x-nullable"`
 	OriginalComment  *IssueComment `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId" extensions:"x-nullable"`
 
 	// Id in system, from that comment was imported
