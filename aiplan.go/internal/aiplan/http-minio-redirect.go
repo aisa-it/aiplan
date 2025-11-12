@@ -12,6 +12,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
@@ -90,13 +91,21 @@ func (s *Services) assetsHandler(c echo.Context) error {
 		return c.NoContent(http.StatusNotFound)
 	}
 
-	exist, err := s.storage.Exist(asset.Id)
+	stats, err := s.storage.GetFileInfo(asset.Id)
 	if err != nil {
+		errResponse := minio.ToErrorResponse(err)
+		if errResponse.Code == "NoSuchKey" {
+			return c.NoContent(http.StatusNotFound)
+		}
 		return EError(c, err)
 	}
-	if !exist {
-		return c.NoContent(http.StatusNotFound)
+
+	ifNoneMatchHeader := c.Request().Header.Get("If-None-Match")
+	if ifNoneMatchHeader == stats.ETag {
+		return c.NoContent(http.StatusNotModified)
 	}
+
+	c.Response().Header().Set("ETag", stats.ETag)
 
 	r, err := s.storage.LoadReader(asset.Id)
 	if err != nil {
@@ -127,13 +136,21 @@ func (s *Services) redirectToMinioFileLegacy(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	exist, err := s.storage.Exist(fileAsset.Id)
+	stats, err := s.storage.GetFileInfo(fileAsset.Id)
 	if err != nil {
+		errResponse := minio.ToErrorResponse(err)
+		if errResponse.Code == "NoSuchKey" {
+			return c.NoContent(http.StatusNotFound)
+		}
 		return EError(c, err)
 	}
-	if !exist {
-		return c.NoContent(http.StatusNotFound)
+
+	ifNoneMatchHeader := c.Request().Header.Get("If-None-Match")
+	if ifNoneMatchHeader == stats.ETag {
+		return c.NoContent(http.StatusNotModified)
 	}
+
+	c.Response().Header().Set("ETag", stats.ETag)
 
 	r, err := s.storage.LoadReader(fileAsset.Id)
 	if err != nil {
