@@ -51,6 +51,7 @@ func (s *Services) getGitConfig(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug workspace"
 // @Param request body dto.CreateGitRepositoryRequest true "Параметры создания репозитория"
 // @Success 201 {object} dto.CreateGitRepositoryResponse "Созданный репозиторий"
 // @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
@@ -58,7 +59,7 @@ func (s *Services) getGitConfig(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Git отключен или недостаточно прав"
 // @Failure 409 {object} apierrors.DefinedError "Репозиторий с таким именем уже существует"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/git/repositories/ [post]
+// @Router /api/auth/git/{workspaceSlug}/repositories/ [post]
 func (s *Services) createGitRepository(c echo.Context) error {
 	user := c.(AuthContext).User
 
@@ -73,6 +74,12 @@ func (s *Services) createGitRepository(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGitDisabled)
 	}
 
+	// Получаем workspace slug из URL
+	workspaceSlug := c.Param("workspaceSlug")
+	if workspaceSlug == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
 	// Парсим входные данные
 	var req dto.CreateGitRepositoryRequest
 	if err := c.Bind(&req); err != nil {
@@ -81,7 +88,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 	}
 
 	// Валидация обязательных полей
-	if req.Workspace == "" || req.Name == "" {
+	if req.Name == "" {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -93,7 +100,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 	// Получаем workspace по slug
 	var workspace dao.Workspace
 	if err := s.db.
-		Where("slug = ?", req.Workspace).
+		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 	}
@@ -243,22 +250,22 @@ func validateBranchName(branch string) bool {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param workspace query string true "Slug workspace"
+// @Param workspaceSlug path string true "Slug workspace"
 // @Success 200 {object} dto.ListGitRepositoriesResponse "Список репозиториев"
 // @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Git отключен или недостаточно прав"
 // @Failure 404 {object} apierrors.DefinedError "Workspace не найден"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/git/repositories/ [get]
+// @Router /api/auth/git/{workspaceSlug}/repositories/ [get]
 func (s *Services) listGitRepositories(c echo.Context) error {
 	// 1. Проверка конфигурации Git
 	if !cfg.GitEnabled {
 		return EErrorDefined(c, apierrors.ErrGitDisabled)
 	}
 
-	// 2. Получение параметра workspace
-	workspaceSlug := c.QueryParam("workspace")
+	// 2. Получение параметра workspace из URL
+	workspaceSlug := c.Param("workspaceSlug")
 	if workspaceSlug == "" {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
@@ -342,6 +349,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug workspace"
 // @Param request body dto.DeleteGitRepositoryRequest true "Параметры удаления репозитория"
 // @Success 204 "Репозиторий успешно удален"
 // @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
@@ -349,7 +357,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Git отключен или недостаточно прав (требуется роль администратора)"
 // @Failure 404 {object} apierrors.DefinedError "Workspace или репозиторий не найден"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/git/repositories/ [delete]
+// @Router /api/auth/git/{workspaceSlug}/repositories/ [delete]
 func (s *Services) deleteGitRepository(c echo.Context) error {
 	user := c.(AuthContext).User
 
@@ -364,6 +372,12 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGitDisabled)
 	}
 
+	// Получаем workspace slug из URL
+	workspaceSlug := c.Param("workspaceSlug")
+	if workspaceSlug == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
 	// Парсим входные данные
 	var req dto.DeleteGitRepositoryRequest
 	if err := c.Bind(&req); err != nil {
@@ -372,7 +386,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 	}
 
 	// Валидация обязательных полей
-	if req.Workspace == "" || req.Name == "" {
+	if req.Name == "" {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -384,12 +398,12 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 	// Получаем workspace по slug
 	var workspace dao.Workspace
 	if err := s.db.
-		Where("slug = ?", req.Workspace).
+		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
-		slog.Error("Failed to load workspace", "slug", req.Workspace, "err", err)
+		slog.Error("Failed to load workspace", "slug", workspaceSlug, "err", err)
 		return EError(c, err)
 	}
 
@@ -442,7 +456,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 // AddGitServices регистрирует все эндпоинты для работы с GIT
 func (s *Services) AddGitServices(g *echo.Group) {
 	g.GET("git/config/", s.getGitConfig)
-	g.GET("git/repositories/", s.listGitRepositories)
-	g.POST("git/repositories/", s.createGitRepository)
-	g.DELETE("git/repositories/", s.deleteGitRepository)
+	g.GET("git/:workspaceSlug/repositories/", s.listGitRepositories)
+	g.POST("git/:workspaceSlug/repositories/", s.createGitRepository)
+	g.DELETE("git/:workspaceSlug/repositories/", s.deleteGitRepository)
 }

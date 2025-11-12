@@ -2670,7 +2670,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/git/repositories/": {
+        "/api/auth/git/{workspaceSlug}/repositories/": {
             "get": {
                 "security": [
                     {
@@ -2692,8 +2692,8 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Slug workspace",
-                        "name": "workspace",
-                        "in": "query",
+                        "name": "workspaceSlug",
+                        "in": "path",
                         "required": true
                     }
                 ],
@@ -2754,6 +2754,13 @@ const docTemplate = `{
                 ],
                 "summary": "Репозиторий: создание Git репозитория",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
                     {
                         "description": "Параметры создания репозитория",
                         "name": "request",
@@ -2821,6 +2828,13 @@ const docTemplate = `{
                 ],
                 "summary": "Репозиторий: удаление Git репозитория",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
                     {
                         "description": "Параметры удаления репозитория",
                         "name": "request",
@@ -17075,8 +17089,7 @@ const docTemplate = `{
         "dto.CreateGitRepositoryRequest": {
             "type": "object",
             "required": [
-                "name",
-                "workspace"
+                "name"
             ],
             "properties": {
                 "branch": {
@@ -17096,10 +17109,6 @@ const docTemplate = `{
                 "private": {
                     "description": "Private - флаг приватности репозитория (необязательное поле, по умолчанию: false)",
                     "type": "boolean"
-                },
-                "workspace": {
-                    "description": "Workspace - slug рабочего пространства (обязательное поле)",
-                    "type": "string"
                 }
             }
         },
@@ -17138,16 +17147,11 @@ const docTemplate = `{
         "dto.DeleteGitRepositoryRequest": {
             "type": "object",
             "required": [
-                "name",
-                "workspace"
+                "name"
             ],
             "properties": {
                 "name": {
                     "description": "Name - название репозитория (обязательное поле)",
-                    "type": "string"
-                },
-                "workspace": {
-                    "description": "Workspace - slug рабочего пространства (обязательное поле)",
                     "type": "string"
                 }
             }

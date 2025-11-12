@@ -21,9 +21,6 @@ type GitRepositoryLight struct {
 
 // CreateGitRepositoryRequest - структура запроса на создание Git репозитория
 type CreateGitRepositoryRequest struct {
-	// Workspace - slug рабочего пространства (обязательное поле)
-	Workspace string `json:"workspace" validate:"required"`
-
 	// Name - название репозитория (обязательное поле)
 	// Допустимые символы: a-z, A-Z, 0-9, дефис, подчеркивание, точка
 	Name string `json:"name" validate:"required,min=1,max=100"`
@@ -59,9 +56,6 @@ type ListGitRepositoriesResponse struct {
 
 // DeleteGitRepositoryRequest - структура запроса на удаление Git репозитория
 type DeleteGitRepositoryRequest struct {
-	// Workspace - slug рабочего пространства (обязательное поле)
-	Workspace string `json:"workspace" validate:"required"`
-
 	// Name - название репозитория (обязательное поле)
 	Name string `json:"name" validate:"required"`
 }
