@@ -46,6 +46,7 @@ type FileInfo struct {
 	Size        int64
 	ContentType string
 	CreatedAt   time.Time
+	ETag        string
 }
 
 func (m Metadata) GetMap() map[string]string {
@@ -354,6 +355,7 @@ func (s *MinioStorage) GetFileInfo(name uuid.UUID) (*FileInfo, error) {
 		Size:        stat.Size,
 		ContentType: stat.ContentType,
 		CreatedAt:   stat.LastModified,
+		ETag:        stat.ETag,
 	}, nil
 }
 

@@ -433,14 +433,14 @@ func (c *ImportContext) replaceCommentLinks(n *html.Node) bool {
 
 	htmlRemoveChildren(n)
 
-	if comment.Id != "" {
+	if !comment.Id.IsNil() {
 		// Comment from this import
 		n.Attr = []html.Attribute{
 			{Key: "data-type", Val: "issue"},
 			{Key: "data-slug", Val: comment.WorkspaceId},
 			{Key: "data-project-identifier", Val: comment.ProjectId},
 			{Key: "data-current-issue-id", Val: comment.IssueId},
-			{Key: "data-comment-id", Val: comment.Id},
+			{Key: "data-comment-id", Val: comment.Id.String()},
 			{Key: "class", Val: "special-link-mention"},
 			{Key: "contenteditable", Val: "false"},
 		}

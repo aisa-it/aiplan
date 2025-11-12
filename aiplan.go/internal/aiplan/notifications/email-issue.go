@@ -9,6 +9,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -141,8 +142,8 @@ type issueActivity struct {
 	activities []dao.IssueActivity
 	users      map[string]issueMember //map[user.Email]
 
-	commentActivityMap  map[string][]dao.IssueActivity // map[commentId]
-	commentActivityUser map[string]issueCommentAuthor  //map[user.Email]
+	commentActivityMap  map[uuid.UUID][]dao.IssueActivity // map[commentId]
+	commentActivityUser map[string]issueCommentAuthor     //map[user.Email]
 }
 
 func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
@@ -224,7 +225,7 @@ func (ia *issueActivity) Finalization(tx *gorm.DB) error {
 }
 
 func (ia *issueActivity) getCommentNotify(tx *gorm.DB) error {
-	var commentIds []string
+	var commentIds []uuid.UUID
 	for commentId, _ := range ia.commentActivityMap {
 		commentIds = append(commentIds, commentId)
 	}
@@ -330,7 +331,7 @@ func newIssueActivity(issue *dao.Issue) *issueActivity {
 		issue:               issue,
 		activities:          make([]dao.IssueActivity, 0),
 		users:               make(map[string]issueMember),
-		commentActivityMap:  make(map[string][]dao.IssueActivity),
+		commentActivityMap:  make(map[uuid.UUID][]dao.IssueActivity),
 		commentActivityUser: make(map[string]issueCommentAuthor),
 	}
 
@@ -407,13 +408,14 @@ func (ia *issueActivity) AddActivity(activity dao.IssueActivity) bool {
 	if activity.Field != nil && *activity.Field == "comment" && activity.NewIdentifier != nil {
 		if activity.Verb == "created" || activity.Verb == "updated" {
 			//TODO
+			commentUUID := uuid.FromStringOrNil(*activity.NewIdentifier)
 			var arr []dao.IssueActivity
-			if v, ok := ia.commentActivityMap[*activity.NewIdentifier]; !ok {
+			if v, ok := ia.commentActivityMap[commentUUID]; !ok {
 				arr = append(arr, activity)
 			} else {
 				arr = append(v, activity)
 			}
-			ia.commentActivityMap[*activity.NewIdentifier] = arr
+			ia.commentActivityMap[commentUUID] = arr
 		}
 	}
 	return true
