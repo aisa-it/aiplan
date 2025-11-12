@@ -381,7 +381,7 @@ type DocComment struct {
 	// comment_json jsonb IS_NULL:NO
 	CommentType      int           `json:"comment_type" gorm:"default:1"`
 	IntegrationMeta  string        `json:"-" gorm:"index:integration_doc,priority:2"`
-	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id,omitempty"`
+	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id"`
 	OriginalComment  *DocComment   `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId" extensions:"x-nullable"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`

@@ -16,6 +16,7 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/gofrs/uuid"
 
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -188,7 +189,7 @@ func (gi *GitlabIntegration) GitlabPushEvent(event GitlabPushEvent, workspace da
 			commit.Message,
 		)
 
-		err := gi.bl.CreateIssueComment(issue, *gi.User, msg, nil, false, commit.ID)
+		err := gi.bl.CreateIssueComment(issue, *gi.User, msg, uuid.Nil, false, commit.ID)
 		if err != nil {
 			log.Error("Create issue comment from webhook", "err", err)
 			continue

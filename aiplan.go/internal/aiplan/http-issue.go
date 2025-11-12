@@ -2472,7 +2472,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		comment.Id = dao.GenID()
+		comment.Id = dao.GenUUID()
 		comment.ProjectId = project.ID
 		comment.Project = &project
 		comment.IssueId = issue.ID.String()
@@ -2519,12 +2519,12 @@ func (s *Services) createIssueComment(c echo.Context) error {
 
 		var authorOriginalComment *dao.User
 		var replyNotMember bool
-		if comment.ReplyToCommentId != nil {
+		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where(
 				"id = (?)", tx.
 					Select("actor_id").
 					Model(&dao.IssueComment{}).
-					Where("id = ?", comment.ReplyToCommentId)).
+					Where("id = ?", comment.ReplyToCommentId.UUID)).
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
@@ -2736,12 +2736,12 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 
 		var authorOriginalComment *dao.User
 		var replyNotMember bool
-		if comment.ReplyToCommentId != nil {
+		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where(
 				"id = (?)", tx.
 					Select("actor_id").
 					Model(&dao.IssueComment{}).
-					Where("id = ?", comment.ReplyToCommentId)).
+					Where("id = ?", comment.ReplyToCommentId.UUID)).
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
@@ -2762,7 +2762,8 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				replyNotMember = true
 			}
 			if !replyNotMember {
-				comment.Id = commentId
+				commentUUID := uuid.Must(uuid.FromString(commentId))
+				comment.Id = commentUUID
 				comment.IssueId = issue.ID.String()
 				comment.WorkspaceId = issue.WorkspaceId
 				comment.Issue = &issue
@@ -2913,11 +2914,12 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 	}
 
 	// Создаем новую реакцию
+	commentUUID := uuid.Must(uuid.FromString(commentId))
 	reaction := dao.CommentReaction{
 		Id:        dao.GenID(),
 		CreatedAt: time.Now(),
 		UserId:    user.ID,
-		CommentId: commentId,
+		CommentId: commentUUID,
 		Reaction:  reactionRequest.Reaction,
 	}
 
