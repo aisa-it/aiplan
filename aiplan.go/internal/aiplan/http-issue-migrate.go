@@ -155,7 +155,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	idsMap := make(map[uuid.UUID]uuid.UUID)
-	idsCommentMap := make(map[string]string)
+	idsCommentMap := make(map[uuid.UUID]uuid.UUID)
 	linkedIds := make(map[string]struct{})
 	var srcIssueUUId uuid.UUID
 	var familyIds, newFamilyIds []string
@@ -213,7 +213,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			return EError(c, err)
 		}
 		for _, comment := range comments {
-			idsCommentMap[comment.Id] = dao.GenID()
+			idsCommentMap[comment.Id] = dao.GenUUID()
 		}
 
 		if createEntities {
@@ -599,7 +599,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	idsMap := make(map[uuid.UUID]uuid.UUID)
-	idsCommentMap := make(map[string]string)
+	idsCommentMap := make(map[uuid.UUID]uuid.UUID)
 	linkedIds := make(map[string]struct{})
 
 	var targetIds, newTargetIds []string
@@ -656,7 +656,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			return EError(c, err)
 		}
 		for _, comment := range comments {
-			idsCommentMap[comment.Id] = dao.GenID()
+			idsCommentMap[comment.Id] = dao.GenUUID()
 		}
 
 		if createEntities {
@@ -1253,7 +1253,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	return nil
 }
 
-func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap map[uuid.UUID]uuid.UUID, idsCommentMap map[string]string, single bool) error {
+func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap map[uuid.UUID]uuid.UUID, idsCommentMap map[uuid.UUID]uuid.UUID, single bool) error {
 	srcIssue := issue.SrcIssue
 
 	if issue.Migrate {
@@ -1383,7 +1383,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	// Comments, reactions
 	{
 		var comments []dao.IssueComment
-		var commentIds []string
+		var commentIds []uuid.UUID
 
 		if err := tx.Where("issue_id = ?", srcIssue.ID).Find(&comments).Error; err != nil {
 			return err
@@ -1394,7 +1394,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 			comments[i].Id = idsCommentMap[comments[i].Id]
 			comments[i].IssueId = targetIssue.ID.String()
 			comments[i].ProjectId = issue.TargetProject.ID
-			if comments[i].ReplyToCommentId != nil {
+			if comments[i].ReplyToCommentId != nil && !comments[i].ReplyToCommentId.IsNil() {
 				replyId := idsCommentMap[*comments[i].ReplyToCommentId]
 				comments[i].ReplyToCommentId = &replyId
 			}

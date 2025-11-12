@@ -2,13 +2,14 @@ package notifications
 
 import (
 	"fmt"
+	"log/slog"
+	"strings"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"log/slog"
-	"strings"
 )
 
 type TgNotifyIssue struct {
@@ -431,7 +432,7 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 	issueUserTgId := GetUserTgIdFromIssue(act.Issue)
 	authorId := act.Issue.Author.ID
 
-	if act.NewIssueComment != nil && act.NewIssueComment.ReplyToCommentId != nil {
+	if act.NewIssueComment != nil && act.NewIssueComment.ReplyToCommentId != nil && !act.NewIssueComment.ReplyToCommentId.IsNil() {
 		if err := tx.Preload("Actor").
 			Where("workspace_id = ? ", act.WorkspaceId).
 			Where("project_id = ?", act.ProjectId).
