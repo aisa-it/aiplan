@@ -2519,12 +2519,12 @@ func (s *Services) createIssueComment(c echo.Context) error {
 
 		var authorOriginalComment *dao.User
 		var replyNotMember bool
-		if comment.ReplyToCommentId != nil && !comment.ReplyToCommentId.IsNil() {
+		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where(
 				"id = (?)", tx.
 					Select("actor_id").
 					Model(&dao.IssueComment{}).
-					Where("id = ?", comment.ReplyToCommentId)).
+					Where("id = ?", comment.ReplyToCommentId.UUID)).
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
@@ -2736,12 +2736,12 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 
 		var authorOriginalComment *dao.User
 		var replyNotMember bool
-		if comment.ReplyToCommentId != nil && !comment.ReplyToCommentId.IsNil() {
+		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where(
 				"id = (?)", tx.
 					Select("actor_id").
 					Model(&dao.IssueComment{}).
-					Where("id = ?", comment.ReplyToCommentId)).
+					Where("id = ?", comment.ReplyToCommentId.UUID)).
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}

@@ -1394,9 +1394,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 			comments[i].Id = idsCommentMap[comments[i].Id]
 			comments[i].IssueId = targetIssue.ID.String()
 			comments[i].ProjectId = issue.TargetProject.ID
-			if comments[i].ReplyToCommentId != nil && !comments[i].ReplyToCommentId.IsNil() {
-				replyId := idsCommentMap[*comments[i].ReplyToCommentId]
-				comments[i].ReplyToCommentId = &replyId
+			if comments[i].ReplyToCommentId.Valid {
+				replyId := idsCommentMap[comments[i].ReplyToCommentId.UUID]
+				comments[i].ReplyToCommentId = uuid.NullUUID{UUID: replyId, Valid: true}
 			}
 		}
 
