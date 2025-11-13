@@ -309,10 +309,6 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 		}
 	}
 
-	if err := tx.Model(FileAsset{}).Where("workspace_id = ?", workspace.ID).Update("workspace_id", nil).Error; err != nil {
-		return err
-	}
-
 	// remove from last workspaces
 	return tx.Model(&User{}).Where("last_workspace_id = ?", workspace.ID).Update("last_workspace_id", nil).Error
 }

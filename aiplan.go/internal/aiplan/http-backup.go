@@ -89,6 +89,21 @@ func (s *Services) AddBackupServices(g *echo.Group) {
 func (s *Services) restoreBackup(c echo.Context) error {
 	workspaceBackup := c.(BackupContext).Backup
 
+	var workspace *dao.Workspace
+	if err := s.db.Where("id = ?", workspaceBackup.WorkspaceId).First(&workspace).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			workspace = nil
+		} else {
+			return EErrorDefined(c, apierrors.ErrGeneric)
+		}
+	}
+
+	if workspace == nil {
+		if err := s.db.Delete(&workspace).Error; err != nil {
+			return EErrorDefined(c, apierrors.ErrGeneric)
+		}
+	}
+
 	go func() {
 		backup, _, err := unpackFromZip(s.storage, workspaceBackup.Asset)
 		if err != nil {
@@ -104,22 +119,22 @@ func (s *Services) restoreBackup(c echo.Context) error {
 
 func importWorkspaceBackup(db *gorm.DB, backup WorkspaceBackup) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		var originalWorkspace dao.Workspace
-		if err := tx.Where("id = ?", backup.Workspace.ID).First(&originalWorkspace).Error; err != nil {
-			if err != gorm.ErrRecordNotFound {
-				return err
-			}
-		} else {
-			//originalWorkspace.BackupWork = true
-			if err := originalWorkspace.BeforeDelete(tx); err != nil {
-				return err
-			}
-		}
-		workspaceLogoId := backup.Workspace.LogoId
-
-		if err := tx.Omit("LogoId").Save(&backup.Workspace).Error; err != nil {
-			return err
-		}
+		//var originalWorkspace dao.Workspace
+		//if err := tx.Where("id = ?", backup.Workspace.ID).First(&originalWorkspace).Error; err != nil {
+		//	if err != gorm.ErrRecordNotFound {
+		//		return err
+		//	}
+		//} else {
+		//	//originalWorkspace.BackupWork = true
+		//	if err := originalWorkspace.BeforeDelete(tx); err != nil {
+		//		return err
+		//	}
+		//}
+		//workspaceLogoId := backup.Workspace.LogoId
+		//
+		//if err := tx.Omit("LogoId").Save(&backup.Workspace).Error; err != nil {
+		//	return err
+		//}
 
 		v := reflect.ValueOf(&backup).Elem()
 		vType := reflect.ValueOf(WorkspaceBackup{}).Type()
@@ -142,11 +157,11 @@ func importWorkspaceBackup(db *gorm.DB, backup WorkspaceBackup) error {
 				return err
 			}
 		}
-		if workspaceLogoId.Valid {
-			if err := tx.Select("LogoId").Save(&backup.Workspace).Error; err != nil {
-				return err
-			}
-		}
+		//if workspaceLogoId.Valid {
+		//	if err := tx.Select("LogoId").Save(&backup.Workspace).Error; err != nil {
+		//		return err
+		//	}
+		//}
 		return nil
 	})
 }
@@ -426,7 +441,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 		CreatedAt:   time.Now(),
 		CreatedById: &user.ID,
 		Name:        name.String(),
-		WorkspaceId: &workspace.ID,
+		WorkspaceId: nil,
 		ContentType: "application/zip",
 	}
 
@@ -441,7 +456,6 @@ func CreateBackup(db *gorm.DB, storage filestorage.FileStorage, backup Workspace
 		fmt.Println(err)
 		return
 	}
-	defer backupReader.Close()
 
 	backupAsset.FileSize = int(info.Size)
 
@@ -554,7 +568,7 @@ func (s *Services) getWorkspaceBackupList(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 
 	var backups []dao.WorkspaceBackup
-	if err := s.db.Joins("Workspace").
+	if err := s.db.
 		Where("workspace_backups.workspace_id = ?", workspace.ID).
 		Where("in_progress = ?", false).
 		Find(&backups).Error; err != nil {
