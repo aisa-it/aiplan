@@ -27,7 +27,7 @@ require (
 
 require (
 	codeberg.org/go-pdf/fpdf v0.11.1
-	github.com/aisa-it/aiplan-mem v1.0.2
+	github.com/aisa-it/aiplan-mem v1.0.3
 	github.com/aws/aws-sdk-go-v2 v1.36.6
 	github.com/aws/aws-sdk-go-v2/config v1.29.18
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.84.1

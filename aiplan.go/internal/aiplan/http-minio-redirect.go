@@ -12,23 +12,111 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
-// redirectToMinioFile godoc
-// @id redirectToMinioFile
-// @Summary Интеграции: перенаправление на файл в MinIO
-// @Description Перенаправляет пользователя на файл, хранящийся в MinIO, по имени файла или ID
+const (
+	selectFileWithPermissionCheck = `
+SELECT
+    f.id,
+    f.content_type,
+    (f.workspace_id IS NULL OR wm.role IS NOT NULL)
+    AND (
+        (f.comment_id IS NULL AND f.issue_id IS NULL AND f.doc_comment_id IS NULL)
+        OR pm.role IS NOT NULL
+    )
+    AND (
+        f.doc_id IS NULL
+        OR wm.role >= d.reader_role
+        OR dr.id IS NOT NULL
+        OR de.id IS NOT NULL
+    ) AS allowed
+FROM file_assets f
+LEFT JOIN workspace_members wm
+    ON wm.workspace_id = f.workspace_id
+    AND wm.member_id = ?
+LEFT JOIN project_members pm
+    ON pm.workspace_id = f.workspace_id
+    AND pm.member_id = ?
+    AND (
+        pm.project_id IN (SELECT project_id FROM issues WHERE id = f.issue_id)
+        OR pm.project_id IN (SELECT project_id FROM issue_comments WHERE id = f.comment_id)
+        OR pm.project_id IN (SELECT project_id FROM doc_comments WHERE id = f.doc_comment_id)
+    )
+LEFT JOIN docs d
+    ON d.id = f.doc_id
+LEFT JOIN doc_readers dr
+    ON dr.doc_id = f.doc_id
+    AND dr.reader_id = ?
+LEFT JOIN doc_editors de
+    ON de.doc_id = f.doc_id
+    AND de.editor_id = ?
+`
+)
+
+// assetsHandler godoc
+// @id assetsHandler
+// @Summary Получение файла
+// @Description Эндпоинт для получения файла из MinIO хранилища. Проверяет права доступа пользователя к файлу и возвращает файл по его имени или идентификатору
 // @Tags Integrations
 // @Security ApiKeyAuth
 // @Accept */*
 // @Produce */*
 // @Param fileName path string true "Имя файла или ID файла"
-// @Success 307 "Перенаправление на URL файла в MinIO"
+// @Success 200 "Успешный ответ с содержимым файла"
 // @Failure 404 {object} apierrors.DefinedError "Файл не найден"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
-// @Router /api/file/{fileName} [get]
-func (s *Services) redirectToMinioFile(c echo.Context) error {
+// @Router /api/auth/file/{fileName} [get]
+func (s *Services) assetsHandler(c echo.Context) error {
+	user := c.(AuthContext).User
+	name := c.Param("fileName")
+
+	query := selectFileWithPermissionCheck
+	if _, err := uuid.FromString(name); err == nil {
+		query += " WHERE f.id = ?"
+	} else {
+		query += " WHERE f.name = ?"
+	}
+
+	var asset struct {
+		dao.FileAsset
+		Allowed bool
+	}
+	if err := s.db.Raw(query, user.ID, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if asset.Id.IsNil() {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	stats, err := s.storage.GetFileInfo(asset.Id)
+	if err != nil {
+		errResponse := minio.ToErrorResponse(err)
+		if errResponse.Code == "NoSuchKey" {
+			return c.NoContent(http.StatusNotFound)
+		}
+		return EError(c, err)
+	}
+
+	ifNoneMatchHeader := c.Request().Header.Get("If-None-Match")
+	if ifNoneMatchHeader == stats.ETag {
+		return c.NoContent(http.StatusNotModified)
+	}
+
+	c.Response().Header().Set("ETag", stats.ETag)
+
+	r, err := s.storage.LoadReader(asset.Id)
+	if err != nil {
+		return EError(c, err)
+	}
+	defer r.Close()
+
+	return c.Stream(http.StatusOK, asset.ContentType, r)
+}
+
+func (s *Services) redirectToMinioFileLegacy(c echo.Context) error {
 	name := c.Param("fileName")
 
 	query := s.db.
@@ -48,10 +136,27 @@ func (s *Services) redirectToMinioFile(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	stats, err := s.storage.GetFileInfo(fileAsset.Id)
+	if err != nil {
+		errResponse := minio.ToErrorResponse(err)
+		if errResponse.Code == "NoSuchKey" {
+			return c.NoContent(http.StatusNotFound)
+		}
+		return EError(c, err)
+	}
+
+	ifNoneMatchHeader := c.Request().Header.Get("If-None-Match")
+	if ifNoneMatchHeader == stats.ETag {
+		return c.NoContent(http.StatusNotModified)
+	}
+
+	c.Response().Header().Set("ETag", stats.ETag)
+
 	r, err := s.storage.LoadReader(fileAsset.Id)
 	if err != nil {
 		return EError(c, err)
 	}
+	defer r.Close()
 
 	return c.Stream(http.StatusOK, fileAsset.ContentType, r)
 }

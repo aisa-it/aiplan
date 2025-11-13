@@ -52,7 +52,7 @@ type Issue struct {
 	// created_by_id uuid,
 	CreatedById string `json:"created_by"`
 	// parent_id uuid,
-	ParentId uuid.NullUUID `json:"parent" gorm:"type:text;index:,type:hash;index:issue_sort_order_index,priority:1"`
+	ParentId uuid.NullUUID `json:"parent" gorm:"type:text;index;index:issue_sort_order_index,priority:1"`
 	// project_id uuid NOT NULL,
 	ProjectId string `json:"project" gorm:"index:,type:hash,where:deleted_at is not null"`
 	// state_id uuid,
@@ -585,7 +585,7 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	var commentId []string
+	var commentId []uuid.UUID
 
 	for _, comment := range comments {
 		commentId = append(commentId, comment.Id)
@@ -1281,7 +1281,7 @@ type IssueLabel struct {
 func (IssueLabel) TableName() string { return "issue_labels" }
 
 type IssueComment struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1299,7 +1299,7 @@ type IssueComment struct {
 	CommentStripped string             `json:"comment_stripped"`
 
 	IntegrationMeta  string        `json:"-" gorm:"index:integration,priority:2"`
-	ReplyToCommentId *string       `json:"reply_to_comment_id,omitempty" extensions:"x-nullable"`
+	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" extensions:"x-nullable"`
 	OriginalComment  *IssueComment `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId" extensions:"x-nullable"`
 
 	// Id in system, from that comment was imported
@@ -1333,7 +1333,7 @@ type IssueCommentExtendFields struct {
 }
 
 func (i IssueComment) GetId() string {
-	return i.Id
+	return i.Id.String()
 }
 
 func (i IssueComment) GetString() string {
@@ -1369,7 +1369,7 @@ func (i *IssueComment) ToLightDTO() *dto.IssueCommentLight {
 	}
 	i.SetUrl()
 	return &dto.IssueCommentLight{
-		Id:              i.Id,
+		Id:              i.Id.String(),
 		CommentStripped: i.CommentStripped,
 		CommentHtml:     i.CommentHtml.Body,
 		URL:             types.JsonURL{i.URL},
@@ -1416,7 +1416,7 @@ type CommentReaction struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	UserId    string    `json:"user_id"`
-	CommentId string    `json:"comment_id" gorm:"index"`
+	CommentId uuid.UUID `json:"comment_id" gorm:"index"`
 	Reaction  string    `json:"reaction"`
 
 	User    *User         `json:"-" gorm:"foreignKey:UserId" extensions:"x-nullable"`
@@ -1445,7 +1445,7 @@ func (cr CommentReaction) ToDTO() *dto.CommentReaction {
 		Id:        cr.Id,
 		CreatedAt: cr.CreatedAt,
 		UpdatedAt: cr.UpdatedAt,
-		CommentId: cr.CommentId,
+		CommentId: cr.CommentId.String(),
 		UserId:    cr.UserId,
 		Reaction:  cr.Reaction,
 	}
@@ -1893,67 +1893,4 @@ func (rl *RulesLog) ToDTO() *dto.RulesLog {
 		Msg:          rl.Msg,
 		LuaErr:       rl.LuaErr,
 	}
-}
-
-func GetIssuesGroupsSize(db *gorm.DB, groupByParam string, projectId string, onlyActive bool) (map[string]int, error) {
-	query := db.Session(&gorm.Session{})
-	switch groupByParam {
-	case "priority":
-		query = query.Where("project_id = ?", projectId).Model(&Issue{}).Select("count(*) as Count, coalesce(priority, '') as \"Key\"")
-	case "author":
-		query = db.
-			Model(&ProjectMember{}).
-			Joins("LEFT JOIN issues on project_members.member_id = issues.created_by_id and issues.project_id = ?", projectId).
-			Where("project_members.project_id = ?", projectId).
-			Select("count(issues.created_by_id) as Count, project_members.member_id as \"Key\"")
-	case "state":
-		query = db.
-			Model(&State{}).
-			Joins("LEFT JOIN issues on states.id = issues.state_id and issues.project_id = ?", projectId).
-			Where("states.project_id = ?", projectId).
-			Select("count(issues.state_id) as Count, states.id as \"Key\"")
-		if onlyActive {
-			query = query.Where("states.\"group\" <> ?", "cancelled").Where("states.\"group\" <> ?", "completed")
-		}
-	case "labels":
-		query = query.Raw(`select count(i.id) as Count, l.id as Key from labels l
-left join issue_labels il on il.label_id = l.id
-right join issues i on il.issue_id = i.id
-where (il.project_id = ? or il.project_id is null)
-and
-(i.project_id = ? or i.project_id is null)
-and (l.project_id = ? or l.project_id is null)
-group by Key`, projectId, projectId, projectId)
-	case "assignees":
-		query = query.Raw(`select count(i.id) as Count, u.id as Key from users u
-left join issue_assignees ia on ia.assignee_id = u.id
-right join issues i on ia.issue_id = i.id
-where (ia.project_id = ? or ia.project_id is null)
-and
-(i.project_id = ? or i.project_id is null)
-group by u.id`, projectId, projectId)
-	case "watchers":
-		query = query.Raw(`select count(i.id) as Count, u.id as Key from users u
-left join issue_watchers ia on ia.watcher_id = u.id
-right join issues i on ia.issue_id = i.id
-where (ia.project_id = ? or ia.project_id is null)
-and
-(i.project_id = ? or i.project_id is null)
-group by u.id`, projectId, projectId)
-	}
-	query = query.Offset(-1).Limit(-1).Group("Key")
-
-	var count []struct {
-		Count int
-		Key   string
-	}
-	if err := query.Scan(&count).Error; err != nil {
-		return nil, err
-	}
-
-	res := make(map[string]int, len(count))
-	for _, c := range count {
-		res[c.Key] = c.Count
-	}
-	return res, nil
 }
