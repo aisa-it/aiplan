@@ -80,6 +80,20 @@ func (td *TargetDate) ToNullTime() sql.NullTime {
 	}
 }
 
+func (d TargetDate) GobEncode() ([]byte, error) {
+	return d.Time.MarshalBinary()
+}
+
+func (d *TargetDate) GobDecode(data []byte) error {
+	var t time.Time
+	err := t.UnmarshalBinary(data)
+	if err != nil {
+		return err
+	}
+	*d = TargetDate{t}
+	return nil
+}
+
 // TargetDateTimeZ type
 type TargetDateTimeZ struct {
 	Time time.Time
@@ -126,6 +140,20 @@ func (d TargetDateTimeZ) String() string {
 	return d.Time.String()
 }
 
+func (d TargetDateTimeZ) GobEncode() ([]byte, error) {
+	return d.Time.MarshalBinary()
+}
+
+func (d *TargetDateTimeZ) GobDecode(data []byte) error {
+	var t time.Time
+	err := t.UnmarshalBinary(data)
+	if err != nil {
+		return err
+	}
+	*d = TargetDateTimeZ{t}
+	return nil
+}
+
 // TimeZone type
 type TimeZone time.Location
 
@@ -159,6 +187,21 @@ func (TimeZone) GormDataType() string {
 func (tz TimeZone) MarshalJSON() ([]byte, error) {
 	loc := time.Location(tz)
 	return []byte(fmt.Sprintf("\"%s\"", &loc)), nil
+}
+
+func (tz TimeZone) GobEncode() ([]byte, error) {
+	loc := time.Location(tz)
+	return []byte(loc.String()), nil
+}
+
+func (tz *TimeZone) GobDecode(data []byte) error {
+	str := string(data)
+	loc, err := time.LoadLocation(str)
+	if err != nil {
+		return err
+	}
+	*tz = TimeZone(*loc)
+	return nil
 }
 
 // Theme type
@@ -873,6 +916,92 @@ type SprintStats struct {
 	InProgress int `json:"in_progress"`
 	Completed  int `json:"completed"`
 	Cancelled  int `json:"cancelled"`
+}
+
+type BackupMetadata struct {
+	WorkspaceId   string `json:"workspace_id"`
+	WorkspaceSlug string `json:"workspace_slug"`
+	WorkspaceName string `json:"workspace_name"`
+
+	Users            int `json:"users,omitempty"`
+	WorkspaceMembers int `json:"workspace_members,omitempty"`
+
+	Forms      int `json:"forms,omitempty"`
+	FormAnswer int `json:"form_answer,omitempty"`
+
+	Docs                int `json:"docs,omitempty"`
+	DocFavorites        int `json:"doc_favorites,omitempty"`
+	DocEditors          int `json:"doc_editors,omitempty"`
+	DocWatchers         int `json:"doc_watchers,omitempty"`
+	DocReaders          int `json:"doc_readers,omitempty"`
+	DocComments         int `json:"doc_comments,omitempty"`
+	DocCommentReactions int `json:"doc_comment_reactions,omitempty"`
+
+	Projects         int `json:"projects,omitempty"`
+	ProjectFavorites int `json:"project_favorites,omitempty"`
+	ProjectMembers   int `json:"project_members,omitempty"`
+	States           int `json:"states,omitempty"`
+	Labels           int `json:"labels,omitempty"`
+	RulesLog         int `json:"rules_log,omitempty"`
+
+	Issues          int `json:"issues,omitempty"`
+	IssueTemplates  int `json:"issue_templates,omitempty"`
+	IssueAssignees  int `json:"issue_assignees,omitempty"`
+	IssueWatchers   int `json:"issue_watchers,omitempty"`
+	IssueBlockers   int `json:"issue_blockers,omitempty"`
+	IssueLabels     int `json:"issue_labels,omitempty"`
+	IssueLinks      int `json:"issue_links,omitempty"`
+	IssueProperties int `json:"issue_properties,omitempty"`
+	IssueComments   int `json:"issue_comments,omitempty"`
+	CommentReaction int `json:"comment_reaction,omitempty"`
+	LinkedIssues    int `json:"linked_issues,omitempty"`
+
+	Sprints        int `json:"sprints,omitempty"`
+	SprintWatchers int `json:"sprint_watchers,omitempty"`
+	SprintIssues   int `json:"sprint_issues,omitempty"`
+
+	FileAsset       int `json:"file_asset,omitempty"`
+	IssueAttachment int `json:"issue_attachment,omitempty"`
+	FormAttachment  int `json:"form_attachment,omitempty"`
+	DocAttachment   int `json:"doc_attachment,omitempty"`
+
+	WorkspaceActivities int   `json:"workspace_activities,omitempty"`
+	FormActivities      int   `json:"form_activities,omitempty"`
+	DocActivities       int   `json:"doc_activities,omitempty"`
+	ProjectActivities   int   `json:"project_activities,omitempty"`
+	IssueActivities     int   `json:"issue_activities,omitempty"`
+	SprintActivities    int   `json:"sprint_activities,omitempty"`
+	FileAssetSize       int64 `json:"file_asset_size,omitempty"`
+}
+
+func (bm BackupMetadata) Value() (driver.Value, error) {
+	b, err := json.Marshal(bm)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (bm *BackupMetadata) Scan(value interface{}) error {
+	if value == nil {
+		*bm = BackupMetadata{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, bm); err != nil {
+		return err
+	}
+	return nil
 }
 
 // -----

@@ -42,10 +42,40 @@ type Metadata struct {
 }
 
 type FileInfo struct {
-	Name        string
-	Size        int64
-	ContentType string
-	CreatedAt   time.Time
+	Name         string
+	Size         int64
+	ContentType  string
+	CreatedAt    time.Time
+	UserMetadata map[string]string
+	UserTags     map[string]string
+	Metadata     http.Header
+}
+
+func ConvertToMetadata(md map[string]string) *Metadata {
+	metadata := &Metadata{}
+
+	if md != nil {
+		if workspaceId, exists := md["workspaceId"]; exists {
+			metadata.WorkspaceId = workspaceId
+		}
+		if docId, exists := md["docId"]; exists {
+			metadata.DocId = docId
+		}
+		if formId, exists := md["formId"]; exists {
+			metadata.FormId = formId
+		}
+		if projectId, exists := md["projectId"]; exists {
+			metadata.ProjectId = projectId
+		}
+		if issueId, exists := md["issueId"]; exists {
+			metadata.IssueId = issueId
+		}
+		if commentId, exists := md["commentId"]; exists {
+			metadata.CommentId = commentId
+		}
+	}
+
+	return metadata
 }
 
 func (m Metadata) GetMap() map[string]string {
@@ -72,8 +102,8 @@ type FileStorage interface {
 		uploadValidator func(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error),
 		postUploadHook func(event tusd.HookEvent)) echo.HandlerFunc
 	Save(data []byte, name uuid.UUID, contentType string, metadata *Metadata) error
-	SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error
-	SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error
+	SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata, userMetadata map[string]string) error
+	SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata, userMetadata map[string]string) error
 	Load(name uuid.UUID) ([]byte, error)
 	LoadReader(name uuid.UUID) (io.Reader, error)
 	Delete(name uuid.UUID) error
@@ -97,7 +127,7 @@ func (s *LocalStorage) Save(data []byte, name uuid.UUID, contentType string, met
 	return os.WriteFile(filepath.Join(s.rootDir, name.String()), data, 0644)
 }
 
-func (s *LocalStorage) SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error {
+func (s *LocalStorage) SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata, userMetadata map[string]string) error {
 	f, err := os.Create(name.String())
 	if err != nil {
 		return err
@@ -106,8 +136,8 @@ func (s *LocalStorage) SaveReader(reader io.Reader, fileSize int64, name uuid.UU
 	return err
 }
 
-func (s *LocalStorage) SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error {
-	return s.SaveReader(reader, fileSize, name, contentType, metadata)
+func (s *LocalStorage) SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata, userMetadata map[string]string) error {
+	return s.SaveReader(reader, fileSize, name, contentType, metadata, userMetadata)
 }
 
 func (s *LocalStorage) Load(name uuid.UUID) ([]byte, error) {
@@ -211,10 +241,13 @@ func (s *MinioStorage) Save(data []byte, name uuid.UUID, contentType string, met
 	return err
 }
 
-func (s *MinioStorage) SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error {
+func (s *MinioStorage) SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata, userMetadata map[string]string) error {
 	putOptions := minio.PutObjectOptions{ContentType: contentType}
 	if metadata != nil {
 		putOptions.UserTags = metadata.GetMap()
+	}
+	if userMetadata != nil {
+		putOptions.UserMetadata = userMetadata
 	}
 
 	var err error
@@ -237,7 +270,7 @@ func (s *MinioStorage) SaveReader(reader io.Reader, fileSize int64, name uuid.UU
 	return err
 }
 
-func (s *MinioStorage) SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error {
+func (s *MinioStorage) SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata, userMetadata map[string]string) error {
 	tmp, err := os.CreateTemp("", name.String()+".*.tmp")
 	if err != nil {
 		return err
@@ -249,7 +282,7 @@ func (s *MinioStorage) SaveReaderWithBuf(reader io.Reader, fileSize int64, name 
 	}
 	tmp.Seek(0, io.SeekStart)
 
-	return s.SaveReader(tmp, fileSize, name, contentType, metadata)
+	return s.SaveReader(tmp, fileSize, name, contentType, metadata, userMetadata)
 }
 
 func (s *MinioStorage) Load(name uuid.UUID) ([]byte, error) {
@@ -348,11 +381,21 @@ func (s *MinioStorage) GetFileInfo(name uuid.UUID) (*FileInfo, error) {
 		return nil, err
 	}
 
+	userTags := make(map[string]string)
+	objectTags, _ := s.client.GetObjectTagging(context.Background(), s.bucketName, name.String(), minio.GetObjectTaggingOptions{})
+
+	if objectTags != nil {
+		userTags = objectTags.ToMap()
+	}
+
 	return &FileInfo{
-		Name:        name.String(),
-		Size:        stat.Size,
-		ContentType: stat.ContentType,
-		CreatedAt:   stat.LastModified,
+		Name:         name.String(),
+		Size:         stat.Size,
+		ContentType:  stat.ContentType,
+		CreatedAt:    stat.LastModified,
+		UserMetadata: stat.UserMetadata,
+		UserTags:     userTags,
+		Metadata:     stat.Metadata,
 	}, nil
 }
 

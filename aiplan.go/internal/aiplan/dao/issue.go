@@ -731,6 +731,12 @@ func (issue *Issue) BeforeSave(tx *gorm.DB) error {
 		return nil
 	}
 
+	if tx.Statement.Dest != nil {
+		if _, isSlice := tx.Statement.Dest.([]Issue); isSlice {
+			return nil
+		}
+	}
+
 	if tx.Statement.Changed("description_html") {
 		// Strip description
 		var desc string

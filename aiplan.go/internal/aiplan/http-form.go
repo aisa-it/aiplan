@@ -789,6 +789,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 			WorkspaceId: form.WorkspaceId,
 			FormId:      form.ID.String(),
 		},
+		nil,
 	); err != nil {
 		return EError(c, err)
 	}

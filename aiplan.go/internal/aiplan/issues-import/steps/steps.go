@@ -144,6 +144,7 @@ func DownloadAttachmentsStep(c *context.ImportContext) error {
 						v.DstAssetID,
 						contentType,
 						&metadata,
+						nil,
 					); err != nil {
 						c.Log.Error("Save attachment to minio", "try", i+1, urlLogAttr, "err", err)
 						resp.Body.Close()
@@ -292,7 +293,7 @@ func AvatarsStep(context *context.ImportContext) error {
 			FileSize:  int(resp.ContentLength),
 		}
 
-		if err := context.Storage.SaveReader(resp.Body, resp.ContentLength, fileAsset.Id, "image/png", nil); err != nil {
+		if err := context.Storage.SaveReader(resp.Body, resp.ContentLength, fileAsset.Id, "image/png", nil, nil); err != nil {
 			context.Log.Error("Save user avatar", "url", user.Avatar, "err", err)
 			continue
 		}

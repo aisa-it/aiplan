@@ -93,6 +93,10 @@ var (
 	ErrDeleteLastWorkspaceMember         = DefinedError{Code: 2035, StatusCode: http.StatusBadRequest, Err: "cannot delete the last workspace member", RuErr: "Невозможно удалить последнего участника пространства"}
 	ErrInvitesExceed                     = DefinedError{Code: 2036, StatusCode: http.StatusPaymentRequired, Err: "you invites limit exceed", RuErr: "Лимит на участников пространства исчерпан. Обновите ваш тарифный план для подключения дополнительный участников"}
 
+	//22** - workspaceBackup errors
+	ErrBackupNotFound  = DefinedError{Code: 2201, StatusCode: http.StatusNotFound, Err: "backup not found"}
+	ErrBackupForbidden = DefinedError{Code: 2202, StatusCode: http.StatusForbidden, Err: "backup forbidden"}
+
 	// 3*** - project errors
 	ErrProjectConflict                   = DefinedError{Code: 3001, StatusCode: http.StatusConflict, Err: "project already exists", RuErr: "Такой проект уже существует"}
 	ErrProjectAdminNotFound              = DefinedError{Code: 3002, StatusCode: http.StatusNotFound, Err: "project admin not found", RuErr: "Администратор проекта не найден"}

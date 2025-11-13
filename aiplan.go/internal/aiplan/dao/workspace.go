@@ -256,9 +256,9 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	// delete backups
-	if err := tx.Where("workspace_id = ?", workspace.ID).Delete(&WorkspaceBackup{}).Error; err != nil {
-		return err
-	}
+	//if err := tx.Where("workspace_id = ?", workspace.ID).Delete(&WorkspaceBackup{}).Error; err != nil {
+	//	return err
+	//}
 
 	// delete favorites
 	if err := tx.Where("workspace_id = ?", workspace.ID).Delete(&WorkspaceFavorites{}).Error; err != nil {
@@ -307,6 +307,10 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 		if err := tx.Delete(&sprint[i]).Error; err != nil {
 			return err
 		}
+	}
+
+	if err := tx.Model(FileAsset{}).Where("workspace_id = ?", workspace.ID).Update("workspace_id", nil).Error; err != nil {
+		return err
 	}
 
 	// remove from last workspaces
