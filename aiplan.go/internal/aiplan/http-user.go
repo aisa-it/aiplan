@@ -14,12 +14,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	uuid5 "github.com/gofrs/uuid/v5"
 	"log"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	uuid5 "github.com/gofrs/uuid/v5"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
@@ -883,6 +884,10 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
 		}
 		return EError(c, err)
+	}
+
+	if len(code) == 0 {
+		return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
 	}
 
 	err = s.emailService.UserChangeEmailNotify(user, newEmail, code)
