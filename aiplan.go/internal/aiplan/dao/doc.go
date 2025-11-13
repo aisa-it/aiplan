@@ -105,10 +105,13 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 	d.SetUrl()
 
 	if userId, ok := tx.Get("member_id"); ok {
-		if err := tx.Select("count(*) > 0").
-			Model(&DocFavorites{}).
-			Where("user_id = ?", userId).
-			Where("doc_id = ?", d.ID).
+		if err := tx.Model(&DocFavorites{}).
+			Select("EXISTS(?)",
+				tx.Model(&DocFavorites{}).
+					Select("1").
+					Where("user_id = ?", userId).
+					Where("doc_id = ?", d.ID),
+			).
 			Find(&d.IsFavorite).Error; err != nil {
 			return err
 		}
@@ -378,7 +381,7 @@ type DocComment struct {
 	// comment_json jsonb IS_NULL:NO
 	CommentType      int           `json:"comment_type" gorm:"default:1"`
 	IntegrationMeta  string        `json:"-" gorm:"index:integration_doc,priority:2"`
-	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id,omitempty"`
+	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id"`
 	OriginalComment  *DocComment   `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId" extensions:"x-nullable"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`

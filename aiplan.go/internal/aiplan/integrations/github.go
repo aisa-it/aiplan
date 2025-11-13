@@ -16,6 +16,7 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/gofrs/uuid"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
@@ -136,7 +137,14 @@ func (ghi *GithubIntegration) RegisterWebhook(g *echo.Group) {
 func (ghi *GithubIntegration) GithubPushEvent(event GithubPushEvent, workspace dao.Workspace) {
 	for _, commit := range event.Commits {
 		var exist bool
-		if err := ghi.db.Select("count(*) > 0").Model(&dao.IssueComment{}).Where("actor_id = ?", ghi.User.ID).Where("integration_meta = ?", commit.Id).Find(&exist).Error; err != nil {
+		if err := ghi.db.Model(&dao.IssueComment{}).
+			Select("EXISTS(?)",
+				ghi.db.Model(&dao.IssueComment{}).
+					Select("1").
+					Where("actor_id = ?", ghi.User.ID).
+					Where("integration_meta = ?", commit.Id),
+			).
+			Find(&exist).Error; err != nil {
 			logGithub.Error("Check commit comment exists")
 			continue
 		}
@@ -190,7 +198,7 @@ func (ghi *GithubIntegration) GithubPushEvent(event GithubPushEvent, workspace d
 			commit.Message,
 		)
 
-		err := ghi.bl.CreateIssueComment(issue, *ghi.User, msg, nil, false, commit.Id)
+		err := ghi.bl.CreateIssueComment(issue, *ghi.User, msg, uuid.Nil, false, commit.Id)
 		if err != nil {
 			logGithub.Error("Create issue comment from webhook", "err", err)
 			continue

@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"image"
 	"io"
 	"log/slog"
@@ -62,7 +61,6 @@ import (
 	issues_import "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/maintenance"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/sessions"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo-contrib/echoprometheus"
@@ -71,6 +69,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/pbkdf2"
 	"gorm.io/gorm"
+
+	mem "github.com/aisa-it/aiplan-mem/api"
 
 	_ "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/docs"
 	echoSwagger "github.com/swaggo/echo-swagger"
@@ -88,7 +88,7 @@ type Services struct {
 	tracker             *tracker.ActivitiesTracker
 	storage             filestorage.FileStorage
 	emailService        *notifications.EmailService
-	sessionsManager     *sessions.SessionsManager
+	memDB               *mem.AIPlanMemAPI
 	integrationsService *integrations.IntegrationsService
 	importService       *issues_import.ImportService
 	jitsiTokenIss       *jitsi_token.JitsiTokenIssuer
@@ -110,6 +110,17 @@ func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+// PodHeader middleware adds a X-Pod-Name header with pod name to response for balancer debug
+func PodHeader(next echo.HandlerFunc) echo.HandlerFunc {
+	podName := os.Getenv("POD_NAME")
+	return func(c echo.Context) error {
+		if podName != "" {
+			c.Response().Header().Set("X-Pod-Name", podName)
+		}
+		return next(c)
+	}
+}
+
 func Server(db *gorm.DB, c *config.Config, version string) {
 	cfg = c
 	appVersion = version
@@ -117,6 +128,11 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e := echo.New()
 	e.HideBanner = true
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		// Ignore brone pipe errors
+		if strings.Contains(err.Error(), "broken pipe") {
+			return
+		}
+
 		code := http.StatusInternalServerError
 		if he, ok := err.(*echo.HTTPError); ok {
 			code = he.Code
@@ -151,7 +167,16 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		slog.Error("Register query callback", "err", err)
 	}
 
-	sm := sessions.NewSessionsManager(cfg, types.RefreshTokenExpiresPeriod+time.Hour)
+	memDBConn := "session.db"
+	if cfg.ExternalMemDB != nil {
+		memDBConn = cfg.ExternalMemDB.String()
+	}
+	memDB, err := mem.NewClient(cfg.ExternalMemDB == nil, memDBConn)
+	if err != nil {
+		slog.Error("Connect to AIPlan MemDB", "err", err)
+		os.Exit(1)
+	}
+
 	es := notifications.NewEmailService(cfg, db)
 	tr := tracker.NewActivitiesTracker(db)
 	bl, err := business.NewBL(db, tr)
@@ -207,8 +232,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		storage:      storage,
 		emailService: es,
 		//telegramService:       ts,
-		sessionsManager: sm,
-		importService:   issues_import.NewImportService(db, storage, es),
+		memDB:         memDB,
+		importService: issues_import.NewImportService(db, storage, es),
 		//wsNotificationService: ws,
 		notificationsService: ns,
 		business:             bl,
@@ -250,6 +275,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// Global middlewares
 	e.Use(ServerHeader)
+	e.Use(PodHeader)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowCredentials: true,
 	}))
@@ -289,7 +315,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	e.Validator = NewRequestValidator()
 
-	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), sm, ns.Tg, es)
+	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es)
 
 	//services with auth
 	apiGroup := e.Group("/api/")
@@ -298,9 +324,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	authGroup := apiGroup.Group("auth/",
 		AuthMiddleware(AuthConfig{
-			Secret:         []byte(cfg.SecretKey),
-			DB:             db,
-			SessionManager: sm,
+			Secret: []byte(cfg.SecretKey),
+			DB:     db,
+			MemDB:  memDB,
 		}),
 	)
 
@@ -316,14 +342,14 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
 	authGroup.GET("queryLog/", ql.CountEndpoint)
-	s.AddFormServices(authGroup) // todo
+	s.AddFormServices(authGroup)
 	s.AddProjectServices(authGroup)
 	s.AddWorkspaceServices(authGroup)
 	s.AddUserServices(authGroup)
 	s.AddIssueServices(authGroup)
 	s.AddBackupServices(authGroup)
 	s.AddAdminServices(authGroup)
-	AddProfileServices(authGroup)
+	AddProfileServices(e.Group("/"))
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
 	s.AddDocServices(authGroup)
@@ -367,7 +393,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.GET("sf/:base/", s.shortSearchFilterURLRedirect)
 
 	// Get minio file
-	apiGroup.GET("file/:fileName/", s.redirectToMinioFile)
+	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy, remove after front migration to new endpoint
+	authGroup.GET("file/:fileName/", s.assetsHandler)
 
 	// Jitsi conf redirect
 	authGroup.GET("conf/:room/", s.redirectToJitsiConf)
@@ -375,14 +402,17 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	// Front handler
 	if cfg.FrontFilesPath != "" {
 		slog.Info("Start front routing")
-		e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
-			Root:  cfg.FrontFilesPath,
-			HTML5: true,
-			Skipper: func(c echo.Context) bool {
-				return strings.Contains(c.Path(), "tus") ||
-					strings.Contains(c.Path(), "swagger")
-			},
-		}))
+		e.Use(
+			NewSPACacheMiddleware(filepath.Join(cfg.FrontFilesPath, "index.html")),
+			middleware.StaticWithConfig(middleware.StaticConfig{
+				Root:  cfg.FrontFilesPath,
+				HTML5: true,
+				Skipper: func(c echo.Context) bool {
+					return strings.Contains(c.Path(), "tus") ||
+						strings.Contains(c.Path(), "swagger")
+				},
+			}),
+		)
 
 		uHttp, _ := url.Parse(fmt.Sprintf("http://%s", cfg.AWSEndpoint))
 		e.Group("/"+cfg.AWSBucketName,
@@ -773,22 +803,6 @@ func imageThumbnail(r io.Reader, contentType string) (io.Reader, int, string, er
 		err = jpeg.Encode(buf, thmb, &jpeg.Options{Quality: 80})
 	}
 	return buf, buf.Len(), dataType, err
-}
-
-func rapidoc(c echo.Context) error {
-	type PageData struct {
-		SwaggerURL string
-	}
-	data := PageData{
-		SwaggerURL: fmt.Sprint(cfg.WebURL) + "/api/swagger/docs/",
-	}
-
-	tmpl, err := template.ParseFiles("docs/index.html")
-	if err != nil {
-		return c.String(http.StatusInternalServerError, "Template parsing error")
-	}
-
-	return tmpl.Execute(c.Response().Writer, data)
 }
 
 func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[string]types.ActivityTable, error) {

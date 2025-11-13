@@ -41,16 +41,19 @@ func (ac *AssetsCleaner) CleanAssets() {
 		}
 
 		var exist bool
-		if err := ac.db.
-			Where("id = ?", fi.Name).
-			Select("count(*) > 0").
-			Model(&dao.FileAsset{}).
+		if err := ac.db.Model(&dao.FileAsset{}).
+			Select("EXISTS(?)",
+				ac.db.Model(&dao.FileAsset{}).
+					Select("1").
+					Where("id = ?", fi.Name),
+			).
 			Find(&exist).Error; err != nil && !strings.Contains(err.Error(), "invalid input syntax") {
 			return err
 		}
 		if exist {
 			return nil
 		}
+
 		if err := ac.si.Move(fi.Name, "unknown/"+fi.Name); err != nil {
 			return err
 		}

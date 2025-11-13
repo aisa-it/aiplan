@@ -23,9 +23,9 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
+	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/sessions"
 	"github.com/altcha-org/altcha-lib-go"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -36,7 +36,7 @@ import (
 type Authentication struct {
 	db              *gorm.DB
 	secret          []byte
-	sessionsManager *sessions.SessionsManager
+	memDB           *mem.AIPlanMemAPI
 	telegramService *notifications.TelegramService
 	emailService    *notifications.EmailService
 }
@@ -50,10 +50,10 @@ type AuthContext struct {
 }
 
 type AuthConfig struct {
-	Secret         []byte
-	DB             *gorm.DB
-	SessionManager *sessions.SessionsManager
-	Skipper        middleware.Skipper
+	Secret  []byte
+	DB      *gorm.DB
+	MemDB   *mem.AIPlanMemAPI
+	Skipper middleware.Skipper
 }
 
 func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
@@ -154,7 +154,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				return EError(c, err)
 			} else {
 				// Check if token not blacklisted
-				blacklisted, err := config.SessionManager.IsTokenBlacklisted(accessToken.JWT.Signature)
+				blacklisted, err := config.MemDB.IsTokenBlacklisted(accessToken.JWT.Signature)
 				if err != nil {
 					return EError(c, err)
 				}
@@ -228,8 +228,8 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 	}
 }
 
-func AddAuthenticationServices(db *gorm.DB, g *echo.Echo, secret []byte, sessionManager *sessions.SessionsManager, telegramService *notifications.TelegramService, emailService *notifications.EmailService) *Authentication {
-	ret := &Authentication{db, secret, sessionManager, telegramService, emailService}
+func AddAuthenticationServices(db *gorm.DB, g *echo.Echo, secret []byte, memDB *mem.AIPlanMemAPI, telegramService *notifications.TelegramService, emailService *notifications.EmailService) *Authentication {
+	ret := &Authentication{db, secret, memDB, telegramService, emailService}
 
 	g.POST("api/sign-in/", ret.emailLogin)
 
@@ -354,7 +354,7 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	}
 	// Check if token not blacklisted
 	{
-		blacklisted, err := a.SessionManager.IsTokenBlacklisted(token.JWT.Signature)
+		blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
 		if err != nil {
 			EError(c, err)
 			return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
@@ -366,7 +366,7 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	}
 
 	// Blacklist old refresh token
-	if err := a.SessionManager.BlacklistToken(token.JWT.Signature); err != nil {
+	if err := a.MemDB.BlacklistToken(token.JWT.Signature); err != nil {
 		return nil, nil, EError(c, err)
 	}
 

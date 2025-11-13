@@ -16,16 +16,16 @@ func AddProfileServices(g *echo.Group) {
 	}{
 		{"GET", "", IndexHandler()},
 		{"GET", "/", IndexHandler()},
-		{"GET", "/heap", HeapHandler()},
-		{"GET", "/goroutine", GoroutineHandler()},
-		{"GET", "/block", BlockHandler()},
-		{"GET", "/threadcreate", ThreadCreateHandler()},
-		{"GET", "/cmdline", CmdlineHandler()},
-		{"GET", "/profile", ProfileHandler()},
-		{"GET", "/symbol", SymbolHandler()},
-		{"POST", "/symbol", SymbolHandler()},
-		{"GET", "/trace", TraceHandler()},
-		{"GET", "/mutex", MutexHandler()},
+		{"GET", "/heap/", HeapHandler()},
+		{"GET", "/goroutine/", GoroutineHandler()},
+		{"GET", "/block/", BlockHandler()},
+		{"GET", "/threadcreate/", ThreadCreateHandler()},
+		{"GET", "/cmdline/", CmdlineHandler()},
+		{"GET", "/profile/", ProfileHandler()},
+		{"GET", "/symbol/", SymbolHandler()},
+		{"POST", "/symbol/", SymbolHandler()},
+		{"GET", "/trace/", TraceHandler()},
+		{"GET", "/mutex/", MutexHandler()},
 	}
 
 	for _, r := range routers {

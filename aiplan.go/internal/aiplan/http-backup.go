@@ -441,6 +441,7 @@ func CreateBackup(db *gorm.DB, storage filestorage.FileStorage, backup Workspace
 		fmt.Println(err)
 		return
 	}
+	defer backupReader.Close()
 
 	backupAsset.FileSize = int(info.Size)
 

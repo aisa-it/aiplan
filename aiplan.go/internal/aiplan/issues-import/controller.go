@@ -229,10 +229,13 @@ func (is *ImportService) GetUserImportStatus(id string, actorId string) (ImportS
 
 func (is *ImportService) CanStartImport(actorId string) bool {
 	var working bool
-	if err := is.memDB.Select("count(*) > 0").
-		Where("actor_id = ?", actorId).
-		Where("finished = 0").
-		Model(&Import{}).
+	if err := is.memDB.Model(&Import{}).
+		Select("EXISTS(?)",
+			is.memDB.Model(&Import{}).
+				Select("1").
+				Where("actor_id = ?", actorId).
+				Where("finished = 0"),
+		).
 		Find(&working).Error; err != nil {
 		slog.Error("Get user working imports", "err", err)
 		return false

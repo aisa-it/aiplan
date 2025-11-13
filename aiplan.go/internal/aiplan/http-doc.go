@@ -1045,6 +1045,11 @@ func (s *Services) createDocComment(c echo.Context) error {
 		return EError(c, err)
 	}
 	form, _ := c.MultipartForm()
+
+	if comment.CommentHtml.StripTags() == "" {
+		return EErrorDefined(c, apierrors.ErrDocCommentEmpty)
+	}
+
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where("id = ?", comment.ReplyToCommentId).First(&comment.OriginalComment).Error; err != nil {
@@ -1175,6 +1180,10 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	comment, fields, err := BindDocComment(c, &commentOld)
 	if err != nil {
 		return EError(c, err)
+	}
+
+	if comment.CommentHtml.StripTags() == "" {
+		return EErrorDefined(c, apierrors.ErrDocCommentEmpty)
 	}
 
 	form, _ := c.MultipartForm()

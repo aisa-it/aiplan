@@ -1,14 +1,12 @@
 module github.com/aisa-it/aiplan/aiplan.go
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.25.1
 
 require (
 	ariga.io/atlas-go-sdk v0.7.2
 	github.com/altcha-org/altcha-lib-go v0.2.2
 	github.com/andygrunwald/go-jira v1.16.0
-	github.com/boltdb/bolt v1.3.1
+	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-playground/validator v9.31.0+incompatible
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
@@ -29,10 +27,12 @@ require (
 
 require (
 	codeberg.org/go-pdf/fpdf v0.11.1
+	github.com/aisa-it/aiplan-mem v1.0.3
 	github.com/aws/aws-sdk-go-v2 v1.36.6
 	github.com/aws/aws-sdk-go-v2/config v1.29.18
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.84.1
 	github.com/coder/websocket v1.8.13
+	github.com/gofrs/uuid/v5 v5.3.2
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/nao1215/markdown v0.8.0
@@ -140,7 +140,7 @@ require (
 	github.com/zclconf/go-cty v1.16.3 // indirect
 	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/sync v0.16.0
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect

@@ -185,9 +185,9 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 						//}
 
 						if act.Issue != nil {
-							var identifier *string
-							if act.Field != nil && *act.Field == "comment" {
-								identifier = act.NewIdentifier
+							var identifier uuid.UUID
+							if act.Field != nil && *act.Field == "comment" && act.NewIdentifier != nil {
+								identifier = uuid.FromStringOrNil(*act.NewIdentifier)
 							}
 							err := bl.CreateIssueComment(*act.Issue, user, update.Message.Text, identifier, true)
 							if err != nil {

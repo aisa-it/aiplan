@@ -813,7 +813,7 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 
 	//Blacklist token
 	if accessToken.JWT != nil {
-		if err := s.sessionsManager.BlacklistToken(accessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(accessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 	} else {
@@ -943,12 +943,12 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 			s.notificationsService.Ws.CloseUserSessions(user.ID)
 
 			if !c.(AuthContext).TokenAuth {
-				if err := s.sessionsManager.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
-					return EError(c, err)
+				if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+					return err
 				}
 
-				if err := s.sessionsManager.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
-					return EError(c, err)
+				if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+					return err
 				}
 
 				clearAuthCookies(c)
@@ -1065,11 +1065,11 @@ func (s *Services) signOut(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(refreshToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(refreshToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
@@ -1111,11 +1111,11 @@ func (s *Services) signOutEverywhere(c echo.Context) error {
 			return c.NoContent(http.StatusOK)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
-		if err := s.sessionsManager.BlacklistToken(refreshToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(refreshToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
@@ -1335,7 +1335,13 @@ func (s *Services) signUp(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Select("count(*) > 0").Model(&dao.User{}).Where("email = ?", req.Email).Find(&exist).Error; err != nil {
+	if err := s.db.Model(&dao.User{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.User{}).
+				Select("1").
+				Where("email = ?", req.Email),
+		).
+		Find(&exist).Error; err != nil {
 		return EError(c, err)
 	}
 	if exist {

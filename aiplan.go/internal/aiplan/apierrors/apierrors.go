@@ -160,6 +160,7 @@ var (
 	ErrDocChildRoleTooLow    = DefinedError{Code: 3411, StatusCode: http.StatusBadRequest, Err: "child doc role must not be lower than parent's", RuErr: "Роль дочернего документа не может быть ниже родительского"}
 	ErrDocParentRoleTooLow   = DefinedError{Code: 3412, StatusCode: http.StatusBadRequest, Err: "parent doc role must not be lower than any child", RuErr: "Роль родительского документа не может быть ниже дочернего"}
 	ErrDocMoveIntoOwnChild   = DefinedError{Code: 3413, StatusCode: http.StatusBadRequest, Err: "cannot move document into its own child", RuErr: "Невозможно переместить документ в его же дочерний"}
+	ErrDocCommentEmpty       = DefinedError{Code: 3414, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
 
 	// 36** - sprint errors
 	ErrSprintNotFound        = DefinedError{Code: 3601, StatusCode: http.StatusNotFound, Err: "sprint not found", RuErr: "Спринт не найден"}
@@ -193,6 +194,7 @@ var (
 	ErrIssueCustomScriptFail           = DefinedError{Code: 4022, StatusCode: http.StatusForbidden, Err: "prohibition of committing an action", RuErr: "Запрет на совершение действия"}
 	ErrUnsupportedGroup                = DefinedError{Code: 4023, StatusCode: http.StatusBadRequest, Err: "unsupported grouping param", RuErr: "Данный параметр не поддерживается для группировки"}
 	ErrIssueTargetDateExp              = DefinedError{Code: 4024, StatusCode: http.StatusBadRequest, Err: "the date has already passed", RuErr: "Заданная дата уже прошла"}
+	ErrIssueCommentEmpty               = DefinedError{Code: 4025, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email"}

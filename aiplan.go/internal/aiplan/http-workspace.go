@@ -59,7 +59,13 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
 			var exist bool
-			if err := s.db.Model(&dao.Workspace{}).Select("count(*) > 0").Where("encode(hash, 'hex') = ?", etag).Find(&exist).Error; err != nil {
+			if err := s.db.Model(&dao.Workspace{}).
+				Select("EXISTS(?)",
+					s.db.Model(&dao.Workspace{}).
+						Select("1").
+						Where("encode(hash, 'hex') = ?", etag),
+				).
+				Find(&exist).Error; err != nil {
 				return EError(c, err)
 			}
 
@@ -1293,7 +1299,7 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 		Select("*,(?) as total_members,(?) as total_projects,(?) as is_favorite",
 			s.db.Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
 			s.db.Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
-			s.db.Model(&dao.WorkspaceFavorites{}).Select("count(*) > 0").Where("workspace_favorites.workspace_id = workspaces.id").Where("user_id = ?", user.ID),
+			s.db.Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
 		).
 		Preload("Owner").
 		Set("userID", user.ID).
