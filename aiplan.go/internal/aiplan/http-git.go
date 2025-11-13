@@ -6,12 +6,14 @@
 package aiplan
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,84 @@ import (
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
+
+// ========================================
+// Git Browse API DTO Structures
+// ========================================
+
+// TreeEntryDTO представляет файл или директорию в Git tree
+type TreeEntryDTO struct {
+	Name string `json:"name"`         // Имя файла/директории
+	Type string `json:"type"`         // "file" или "dir"
+	Mode string `json:"mode"`         // Режим файла (100644, 040000, etc.)
+	Size int64  `json:"size,omitempty"` // Размер файла (только для файлов)
+	SHA  string `json:"sha"`          // SHA объекта
+}
+
+// TreeResponseDTO представляет ответ на запрос дерева репозитория
+type TreeResponseDTO struct {
+	Ref     string         `json:"ref"`     // Ветка/тег/коммит
+	Path    string         `json:"path"`    // Путь в репозитории
+	Entries []TreeEntryDTO `json:"entries"` // Список файлов и директорий
+}
+
+// BlobResponseDTO представляет ответ на запрос содержимого файла
+type BlobResponseDTO struct {
+	Path     string `json:"path"`     // Путь к файлу
+	Ref      string `json:"ref"`      // Ветка/тег/коммит
+	Size     int64  `json:"size"`     // Размер файла
+	SHA      string `json:"sha"`      // SHA объекта
+	Content  string `json:"content"`  // Содержимое файла (base64 encoded)
+	Encoding string `json:"encoding"` // "base64"
+	IsBinary bool   `json:"is_binary"` // Является ли файл бинарным
+}
+
+// PersonDTO представляет информацию об авторе/коммиттере
+type PersonDTO struct {
+	Name  string    `json:"name"`  // Имя
+	Email string    `json:"email"` // Email
+	Date  time.Time `json:"date"`  // Дата
+}
+
+// CommitDTO представляет информацию о коммите
+type CommitDTO struct {
+	SHA        string     `json:"sha"`         // SHA коммита
+	Author     PersonDTO  `json:"author"`      // Автор коммита
+	Committer  PersonDTO  `json:"committer"`   // Коммиттер
+	Message    string     `json:"message"`     // Сообщение коммита
+	ParentSHAs []string   `json:"parent_shas"` // SHA родительских коммитов
+}
+
+// CommitsResponseDTO представляет ответ на запрос истории коммитов
+type CommitsResponseDTO struct {
+	Commits []CommitDTO `json:"commits"` // Список коммитов
+	Total   int         `json:"total"`   // Общее количество коммитов
+	Limit   int         `json:"limit"`   // Лимит на страницу
+	Offset  int         `json:"offset"`  // Смещение
+}
+
+// BranchDTO представляет информацию о ветке
+type BranchDTO struct {
+	Name      string `json:"name"`       // Имя ветки
+	SHA       string `json:"sha"`        // SHA последнего коммита
+	IsDefault bool   `json:"is_default"` // Является ли веткой по умолчанию
+}
+
+// BranchesResponseDTO представляет ответ на запрос списка веток
+type BranchesResponseDTO struct {
+	Branches []BranchDTO `json:"branches"` // Список веток
+}
+
+// RepoInfoDTO представляет информацию о репозитории
+type RepoInfoDTO struct {
+	Name          string     `json:"name"`            // Имя репозитория
+	Workspace     string     `json:"workspace"`       // Slug workspace
+	DefaultBranch string     `json:"default_branch"`  // Ветка по умолчанию
+	BranchesCount int        `json:"branches_count"`  // Количество веток
+	CommitsCount  int        `json:"commits_count"`   // Количество коммитов
+	Size          int64      `json:"size"`            // Размер репозитория (байты)
+	LastCommit    *CommitDTO `json:"last_commit,omitempty"` // Последний коммит
+}
 
 // @Summary Конфигурация: получение Git настроек
 // @Description Возвращает информацию о состоянии Git конфигурации системы
@@ -260,21 +340,16 @@ func validateBranchName(branch string) bool {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [get]
 func (s *Services) listGitRepositories(c echo.Context) error {
-	// 1. Проверка конфигурации Git
-	if !cfg.GitEnabled {
-		return EErrorDefined(c, apierrors.ErrGitDisabled)
-	}
-
-	// 2. Получение параметра workspace из URL
+	// 1. Получение параметра workspace из URL
 	workspaceSlug := c.Param("workspaceSlug")
 	if workspaceSlug == "" {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	// 3. Получение пользователя
+	// 2. Получение пользователя
 	user := c.(AuthContext).User
 
-	// 4. Проверка существования workspace в БД
+	// 3. Проверка существования workspace в БД
 	var workspace dao.Workspace
 	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -284,7 +359,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// 5. Проверка прав доступа к workspace (любая роль - достаточно быть участником)
+	// 4. Проверка прав доступа к workspace (любая роль - достаточно быть участником)
 	var member dao.WorkspaceMember
 	err := s.db.Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
 	if err != nil {
@@ -295,7 +370,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// 6. Получение списка репозиториев из файловой системы
+	// 5. Получение списка репозиториев из файловой системы
 	repos, err := ListGitRepositories(workspace.Slug, cfg.GitRepositoriesPath)
 	if err != nil {
 		slog.Error("Failed to list git repositories",
@@ -305,7 +380,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// 7. Преобразование в DTO
+	// 6. Преобразование в DTO
 	reposList := make([]dto.GitRepositoryLight, 0, len(repos))
 	for _, repo := range repos {
 		// Генерация clone URL
@@ -330,7 +405,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 		})
 	}
 
-	// 8. Формирование ответа
+	// 7. Формирование ответа
 	response := dto.ListGitRepositoriesResponse{
 		Repositories: reposList,
 		Total:        len(reposList),
@@ -361,11 +436,6 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [delete]
 func (s *Services) deleteGitRepository(c echo.Context) error {
 	user := c.(AuthContext).User
-
-	// Проверяем, что Git функциональность включена
-	if !cfg.GitEnabled {
-		return EErrorDefined(c, apierrors.ErrGitDisabled)
-	}
 
 	// Проверяем наличие пути к репозиториям
 	if cfg.GitRepositoriesPath == "" {
@@ -502,11 +572,6 @@ func (s *Services) getGitSSHConfig(c echo.Context) error {
 func (s *Services) addGitSSHKey(c echo.Context) error {
 	user := c.(AuthContext).User
 
-	// Проверяем, что Git функциональность включена
-	if !cfg.GitEnabled {
-		return EErrorDefined(c, apierrors.ErrGitDisabled)
-	}
-
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
 		return EErrorDefined(c, apierrors.ErrSSHDisabled)
@@ -580,11 +645,6 @@ func (s *Services) addGitSSHKey(c echo.Context) error {
 func (s *Services) listGitSSHKeys(c echo.Context) error {
 	user := c.(AuthContext).User
 
-	// Проверяем, что Git функциональность включена
-	if !cfg.GitEnabled {
-		return EErrorDefined(c, apierrors.ErrGitDisabled)
-	}
-
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
 		return EErrorDefined(c, apierrors.ErrSSHDisabled)
@@ -643,11 +703,6 @@ func (s *Services) listGitSSHKeys(c echo.Context) error {
 func (s *Services) deleteGitSSHKey(c echo.Context) error {
 	user := c.(AuthContext).User
 
-	// Проверяем, что Git функциональность включена
-	if !cfg.GitEnabled {
-		return EErrorDefined(c, apierrors.ErrGitDisabled)
-	}
-
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
 		return EErrorDefined(c, apierrors.ErrSSHDisabled)
@@ -684,17 +739,840 @@ func (s *Services) deleteGitSSHKey(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// ========================================
+// Git Browse API Helper Functions
+// ========================================
+
+// executeGitCommand выполняет Git команду в репозитории
+func executeGitCommand(repoPath string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git command failed: %w, output: %s", err, string(output))
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// getDefaultBranch возвращает ветку по умолчанию для репозитория
+func getDefaultBranch(repoPath string) (string, error) {
+	// Пытаемся получить HEAD reference
+	output, err := executeGitCommand(repoPath, "symbolic-ref", "HEAD")
+	if err != nil {
+		// Fallback: проверяем наличие веток main/master
+		branches, _ := executeGitCommand(repoPath, "branch", "--list")
+		if strings.Contains(branches, "main") {
+			return "main", nil
+		}
+		if strings.Contains(branches, "master") {
+			return "master", nil
+		}
+		return "", fmt.Errorf("no default branch found")
+	}
+
+	// Парсим refs/heads/main -> main
+	ref := strings.TrimSpace(output)
+	parts := strings.Split(ref, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1], nil
+	}
+	return "main", nil
+}
+
+// parseLsTree парсит вывод команды git ls-tree
+func parseLsTree(output string) ([]TreeEntryDTO, error) {
+	if output == "" {
+		return []TreeEntryDTO{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	entries := make([]TreeEntryDTO, 0, len(lines))
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		// Формат: <mode> SP <type> SP <object> TAB <file>
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		metaParts := strings.Fields(parts[0])
+		if len(metaParts) != 3 {
+			continue
+		}
+
+		mode := metaParts[0]
+		objType := metaParts[1]
+		sha := metaParts[2]
+		name := parts[1]
+
+		entryType := "file"
+		if objType == "tree" {
+			entryType = "dir"
+		}
+
+		entries = append(entries, TreeEntryDTO{
+			Name: name,
+			Type: entryType,
+			Mode: mode,
+			SHA:  sha,
+		})
+	}
+
+	return entries, nil
+}
+
+// parseCommitLog парсит вывод команды git log --pretty=format:...
+func parseCommitLog(output string) ([]CommitDTO, error) {
+	if output == "" {
+		return []CommitDTO{}, nil
+	}
+
+	commits := []CommitDTO{}
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		// Формат: sha|author_name|author_email|author_date|committer_name|committer_email|committer_date|parents|message
+		parts := strings.SplitN(line, "|", 9)
+		if len(parts) < 9 {
+			continue
+		}
+
+		sha := parts[0]
+		authorName := parts[1]
+		authorEmail := parts[2]
+		authorDate := parts[3]
+		committerName := parts[4]
+		committerEmail := parts[5]
+		committerDate := parts[6]
+		parents := parts[7]
+		message := parts[8]
+
+		// Парсим даты
+		authorTime, _ := time.Parse(time.RFC3339, authorDate)
+		committerTime, _ := time.Parse(time.RFC3339, committerDate)
+
+		// Парсим родительские коммиты
+		parentSHAs := []string{}
+		if parents != "" {
+			parentSHAs = strings.Split(parents, " ")
+		}
+
+		commit := CommitDTO{
+			SHA: sha,
+			Author: PersonDTO{
+				Name:  authorName,
+				Email: authorEmail,
+				Date:  authorTime,
+			},
+			Committer: PersonDTO{
+				Name:  committerName,
+				Email: committerEmail,
+				Date:  committerTime,
+			},
+			Message:    message,
+			ParentSHAs: parentSHAs,
+		}
+
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
+}
+
+// isBinaryFile проверяет является ли файл бинарным
+func isBinaryFile(content []byte) bool {
+	// Простая эвристика: если в первых 8KB есть нулевой байт - это бинарный файл
+	sampleSize := 8192
+	if len(content) < sampleSize {
+		sampleSize = len(content)
+	}
+
+	for i := 0; i < sampleSize; i++ {
+		if content[i] == 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// checkRepositoryAccess проверяет права доступа пользователя к репозиторию
+func (s *Services) checkRepositoryAccess(user *dao.User, workspaceSlug, repoName string) (bool, error) {
+	// Superuser имеет доступ ко всему
+	if user.IsSuperuser {
+		return true, nil
+	}
+
+	// Загружаем метаданные репозитория
+	repoPath := GetRepositoryPath(workspaceSlug, repoName, cfg.GitRepositoriesPath)
+	repo, err := LoadGitRepository(repoPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to load repository metadata: %w", err)
+	}
+
+	// Публичный репозиторий - все могут читать
+	if !repo.Private {
+		return true, nil
+	}
+
+	// Приватный репозиторий - проверяем membership в workspace
+	var workspace dao.Workspace
+	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+		return false, fmt.Errorf("workspace not found: %w", err)
+	}
+
+	var membership dao.WorkspaceMember
+	err = s.db.Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).First(&membership).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil // Не является членом workspace
+		}
+		return false, fmt.Errorf("failed to check workspace membership: %w", err)
+	}
+
+	return true, nil
+}
+
+// ========================================
+// Git Browse API Endpoints
+// ========================================
+
+// @Summary Browse: просмотр дерева файлов
+// @Description Возвращает список файлов и директорий в указанном пути репозитория
+// @Tags GIT-BROWSE
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug workspace"
+// @Param repoName path string true "Имя репозитория"
+// @Param ref query string false "Ветка/тег/коммит (по умолчанию: main/master)"
+// @Param path query string false "Путь в репозитории (по умолчанию: корень)"
+// @Success 200 {object} TreeResponseDTO "Дерево файлов"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Репозиторий или путь не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/tree [get]
+func (s *Services) getRepositoryTree(c echo.Context) error {
+	user := c.(AuthContext).User
+	workspaceSlug := c.Param("workspaceSlug")
+	repoName := c.Param("repoName")
+	ref := c.QueryParam("ref")
+	path := c.QueryParam("path")
+
+	// Валидация параметров
+	if workspaceSlug == "" || repoName == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Проверка прав доступа
+	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
+	if err != nil {
+		slog.Error("Failed to check repository access", "err", err)
+		return EError(c, err)
+	}
+	if !hasAccess {
+		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+	}
+
+	// Получаем путь к репозиторию
+	repoPath := GetRepositoryPath(workspaceSlug, repoName, cfg.GitRepositoriesPath)
+
+	// Проверяем существование репозитория
+	if !GitRepositoryExists(workspaceSlug, repoName, cfg.GitRepositoriesPath) {
+		return EErrorDefined(c, apierrors.ErrGitRepositoryNotFound)
+	}
+
+	// Получаем ветку по умолчанию, если ref не указан
+	if ref == "" {
+		defaultBranch, err := getDefaultBranch(repoPath)
+		if err != nil {
+			slog.Warn("Failed to get default branch, using 'main'", "err", err)
+			ref = "main"
+		} else {
+			ref = defaultBranch
+		}
+	}
+
+	// Нормализуем path
+	if path == "" || path == "/" {
+		path = ""
+	} else {
+		// Убираем начальный слэш
+		path = strings.TrimPrefix(path, "/")
+	}
+
+	// Выполняем git ls-tree
+	gitPath := ref
+	if path != "" {
+		gitPath = ref + ":" + path
+	}
+
+	output, err := executeGitCommand(repoPath, "ls-tree", gitPath)
+	if err != nil {
+		slog.Error("Failed to execute git ls-tree",
+			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+			"ref", ref,
+			"path", path,
+			"err", err)
+		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Path not found"))
+	}
+
+	// Парсим результат
+	entries, err := parseLsTree(output)
+	if err != nil {
+		slog.Error("Failed to parse ls-tree output", "err", err)
+		return EError(c, err)
+	}
+
+	// Для файлов получаем размер
+	for i := range entries {
+		if entries[i].Type == "file" {
+			sizeOutput, err := executeGitCommand(repoPath, "cat-file", "-s", entries[i].SHA)
+			if err == nil {
+				size, _ := strconv.ParseInt(sizeOutput, 10, 64)
+				entries[i].Size = size
+			}
+		}
+	}
+
+	displayPath := "/" + path
+	if path == "" {
+		displayPath = "/"
+	}
+
+	response := TreeResponseDTO{
+		Ref:     ref,
+		Path:    displayPath,
+		Entries: entries,
+	}
+
+	slog.Info("Git tree browsed",
+		"workspace", workspaceSlug,
+		"repo", repoName,
+		"ref", ref,
+		"path", path,
+		"entries_count", len(entries),
+		"user", user.Email)
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// @Summary Browse: получение содержимого файла
+// @Description Возвращает содержимое файла из репозитория (base64 encoded)
+// @Tags GIT-BROWSE
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug workspace"
+// @Param repoName path string true "Имя репозитория"
+// @Param ref query string false "Ветка/тег/коммит (по умолчанию: main/master)"
+// @Param path query string true "Путь к файлу"
+// @Success 200 {object} BlobResponseDTO "Содержимое файла"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Файл не найден"
+// @Failure 413 {object} apierrors.DefinedError "Файл слишком большой"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/blob [get]
+func (s *Services) getRepositoryBlob(c echo.Context) error {
+	user := c.(AuthContext).User
+	workspaceSlug := c.Param("workspaceSlug")
+	repoName := c.Param("repoName")
+	ref := c.QueryParam("ref")
+	path := c.QueryParam("path")
+
+	// Валидация параметров
+	if workspaceSlug == "" || repoName == "" || path == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Проверка прав доступа
+	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
+	if err != nil {
+		slog.Error("Failed to check repository access", "err", err)
+		return EError(c, err)
+	}
+	if !hasAccess {
+		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+	}
+
+	// Получаем путь к репозиторию
+	repoPath := GetRepositoryPath(workspaceSlug, repoName, cfg.GitRepositoriesPath)
+
+	// Проверяем существование репозитория
+	if !GitRepositoryExists(workspaceSlug, repoName, cfg.GitRepositoriesPath) {
+		return EErrorDefined(c, apierrors.ErrGitRepositoryNotFound)
+	}
+
+	// Получаем ветку по умолчанию, если ref не указан
+	if ref == "" {
+		defaultBranch, err := getDefaultBranch(repoPath)
+		if err != nil {
+			slog.Warn("Failed to get default branch, using 'main'", "err", err)
+			ref = "main"
+		} else {
+			ref = defaultBranch
+		}
+	}
+
+	// Нормализуем path
+	path = strings.TrimPrefix(path, "/")
+
+	// Получаем размер файла
+	sizeOutput, err := executeGitCommand(repoPath, "cat-file", "-s", ref+":"+path)
+	if err != nil {
+		slog.Error("Failed to get file size",
+			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+			"ref", ref,
+			"path", path,
+			"err", err)
+		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("File not found"))
+	}
+
+	size, _ := strconv.ParseInt(sizeOutput, 10, 64)
+
+	// Ограничение размера файла (10 MB)
+	const maxFileSize = 10 * 1024 * 1024
+	if size > maxFileSize {
+		return EErrorDefined(c, apierrors.ErrGeneric.WithFormattedMessage("File too large (max 10MB)"))
+	}
+
+	// Получаем SHA файла
+	shaOutput, err := executeGitCommand(repoPath, "rev-parse", ref+":"+path)
+	if err != nil {
+		slog.Error("Failed to get file SHA", "err", err)
+		return EError(c, err)
+	}
+	sha := strings.TrimSpace(shaOutput)
+
+	// Получаем содержимое файла
+	contentOutput, err := executeGitCommand(repoPath, "show", ref+":"+path)
+	if err != nil {
+		slog.Error("Failed to get file content", "err", err)
+		return EError(c, err)
+	}
+
+	contentBytes := []byte(contentOutput)
+
+	// Проверяем, является ли файл бинарным
+	isBinary := isBinaryFile(contentBytes)
+
+	// Кодируем содержимое в base64
+	content := base64.StdEncoding.EncodeToString(contentBytes)
+
+	response := BlobResponseDTO{
+		Path:     "/" + path,
+		Ref:      ref,
+		Size:     size,
+		SHA:      sha,
+		Content:  content,
+		Encoding: "base64",
+		IsBinary: isBinary,
+	}
+
+	slog.Info("Git file blob retrieved",
+		"workspace", workspaceSlug,
+		"repo", repoName,
+		"ref", ref,
+		"path", path,
+		"size", size,
+		"is_binary", isBinary,
+		"user", user.Email)
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// @Summary Browse: история коммитов
+// @Description Возвращает список коммитов в указанной ветке
+// @Tags GIT-BROWSE
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug workspace"
+// @Param repoName path string true "Имя репозитория"
+// @Param ref query string false "Ветка/тег (по умолчанию: main/master)"
+// @Param limit query int false "Лимит коммитов (по умолчанию: 50, макс: 100)"
+// @Param offset query int false "Смещение (по умолчанию: 0)"
+// @Success 200 {object} CommitsResponseDTO "История коммитов"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Репозиторий не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/commits [get]
+func (s *Services) getRepositoryCommits(c echo.Context) error {
+	user := c.(AuthContext).User
+	workspaceSlug := c.Param("workspaceSlug")
+	repoName := c.Param("repoName")
+	ref := c.QueryParam("ref")
+	limitStr := c.QueryParam("limit")
+	offsetStr := c.QueryParam("offset")
+
+	// Валидация параметров
+	if workspaceSlug == "" || repoName == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Парсим limit и offset
+	limit := 50
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+			if limit > 100 {
+				limit = 100
+			}
+		}
+	}
+
+	offset := 0
+	if offsetStr != "" {
+		parsedOffset, err := strconv.Atoi(offsetStr)
+		if err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
+	}
+
+	// Проверка прав доступа
+	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
+	if err != nil {
+		slog.Error("Failed to check repository access", "err", err)
+		return EError(c, err)
+	}
+	if !hasAccess {
+		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+	}
+
+	// Получаем путь к репозиторию
+	repoPath := GetRepositoryPath(workspaceSlug, repoName, cfg.GitRepositoriesPath)
+
+	// Проверяем существование репозитория
+	if !GitRepositoryExists(workspaceSlug, repoName, cfg.GitRepositoriesPath) {
+		return EErrorDefined(c, apierrors.ErrGitRepositoryNotFound)
+	}
+
+	// Получаем ветку по умолчанию, если ref не указан
+	if ref == "" {
+		defaultBranch, err := getDefaultBranch(repoPath)
+		if err != nil {
+			slog.Warn("Failed to get default branch, using 'main'", "err", err)
+			ref = "main"
+		} else {
+			ref = defaultBranch
+		}
+	}
+
+	// Получаем общее количество коммитов
+	countOutput, err := executeGitCommand(repoPath, "rev-list", "--count", ref)
+	if err != nil {
+		slog.Error("Failed to count commits",
+			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+			"ref", ref,
+			"err", err)
+		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Branch not found"))
+	}
+	total, _ := strconv.Atoi(strings.TrimSpace(countOutput))
+
+	// Формат вывода для git log
+	format := "%H|%an|%ae|%aI|%cn|%ce|%cI|%P|%s"
+
+	// Выполняем git log с pagination
+	args := []string{"log", "--pretty=format:" + format, fmt.Sprintf("--skip=%d", offset), fmt.Sprintf("--max-count=%d", limit), ref}
+	output, err := executeGitCommand(repoPath, args...)
+	if err != nil {
+		slog.Error("Failed to execute git log", "err", err)
+		return EError(c, err)
+	}
+
+	// Парсим коммиты
+	commits, err := parseCommitLog(output)
+	if err != nil {
+		slog.Error("Failed to parse commit log", "err", err)
+		return EError(c, err)
+	}
+
+	response := CommitsResponseDTO{
+		Commits: commits,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	}
+
+	slog.Info("Git commits retrieved",
+		"workspace", workspaceSlug,
+		"repo", repoName,
+		"ref", ref,
+		"total", total,
+		"limit", limit,
+		"offset", offset,
+		"user", user.Email)
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// @Summary Browse: список веток
+// @Description Возвращает список всех веток в репозитории
+// @Tags GIT-BROWSE
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug workspace"
+// @Param repoName path string true "Имя репозитория"
+// @Success 200 {object} BranchesResponseDTO "Список веток"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Репозиторий не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/branches [get]
+func (s *Services) getRepositoryBranches(c echo.Context) error {
+	user := c.(AuthContext).User
+	workspaceSlug := c.Param("workspaceSlug")
+	repoName := c.Param("repoName")
+
+	// Валидация параметров
+	if workspaceSlug == "" || repoName == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Проверка прав доступа
+	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
+	if err != nil {
+		slog.Error("Failed to check repository access", "err", err)
+		return EError(c, err)
+	}
+	if !hasAccess {
+		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+	}
+
+	// Получаем путь к репозиторию
+	repoPath := GetRepositoryPath(workspaceSlug, repoName, cfg.GitRepositoriesPath)
+
+	// Проверяем существование репозитория
+	if !GitRepositoryExists(workspaceSlug, repoName, cfg.GitRepositoriesPath) {
+		return EErrorDefined(c, apierrors.ErrGitRepositoryNotFound)
+	}
+
+	// Получаем ветку по умолчанию
+	defaultBranch, err := getDefaultBranch(repoPath)
+	if err != nil {
+		slog.Warn("Failed to get default branch", "err", err)
+		defaultBranch = "main"
+	}
+
+	// Получаем список веток с их SHA
+	// Формат: <sha> refs/heads/<branch>
+	output, err := executeGitCommand(repoPath, "show-ref", "--heads")
+	if err != nil {
+		slog.Warn("Failed to execute git show-ref",
+			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+			"err", err)
+		// Репозиторий может быть пустым (нет веток)
+		return c.JSON(http.StatusOK, BranchesResponseDTO{
+			Branches: []BranchDTO{},
+		})
+	}
+
+	// Парсим вывод
+	branches := []BranchDTO{}
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			continue
+		}
+
+		sha := parts[0]
+		ref := parts[1] // refs/heads/main
+
+		// Извлекаем имя ветки
+		branchName := strings.TrimPrefix(ref, "refs/heads/")
+
+		branch := BranchDTO{
+			Name:      branchName,
+			SHA:       sha,
+			IsDefault: (branchName == defaultBranch),
+		}
+
+		branches = append(branches, branch)
+	}
+
+	response := BranchesResponseDTO{
+		Branches: branches,
+	}
+
+	slog.Info("Git branches retrieved",
+		"workspace", workspaceSlug,
+		"repo", repoName,
+		"branches_count", len(branches),
+		"user", user.Email)
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// @Summary Browse: информация о репозитории
+// @Description Возвращает метаданные репозитория (размер, количество веток, последний коммит)
+// @Tags GIT-BROWSE
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug workspace"
+// @Param repoName path string true "Имя репозитория"
+// @Success 200 {object} RepoInfoDTO "Информация о репозитории"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Репозиторий не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/info [get]
+func (s *Services) getRepositoryInfo(c echo.Context) error {
+	user := c.(AuthContext).User
+	workspaceSlug := c.Param("workspaceSlug")
+	repoName := c.Param("repoName")
+
+	// Валидация параметров
+	if workspaceSlug == "" || repoName == "" {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	// Проверка прав доступа
+	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
+	if err != nil {
+		slog.Error("Failed to check repository access", "err", err)
+		return EError(c, err)
+	}
+	if !hasAccess {
+		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
+	}
+
+	// Получаем путь к репозиторию
+	repoPath := GetRepositoryPath(workspaceSlug, repoName, cfg.GitRepositoriesPath)
+
+	// Проверяем существование репозитория
+	if !GitRepositoryExists(workspaceSlug, repoName, cfg.GitRepositoriesPath) {
+		return EErrorDefined(c, apierrors.ErrGitRepositoryNotFound)
+	}
+
+	// Получаем ветку по умолчанию
+	defaultBranch, err := getDefaultBranch(repoPath)
+	if err != nil {
+		slog.Warn("Failed to get default branch", "err", err)
+		defaultBranch = "main"
+	}
+
+	// Получаем количество веток
+	branchesOutput, err := executeGitCommand(repoPath, "branch", "-a")
+	branchesCount := 0
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(branchesOutput), "\n")
+		branchesCount = len(lines)
+	}
+
+	// Получаем количество коммитов
+	commitsCount := 0
+	countOutput, err := executeGitCommand(repoPath, "rev-list", "--count", "--all")
+	if err == nil {
+		commitsCount, _ = strconv.Atoi(strings.TrimSpace(countOutput))
+	}
+
+	// Получаем размер репозитория (в байтах)
+	var repoSize int64
+	err = filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() {
+			repoSize += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Warn("Failed to calculate repository size", "err", err)
+	}
+
+	// Получаем последний коммит
+	var lastCommit *CommitDTO
+	format := "%H|%an|%ae|%aI|%cn|%ce|%cI|%P|%s"
+	lastCommitOutput, err := executeGitCommand(repoPath, "log", "--pretty=format:"+format, "-1", defaultBranch)
+	if err == nil && lastCommitOutput != "" {
+		commits, err := parseCommitLog(lastCommitOutput)
+		if err == nil && len(commits) > 0 {
+			lastCommit = &commits[0]
+		}
+	}
+
+	response := RepoInfoDTO{
+		Name:          repoName,
+		Workspace:     workspaceSlug,
+		DefaultBranch: defaultBranch,
+		BranchesCount: branchesCount,
+		CommitsCount:  commitsCount,
+		Size:          repoSize,
+		LastCommit:    lastCommit,
+	}
+
+	slog.Info("Git repository info retrieved",
+		"workspace", workspaceSlug,
+		"repo", repoName,
+		"branches_count", branchesCount,
+		"commits_count", commitsCount,
+		"size", repoSize,
+		"user", user.Email)
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// requireGitEnabled middleware проверяет, что Git функциональность включена
+// Возвращает 503 Service Unavailable если Git отключен
+func (s *Services) requireGitEnabled(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if !cfg.GitEnabled {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{
+				"error": "Git functionality is disabled",
+			})
+		}
+		return next(c)
+	}
+}
+
 // AddGitServices регистрирует все эндпоинты для работы с GIT
 func (s *Services) AddGitServices(g *echo.Group) {
-	// Existing Git endpoints
+	// Config endpoints (no path params) - ВСЕГДА доступны для проверки статуса
 	g.GET("git/config/", s.getGitConfig)
-	g.GET("git/:workspaceSlug/repositories/", s.listGitRepositories)
-	g.POST("git/:workspaceSlug/repositories/", s.createGitRepository)
-	g.DELETE("git/:workspaceSlug/repositories/", s.deleteGitRepository)
-
-	// NEW SSH endpoints
 	g.GET("git/ssh-config/", s.getGitSSHConfig)
-	g.POST("git/ssh-keys/", s.addGitSSHKey)
-	g.GET("git/ssh-keys/", s.listGitSSHKeys)
-	g.DELETE("git/ssh-keys/:keyId", s.deleteGitSSHKey)
+
+	// Создаем подгруппу с middleware для проверки GIT_ENABLED
+	gitEnabledGroup := g.Group("git/", s.requireGitEnabled)
+
+	// SSH Keys endpoints (no workspace/repo params)
+	gitEnabledGroup.POST("ssh-keys/", s.addGitSSHKey)
+	gitEnabledGroup.GET("ssh-keys/", s.listGitSSHKeys)
+	gitEnabledGroup.DELETE("ssh-keys/:keyId", s.deleteGitSSHKey)
+
+	// Git Browse API endpoints (specific routes with :repoName - MUST be before general routes)
+	gitEnabledGroup.GET(":workspaceSlug/repositories/:repoName/tree/", s.getRepositoryTree)
+	gitEnabledGroup.GET(":workspaceSlug/repositories/:repoName/blob/", s.getRepositoryBlob)
+	gitEnabledGroup.GET(":workspaceSlug/repositories/:repoName/commits/", s.getRepositoryCommits)
+	gitEnabledGroup.GET(":workspaceSlug/repositories/:repoName/branches/", s.getRepositoryBranches)
+	gitEnabledGroup.GET(":workspaceSlug/repositories/:repoName/info/", s.getRepositoryInfo)
+
+	// Repository CRUD endpoints (general routes - MUST be after specific routes)
+	gitEnabledGroup.GET(":workspaceSlug/repositories/", s.listGitRepositories)
+	gitEnabledGroup.POST(":workspaceSlug/repositories/", s.createGitRepository)
+	gitEnabledGroup.DELETE(":workspaceSlug/repositories/", s.deleteGitRepository)
 }
