@@ -8,7 +8,14 @@
 package aiplan
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"io"
+	"log/slog"
 	"net/http"
+	"os"
+	"regexp"
+	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
@@ -45,5 +52,51 @@ func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFu
 		}
 
 		return next(SearchFilterContext{c.(AuthContext), filter})
+	}
+}
+
+func NewSPACacheMiddleware(indexPath string) func(echo.HandlerFunc) echo.HandlerFunc {
+	formatRegexp := regexp.MustCompile(`\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)`)
+
+	indexHasher := md5.New()
+
+	indexF, err := os.Open(indexPath)
+	if err != nil {
+		slog.Error("Open SPA index file, cache disabled", "err", err)
+	} else {
+		if _, err := io.Copy(indexHasher, indexF); err != nil {
+			slog.Error("Read SPA index file, cache disabled", "err", err)
+			indexHasher = nil
+		}
+	}
+	indexF.Close()
+
+	indexHash := ""
+	if indexHasher != nil {
+		indexHash = hex.EncodeToString(indexHasher.Sum(nil))
+	}
+
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// Assets
+			if formatRegexp.MatchString(c.Request().URL.Path) {
+				c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=31536000, immutable")
+				return next(c)
+			}
+
+			// Index file
+			if indexHash != "" && strings.Contains(c.Request().URL.Path, "index.html") {
+				c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
+
+				reqHash := c.Request().Header.Get("If-None-Match")
+				if reqHash != indexHash {
+					c.Response().Header().Set("ETag", indexHash)
+					return next(c)
+				}
+				return c.NoContent(http.StatusNotModified)
+			}
+
+			return next(c)
+		}
 	}
 }

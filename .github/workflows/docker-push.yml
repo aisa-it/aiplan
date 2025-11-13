@@ -34,21 +34,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: "true"
+          submodules: "false"
           token: ${{ secrets.GIT_PAT }}
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Config Git
         run: |
+          git config submodule.aiplan-api-ts.url https://x-access-token:${{ secrets.GIT_PAT }}@github.com/aisa-it/aiplan-api-ts.git
+          git submodule update --init aiplan-api-ts
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git config pull.rebase false
-          git pull origin main --allow-unrelated-histories
 
-      - name: Set up Node 20
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Prepare
         run: |
@@ -60,7 +60,7 @@ jobs:
           git checkout main
           npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/internal/aiplan/docs/swagger.json -o ./src/ -n aiplan-api.ts
           git add .
-          git commit -m "new generated API version" || echo "No changes to commit"
+          git commit -m "new generated API version"
           yarn version --minor
           git push origin main
           git push --tags

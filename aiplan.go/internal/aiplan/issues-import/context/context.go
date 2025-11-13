@@ -427,7 +427,7 @@ func (c *ImportContext) mapJiraComment(comment *jira.Comment, issueID string) (*
 	}
 
 	return &dao.IssueComment{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		CommentHtml: types.RedactorHTML{Body: comment.Body},
 		ActorId:     &author.ID,
 		CreatedAt:   created,
