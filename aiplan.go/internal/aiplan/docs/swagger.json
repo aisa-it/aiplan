@@ -3114,6 +3114,425 @@
                 }
             }
         },
+        "/api/auth/git/{workspaceSlug}/repositories/{repoName}/blob": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает содержимое файла из репозитория (base64 encoded)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-BROWSE"
+                ],
+                "summary": "Browse: получение содержимого файла",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Имя репозитория",
+                        "name": "repoName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ветка/тег/коммит (по умолчанию: main/master)",
+                        "name": "ref",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Путь к файлу",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Содержимое файла",
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.BlobResponseDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Файл не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "413": {
+                        "description": "Файл слишком большой",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/git/{workspaceSlug}/repositories/{repoName}/branches": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список всех веток в репозитории",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-BROWSE"
+                ],
+                "summary": "Browse: список веток",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Имя репозитория",
+                        "name": "repoName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список веток",
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.BranchesResponseDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Репозиторий не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/git/{workspaceSlug}/repositories/{repoName}/commits": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список коммитов в указанной ветке",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-BROWSE"
+                ],
+                "summary": "Browse: история коммитов",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Имя репозитория",
+                        "name": "repoName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ветка/тег (по умолчанию: main/master)",
+                        "name": "ref",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Лимит коммитов (по умолчанию: 50, макс: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (по умолчанию: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "История коммитов",
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.CommitsResponseDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Репозиторий не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/git/{workspaceSlug}/repositories/{repoName}/info": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает метаданные репозитория (размер, количество веток, последний коммит)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-BROWSE"
+                ],
+                "summary": "Browse: информация о репозитории",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Имя репозитория",
+                        "name": "repoName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Информация о репозитории",
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.RepoInfoDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Репозиторий не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/git/{workspaceSlug}/repositories/{repoName}/tree": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список файлов и директорий в указанном пути репозитория",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GIT-BROWSE"
+                ],
+                "summary": "Browse: просмотр дерева файлов",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug workspace",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Имя репозитория",
+                        "name": "repoName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ветка/тег/коммит (по умолчанию: main/master)",
+                        "name": "ref",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Путь в репозитории (по умолчанию: корень)",
+                        "name": "path",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Дерево файлов",
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.TreeResponseDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Репозиторий или путь не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/import/jira/cancel/{importId}": {
             "post": {
                 "security": [
@@ -16284,6 +16703,68 @@
                 }
             }
         },
+        "aiplan.BlobResponseDTO": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "description": "Содержимое файла (base64 encoded)",
+                    "type": "string"
+                },
+                "encoding": {
+                    "description": "\"base64\"",
+                    "type": "string"
+                },
+                "is_binary": {
+                    "description": "Является ли файл бинарным",
+                    "type": "boolean"
+                },
+                "path": {
+                    "description": "Путь к файлу",
+                    "type": "string"
+                },
+                "ref": {
+                    "description": "Ветка/тег/коммит",
+                    "type": "string"
+                },
+                "sha": {
+                    "description": "SHA объекта",
+                    "type": "string"
+                },
+                "size": {
+                    "description": "Размер файла",
+                    "type": "integer"
+                }
+            }
+        },
+        "aiplan.BranchDTO": {
+            "type": "object",
+            "properties": {
+                "is_default": {
+                    "description": "Является ли веткой по умолчанию",
+                    "type": "boolean"
+                },
+                "name": {
+                    "description": "Имя ветки",
+                    "type": "string"
+                },
+                "sha": {
+                    "description": "SHA последнего коммита",
+                    "type": "string"
+                }
+            }
+        },
+        "aiplan.BranchesResponseDTO": {
+            "type": "object",
+            "properties": {
+                "branches": {
+                    "description": "Список веток",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/aiplan.BranchDTO"
+                    }
+                }
+            }
+        },
         "aiplan.CheckProjectIdentifierAvailabilityResponse": {
             "type": "object",
             "properties": {
@@ -16300,6 +16781,66 @@
                         "[\"PROJECT1\"",
                         " \"PROJECT2\"]"
                     ]
+                }
+            }
+        },
+        "aiplan.CommitDTO": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "description": "Автор коммита",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/aiplan.PersonDTO"
+                        }
+                    ]
+                },
+                "committer": {
+                    "description": "Коммиттер",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/aiplan.PersonDTO"
+                        }
+                    ]
+                },
+                "message": {
+                    "description": "Сообщение коммита",
+                    "type": "string"
+                },
+                "parent_shas": {
+                    "description": "SHA родительских коммитов",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sha": {
+                    "description": "SHA коммита",
+                    "type": "string"
+                }
+            }
+        },
+        "aiplan.CommitsResponseDTO": {
+            "type": "object",
+            "properties": {
+                "commits": {
+                    "description": "Список коммитов",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/aiplan.CommitDTO"
+                    }
+                },
+                "limit": {
+                    "description": "Лимит на страницу",
+                    "type": "integer"
+                },
+                "offset": {
+                    "description": "Смещение",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Общее количество коммитов",
+                    "type": "integer"
                 }
             }
         },
@@ -16791,6 +17332,23 @@
                 }
             }
         },
+        "aiplan.PersonDTO": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "description": "Дата",
+                    "type": "string"
+                },
+                "email": {
+                    "description": "Email",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Имя",
+                    "type": "string"
+                }
+            }
+        },
         "aiplan.PostFeedbackRequest": {
             "type": "object",
             "properties": {
@@ -16809,6 +17367,43 @@
             ],
             "properties": {
                 "reaction": {
+                    "type": "string"
+                }
+            }
+        },
+        "aiplan.RepoInfoDTO": {
+            "type": "object",
+            "properties": {
+                "branches_count": {
+                    "description": "Количество веток",
+                    "type": "integer"
+                },
+                "commits_count": {
+                    "description": "Количество коммитов",
+                    "type": "integer"
+                },
+                "default_branch": {
+                    "description": "Ветка по умолчанию",
+                    "type": "string"
+                },
+                "last_commit": {
+                    "description": "Последний коммит",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/aiplan.CommitDTO"
+                        }
+                    ]
+                },
+                "name": {
+                    "description": "Имя репозитория",
+                    "type": "string"
+                },
+                "size": {
+                    "description": "Размер репозитория (байты)",
+                    "type": "integer"
+                },
+                "workspace": {
+                    "description": "Slug workspace",
                     "type": "string"
                 }
             }
@@ -16838,6 +17433,51 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "aiplan.TreeEntryDTO": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "description": "Режим файла (100644, 040000, etc.)",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Имя файла/директории",
+                    "type": "string"
+                },
+                "sha": {
+                    "description": "SHA объекта",
+                    "type": "string"
+                },
+                "size": {
+                    "description": "Размер файла (только для файлов)",
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "\"file\" или \"dir\"",
+                    "type": "string"
+                }
+            }
+        },
+        "aiplan.TreeResponseDTO": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "description": "Список файлов и директорий",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/aiplan.TreeEntryDTO"
+                    }
+                },
+                "path": {
+                    "description": "Путь в репозитории",
+                    "type": "string"
+                },
+                "ref": {
+                    "description": "Ветка/тег/коммит",
+                    "type": "string"
                 }
             }
         },
@@ -18208,7 +18848,11 @@
                     }
                 },
                 "reply_to_comment_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -19676,6 +20320,17 @@
                 },
                 "urgent_id": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_gofrs_uuid.NullUUID": {
+            "type": "object",
+            "properties": {
+                "uuid": {
+                    "type": "string"
+                },
+                "valid": {
+                    "type": "boolean"
                 }
             }
         },

@@ -451,7 +451,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 				Root:  cfg.FrontFilesPath,
 				HTML5: true,
 				Skipper: func(c echo.Context) bool {
-					return strings.Contains(c.Path(), "tus") ||
+					return strings.Contains(c.Path(), "api") ||
+						strings.Contains(c.Path(), "tus") ||
 						strings.Contains(c.Path(), "swagger")
 				},
 			}),
