@@ -7958,6 +7958,14 @@ const docTemplate = `{
                         "description": "Создать не достающие label, state",
                         "name": "create_entities",
                         "in": "query"
+                    },
+                    {
+                        "description": "Идентификаторы связанных задач",
+                        "name": "data",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.NewIssueParam"
+                        }
                     }
                 ],
                 "responses": {
@@ -16305,6 +16313,36 @@ const docTemplate = `{
                 }
             }
         },
+        "aiplan.NewIssueParam": {
+            "type": "object",
+            "properties": {
+                "assigner_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "x-nullable": true
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
+                },
+                "state_id": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "target_date": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
         "aiplan.NotificationIdResponse": {
             "type": "object",
             "properties": {
@@ -17614,7 +17652,11 @@ const docTemplate = `{
                     }
                 },
                 "reply_to_comment_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "updated_at": {
@@ -19014,6 +19056,17 @@ const docTemplate = `{
                 },
                 "urgent_id": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_gofrs_uuid.NullUUID": {
+            "type": "object",
+            "properties": {
+                "uuid": {
+                    "type": "string"
+                },
+                "valid": {
+                    "type": "boolean"
                 }
             }
         },
