@@ -483,3 +483,68 @@ func GetSystemUser(tx *gorm.DB) *User {
 	}
 	return &user
 }
+
+const (
+	getForeignKeysSQL = `SELECT
+    tc.table_name AS foreign_table_name,
+    kcu.column_name AS foreign_column_name,
+    ccu.table_name AS referenced_table_name,
+    ccu.column_name AS referenced_column_name,
+    tc.constraint_name
+FROM information_schema.table_constraints AS tc
+JOIN information_schema.key_column_usage AS kcu
+    ON tc.constraint_name = kcu.constraint_name
+JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = tc.constraint_name
+WHERE tc.constraint_type = 'FOREIGN KEY'
+    AND ccu.table_name = ?
+    AND ccu.column_name = ?;`
+)
+
+type ForeignKey struct {
+	ForeignTableName     string
+	ForeignColumnName    string
+	ReferencedTableName  string
+	ReferencedColumnName string
+	ConstraintName       string
+}
+
+func ReplaceColumnType(db *gorm.DB, table string, column string, newType string) error {
+	var fks []ForeignKey
+	if err := db.Raw(getForeignKeysSQL, table, column).Find(&fks).Error; err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Delete FKs
+		for _, fk := range fks {
+			fmt.Printf("ALTER TABLE %s DROP CONSTRAINT %s;\n", fk.ForeignTableName, fk.ConstraintName)
+			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s;", fk.ForeignTableName, fk.ConstraintName)).Error; err != nil {
+				return err
+			}
+		}
+		fmt.Println()
+
+		// Change types
+		if err := tx.Exec(fmt.Sprintf("alter table %s alter column %s TYPE %s USING %s::%s;", table, column, newType, column, newType)).Error; err != nil {
+			return err
+		}
+		for _, fk := range fks {
+			fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", fk.ForeignTableName, fk.ForeignColumnName, newType, fk.ForeignColumnName, newType)
+			if err := tx.Exec(fmt.Sprintf("alter table %s alter column %s TYPE %s USING %s::%s;", fk.ForeignTableName, fk.ForeignColumnName, newType, fk.ForeignColumnName, newType)).Error; err != nil {
+				return err
+			}
+		}
+		fmt.Println("")
+
+		// Add FKs back
+		for _, fk := range fks {
+			fmt.Printf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s);\n", fk.ForeignTableName, fk.ConstraintName, fk.ForeignColumnName, fk.ReferencedTableName, fk.ReferencedColumnName)
+			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s);", fk.ForeignTableName, fk.ConstraintName, fk.ForeignColumnName, fk.ReferencedTableName, fk.ReferencedColumnName)).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
