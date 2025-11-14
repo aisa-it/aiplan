@@ -79,6 +79,13 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 			Where("(i.project_id = ? or i.project_id is null)", projectId).
 			Group(`"Key"`).
 			Order("sub")
+	case "project":
+		query = db.
+			Table("projects p").
+			Joins("LEFT JOIN issues i on p.id = i.project_id and i.deleted_at is null").
+			Select("count(i.project_id) as Count, p.id as \"Key\", p.name as sub").
+			Group(`"Key", sub`).
+			Order("sub")
 	}
 
 	{
@@ -221,6 +228,18 @@ func FetchIssuesByGroups(
 				}
 				entity = u.ToLightDTO()
 			}
+		case "project":
+			if len(searchParams.Filters.ProjectIds) > 0 && !slices.Contains(searchParams.Filters.ProjectIds, group.Key) {
+				continue
+			}
+			q = q.Where("issues.project_id = ?", group.Key)
+			if group.Count == 0 {
+				var project dao.Project
+				if err := db.Where("id = ?", group.Key).First(&project).Error; err != nil {
+					return 0, err
+				}
+				entity = project.ToLightDTO()
+			}
 		}
 
 		if group.Count == 0 {
@@ -252,6 +271,8 @@ func FetchIssuesByGroups(
 			entity = issues[0].Author.ToLightDTO()
 		case "state":
 			entity = issues[0].State.ToLightDTO()
+		case "project":
+			entity = issues[0].Project.ToLightDTO()
 		}
 
 		if err := iterFunc(IssuesGroupResponse{

@@ -22,7 +22,7 @@ type SearchParams struct {
 }
 
 func ParseSearchParams(c echo.Context) (*SearchParams, error) {
-	sp := &SearchParams{}
+	sp := &SearchParams{OrderByParam: "sequence_id"}
 	if err := echo.QueryParamsBinder(c).
 		Bool("show_sub_issues", &sp.ShowSubIssues).
 		Bool("draft", &sp.Draft).
