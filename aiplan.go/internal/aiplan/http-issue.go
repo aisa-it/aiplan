@@ -383,7 +383,7 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 // ############# Issue methods ###################
 
 var issueSortFields = []string{"id", "created_at", "updated_at", "name", "priority", "target_date", "sequence_id", "state", "labels", "sub_issues_count", "link_count", "attachment_count", "linked_issues_count", "assignees", "watchers", "author"}
-var issueGroupFields = []string{"priority", "author", "state", "labels", "assignees", "watchers"}
+var issueGroupFields = []string{"priority", "author", "state", "labels", "assignees", "watchers", "project"}
 
 // getIssueList godoc
 // @id getIssueList
@@ -395,7 +395,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Produce json
 // @Param show_sub_issues query bool false "Включать подзадачи" default(true)
 // @Param order_by query string false "Поле для сортировки" default("sequence_id") enum(id, created_at, updated_at, name, priority, target_date, sequence_id, state, labels, sub_issues_count, link_count, attachment_count, linked_issues_count, assignees, watchers, author)
-// @Param group_by query string false "Поле для группировки результатов" default("") enum(priority, author, state, labels, assignees, watchers)
+// @Param group_by query string false "Поле для группировки результатов" default("") enum(priority, author, state, labels, assignees, watchers, project)
 // @Param offset query int false "Смещение для пагинации" default(-1)
 // @Param limit query int false "Лимит записей" default(100)
 // @Param desc query bool false "Сортировка по убыванию" default(true)
