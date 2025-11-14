@@ -121,3 +121,8 @@ type WorkspaceLimitsInfo struct {
 	AttachmentsRemain int    `json:"attachments_remains,omitempty"`
 	AttachmentsMax    int    `json:"attachments_max,omitempty"`
 }
+
+type GitConfigInfo struct {
+	GitEnabled          bool   `json:"git_enabled"`
+	GitRepositoriesPath string `json:"git_repositories_path"`
+}

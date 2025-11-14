@@ -16,6 +16,8 @@ package aiplan
 // @name Authorization
 // @BasePath /
 // @query.collection.format multi
+// @tag.name GIT
+// @tag.description Git repository integration endpoints
 import (
 	"bytes"
 	"context"
@@ -248,10 +250,50 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Gracefully stop NotificationProcessor
+	// Запуск SSH сервера для Git (если включен)
+	var sshServer *SSHServer
+	if cfg.GitEnabled && cfg.SSHEnabled {
+		sshServerConfig := SSHServerConfig{
+			DB:               db,
+			GitReposPath:     cfg.GitRepositoriesPath,
+			Host:             cfg.SSHHost,
+			Port:             cfg.SSHPort,
+			HostKeyPath:      cfg.SSHHostKeyPath,
+			RateLimitEnabled: cfg.SSHRateLimitEnabled,
+		}
+
+		var err error
+		sshServer, err = NewSSHServer(sshServerConfig)
+		if err != nil {
+			slog.Error("Failed to create SSH server", "err", err)
+		} else {
+			// Запускаем SSH сервер в отдельной горутине
+			go func() {
+				if err := sshServer.Start(ctx); err != nil {
+					slog.Error("SSH server error", "err", err)
+				}
+			}()
+
+			slog.Info("SSH server started successfully",
+				"host", cfg.SSHHost,
+				"port", cfg.SSHPort)
+		}
+	}
+
+	// Gracefully stop NotificationProcessor and SSH server
 	go func() {
 		<-ctx.Done()
 		slog.Info("Shutting down gracefully, press Ctrl+C again to force")
+
+		// Останавливаем SSH сервер
+		if sshServer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := sshServer.Shutdown(shutdownCtx); err != nil {
+				slog.Error("SSH server shutdown error", "err", err)
+			}
+		}
+
 		cronManager.Stop()
 		es.Stop()
 		os.Exit(0)
@@ -349,6 +391,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s.AddIssueServices(authGroup)
 	s.AddBackupServices(authGroup)
 	s.AddAdminServices(authGroup)
+	s.AddGitServices(authGroup)
 	AddProfileServices(e.Group("/"))
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
@@ -408,7 +451,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 				Root:  cfg.FrontFilesPath,
 				HTML5: true,
 				Skipper: func(c echo.Context) bool {
-					return strings.Contains(c.Path(), "tus") ||
+					return strings.Contains(c.Path(), "api") ||
+						strings.Contains(c.Path(), "tus") ||
 						strings.Contains(c.Path(), "swagger")
 				},
 			}),
