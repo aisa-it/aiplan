@@ -36,20 +36,20 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 
 	var projectMembers []dao.ProjectMember
 	if err := b.db.
-		Preload("Project").
-		Preload("Member").
-		Where("workspace_id = ?", requestedMember.Workspace.ID).
-		Where("member_id = ?", requestedMember.MemberId).
+		Joins("Project").
+		Joins("Member").
+		Where("project_members.workspace_id = ?", requestedMember.Workspace.ID).
+		Where("project_members.member_id = ?", requestedMember.MemberId).
 		Find(&projectMembers).Error; err != nil {
 		return err
 	}
 
 	var actorProjectMembers []dao.ProjectMember
 	if err := b.db.
-		Preload("Project").
-		Preload("Member").
-		Where("workspace_id = ?", requestedMember.Workspace.ID).
-		Where("member_id = ?", actor.MemberId).
+		Joins("Project").
+		Joins("Member").
+		Where("project_members.workspace_id = ?", requestedMember.Workspace.ID).
+		Where("project_members.member_id = ?", actor.MemberId).
 		Find(&actorProjectMembers).Error; err != nil {
 		return err
 	}
