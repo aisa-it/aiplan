@@ -466,6 +466,57 @@ func (ts *TsVector) String() string {
 	return ts.Vector
 }
 
+// JSONField generic field
+type JSONField[T any] struct {
+	Value   *T
+	Defined bool
+}
+
+func (j *JSONField[T]) UnmarshalJSON(data []byte) error {
+	j.Defined = true
+
+	if string(data) == "null" {
+		j.Value = nil
+		return nil
+	}
+
+	var value T
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("invalid value for type %T: %s", value, err.Error())
+	}
+	j.Value = &value
+	return nil
+}
+
+func (j JSONField[T]) MarshalJSON() ([]byte, error) {
+	if !j.Defined {
+		return []byte("null"), nil
+	}
+	if j.Value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*j.Value)
+}
+
+func (j JSONField[T]) String() string {
+	if j.Value == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%v", *j.Value)
+}
+
+func (j JSONField[T]) IsDefined() bool {
+	return j.Defined
+}
+
+func (j JSONField[T]) IsNull() bool {
+	return j.Defined && j.Value == nil
+}
+
+func (j JSONField[T]) GetValue() (*T, bool) {
+	return j.Value, j.Defined
+}
+
 // ProjectMemberNS type
 type ProjectMemberNS struct {
 	DisableName          bool `json:"disable_name"`
