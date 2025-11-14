@@ -3632,7 +3632,7 @@ func (s *Services) issueUnpin(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// SubIssuesIds представляет собой структуру для передачи связанных задач
+// LinkedIssuesIds представляет собой структуру для передачи связанных задач
 type LinkedIssuesIds struct {
 	IssueIDs []uuid.UUID `json:"issue_ids"`
 }

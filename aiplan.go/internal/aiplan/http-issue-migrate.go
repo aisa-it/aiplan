@@ -10,13 +10,18 @@ package aiplan
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
@@ -71,6 +76,7 @@ func (s *Services) AddIssueMigrationServices(g *echo.Group) {
 // @Param linked_issues query bool false "Мигрировать связанные задачи" default(false)
 // @Param delete_src query bool false "Удалить исходную задачу после миграции" default(false)
 // @Param create_entities query bool false "Создать не достающие label, state" default(false)
+// @Param data body NewIssueParam false "Идентификаторы связанных задач"
 // @Success 201 {object} NewIssueID "ID созданной задачи"
 // @Failure 400 {object} map[string]interface{} "Некорректные параметры запроса или данные"
 // / @Failure 404 {object} apierrors.DefinedError "Целевой проект или исходная задача не найдены"
@@ -92,6 +98,11 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		Bool("delete_src", &deleteSrc).
 		Bool("create_entities", &createEntities).
 		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	var param *NewIssueParam
+	if err := c.Bind(&param); err != nil && !errors.Is(err, io.EOF) {
 		return EError(c, err)
 	}
 
@@ -129,6 +140,63 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			})
 		}
 		return EError(c, err)
+	}
+	if linkedIssues == false && param != nil {
+
+		if v, ok := param.StateId.GetValue(); ok {
+			var state dao.State
+			if err := s.db.Where("workspace_id = ?", srcIssue.WorkspaceId).
+				Where("project_id = ?", srcIssue.ProjectId).
+				Where("id = ?", param.StateId.String()).
+				First(&state).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return c.JSON(http.StatusBadRequest, map[string]interface{}{
+						"errors": []ErrClause{
+							{
+								Error: ErrStateNotFound,
+								Type:  "issue",
+							},
+						},
+					})
+				}
+				return EError(c, err)
+			}
+
+			srcIssue.StateId = v
+			srcIssue.State = &state
+		}
+
+		if v, ok := param.Priority.GetValue(); ok {
+			srcIssue.Priority = v
+		}
+
+		if v, ok := param.AssignersIds.GetValue(); ok {
+			if v == nil {
+				srcIssue.AssigneeIDs = []string{}
+			} else {
+				srcIssue.AssigneeIDs = *v
+			}
+		}
+
+		if v, ok := param.TargetDate.GetValue(); ok {
+			if v == nil {
+				srcIssue.TargetDate = nil
+			} else {
+				date, err := utils.FormatDateStr(*v, "2006-01-02T15:04:05Z07:00", nil)
+				if err != nil {
+					return EErrorDefined(c, apierrors.ErrGeneric)
+				}
+
+				if d, err := utils.FormatDate(date); err != nil {
+					return EErrorDefined(c, apierrors.ErrGeneric)
+				} else {
+					if time.Now().After(d) {
+						return EErrorDefined(c, apierrors.ErrIssueTargetDateExp)
+					}
+					srcIssue.TargetDate = &types.TargetDateTimeZ{Time: d}
+				}
+			}
+		}
 	}
 
 	err := srcIssue.FetchLinkedIssues(s.db)
@@ -1569,4 +1637,12 @@ func linkedIdToStringKey(s1, s2 string) string {
 	} else {
 		return ""
 	}
+}
+
+// NewIssueParam изменяемы поля при копировании одиночной задачи
+type NewIssueParam struct {
+	Priority     types.JSONField[string]   `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
+	TargetDate   types.JSONField[string]   `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	AssignersIds types.JSONField[[]string] `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
+	StateId      types.JSONField[string]   `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
 }
