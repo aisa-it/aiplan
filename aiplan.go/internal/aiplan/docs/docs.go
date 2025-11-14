@@ -8822,6 +8822,14 @@ const docTemplate = `{
                         "description": "Создать не достающие label, state",
                         "name": "create_entities",
                         "in": "query"
+                    },
+                    {
+                        "description": "Идентификаторы связанных задач",
+                        "name": "data",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/aiplan.NewIssueParam"
+                        }
                     }
                 ],
                 "responses": {
@@ -17288,6 +17296,36 @@ const docTemplate = `{
             "properties": {
                 "id": {
                     "type": "string"
+                }
+            }
+        },
+        "aiplan.NewIssueParam": {
+            "type": "object",
+            "properties": {
+                "assigner_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "x-nullable": true
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
+                },
+                "state_id": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "target_date": {
+                    "type": "string",
+                    "x-nullable": true
                 }
             }
         },
