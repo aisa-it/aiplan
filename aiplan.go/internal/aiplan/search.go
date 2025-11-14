@@ -1,7 +1,7 @@
 package aiplan
 
 import (
-	"fmt"
+	"log/slog"
 	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -24,12 +24,13 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 		query = query.Where("project_id = ?", projectId).
 			Table("issues i").
 			Select("count(*) as Count, coalesce(priority, '') as \"Key\"").
+			Where("i.deleted_at is null").
 			Group("priority").
 			Order("case when priority='urgent' then 5 when priority='high' then 4 when priority='medium' then 3 when priority='low' then 2 when priority is null then 1 end")
 	case "author":
 		query = db.
 			Model(&dao.ProjectMember{}).
-			Joins("LEFT JOIN issues i on project_members.member_id = i.created_by_id and i.project_id = ?", projectId).
+			Joins("LEFT JOIN issues i on project_members.member_id = i.created_by_id and i.project_id = ? and i.deleted_at is null", projectId).
 			Joins("LEFT JOIN users u on u.id = i.created_by_id").
 			Where("project_members.project_id = ?", projectId).
 			Select("count(i.created_by_id) as Count, project_members.member_id as \"Key\", coalesce((u.first_name || ' ' || u.last_name), u.email) as sub").
@@ -38,7 +39,7 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 	case "state":
 		query = db.
 			Model(&dao.State{}).
-			Joins("LEFT JOIN issues i on states.id = i.state_id and i.project_id = ?", projectId).
+			Joins("LEFT JOIN issues i on states.id = i.state_id and i.project_id = ? and i.deleted_at is null", projectId).
 			Where("states.project_id = ?", projectId).
 			Select("count(i.state_id) as Count, states.id as \"Key\", max(states.name) as state_name").
 			Group(`"Key", states.group`).
@@ -54,7 +55,7 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 		query = query.Select("count(i.id) as Count, l.id as \"Key\", max(l.name) as label_name").
 			Table("labels l").
 			Joins("left join issue_labels il on il.label_id = l.id").
-			Joins("right join issues i on il.issue_id = i.id").
+			Joins("right join issues i on il.issue_id = i.id and i.deleted_at is null").
 			Where("il.project_id = ? or il.project_id is null", projectId).
 			Where("i.project_id = ? or i.project_id is null", projectId).
 			Where("l.project_id = ? or l.project_id is null", projectId).
@@ -64,7 +65,7 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 		query = query.Select("count(i.id) as Count, u.id as \"Key\", coalesce((u.first_name || ' ' || u.last_name), u.email) as sub").
 			Table("users u").
 			Joins("left join issue_assignees ia on ia.assignee_id = u.id").
-			Joins("right join issues i on ia.issue_id = i.id").
+			Joins("right join issues i on ia.issue_id = i.id and i.deleted_at is null").
 			Where("ia.project_id = ? or ia.project_id is null", projectId).
 			Where("i.project_id = ? or i.project_id is null", projectId).
 			Group(`"Key"`).
@@ -73,7 +74,7 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 		query = query.Select("count(i.id) as Count, u.id as \"Key\", coalesce((u.first_name || ' ' || u.last_name), u.email) as sub").
 			Table("users u").
 			Joins("left join issue_watchers iw on iw.watcher_id = u.id").
-			Joins("right join issues i on iw.issue_id = i.id").
+			Joins("right join issues i on iw.issue_id = i.id and i.deleted_at is null").
 			Where("(iw.project_id = ? or iw.project_id is null)", projectId).
 			Where("(i.project_id = ? or i.project_id is null)", projectId).
 			Group(`"Key"`).
@@ -241,12 +242,13 @@ func FetchIssuesByGroups(
 			return 0, err
 		}
 
+		if len(issues) == 0 {
+			slog.Error("Empty serach result for not empty group", "groupBy", searchParams.GroupByParam, "groupKey", group.Key, "groupCount", group.Count)
+			continue
+		}
+
 		switch searchParams.GroupByParam {
 		case "author":
-			if len(issues) == 0 {
-				fmt.Println(group)
-				continue
-			}
 			entity = issues[0].Author.ToLightDTO()
 		case "state":
 			entity = issues[0].State.ToLightDTO()
@@ -284,23 +286,4 @@ func FetchParentsDetails(db *gorm.DB, issues []dao.IssueWithCount) error {
 		}
 	}
 	return nil
-}
-
-func getStateGroupOrder(state *dto.StateLight) int {
-	if state == nil {
-		return 0
-	}
-	switch state.Group {
-	case "backlog":
-		return 1
-	case "unstarted":
-		return 2
-	case "started":
-		return 3
-	case "completed":
-		return 4
-	case "cancelled":
-		return 5
-	}
-	return 0
 }

@@ -71,7 +71,7 @@ func main() {
 		PreferSimpleProtocol: false, // disables implicit prepared statement usage
 	}), &gorm.Config{
 		TranslateError: !*noTranslateFlag,
-		Logger:         gormlogger.NewGormLogger(slog.Default(), time.Second, *paramQueries),
+		Logger:         gormlogger.NewGormLogger(slog.Default(), time.Second*4, *paramQueries),
 	})
 	if err != nil {
 		slog.Error("Fail init DB connection", "err", err)
