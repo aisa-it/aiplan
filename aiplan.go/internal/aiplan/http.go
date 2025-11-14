@@ -39,8 +39,6 @@ import (
 	"syscall"
 	"time"
 
-	store "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/memory-store"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 
@@ -96,7 +94,6 @@ type Services struct {
 	notificationsService *notifications.Notification
 
 	business *business.Business
-	store    *store.Store
 }
 
 var cfg *config.Config
@@ -237,7 +234,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		//wsNotificationService: ws,
 		notificationsService: ns,
 		business:             bl,
-		store:                store.NewStore(),
 		jitsiTokenIss:        jitsi_token.NewJitsiTokenIssuer(cfg.JitsiJWTSecret, cfg.JitsiAppID),
 	}
 
