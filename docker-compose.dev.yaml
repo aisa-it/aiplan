@@ -15,3 +15,10 @@ services:
       args:
         VERSION: dev
     image: aiplan:local
+    env_file:
+      - path: ./.env
+        required: true
+      - path: ./.env.development.local
+        required: false
+    volumes:
+      - ./git-data:/var/lib/aiplan/git-repositories
