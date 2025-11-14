@@ -179,19 +179,22 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 
 		if v, ok := param.TargetDate.GetValue(); ok {
-
-			date, err := utils.FormatDateStr(*v, "2006-01-02T15:04:05Z07:00", nil)
-			if err != nil {
-				return EErrorDefined(c, apierrors.ErrGeneric)
-			}
-
-			if d, err := utils.FormatDate(date); err != nil {
-				return EErrorDefined(c, apierrors.ErrGeneric)
+			if v == nil {
+				srcIssue.TargetDate = nil
 			} else {
-				if time.Now().After(d) {
-					return EErrorDefined(c, apierrors.ErrIssueTargetDateExp)
+				date, err := utils.FormatDateStr(*v, "2006-01-02T15:04:05Z07:00", nil)
+				if err != nil {
+					return EErrorDefined(c, apierrors.ErrGeneric)
 				}
-				srcIssue.TargetDate = &types.TargetDateTimeZ{Time: d}
+
+				if d, err := utils.FormatDate(date); err != nil {
+					return EErrorDefined(c, apierrors.ErrGeneric)
+				} else {
+					if time.Now().After(d) {
+						return EErrorDefined(c, apierrors.ErrIssueTargetDateExp)
+					}
+					srcIssue.TargetDate = &types.TargetDateTimeZ{Time: d}
+				}
 			}
 		}
 	}
