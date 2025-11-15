@@ -1480,6 +1480,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 			WorkspaceId: workspace.ID,
 			DocId:       doc.ID.String(),
 		},
+		nil,
 	); err != nil {
 		return EError(c, err)
 	}

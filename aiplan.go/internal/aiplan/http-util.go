@@ -53,6 +53,7 @@ func (s *Services) uploadAssetForm(tx *gorm.DB, file *multipart.FileHeader, dstA
 		dstAsset.Id,
 		dstAsset.ContentType,
 		&metadata,
+		nil,
 	); err != nil {
 		return err
 	}
@@ -96,6 +97,7 @@ func (s *Services) uploadAvatarForm(tx *gorm.DB, file *multipart.FileHeader, dst
 		dstAsset.Id,
 		dataType,
 		&filestorage.Metadata{},
+		nil,
 	); err != nil {
 		return err
 	}

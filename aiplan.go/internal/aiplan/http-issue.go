@@ -3164,6 +3164,7 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 			ProjectId:   issue.ProjectId,
 			IssueId:     issue.ID.String(),
 		},
+		nil,
 	); err != nil {
 		return EError(c, err)
 	}
