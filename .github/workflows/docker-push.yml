@@ -15,12 +15,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: "true"
+          submodules: "recursive"
 
-      - name: Fetch front submodules
-        run: |
-          cd aiplan-front
-          git submodule update --recursive --init
+      #- name: Fetch front submodules
+      #  run: |
+      #    git config submodule.aiplan-api-ts.url https://x-access-token:${{ secrets.GIT_PAT }}@github.com/aisa-it/aiplan-api-ts.git
+      #    cd aiplan-front
+      #    git submodule update --recursive --init
 
       - name: Build and Push
         uses: dagger/dagger-for-github@v8.1.0
