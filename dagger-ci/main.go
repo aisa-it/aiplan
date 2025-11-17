@@ -50,7 +50,6 @@ func (m *Aiplan) FrontBuildEnv(version string, source *dagger.Directory) *dagger
 		WithWorkdir("/src").
 		WithMountedCache("/src/node_modules", nodeCache).
 		WithMountedCache("/src/.quasar", quasarCache).
-		WithExec([]string{"git", "submodule", "update", "--recursive", "--init"}).
 		WithExec([]string{"yarn"}).
 		WithExec([]string{"yarn", "version", "--new-version", strings.TrimLeft(version, "v"), "--no-git-tag-version"}).
 		WithExec([]string{"yarn", "build"})
