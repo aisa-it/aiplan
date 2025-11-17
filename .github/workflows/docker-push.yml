@@ -17,6 +17,11 @@ jobs:
         with:
           submodules: "true"
 
+      - name: Fetch front submodules
+        run: |
+          cd aiplan-front
+          git submodule update --recursive --init
+
       - name: Build and Push
         uses: dagger/dagger-for-github@v8.1.0
         env:
