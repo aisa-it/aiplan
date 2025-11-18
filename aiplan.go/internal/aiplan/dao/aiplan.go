@@ -520,10 +520,16 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				switch targetField {
 				case "link_title", "link_url", "status_color", "status_name", "status_description", "status_group", "label_name", "label_color", "status_default", "template_name", "template_template":
 					targetField = strings.Split(targetField, "_")[0]
-					if targetField == "status" {
-						targetField = "state"
-					}
 				}
+
+				if targetField == "status" {
+					targetField = "state"
+				}
+
+				if targetField == "labels" {
+					targetField = "label"
+				}
+
 				if fieldTag != targetField && fieldTag != targetFieldExt {
 					continue
 				}
