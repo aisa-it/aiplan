@@ -121,6 +121,11 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 			}
 		case "added":
 			switch *activity.Field {
+			case "labels":
+				msg.Text = act.Title("добавил(-a) тег в")
+				msg.Text += Stelegramf("%s",
+					activity.NewLabel.Name,
+				)
 			case "sub_issue":
 				activity.NewSubIssue.Project = activity.Issue.Project
 				msg.Text = act.Title("изменил(-a)")
@@ -144,6 +149,11 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 
 		case "removed":
 			switch *activity.Field {
+			case "labels":
+				msg.Text = act.Title("убрал(-a) тег из")
+				msg.Text += Stelegramf("%s",
+					activity.OldLabel.Name,
+				)
 			case "sub_issue":
 				activity.OldSubIssue.Project = activity.Issue.Project
 				msg.Text = act.Title("изменил(-a)")
