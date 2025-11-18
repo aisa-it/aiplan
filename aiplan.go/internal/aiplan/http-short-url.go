@@ -45,10 +45,10 @@ func (s *Services) shortIssueURLRedirect(c echo.Context) error {
 	}
 
 	ref, _ := url.Parse(fmt.Sprintf(
-		"/%s/projects/%s/issues/%s/",
+		"/%s/projects/%s/issues/%d/",
 		slug,
-		issue.ProjectId,
-		issue.ID.String()))
+		issue.Project.Identifier,
+		issue.SequenceId))
 	path := cfg.WebURL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }
