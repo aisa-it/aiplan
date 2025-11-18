@@ -40,6 +40,10 @@ func ParseSearchParams(c echo.Context) (*SearchParams, error) {
 		return nil, err
 	}
 
+	if sp.Limit == 0 {
+		sp.Limit = 10
+	}
+
 	if err := c.Bind(&sp.Filters); err != nil {
 		return nil, err
 	}
