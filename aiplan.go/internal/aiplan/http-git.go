@@ -743,40 +743,157 @@ func (s *Services) deleteGitSSHKey(c echo.Context) error {
 // Git Browse API Helper Functions
 // ========================================
 
-// executeGitCommand выполняет Git команду в репозитории
+// executeGitCommand выполняет Git команду в bare репозитории
+// ВАЖНО: Для bare репозитория используем --git-dir вместо cmd.Dir
 func executeGitCommand(repoPath string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = repoPath
+	slog.Debug("executeGitCommand called",
+		"repoPath", repoPath,
+		"args", args)
+
+	// Для bare репозитория добавляем --git-dir в начало аргументов
+	gitArgs := append([]string{"--git-dir=" + repoPath}, args...)
+
+	cmd := exec.Command("git", gitArgs...)
 	output, err := cmd.CombinedOutput()
+
 	if err != nil {
+		slog.Debug("Git command failed",
+			"repoPath", repoPath,
+			"args", args,
+			"err", err,
+			"output", string(output))
 		return "", fmt.Errorf("git command failed: %w, output: %s", err, string(output))
 	}
-	return strings.TrimSpace(string(output)), nil
+
+	result := strings.TrimSpace(string(output))
+	slog.Debug("Git command succeeded",
+		"repoPath", repoPath,
+		"args", args,
+		"output_length", len(result))
+
+	return result, nil
 }
 
-// getDefaultBranch возвращает ветку по умолчанию для репозитория
+// getDefaultBranch определяет ветку по умолчанию для репозитория
+// Приоритет определения:
+// 1. git symbolic-ref HEAD (официальная дефолтная ветка) - с валидацией существования
+// 2. master или main (если существуют)
+// 3. Первая ветка в алфавитном порядке
+// Возвращает пустую строку если репозиторий пустой (нет веток)
 func getDefaultBranch(repoPath string) (string, error) {
-	// Пытаемся получить HEAD reference
-	output, err := executeGitCommand(repoPath, "symbolic-ref", "HEAD")
-	if err != nil {
-		// Fallback: проверяем наличие веток main/master
-		branches, _ := executeGitCommand(repoPath, "branch", "--list")
-		if strings.Contains(branches, "main") {
-			return "main", nil
-		}
-		if strings.Contains(branches, "master") {
-			return "master", nil
-		}
-		return "", fmt.Errorf("no default branch found")
+	slog.Debug("getDefaultBranch called",
+		"repoPath", repoPath)
+
+	// Получаем список всех веток ОДИН РАЗ в начале функции
+	// Используем for-each-ref для более надежного парсинга
+	slog.Debug("Fetching all branches via for-each-ref")
+	branchesOutput, err := executeGitCommand(repoPath, "for-each-ref", "refs/heads/", "--format=%(refname:short)")
+	if err != nil || branchesOutput == "" {
+		// Репозиторий пустой (нет веток)
+		slog.Debug("Repository has no branches",
+			"repo", repoPath,
+			"err", err,
+			"output", branchesOutput)
+		return "", fmt.Errorf("repository is empty (no branches)")
 	}
 
-	// Парсим refs/heads/main -> main
-	ref := strings.TrimSpace(output)
-	parts := strings.Split(ref, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1], nil
+	// Парсим список веток
+	branchNames := strings.Split(strings.TrimSpace(branchesOutput), "\n")
+	if len(branchNames) == 0 || (len(branchNames) == 1 && branchNames[0] == "") {
+		slog.Debug("No valid branches found after parsing",
+			"repo", repoPath)
+		return "", fmt.Errorf("repository is empty (no branches)")
 	}
-	return "main", nil
+
+	slog.Debug("Total branches found",
+		"repo", repoPath,
+		"count", len(branchNames),
+		"branches", branchNames)
+
+	// Приоритет 1: Пытаемся получить HEAD reference через symbolic-ref
+	slog.Debug("Trying method 1: git symbolic-ref HEAD")
+	output, err := executeGitCommand(repoPath, "symbolic-ref", "HEAD")
+	if err == nil && output != "" {
+		// Парсим refs/heads/main -> main
+		ref := strings.TrimSpace(output)
+		branchName := strings.TrimPrefix(ref, "refs/heads/")
+
+		// ВАЛИДАЦИЯ: проверяем что ветка действительно существует
+		if branchExists(branchName, branchNames) {
+			slog.Debug("Default branch determined via symbolic-ref",
+				"repo", repoPath,
+				"branch", branchName,
+				"method", "symbolic-ref",
+				"raw_output", output,
+				"validated", true)
+
+			return branchName, nil
+		} else {
+			// symbolic-ref указывает на несуществующую ветку - это проблема
+			slog.Warn("symbolic-ref points to non-existent branch",
+				"repo", repoPath,
+				"branch", branchName,
+				"symbolic_ref", output,
+				"existing_branches", branchNames)
+			// Продолжаем к методу 2 (fallback)
+		}
+	} else {
+		// symbolic-ref не сработал - логируем на уровне DEBUG (это нормально для bare репозиториев)
+		slog.Debug("Method 1 failed, falling back to branch detection",
+			"repo", repoPath,
+			"err", err)
+	}
+
+	// Приоритет 2: Проверяем наличие master
+	slog.Debug("Checking for 'master' branch")
+	for _, branch := range branchNames {
+		if branch == "master" {
+			slog.Debug("Default branch determined",
+				"repo", repoPath,
+				"branch", "master",
+				"method", "fallback-master")
+			return "master", nil
+		}
+	}
+
+	// Приоритет 2: Проверяем наличие main
+	slog.Debug("Checking for 'main' branch")
+	for _, branch := range branchNames {
+		if branch == "main" {
+			slog.Debug("Default branch determined",
+				"repo", repoPath,
+				"branch", "main",
+				"method", "fallback-main")
+			return "main", nil
+		}
+	}
+
+	// Приоритет 3: Берем первую ветку в алфавитном порядке
+	slog.Debug("Using alphabetical order (no master/main found)")
+	firstBranch := branchNames[0]
+	for _, branch := range branchNames {
+		if branch < firstBranch {
+			firstBranch = branch
+		}
+	}
+
+	slog.Debug("Default branch determined",
+		"repo", repoPath,
+		"branch", firstBranch,
+		"method", "alphabetical",
+		"total_branches", len(branchNames))
+
+	return firstBranch, nil
+}
+
+// branchExists проверяет существование ветки в списке
+func branchExists(branch string, branches []string) bool {
+	for _, b := range branches {
+		if b == branch {
+			return true
+		}
+	}
+	return false
 }
 
 // parseLsTree парсит вывод команды git ls-tree
@@ -996,11 +1113,12 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 	if ref == "" {
 		defaultBranch, err := getDefaultBranch(repoPath)
 		if err != nil {
-			slog.Warn("Failed to get default branch, using 'main'", "err", err)
-			ref = "main"
-		} else {
-			ref = defaultBranch
+			slog.Error("Failed to get default branch",
+				"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+				"err", err)
+			return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Repository is empty or has no branches"))
 		}
+		ref = defaultBranch
 	}
 
 	// Нормализуем path
@@ -1019,12 +1137,22 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 
 	output, err := executeGitCommand(repoPath, "ls-tree", gitPath)
 	if err != nil {
+		errMsg := err.Error()
 		slog.Error("Failed to execute git ls-tree",
 			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
 			"ref", ref,
 			"path", path,
 			"err", err)
-		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Path not found"))
+
+		// Более детальные ошибки
+		if strings.Contains(errMsg, "Not a valid object name") {
+			return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Branch or path not found"))
+		}
+		if strings.Contains(errMsg, "does not exist") {
+			return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Path not found"))
+		}
+
+		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Failed to read repository tree"))
 	}
 
 	// Парсим результат
@@ -1119,11 +1247,12 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 	if ref == "" {
 		defaultBranch, err := getDefaultBranch(repoPath)
 		if err != nil {
-			slog.Warn("Failed to get default branch, using 'main'", "err", err)
-			ref = "main"
-		} else {
-			ref = defaultBranch
+			slog.Error("Failed to get default branch",
+				"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+				"err", err)
+			return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Repository is empty or has no branches"))
 		}
+		ref = defaultBranch
 	}
 
 	// Нормализуем path
@@ -1132,12 +1261,22 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 	// Получаем размер файла
 	sizeOutput, err := executeGitCommand(repoPath, "cat-file", "-s", ref+":"+path)
 	if err != nil {
+		errMsg := err.Error()
 		slog.Error("Failed to get file size",
 			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
 			"ref", ref,
 			"path", path,
 			"err", err)
-		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("File not found"))
+
+		// Более детальные ошибки
+		if strings.Contains(errMsg, "Not a valid object name") {
+			return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Branch or file not found"))
+		}
+		if strings.Contains(errMsg, "does not exist") || strings.Contains(errMsg, "Path") {
+			return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("File not found"))
+		}
+
+		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Failed to read file"))
 	}
 
 	size, _ := strconv.ParseInt(sizeOutput, 10, 64)
@@ -1266,11 +1405,12 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 	if ref == "" {
 		defaultBranch, err := getDefaultBranch(repoPath)
 		if err != nil {
-			slog.Warn("Failed to get default branch, using 'main'", "err", err)
-			ref = "main"
-		} else {
-			ref = defaultBranch
+			slog.Error("Failed to get default branch",
+				"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+				"err", err)
+			return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Repository is empty or has no branches"))
 		}
+		ref = defaultBranch
 	}
 
 	// Получаем общее количество коммитов
@@ -1367,8 +1507,10 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 	// Получаем ветку по умолчанию
 	defaultBranch, err := getDefaultBranch(repoPath)
 	if err != nil {
-		slog.Warn("Failed to get default branch", "err", err)
-		defaultBranch = "main"
+		slog.Warn("Failed to get default branch (repository may be empty)",
+			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+			"err", err)
+		defaultBranch = "" // Пустая строка для пустого репозитория
 	}
 
 	// Получаем список веток с их SHA
@@ -1469,11 +1611,25 @@ func (s *Services) getRepositoryInfo(c echo.Context) error {
 	}
 
 	// Получаем ветку по умолчанию
+	slog.Debug("getRepositoryInfo: calling getDefaultBranch",
+		"repoPath", repoPath,
+		"workspace", workspaceSlug,
+		"repo", repoName)
+
 	defaultBranch, err := getDefaultBranch(repoPath)
 	if err != nil {
-		slog.Warn("Failed to get default branch", "err", err)
-		defaultBranch = "main"
+		slog.Warn("Failed to get default branch (repository may be empty)",
+			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
+			"repoPath", repoPath,
+			"err", err)
+		defaultBranch = "" // Пустая строка для пустого репозитория
 	}
+
+	slog.Debug("getRepositoryInfo: got default branch",
+		"defaultBranch", defaultBranch,
+		"is_empty", defaultBranch == "",
+		"workspace", workspaceSlug,
+		"repo", repoName)
 
 	// Получаем количество веток
 	branchesOutput, err := executeGitCommand(repoPath, "branch", "-a")
@@ -1529,10 +1685,15 @@ func (s *Services) getRepositoryInfo(c echo.Context) error {
 	slog.Info("Git repository info retrieved",
 		"workspace", workspaceSlug,
 		"repo", repoName,
+		"default_branch", defaultBranch,
 		"branches_count", branchesCount,
 		"commits_count", commitsCount,
 		"size", repoSize,
+		"has_last_commit", lastCommit != nil,
 		"user", user.Email)
+
+	slog.Debug("getRepositoryInfo: response prepared",
+		"response", response)
 
 	return c.JSON(http.StatusOK, response)
 }
@@ -1562,7 +1723,7 @@ func (s *Services) AddGitServices(g *echo.Group) {
 	// SSH Keys endpoints (no workspace/repo params)
 	gitEnabledGroup.POST("ssh-keys/", s.addGitSSHKey)
 	gitEnabledGroup.GET("ssh-keys/", s.listGitSSHKeys)
-	gitEnabledGroup.DELETE("ssh-keys/:keyId", s.deleteGitSSHKey)
+	gitEnabledGroup.DELETE("ssh-keys/:keyId/", s.deleteGitSSHKey)
 
 	// Git Browse API endpoints (specific routes with :repoName - MUST be before general routes)
 	gitEnabledGroup.GET(":workspaceSlug/repositories/:repoName/tree/", s.getRepositoryTree)

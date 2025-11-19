@@ -190,12 +190,6 @@ func AddSSHKey(userId, userEmail, name, publicKey, gitReposPath string) (*SSHKey
 		return nil, err
 	}
 
-	// Проверяем, не существует ли уже ключ с таким fingerprint
-	existingKey, existingUserId, err := findSSHKeyByFingerprintUnsafe(fingerprint, gitReposPath)
-	if err == nil && existingKey != nil {
-		return nil, fmt.Errorf("SSH key with fingerprint %s already exists for user %s", fingerprint, existingUserId)
-	}
-
 	// Загружаем существующие ключи пользователя или создаем новый файл
 	userKeys, err := LoadUserSSHKeys(userId, gitReposPath)
 	if err != nil {
@@ -210,6 +204,13 @@ func AddSSHKey(userId, userEmail, name, publicKey, gitReposPath string) (*SSHKey
 			}
 		} else {
 			return nil, fmt.Errorf("failed to load user SSH keys: %w", err)
+		}
+	}
+
+	// Проверяем, не существует ли уже ключ с таким fingerprint у ЭТОГО пользователя
+	for _, key := range userKeys.Keys {
+		if key.Fingerprint == fingerprint {
+			return nil, fmt.Errorf("SSH key with fingerprint %s already exists", fingerprint)
 		}
 	}
 
