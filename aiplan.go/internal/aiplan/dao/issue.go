@@ -44,9 +44,9 @@ type Issue struct {
 	// priority character varying(30) COLLATE pg_catalog."default",
 	Priority *string `json:"priority" extensions:"x-nullable"`
 
-	StartDate   *types.TargetDate      `json:"start_date" extensions:"x-nullable"`
+	StartDate   *types.TargetDateTimeZ `json:"start_date" extensions:"x-nullable"`
 	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable"`
-	CompletedAt *types.TargetDate      `json:"completed_at" extensions:"x-nullable"`
+	CompletedAt *types.TargetDateTimeZ `json:"completed_at" extensions:"x-nullable"`
 
 	SequenceId int `json:"sequence_id" gorm:"default:1;index:,where:deleted_at is not null"`
 	// created_by_id uuid,
@@ -1633,11 +1633,11 @@ func CreateIssue(db *gorm.DB, issue *Issue) error {
 
 	// Start timer if state in started group
 	if issue.State.Group == "started" {
-		issue.StartDate = &types.TargetDate{Time: time.Now()}
+		issue.StartDate = &types.TargetDateTimeZ{Time: time.Now()}
 	}
 
 	if issue.State.Group == "completed" {
-		issue.CompletedAt = &types.TargetDate{Time: time.Now()}
+		issue.CompletedAt = &types.TargetDateTimeZ{Time: time.Now()}
 	}
 
 	issue.State = nil
