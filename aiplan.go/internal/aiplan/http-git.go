@@ -1634,7 +1634,7 @@ func (s *Services) getRepositoryInfo(c echo.Context) error {
 	// Получаем количество веток
 	branchesOutput, err := executeGitCommand(repoPath, "branch", "-a")
 	branchesCount := 0
-	if err == nil {
+	if err == nil && strings.TrimSpace(branchesOutput) != "" {
 		lines := strings.Split(strings.TrimSpace(branchesOutput), "\n")
 		branchesCount = len(lines)
 	}
