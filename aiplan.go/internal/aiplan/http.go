@@ -43,6 +43,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -185,6 +186,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
+	migration.New(db).Run()
 
 	jobRegistry := cronmanager.JobRegistry{
 		"notification_processing": cronmanager.Job{

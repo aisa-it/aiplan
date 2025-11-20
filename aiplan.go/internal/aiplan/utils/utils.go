@@ -13,11 +13,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"iter"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
@@ -149,6 +150,39 @@ func SliceToMap[K comparable, V any](in *[]V, f func(*V) K) map[K]V {
 		out[f(&v)] = v
 	}
 	return out
+}
+
+func MergeSlices[T any](slices ...[]T) []T {
+	lenSl := 0
+	for _, s := range slices {
+		lenSl += len(s)
+	}
+
+	result := make([]T, 0, lenSl)
+	for _, s := range slices {
+		result = append(result, s...)
+	}
+	return result
+}
+
+func ToPtr[T any](b T) *T {
+	return &b
+}
+
+func MergeUniqueSlices[T comparable](slices ...[]T) []T {
+	seen := make(map[T]bool)
+	result := make([]T, 0)
+
+	for _, slice := range slices {
+		for _, item := range slice {
+			if !seen[item] {
+				result = append(result, item)
+				seen[item] = true
+			}
+		}
+	}
+
+	return result
 }
 
 func Filter[T any](seq iter.Seq[T], by func(T) bool) iter.Seq[T] {
