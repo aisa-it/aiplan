@@ -2,6 +2,8 @@ package aiplan
 
 import (
 	"errors"
+	"net/http"
+
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -13,7 +15,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"net/http"
 )
 
 type SprintContext struct {
@@ -34,7 +35,8 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			Joins("UpdatedBy").
 			Preload("Watchers").
 			Preload("Issues").
-			Where("sprints.workspace_id = ?", workspace.ID)
+			Where("sprints.workspace_id = ?", workspace.ID).
+			Set("issueProgress", true)
 
 		if val, err := uuid.FromString(sprintId); err != nil {
 			query = query.Where("sprints.sequence_id = ?", sprintId)

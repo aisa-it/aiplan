@@ -20706,6 +20706,12 @@ const docTemplate = `{
                 "search_query": {
                     "type": "string"
                 },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "states": {
                     "type": "array",
                     "items": {

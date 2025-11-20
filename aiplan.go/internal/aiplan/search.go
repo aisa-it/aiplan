@@ -86,6 +86,22 @@ func GetIssuesGroupsSize(db *gorm.DB, user *dao.User, projectId string, searchPa
 			Select("count(i.project_id) as Count, p.id as \"Key\", p.name as sub").
 			Group(`"Key", sub`).
 			Order("sub")
+		if len(searchParams.Filters.WorkspaceIds) > 0 {
+			query = query.Where("p.workspace_id in (?)", searchParams.Filters.WorkspaceIds)
+		}
+
+		if len(searchParams.Filters.ProjectIds) > 0 {
+			query = query.Where("p.id in (?)", searchParams.Filters.ProjectIds)
+		}
+
+		if !user.IsSuperuser {
+			query = query.
+				Where("p.id in (?)", db.
+					Select("project_id").
+					Where("member_id = ?", user.ID).
+					Model(&dao.ProjectMember{}),
+				)
+		}
 	}
 
 	{
