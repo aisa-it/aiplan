@@ -153,15 +153,17 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				}
 				return EError(c, err)
 			} else {
-				// Check if token not blacklisted
-				blacklisted, err := config.MemDB.IsTokenBlacklisted(accessToken.JWT.Signature)
-				if err != nil {
-					return EError(c, err)
-				}
+				/*
+					// Check if token not blacklisted
+					blacklisted, err := config.MemDB.IsTokenBlacklisted(accessToken.JWT.Signature)
+					if err != nil {
+						return EError(c, err)
+					}
 
-				if blacklisted {
-					return EErrorDefined(c, apierrors.ErrTokenExpired)
-				}
+					if blacklisted {
+						return EErrorDefined(c, apierrors.ErrTokenExpired)
+					}
+				*/
 
 				claims, ok := accessToken.JWT.Claims.(jwt.MapClaims)
 				if !ok || !accessToken.JWT.Valid {
@@ -352,23 +354,25 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	if token == nil {
 		return nil, nil, EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	}
-	// Check if token not blacklisted
-	{
-		blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
-		if err != nil {
-			EError(c, err)
-			return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
+	/*
+		// Check if token not blacklisted
+		{
+			blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
+			if err != nil {
+				EError(c, err)
+				return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
+			}
+
+			if blacklisted {
+				return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
+			}
 		}
 
-		if blacklisted {
-			return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
-		}
-	}
-
-	// Blacklist old refresh token
-	if err := a.MemDB.BlacklistToken(token.JWT.Signature); err != nil {
-		return nil, nil, EError(c, err)
-	}
+			// Blacklist old refresh token
+			if err := a.MemDB.BlacklistToken(token.JWT.Signature); err != nil {
+				return nil, nil, EError(c, err)
+			}
+	*/
 
 	claims, ok := token.JWT.Claims.(jwt.MapClaims)
 	if !ok || !token.JWT.Valid {

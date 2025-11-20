@@ -537,6 +537,19 @@ func (s *Services) getIssueList(c echo.Context) error {
 			query = query.Where(q)
 		}
 
+		if len(searchParams.Filters.SprintIds) > 0 {
+			q := s.db.Where("issues.id in (?)", s.db.
+				Model(&dao.SprintIssue{}).
+				Select("issue_id").
+				Where("sprint_id in (?)", searchParams.Filters.SprintIds))
+			if slices.Contains(searchParams.Filters.SprintIds, "") {
+				q = q.Or("issues.id not in (?)", s.db.
+					Select("issue_id").
+					Model(&dao.SprintIssue{}))
+			}
+			query = query.Where(q)
+		}
+
 		if len(searchParams.Filters.WorkspaceIds) > 0 {
 			query = query.Where("issues.workspace_id in (?)",
 				s.db.Select("workspace_id").

@@ -463,7 +463,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				if formatted, err := utils.FormatDateStr(v.NewValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
 					v.NewValue = formatted
 				} else {
-					slog.Error("format", "newValue", v.NewValue, "id", v.Id, "comment", v.Comment, "error", err)
+					slog.Error("date format", "newValue", v.NewValue, "id", v.Id, "comment", v.Comment, "error", err)
 				}
 			}
 
@@ -471,7 +471,8 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				if formatted, err := utils.FormatDateStr(*v.OldValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
 					v.OldValue = &formatted
 				} else {
-					slog.Error("format", "oldValue", *v.OldValue, "id", v.Id, "comment", v.Comment, "error", err)
+					slog.Error("date format", "oldValue", *v.OldValue, "id", v.Id, "comment", v.Comment, "error", err)
+
 				}
 			}
 			//date, err := utils.FormatDateStr(v.NewValue, "2006-01-02T15:04:05Z07:00", nil)
@@ -547,7 +548,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				} else if err != gorm.ErrRecordNotFound {
 					continue
 				} else {
-					slog.Info(fmt.Sprintf("ERR EntityActivityAfterFind: field: \"%s\", fieldTag: \"%s\", fieldType: \"%T\", id: \"%s\", activityId: \"%s\" error: \"%s\"", fieldName, fieldTag, ptr.Interface(), newID, aI.GetId(), err.Error()))
+					slog.Debug("ERR EntityActivityAfterFind", "field", fieldName, "fieldTag", fieldTag, "fieldType", fmt.Sprintf("%T", ptr.Interface()), "id", newID, "activityId", aI.GetId(), "error", err.Error())
 					continue
 				}
 			}
@@ -564,7 +565,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				} else if err != gorm.ErrRecordNotFound {
 					continue
 				} else {
-					slog.Info(fmt.Sprintf("ERR EntityActivityAfterFind: field: \"%s\", fieldTag: \"%s\", fieldType: \"%T\", id: \"%s\", activityId: \"%s\" error: \"%s\"", fieldName, fieldTag, ptr.Interface(), oldID, aI.GetId(), err.Error()))
+					slog.Debug("ERR EntityActivityAfterFind", "field", fieldName, "fieldTag", fieldTag, "fieldType", fmt.Sprintf("%T", ptr.Interface()), "id", oldID, "activityId", aI.GetId(), "error", err.Error())
 					continue
 				}
 			}

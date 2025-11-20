@@ -368,6 +368,7 @@ type IssuesListFilters struct {
 	WorkspaceIds   []string `json:"workspaces"`
 	WorkspaceSlugs []string `json:"workspace_slugs"`
 	ProjectIds     []string `json:"projects"`
+	SprintIds      []string `json:"sprints"`
 
 	OnlyActive   bool `json:"only_active"`
 	AssignedToMe bool `json:"assigned_to_me"`
