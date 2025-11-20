@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -50,10 +51,11 @@ type AuthContext struct {
 }
 
 type AuthConfig struct {
-	Secret  []byte
-	DB      *gorm.DB
-	MemDB   *mem.AIPlanMemAPI
-	Skipper middleware.Skipper
+	Secret      []byte
+	DB          *gorm.DB
+	MemDB       *mem.AIPlanMemAPI
+	Skipper     middleware.Skipper
+	TokensCache *tokenscache.TokensCache
 }
 
 func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
@@ -153,17 +155,15 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				}
 				return EError(c, err)
 			} else {
-				/*
-					// Check if token not blacklisted
-					blacklisted, err := config.MemDB.IsTokenBlacklisted(accessToken.JWT.Signature)
-					if err != nil {
-						return EError(c, err)
-					}
+				// Check if token not blacklisted
+				blacklisted, err := config.MemDB.IsTokenBlacklisted(accessToken.JWT.Signature)
+				if err != nil {
+					return EError(c, err)
+				}
 
-					if blacklisted {
-						return EErrorDefined(c, apierrors.ErrTokenExpired)
-					}
-				*/
+				if blacklisted {
+					return EErrorDefined(c, apierrors.ErrTokenExpired)
+				}
 
 				claims, ok := accessToken.JWT.Claims.(jwt.MapClaims)
 				if !ok || !accessToken.JWT.Valid {
@@ -354,25 +354,31 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	if token == nil {
 		return nil, nil, EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	}
-	/*
-		// Check if token not blacklisted
-		{
-			blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
-			if err != nil {
-				EError(c, err)
-				return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
-			}
 
-			if blacklisted {
-				return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
-			}
+	if cachedTokens := a.TokensCache.GetTokens(token.SignedString); cachedTokens != nil {
+		accessToken := &Token{SignedString: cachedTokens.AccessToken}
+		refreshToken := &Token{SignedString: cachedTokens.RefreshToken}
+		setAuthCookies(c, accessToken, refreshToken)
+		return accessToken, cachedTokens.User, nil
+	}
+
+	// Check if token not blacklisted
+	{
+		blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
+		if err != nil {
+			EError(c, err)
+			return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
 		}
 
-			// Blacklist old refresh token
-			if err := a.MemDB.BlacklistToken(token.JWT.Signature); err != nil {
-				return nil, nil, EError(c, err)
-			}
-	*/
+		if blacklisted {
+			return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
+		}
+	}
+
+	// Blacklist old refresh token
+	if err := a.MemDB.BlacklistToken(token.JWT.Signature); err != nil {
+		return nil, nil, EError(c, err)
+	}
 
 	claims, ok := token.JWT.Claims.(jwt.MapClaims)
 	if !ok || !token.JWT.Valid {
@@ -411,6 +417,8 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	}
 
 	setAuthCookies(c, accessToken, refreshToken)
+
+	a.TokensCache.StoreTokens(token.SignedString, accessToken.SignedString, refreshToken.SignedString, &user)
 
 	return accessToken, &user, nil
 }
