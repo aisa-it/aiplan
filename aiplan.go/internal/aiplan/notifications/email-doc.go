@@ -37,9 +37,7 @@ func (e *emailNotifyDoc) Process() {
 		Joins("Workspace").
 		Preload("Doc.ParentDoc").
 		Preload("Doc.Author").
-		Preload("Doc.Editors").
-		Preload("Doc.Readers").
-		Preload("Doc.Watchers").
+		Preload("Doc.AccessRules").
 		Order("doc_activities.created_at").
 		Where("doc_activities.notified = ?", false).
 		Limit(100).
@@ -376,9 +374,7 @@ func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
 			Joins("Author").
 			Joins("Workspace").
 			Joins("ParentDoc").
-			Preload("Readers").
-			Preload("Editors").
-			Preload("Watchers").
+			Preload("AccessRules.Member").
 			Where("docs.id = ?", activity.NewDoc.ID).First(&newDocCreate).Error != nil {
 		}
 	}
@@ -410,6 +406,9 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 	commentCount := 0
 	for _, activity := range activities {
 		// doc deletion
+		activity.Doc.AfterFind(tx)
+		doc.AfterFind(tx)
+
 		if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "deleted" {
 			var template dao.Template
 			if err := tx.Where("name = ?", "doc_activity_delete").First(&template).Error; err != nil {
@@ -639,9 +638,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 			Joins("Author").
 			Joins("Workspace").
 			Joins("ParentDoc").
-			Preload("Readers").
-			Preload("Editors").
-			Preload("Watchers").
+			Preload("AccessRules").
 			Where("docs.id = ?", docId).
 			First(&newDoc).Error; err != nil {
 			return ""

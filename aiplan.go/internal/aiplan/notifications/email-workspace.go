@@ -243,9 +243,7 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 					Joins("ParentDoc").
 					Joins("Workspace").
 					Joins("Author").
-					Preload("Editors").
-					Preload("Readers").
-					Preload("Watchers").
+					Preload("AccessRules.Member").
 					Where("docs.id = ?", docId).First(&doc).Error; err != nil {
 					continue
 				}

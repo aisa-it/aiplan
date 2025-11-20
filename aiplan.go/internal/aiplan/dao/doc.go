@@ -51,19 +51,77 @@ type Doc struct {
 	ChildDocs   []string `json:"-" gorm:"-"`
 	Breadcrumbs []string `json:"-" gorm:"-"`
 
-	Editors  *[]User `json:"editor_details,omitempty" gorm:"many2many:doc_editors;foreignKey:id;joinForeignKey:doc_id;References:id;joinReferences:editor_id;- :migration" extensions:"x-nullable"`
-	Readers  *[]User `json:"reader_details,omitempty" gorm:"many2many:doc_readers;foreignKey:id;joinForeignKey:doc_id;References:id;joinReferences:reader_id;- :migration" extensions:"x-nullable"`
-	Watchers *[]User `json:"watcher_details,omitempty" gorm:"many2many:doc_watchers;foreignKey:id;joinForeignKey:doc_id;References:id;joinReferences:watcher_id;- :migration" extensions:"x-nullable"`
+	Editors  *[]User `json:"editor_details,omitempty" gorm:"-"`
+	Readers  *[]User `json:"reader_details,omitempty" gorm:"-"`
+	Watchers *[]User `json:"watcher_details,omitempty" gorm:"-"`
 
 	EditorsIDs []string `json:"editors" gorm:"-"`
 	ReaderIDs  []string `json:"readers" gorm:"-"`
 	WatcherIDs []string `json:"watchers" gorm:"-"`
+
+	AccessRules []DocAccessRules `json:"-" gorm:"foreignKey:DocId"`
 
 	URL      *url.URL `json:"-" gorm:"-"`
 	ShortURL *url.URL `json:"-" gorm:"-"`
 
 	IsFavorite           bool `json:"is_favorite" gorm:"-"`
 	CurrentWorkspaceRole int  `json:"-" gorm:"-"`
+}
+
+func (d *Doc) PopulateAccessFields() {
+	d.EditorsIDs = []string{}
+	d.ReaderIDs = []string{}
+	d.WatcherIDs = []string{}
+	editorUsers := make([]User, 0)
+	readerUsers := make([]User, 0)
+	watcherUsers := make([]User, 0)
+
+	d.Editors = &editorUsers
+	d.Readers = &readerUsers
+	d.Watchers = &watcherUsers
+
+	if len(d.AccessRules) == 0 {
+		return
+	}
+
+	editors := make([]string, 0)
+	readers := make([]string, 0)
+	watchers := make([]string, 0)
+
+	for _, access := range d.AccessRules {
+		if access.Edit {
+			editors = append(editors, access.MemberId.String())
+			if access.Member != nil {
+				editorUsers = append(editorUsers, *access.Member)
+			}
+		} else {
+			readers = append(readers, access.MemberId.String())
+			if access.Member != nil {
+				readerUsers = append(readerUsers, *access.Member)
+			}
+		}
+
+		if access.Watch {
+			watchers = append(watchers, access.MemberId.String())
+			if access.Member != nil {
+				watcherUsers = append(watcherUsers, *access.Member)
+			}
+		}
+	}
+
+	d.EditorsIDs = editors
+	d.ReaderIDs = readers
+	d.WatcherIDs = watchers
+
+	if len(editorUsers) > 0 {
+		d.Editors = &editorUsers
+	}
+	if len(readerUsers) > 0 {
+		d.Readers = &readerUsers
+	}
+	if len(watcherUsers) > 0 {
+		d.Watchers = &watcherUsers
+	}
 }
 
 // Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
@@ -101,7 +159,6 @@ func (d Doc) GetDocId() string {
 
 // Функция AfterFind выполняется после успешного поиска записи в базе данных.  Она выполняет дополнительные операции, такие как обновление информации о URL,  получение итоговых данных о реакции на комментарии, и другие необходимые действия после извлечения данных из базы.
 func (d *Doc) AfterFind(tx *gorm.DB) error {
-
 	d.SetUrl()
 
 	if userId, ok := tx.Get("member_id"); ok {
@@ -117,9 +174,7 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 		}
 	}
 
-	d.EditorsIDs = utils.SliceToSlice(d.Editors, func(u *User) string { return u.ID })
-	d.ReaderIDs = utils.SliceToSlice(d.Readers, func(u *User) string { return u.ID })
-	d.WatcherIDs = utils.SliceToSlice(d.Watchers, func(u *User) string { return u.ID })
+	d.PopulateAccessFields()
 
 	if d.UpdatedById != nil {
 		if err := tx.Where("id = ?", d.UpdatedById).First(&d.Updater).Error; err != nil {
@@ -138,12 +193,11 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 	memberId, ok := tx.Get("member_id")
 	if ok {
 		if err := tx.Model(&Doc{}).
-			Joins("LEFT JOIN doc_readers ON doc_readers.doc_id = docs.id").
-			Joins("LEFT JOIN doc_editors ON doc_editors.doc_id = docs.id").
-			Joins("LEFT JOIN doc_watchers ON doc_watchers.doc_id = docs.id").
+			Joins("LEFT JOIN doc_access_rules dar ON dar.doc_id = docs.id").
 			Select("docs.id").
 			Where("docs.parent_doc_id = ?", d.ID).
-			Where("docs.reader_role <= ? OR docs.editor_role <= ? OR doc_readers.reader_id = ? OR doc_editors.editor_id = ? OR doc_watchers.watcher_id = ? OR docs.created_by_id = ?", d.CurrentWorkspaceRole, d.CurrentWorkspaceRole, memberId, memberId, memberId, memberId).
+			Where("docs.reader_role <= ? OR docs.editor_role <= ? OR dar.member_id = ? OR docs.created_by_id = ?",
+				d.CurrentWorkspaceRole, d.CurrentWorkspaceRole, memberId, memberId).
 			Group("docs.id").
 			Scan(&d.ChildDocs).Error; err != nil {
 			return err
@@ -154,25 +208,24 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 		if d.ParentDocID.Valid {
 			var breadcrumbs []string
 
-			// Выполняем рекурсивный SQL
 			err := tx.Raw(`
-	WITH RECURSIVE breadcrumbs AS (
-		SELECT
-			id, title, parent_doc_id,
-			ARRAY[id] AS path
-		FROM docs
-		WHERE id = ?
+    WITH RECURSIVE breadcrumbs AS (
+        SELECT
+            id, title, parent_doc_id,
+            ARRAY[id] AS path
+        FROM docs
+        WHERE id = ?
 
-		UNION ALL
+        UNION ALL
 
-		SELECT
-			d.id, d.title, d.parent_doc_id,
-			b.path || d.id
-		FROM docs d
-		INNER JOIN breadcrumbs b ON d.id = b.parent_doc_id
-		WHERE NOT d.id = ANY(b.path)
-	)
-	SELECT id FROM breadcrumbs;
+        SELECT
+            d.id, d.title, d.parent_doc_id,
+            b.path || d.id
+        FROM docs d
+        INNER JOIN breadcrumbs b ON d.id = b.parent_doc_id
+        WHERE NOT d.id = ANY(b.path)
+    )
+    SELECT id FROM breadcrumbs;
 `, d.ID).Scan(&breadcrumbs).Error
 
 			if err != nil {
@@ -243,17 +296,10 @@ func (d *Doc) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	if err := tx.Where("doc_id = ?", d.ID).Delete(&DocEditor{}).Error; err != nil {
+	if err := tx.Where("doc_id = ?", d.ID).Delete(&DocAccessRules{}).Error; err != nil {
 		return err
 	}
 
-	if err := tx.Where("doc_id = ?", d.ID).Delete(&DocReader{}).Error; err != nil {
-		return err
-	}
-
-	if err := tx.Where("doc_id = ?", d.ID).Delete(&DocWatcher{}).Error; err != nil {
-		return err
-	}
 	// Delete comments, reaction
 	var comments []DocComment
 	if err := tx.Where("doc_id = ?", d.ID).Preload("Attachments").Find(&comments).Error; err != nil {
@@ -920,62 +966,27 @@ func (attachment *DocAttachment) AfterDelete(tx *gorm.DB) error {
 	return nil
 }
 
-type DocEditor struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+type DocAccessRules struct {
+	Id        uuid.UUID `json:"id" gorm:"primaryKey"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	EditorId    string  `json:"editor_id" gorm:"uniqueIndex:doc_editors_idx,priority:2"`
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	DocId       string  `json:"doc_id" gorm:"index;uniqueIndex:doc_editors_idx,priority:1"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string  `json:"workspace_id"`
+	MemberId    uuid.UUID     `json:"editor_id" gorm:"uniqueIndex:doc_member_idx,priority:2"`
+	CreatedById uuid.UUID     `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	DocId       uuid.UUID     `json:"doc_id" gorm:"index;uniqueIndex:doc_member_idx,priority:1"`
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	WorkspaceId uuid.UUID     `json:"workspace_id"`
+
+	Edit  bool `json:"edit"`
+	Watch bool `json:"watch"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Doc       *Doc       `gorm:"foreignKey:DocId" extensions:"x-nullable"`
-	Editor    *User      `gorm:"foreignKey:EditorId" extensions:"x-nullable"`
+	Member    *User      `gorm:"foreignKey:MemberId" extensions:"x-nullable"`
 }
 
 // Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
-func (DocEditor) TableName() string { return "doc_editors" }
-
-type DocReader struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-
-	ReaderId    string  `json:"reader_id" gorm:"uniqueIndex:doc_readers_idx,priority:2"`
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	DocId       string  `json:"doc_id" gorm:"index;uniqueIndex:doc_readers_idx,priority:1"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string  `json:"workspace_id"`
-
-	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Doc       *Doc       `gorm:"foreignKey:DocId" extensions:"x-nullable"`
-	Reader    *User      `gorm:"foreignKey:ReaderId" extensions:"x-nullable"`
-}
-
-// Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
-func (DocReader) TableName() string { return "doc_readers" }
-
-type DocWatcher struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-
-	WatcherId   string  `json:"watcher_id" gorm:"uniqueIndex:doc_watchers_idx,priority:2"`
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	DocId       string  `json:"doc_id" gorm:"index;uniqueIndex:doc_watchers_idx,priority:1"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string  `json:"workspace_id"`
-
-	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Doc       *Doc       `gorm:"foreignKey:DocId" extensions:"x-nullable"`
-	Watcher   *User      `gorm:"foreignKey:WatcherId" extensions:"x-nullable"`
-}
-
-// Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
-func (DocWatcher) TableName() string { return "doc_watchers" }
+func (DocAccessRules) TableName() string { return "doc_access_rules" }
 
 // DocMemberExtendFields
 // -migration
@@ -1046,11 +1057,9 @@ func GetDoc(db *gorm.DB, workspaceId, docId string, workspaceMember WorkspaceMem
 	d := Doc{}
 	return d, db.Set("member_id", workspaceMember.MemberId).
 		Set("member_role", workspaceMember.Role).
-		Joins("LEFT JOIN doc_readers ON doc_readers.doc_id = docs.id").
-		Joins("LEFT JOIN doc_editors ON doc_editors.doc_id = docs.id").
-		Joins("LEFT JOIN doc_watchers ON doc_watchers.doc_id = docs.id").
 		Where("docs.workspace_id = ?", workspaceId).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR doc_readers.reader_id = ? OR doc_editors.editor_id = ? OR doc_watchers.watcher_id = ? OR docs.created_by_id = ?", workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId).
+		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 		Where("docs.id = ?", docId).
 		First(&d).Error
 }
@@ -1077,77 +1086,47 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 		}
 	}
 
+	doc.ReaderIDs = getUniqueDocMemberIDs(doc.WatcherIDs, doc.ReaderIDs, doc.EditorsIDs)
+
 	userMap := utils.SliceToMap(&users, func(u *User) string { return u.ID })
+	var newAccessRules []DocAccessRules
+	for id, u := range userMap {
+		newAccessRules = append(newAccessRules, DocAccessRules{
+			Id: GenUUID(),
 
-	{ // create Editors
-		if len(doc.EditorsIDs) > 0 {
-			var newEditors []DocEditor
-			for _, editor := range doc.EditorsIDs {
-				newEditors = append(newEditors, DocEditor{
-					Id:          GenID(),
-					EditorId:    editor,
-					DocId:       doc.ID.String(),
-					WorkspaceId: doc.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
-				})
-			}
-			if err := db.CreateInBatches(&newEditors, 10).Error; err != nil {
-				return err
-			}
-			usersTmp := utils.SliceToSlice(&newEditors, func(dw *DocEditor) User { return userMap[dw.EditorId] })
-			doc.Editors = &usersTmp
-		} else {
-			doc.EditorsIDs = make([]string, 0)
-		}
+			MemberId:    uuid.Must(uuid.FromString(u.ID)),
+			CreatedById: uuid.Must(uuid.FromString(user.ID)),
+			DocId:       doc.ID,
+			UpdatedById: uuid.NullUUID{},
+			WorkspaceId: uuid.Must(uuid.FromString(doc.WorkspaceId)),
+			Edit:        utils.CheckInSlice(doc.EditorsIDs, id),
+			Watch:       utils.CheckInSlice(doc.WatcherIDs, id),
+		})
 	}
 
-	{ // create Readers
-		if len(doc.ReaderIDs) > 0 {
-			var newReaders []DocReader
-			for _, reader := range doc.ReaderIDs {
-				newReaders = append(newReaders, DocReader{
-					Id:          GenID(),
-					ReaderId:    reader,
-					DocId:       doc.ID.String(),
-					WorkspaceId: doc.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
-				})
-			}
-			if err := db.CreateInBatches(&newReaders, 10).Error; err != nil {
-				return err
-			}
-			usersTmp := utils.SliceToSlice(&newReaders, func(dw *DocReader) User { return userMap[dw.ReaderId] })
-			doc.Readers = &usersTmp
-		} else {
-			doc.ReaderIDs = make([]string, 0)
-		}
+	if err := db.CreateInBatches(&newAccessRules, 10).Error; err != nil {
+		return err
 	}
 
-	{ // create Watchers
-		if len(doc.WatcherIDs) > 0 {
-			var newWatchers []DocWatcher
-			for _, watcher := range doc.WatcherIDs {
-				newWatchers = append(newWatchers, DocWatcher{
-					Id:          GenID(),
-					WatcherId:   watcher,
-					DocId:       doc.ID.String(),
-					WorkspaceId: doc.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
-				})
-			}
-			if err := db.CreateInBatches(&newWatchers, 10).Error; err != nil {
-				return err
-			}
-
-			usersTmp := utils.SliceToSlice(&newWatchers, func(dw *DocWatcher) User { return userMap[dw.WatcherId] })
-			doc.Watchers = &usersTmp
-		} else {
-			doc.WatcherIDs = make([]string, 0)
-		}
-	}
+	doc.Editors = utils.ToPtr(utils.SliceToSlice(&doc.EditorsIDs, func(s *string) User { return userMap[*s] }))
+	doc.Watchers = utils.ToPtr(utils.SliceToSlice(&doc.WatcherIDs, func(s *string) User { return userMap[*s] }))
+	doc.Readers = utils.ToPtr(utils.SliceToSlice(&doc.ReaderIDs, func(s *string) User { return userMap[*s] }))
 
 	return nil
+}
+
+func getUniqueDocMemberIDs(watcherIDs, readerIDs, editorIDs []string) []string {
+	editorSet := make(map[string]bool)
+	for _, id := range editorIDs {
+		editorSet[id] = true
+	}
+
+	filteredWatchers := make([]string, 0)
+	for _, id := range watcherIDs {
+		if !editorSet[id] {
+			filteredWatchers = append(filteredWatchers, id)
+		}
+	}
+
+	return utils.MergeUniqueSlices(filteredWatchers, readerIDs)
 }
