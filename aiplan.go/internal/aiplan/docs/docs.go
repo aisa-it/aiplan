@@ -19139,6 +19139,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.IssueBlockerLight"
                     }
                 },
+                "comments_count": {
+                    "type": "integer"
+                },
                 "completed_at": {
                     "type": "string",
                     "x-nullable": true
