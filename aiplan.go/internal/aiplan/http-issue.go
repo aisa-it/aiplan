@@ -413,10 +413,10 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 func (s *Services) getIssueList(c echo.Context) error {
 	globalSearch := false
 	var user dao.User
-	var projectMember *dao.ProjectMember
+	var projectMember dao.ProjectMember
 	var sprint *dao.Sprint
 	if context, ok := c.(ProjectContext); ok {
-		projectMember = &context.ProjectMember
+		projectMember = context.ProjectMember
 		user = *context.User
 	}
 	if context, ok := c.(AuthContext); ok {
@@ -468,7 +468,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Fill filters
-	if !globalSearch && projectMember != nil {
+	if !globalSearch && projectMember.ProjectId != "" {
 		query = query.
 			Where("issues.workspace_id = ?", projectMember.WorkspaceId).
 			Where("issues.project_id = ?", projectMember.ProjectId)
