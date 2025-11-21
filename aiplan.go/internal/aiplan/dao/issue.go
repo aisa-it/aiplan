@@ -407,7 +407,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 		if issue.State != nil && issue.State.Group == "cancelled" {
 			issue.IssueProgress.Status = types.Cancelled
 		} else {
-			if issue.StartDate == nil {
+			if issue.StartDate == nil && issue.CompletedAt == nil {
 				issue.IssueProgress.Status = types.Pending
 			} else if issue.StartDate != nil && issue.CompletedAt == nil {
 				issue.IssueProgress.Status = types.InProgress
