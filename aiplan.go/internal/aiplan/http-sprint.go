@@ -26,7 +26,7 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		sprintId := c.Param("sprintId")
 		workspace := c.(WorkspaceContext).Workspace
-		//user := c.(WorkspaceContext).User
+		user := c.(WorkspaceContext).User
 
 		var sprint dao.Sprint
 		query := s.db.
@@ -34,9 +34,10 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			Joins("CreatedBy").
 			Joins("UpdatedBy").
 			Preload("Watchers").
-			Preload("Issues").
+			Preload("Issues.State").
 			Where("sprints.workspace_id = ?", workspace.ID).
-			Set("issueProgress", true)
+			Set("issueProgress", true).
+			Set("userId", user.ID)
 
 		if val, err := uuid.FromString(sprintId); err != nil {
 			query = query.Where("sprints.sequence_id = ?", sprintId)
@@ -101,6 +102,8 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 
 	sprintGroup.GET("/activities/", s.getSpringActivityList)
 	sprintGroup.GET("/", s.GetSprint)
+	
+  sprintGroup.POST("/sprint-view/", s.updateSprintView)
 
 	sprintGroup.POST("/issues/search/", s.getIssueList)
 }
@@ -126,7 +129,6 @@ func (s *Services) getSprintList(c echo.Context) error {
 	var sprints []dao.Sprint
 	if err := s.db.
 		Set("issueProgress", true).
-		Preload("Issues").
 		Preload("Issues.State").
 		Where("workspace_id = ?", workspace.ID).
 		Find(&sprints).Error; err != nil {
@@ -642,6 +644,51 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(pa *dao.FullActivity) dto.EntityActivityFull { return *pa.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+// updateSprintView godoc
+// @id updateSprintView
+// @Summary Спринты: установка фильтров для просмотра
+// @Description Позволяет пользователю установить настройки просмотра для конкретного спринта.
+// @Tags Sprint
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
+// @Param view_props body types.ViewProps true "Настройки просмотра проекта"
+// @Success 204 {string} string "Настройки просмотра успешно обновлены"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка при установке настроек просмотра"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/ [post]
+func (s *Services) updateSprintView(c echo.Context) error {
+	user := *c.(SprintContext).User
+	sprint := c.(SprintContext).Sprint
+
+	var viewProps types.ViewProps
+
+	if err := c.Bind(&viewProps); err != nil {
+		return EError(c, err)
+	}
+
+	if err := c.Validate(viewProps); err != nil {
+		return EErrorDefined(c, apierrors.ErrInvalidSprintViewProps.WithFormattedMessage(err))
+	}
+
+	view := dao.SprintViews{
+		Id:        dao.GenUUID(),
+		SprintId:  sprint.Id,
+		MemberId:  uuid.Must(uuid.FromString(user.ID)),
+		ViewProps: viewProps,
+	}
+
+	if err := s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "sprint_id"}, {Name: "member_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"view_props", "updated_at"}),
+	}).Create(&view).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.NoContent(http.StatusOK)
 }
 
 //
