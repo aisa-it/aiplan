@@ -353,6 +353,7 @@ type IssueWithCount struct {
 	LinkCount         int64 `json:"link_count" gorm:"->;-:migration"`
 	AttachmentCount   int64 `json:"attachment_count" gorm:"->;-:migration"`
 	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->;-:migration"`
+	CommentsCount     int64 `json:"comments_count" gorm:"->;-:migration"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 	DescHighlighted string `json:"desc_highlighted,omitempty" gorm:"->;-:migration"`
@@ -380,6 +381,7 @@ func (iwc *IssueWithCount) ToDTO() *dto.IssueWithCount {
 		LinkCount:         int(iwc.LinkCount),
 		AttachmentCount:   int(iwc.AttachmentCount),
 		LinkedIssuesCount: int(iwc.LinkedIssuesCount),
+		CommentsCount:     int(iwc.CommentsCount),
 		NameHighlighted:   iwc.NameHighlighted,
 		DescHighlighted:   iwc.DescHighlighted,
 	}
