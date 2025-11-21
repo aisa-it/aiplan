@@ -15748,6 +15748,72 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Позволяет пользователю установить настройки просмотра для конкретного спринта.",
+                "tags": [
+                    "Sprint"
+                ],
+                "summary": "Спринты: установка фильтров для просмотра",
+                "operationId": "updateSprintView",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или номер последовательности спринта",
+                        "name": "sprintId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Настройки просмотра проекта",
+                        "name": "view_props",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.ViewProps"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Настройки просмотра успешно обновлены",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка при установке настроек просмотра",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Проект не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/watchers/": {
             "post": {
                 "security": [
@@ -19793,6 +19859,9 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                },
+                "view": {
+                    "$ref": "#/definitions/types.ViewProps"
                 },
                 "watchers": {
                     "type": "array",

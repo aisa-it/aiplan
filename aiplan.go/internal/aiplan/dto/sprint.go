@@ -1,9 +1,10 @@
 package dto
 
 import (
+	"time"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
-	"time"
 )
 
 type SprintLight struct {
@@ -32,4 +33,5 @@ type Sprint struct {
 	Workspace *WorkspaceLight `json:"workspace,omitempty"`
 	Issues    []IssueLight    `json:"issues,omitempty"`
 	Watchers  []UserLight     `json:"watchers,omitempty"`
+	View      types.ViewProps `json:"view,omitempty"`
 }
