@@ -33,5 +33,5 @@ type Sprint struct {
 	Workspace *WorkspaceLight `json:"workspace,omitempty"`
 	Issues    []IssueLight    `json:"issues,omitempty"`
 	Watchers  []UserLight     `json:"watchers,omitempty"`
-	View      types.ViewProps `json:"view,omitempty"`
+	View      types.ViewProps `json:"view_props,omitempty"`
 }
