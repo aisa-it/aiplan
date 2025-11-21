@@ -102,6 +102,7 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 	sprintGroup.GET("/activities/", s.getSpringActivityList)
 	sprintGroup.GET("/", s.GetSprint)
 
+	sprintGroup.POST("/issues/search/", s.getIssueList)
 }
 
 // getSprintList godoc
