@@ -19860,7 +19860,7 @@ const docTemplate = `{
                 "url": {
                     "type": "string"
                 },
-                "view": {
+                "view_props": {
                     "$ref": "#/definitions/types.ViewProps"
                 },
                 "watchers": {

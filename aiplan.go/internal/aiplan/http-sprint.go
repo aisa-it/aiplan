@@ -102,7 +102,7 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 
 	sprintGroup.GET("/activities/", s.getSpringActivityList)
 	sprintGroup.GET("/", s.GetSprint)
-	sprintGroup.POST("/sprint-views/", s.updateSprintView)
+	sprintGroup.POST("/sprint-view/", s.updateSprintView)
 }
 
 // getSprintList godoc
@@ -672,6 +672,7 @@ func (s *Services) updateSprintView(c echo.Context) error {
 	}
 
 	view := dao.SprintViews{
+		Id:        dao.GenUUID(),
 		SprintId:  sprint.Id,
 		MemberId:  uuid.Must(uuid.FromString(user.ID)),
 		ViewProps: viewProps,
