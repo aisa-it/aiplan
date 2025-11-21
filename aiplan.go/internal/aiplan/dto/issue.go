@@ -122,6 +122,7 @@ type IssueWithCount struct {
 	LinkCount         int `json:"link_count"`
 	AttachmentCount   int `json:"attachment_count"`
 	LinkedIssuesCount int `json:"linked_issues_count"`
+	CommentsCount     int `json:"comments_count"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
 	DescHighlighted string `json:"desc_highlighted,omitempty"`
