@@ -1415,7 +1415,7 @@ func (i *IssueComment) ToDTO() *dto.IssueComment {
 }
 
 type CommentReaction struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	UserId    string    `json:"user_id"`
@@ -1448,7 +1448,7 @@ func (cr CommentReaction) ToDTO() *dto.CommentReaction {
 		Id:        cr.Id,
 		CreatedAt: cr.CreatedAt,
 		UpdatedAt: cr.UpdatedAt,
-		CommentId: cr.CommentId.String(),
+		CommentId: cr.CommentId,
 		UserId:    cr.UserId,
 		Reaction:  cr.Reaction,
 	}

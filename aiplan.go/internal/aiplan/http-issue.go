@@ -2946,7 +2946,7 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 	// Создаем новую реакцию
 	commentUUID := uuid.Must(uuid.FromString(commentId))
 	reaction := dao.CommentReaction{
-		Id:        dao.GenID(),
+		Id:        dao.GenUUID(),
 		CreatedAt: time.Now(),
 		UserId:    user.ID,
 		CommentId: commentUUID,
