@@ -225,6 +225,8 @@ var (
 	ErrEmailIsExist             = DefinedError{Code: 6014, StatusCode: http.StatusBadRequest, Err: "email is exist", RuErr: "Пользователь с таким Email уже существует"}
 	ErrEmailChangeLimit         = DefinedError{Code: 6015, StatusCode: http.StatusTooManyRequests, Err: "the code was sent less than a minute ago", RuErr: "Запрос нового кода верификации можно делать раз в минуту"}
 	ErrEmailVerify              = DefinedError{Code: 6016, StatusCode: http.StatusBadRequest, Err: "invalid or expired code", RuErr: "Неверный или просроченный код"}
+	ErrTutorialAction           = DefinedError{Code: 6017, StatusCode: http.StatusBadRequest, Err: "invalid tutorial action", RuErr: "Недопустимое действие обучения"}
+	ErrTutorialAlreadySkipped   = DefinedError{Code: 6019, StatusCode: http.StatusConflict, Err: "tutorial already skipped", RuErr: "Обучение уже было пропущено"}
 
 	// 7*** - integration errors
 	ErrInvalidEventType      = DefinedError{Code: 7001, StatusCode: http.StatusBadRequest, Err: "invalid event type", RuErr: "Указан неверный тип события"}
