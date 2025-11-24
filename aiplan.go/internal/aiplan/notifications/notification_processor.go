@@ -136,6 +136,9 @@ func (np *NotificationProcessor) handleNotification(notification *dao.DeferredNo
 }
 
 func (np *NotificationProcessor) sendToTelegram(notification *dao.DeferredNotifications, sender INotifySend) bool {
+	if np.telegramService.disabled {
+		return false
+	}
 	if !notification.User.CanReceiveNotifications() && !notification.User.Settings.TgNotificationMute {
 		return true
 	}

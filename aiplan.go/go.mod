@@ -6,7 +6,6 @@ require (
 	ariga.io/atlas-go-sdk v0.7.2
 	github.com/altcha-org/altcha-lib-go v0.2.2
 	github.com/andygrunwald/go-jira v1.16.0
-	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-playground/validator v9.31.0+incompatible
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
@@ -27,11 +26,12 @@ require (
 
 require (
 	codeberg.org/go-pdf/fpdf v0.11.1
-	github.com/aisa-it/aiplan-mem v1.0.3
+	github.com/aisa-it/aiplan-mem v1.1.0
 	github.com/aws/aws-sdk-go-v2 v1.36.6
 	github.com/aws/aws-sdk-go-v2/config v1.29.18
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.84.1
 	github.com/coder/websocket v1.8.13
+	github.com/gliderlabs/ssh v0.3.8
 	github.com/gofrs/uuid/v5 v5.3.2
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
@@ -39,6 +39,7 @@ require (
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/ollama/ollama v0.9.6
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/stretchr/testify v1.10.0
 	github.com/swaggo/echo-swagger v1.4.1
 	github.com/swaggo/swag v1.16.5
 	github.com/tdewolff/minify/v2 v2.23.10
@@ -49,6 +50,7 @@ require (
 
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
+	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.11 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.71 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.33 // indirect
@@ -65,12 +67,18 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.34.1 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/bmatcuk/doublestar v1.3.4 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgraph-io/badger/v4 v4.8.0 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.21.1 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/spec v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
+	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
@@ -78,10 +86,15 @@ require (
 	github.com/olekukonko/errors v1.1.0 // indirect
 	github.com/olekukonko/ll v0.0.9 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/tdewolff/parse/v2 v2.8.1 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
 	github.com/zclconf/go-cty-yaml v1.1.0 // indirect
+	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+	go.opentelemetry.io/otel v1.37.0 // indirect
+	go.opentelemetry.io/otel/metric v1.37.0 // indirect
+	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

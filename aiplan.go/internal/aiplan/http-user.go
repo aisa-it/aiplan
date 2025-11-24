@@ -12,12 +12,15 @@ package aiplan
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	uuid5 "github.com/gofrs/uuid/v5"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
@@ -27,6 +30,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
+	memErr "github.com/aisa-it/aiplan-mem/apierror"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -874,11 +878,16 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
 	}
 
-	code := password.MustGenerate(6, 6, 0, false, true)
-
-	err := s.store.EmailChange.NewEmailChange(&user, newEmail, code)
+	code, err := s.memDB.SaveEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail)
 	if err != nil {
+		if errors.Is(err, memErr.ErrEmailCodeTooSoon) {
+			return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
+		}
 		return EError(c, err)
+	}
+
+	if len(code) == 0 {
+		return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
 	}
 
 	err = s.emailService.UserChangeEmailNotify(user, newEmail, code)
@@ -926,7 +935,9 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if ok := s.store.EmailChange.ValidCodeEmail(&user, newEmail, data.Code); !ok {
+	code, _ := s.memDB.VerifyEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail, data.Code)
+
+	if !code {
 		return EErrorDefined(c, apierrors.ErrEmailVerify)
 	}
 
