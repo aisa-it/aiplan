@@ -535,7 +535,7 @@ func ReplaceColumnType(db *gorm.DB, table string, column string, newType string)
 				return err
 			}
 		}
-		fmt.Println("")
+		fmt.Println()
 
 		// Add FKs back
 		for _, fk := range fks {

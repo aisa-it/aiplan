@@ -1478,7 +1478,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 
 		for i := range reactions {
-			reactions[i].Id = dao.GenID()
+			reactions[i].Id = dao.GenUUID()
 			reactions[i].CommentId = idsCommentMap[reactions[i].CommentId]
 		}
 
