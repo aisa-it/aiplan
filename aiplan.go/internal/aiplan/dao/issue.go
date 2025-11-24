@@ -288,6 +288,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 		DescriptionType:     i.DescriptionType,
 		EstimatePoint:       i.EstimatePoint,
 		Draft:               i.Draft,
+		Pinned:              i.Pinned,
 		ParentId:            parent,
 		Parent:              i.Parent.ToLightDTO(),
 		Workspace:           i.Workspace.ToLightDTO(),
