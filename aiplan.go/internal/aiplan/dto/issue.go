@@ -68,6 +68,7 @@ type Issue struct {
 	DescriptionType     int     `json:"description_type"`
 	EstimatePoint       int     `json:"estimate_point"`
 	Draft               bool    `json:"draft"`
+	Pinned              bool    `json:"pinned"`
 
 	Parent    *IssueLight      `json:"parent_detail"  extensions:"x-nullable"`
 	Workspace *WorkspaceLight  `json:"workspace_detail"  extensions:"x-nullable"`

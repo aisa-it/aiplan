@@ -3633,7 +3633,7 @@ func (s *Services) issueDescriptionUnlock(c echo.Context) error {
 func (s *Services) issuePin(c echo.Context) error {
 	issue := c.(IssueContext).Issue
 
-	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
+	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -3656,7 +3656,7 @@ func (s *Services) issuePin(c echo.Context) error {
 func (s *Services) issueUnpin(c echo.Context) error {
 	issue := c.(IssueContext).Issue
 
-	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
+	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
