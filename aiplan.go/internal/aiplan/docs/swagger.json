@@ -5493,7 +5493,7 @@
                 }
             }
         },
-        "/api/auth/users/me/tutorial/{action}": {
+        "/api/auth/users/me/tutorial/": {
             "post": {
                 "security": [
                     {
@@ -5514,10 +5514,10 @@
                 "operationId": "updateUserTutorial",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "команда обучения",
-                        "name": "action",
-                        "in": "path",
+                        "type": "integer",
+                        "description": "Шаг обучения",
+                        "name": "step",
+                        "in": "query",
                         "required": true
                     }
                 ],

@@ -5501,7 +5501,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/users/me/tutorial/{action}": {
+        "/api/auth/users/me/tutorial/": {
             "post": {
                 "security": [
                     {
@@ -5522,10 +5522,10 @@ const docTemplate = `{
                 "operationId": "updateUserTutorial",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "команда обучения",
-                        "name": "action",
-                        "in": "path",
+                        "type": "integer",
+                        "description": "Шаг обучения",
+                        "name": "step",
+                        "in": "query",
                         "required": true
                     }
                 ],
