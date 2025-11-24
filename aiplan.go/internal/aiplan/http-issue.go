@@ -481,6 +481,15 @@ func (s *Services) getIssueList(c echo.Context) error {
 			)
 	}
 
+	// Filter only sprint issues
+	if sprint != nil {
+		issuesID := make([]uuid.UUID, len(sprint.Issues))
+		for i, issue := range sprint.Issues {
+			issuesID[i] = issue.ID
+		}
+		query = query.Where("issues.id in (?)", issuesID)
+	}
+
 	// Filters
 	{
 		if len(searchParams.Filters.AuthorIds) > 0 {
