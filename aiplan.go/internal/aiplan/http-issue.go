@@ -383,7 +383,7 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 // ############# Issue methods ###################
 
 var issueSortFields = []string{"id", "created_at", "updated_at", "name", "priority", "target_date", "sequence_id", "state", "labels", "sub_issues_count", "link_count", "attachment_count", "linked_issues_count", "assignees", "watchers", "author"}
-var issueGroupFields = []string{"priority", "author", "state", "labels", "assignees", "watchers"}
+var issueGroupFields = []string{"priority", "author", "state", "labels", "assignees", "watchers", "project"}
 
 // getIssueList godoc
 // @id getIssueList
@@ -395,7 +395,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Produce json
 // @Param show_sub_issues query bool false "Включать подзадачи" default(true)
 // @Param order_by query string false "Поле для сортировки" default("sequence_id") enum(id, created_at, updated_at, name, priority, target_date, sequence_id, state, labels, sub_issues_count, link_count, attachment_count, linked_issues_count, assignees, watchers, author)
-// @Param group_by query string false "Поле для группировки результатов" default("") enum(priority, author, state, labels, assignees, watchers)
+// @Param group_by query string false "Поле для группировки результатов" default("") enum(priority, author, state, labels, assignees, watchers, project)
 // @Param offset query int false "Смещение для пагинации" default(-1)
 // @Param limit query int false "Лимит записей" default(100)
 // @Param desc query bool false "Сортировка по убыванию" default(true)
@@ -414,12 +414,18 @@ func (s *Services) getIssueList(c echo.Context) error {
 	globalSearch := false
 	var user dao.User
 	var projectMember dao.ProjectMember
+	var sprint *dao.Sprint
 	if context, ok := c.(ProjectContext); ok {
 		projectMember = context.ProjectMember
 		user = *context.User
 	}
 	if context, ok := c.(AuthContext); ok {
 		user = *context.User
+		globalSearch = true
+	}
+	if context, ok := c.(SprintContext); ok {
+		user = *context.User
+		sprint = &context.Sprint
 		globalSearch = true
 	}
 
@@ -462,7 +468,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Fill filters
-	if !globalSearch {
+	if !globalSearch && projectMember.ProjectId != "" {
 		query = query.
 			Where("issues.workspace_id = ?", projectMember.WorkspaceId).
 			Where("issues.project_id = ?", projectMember.ProjectId)
@@ -473,6 +479,15 @@ func (s *Services) getIssueList(c echo.Context) error {
 				Where("member_id = ?", user.ID).
 				Model(&dao.ProjectMember{}),
 			)
+	}
+
+	// Filter only sprint issues
+	if sprint != nil {
+		issuesID := make([]uuid.UUID, len(sprint.Issues))
+		for i, issue := range sprint.Issues {
+			issuesID[i] = issue.ID
+		}
+		query = query.Where("issues.id in (?)", issuesID)
 	}
 
 	// Filters
@@ -533,6 +548,19 @@ func (s *Services) getIssueList(c echo.Context) error {
 				q = q.Or("issues.id not in (?)", s.db.
 					Select("issue_id").
 					Model(&dao.IssueLabel{}))
+			}
+			query = query.Where(q)
+		}
+
+		if len(searchParams.Filters.SprintIds) > 0 {
+			q := s.db.Where("issues.id in (?)", s.db.
+				Model(&dao.SprintIssue{}).
+				Select("issue_id").
+				Where("sprint_id in (?)", searchParams.Filters.SprintIds))
+			if slices.Contains(searchParams.Filters.SprintIds, "") {
+				q = q.Or("issues.id not in (?)", s.db.
+					Select("issue_id").
+					Model(&dao.SprintIssue{}))
 			}
 			query = query.Where(q)
 		}
@@ -645,12 +673,14 @@ func (s *Services) getIssueList(c echo.Context) error {
 			"(?) as link_count",
 			"(?) as attachment_count",
 			"(?) as linked_issues_count",
+			"(?) as comments_count",
 		}
 		selectInterface = []interface{}{
 			s.db.Table("issues as \"child\"").Select("count(*)").Where("\"child\".parent_id = issues.id"),
 			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueLink{}),
 			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueAttachment{}),
 			s.db.Select("count(*)").Where("id1 = issues.id OR id2 = issues.id").Model(&dao.LinkedIssues{}),
+			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueComment{}),
 		}
 	} else {
 		selectExprs = []string{
@@ -726,7 +756,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 
 	// Get groups
 	if searchParams.GroupByParam != "" {
-		groupSize, err := GetIssuesGroupsSize(s.db, &user, projectMember.ProjectId, searchParams)
+		groupSize, err := GetIssuesGroups(s.db, &user, projectMember.ProjectId, sprint, searchParams)
 		if err != nil {
 			return EError(c, err)
 		}
@@ -3603,7 +3633,7 @@ func (s *Services) issueDescriptionUnlock(c echo.Context) error {
 func (s *Services) issuePin(c echo.Context) error {
 	issue := c.(IssueContext).Issue
 
-	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
+	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -3626,13 +3656,13 @@ func (s *Services) issuePin(c echo.Context) error {
 func (s *Services) issueUnpin(c echo.Context) error {
 	issue := c.(IssueContext).Issue
 
-	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
+	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
 }
 
-// SubIssuesIds представляет собой структуру для передачи связанных задач
+// LinkedIssuesIds представляет собой структуру для передачи связанных задач
 type LinkedIssuesIds struct {
 	IssueIDs []uuid.UUID `json:"issue_ids"`
 }

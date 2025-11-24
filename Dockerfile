@@ -55,7 +55,7 @@ FROM alpine:latest
 
 ENV TZ=Europe/Moscow
 
-RUN apk add --no-cache curl tzdata
+RUN apk add --no-cache curl tzdata git openssh-keygen
 
 WORKDIR /app
 

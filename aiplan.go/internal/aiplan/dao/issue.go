@@ -44,9 +44,9 @@ type Issue struct {
 	// priority character varying(30) COLLATE pg_catalog."default",
 	Priority *string `json:"priority" extensions:"x-nullable"`
 
-	StartDate   *types.TargetDate      `json:"start_date" extensions:"x-nullable"`
+	StartDate   *types.TargetDateTimeZ `json:"start_date" extensions:"x-nullable"`
 	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable"`
-	CompletedAt *types.TargetDate      `json:"completed_at" extensions:"x-nullable"`
+	CompletedAt *types.TargetDateTimeZ `json:"completed_at" extensions:"x-nullable"`
 
 	SequenceId int `json:"sequence_id" gorm:"default:1;index:,where:deleted_at is not null"`
 	// created_by_id uuid,
@@ -288,6 +288,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 		DescriptionType:     i.DescriptionType,
 		EstimatePoint:       i.EstimatePoint,
 		Draft:               i.Draft,
+		Pinned:              i.Pinned,
 		ParentId:            parent,
 		Parent:              i.Parent.ToLightDTO(),
 		Workspace:           i.Workspace.ToLightDTO(),
@@ -353,6 +354,7 @@ type IssueWithCount struct {
 	LinkCount         int64 `json:"link_count" gorm:"->;-:migration"`
 	AttachmentCount   int64 `json:"attachment_count" gorm:"->;-:migration"`
 	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->;-:migration"`
+	CommentsCount     int64 `json:"comments_count" gorm:"->;-:migration"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 	DescHighlighted string `json:"desc_highlighted,omitempty" gorm:"->;-:migration"`
@@ -380,6 +382,7 @@ func (iwc *IssueWithCount) ToDTO() *dto.IssueWithCount {
 		LinkCount:         int(iwc.LinkCount),
 		AttachmentCount:   int(iwc.AttachmentCount),
 		LinkedIssuesCount: int(iwc.LinkedIssuesCount),
+		CommentsCount:     int(iwc.CommentsCount),
 		NameHighlighted:   iwc.NameHighlighted,
 		DescHighlighted:   iwc.DescHighlighted,
 	}
@@ -407,7 +410,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 		if issue.State != nil && issue.State.Group == "cancelled" {
 			issue.IssueProgress.Status = types.Cancelled
 		} else {
-			if issue.StartDate == nil {
+			if issue.StartDate == nil && issue.CompletedAt == nil {
 				issue.IssueProgress.Status = types.Pending
 			} else if issue.StartDate != nil && issue.CompletedAt == nil {
 				issue.IssueProgress.Status = types.InProgress
@@ -1633,11 +1636,11 @@ func CreateIssue(db *gorm.DB, issue *Issue) error {
 
 	// Start timer if state in started group
 	if issue.State.Group == "started" {
-		issue.StartDate = &types.TargetDate{Time: time.Now()}
+		issue.StartDate = &types.TargetDateTimeZ{Time: time.Now()}
 	}
 
 	if issue.State.Group == "completed" {
-		issue.CompletedAt = &types.TargetDate{Time: time.Now()}
+		issue.CompletedAt = &types.TargetDateTimeZ{Time: time.Now()}
 	}
 
 	issue.State = nil

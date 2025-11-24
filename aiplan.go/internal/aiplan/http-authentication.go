@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -50,10 +51,11 @@ type AuthContext struct {
 }
 
 type AuthConfig struct {
-	Secret  []byte
-	DB      *gorm.DB
-	MemDB   *mem.AIPlanMemAPI
-	Skipper middleware.Skipper
+	Secret      []byte
+	DB          *gorm.DB
+	MemDB       *mem.AIPlanMemAPI
+	Skipper     middleware.Skipper
+	TokensCache *tokenscache.TokensCache
 }
 
 func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
@@ -352,6 +354,14 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	if token == nil {
 		return nil, nil, EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	}
+
+	if cachedTokens := a.TokensCache.GetTokens(token.SignedString); cachedTokens != nil {
+		accessToken := &Token{SignedString: cachedTokens.AccessToken}
+		refreshToken := &Token{SignedString: cachedTokens.RefreshToken}
+		setAuthCookies(c, accessToken, refreshToken)
+		return accessToken, cachedTokens.User, nil
+	}
+
 	// Check if token not blacklisted
 	{
 		blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
@@ -407,6 +417,8 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	}
 
 	setAuthCookies(c, accessToken, refreshToken)
+
+	a.TokensCache.StoreTokens(token.SignedString, accessToken.SignedString, refreshToken.SignedString, &user)
 
 	return accessToken, &user, nil
 }
