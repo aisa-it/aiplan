@@ -80,6 +80,11 @@ func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
 		return true, nil
 	}
 
+	// Allow sprint member & admin (look at sprint-permission)
+	if strings.Contains(c.Path(), "/api/auth/workspaces/:workspaceSlug/sprints/:sprintId/issues/search/") {
+		return workspaceMember.Role > types.GuestRole, nil
+	}
+
 	switch c.Request().Method {
 	//Safe methods
 	case

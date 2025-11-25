@@ -2,6 +2,9 @@ package aiplan
 
 import (
 	"errors"
+	"net/http"
+	"strings"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
@@ -45,6 +48,10 @@ func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
 		return false, nil
 	}
 
+	if strings.HasSuffix(c.Path(), "/issues/search/") && c.Request().Method == http.MethodPost {
+		return workspaceMember.Role > types.GuestRole, nil
+	}
+
 	return false, nil
 }
 
@@ -55,7 +62,7 @@ func (s *Services) SprintAdminPermissionMiddleware(next echo.HandlerFunc) echo.H
 			return EError(c, err)
 		}
 		if !has {
-			return EErrorDefined(c, apierrors.ErrProjectForbidden)
+			return EErrorDefined(c, apierrors.ErrSprintForbidden)
 		}
 		return next(c)
 	}
