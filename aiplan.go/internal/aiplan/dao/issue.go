@@ -1196,7 +1196,7 @@ type IssueWatchersExtendFields struct {
 }
 
 type IssueBlocker struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1241,7 +1241,7 @@ func (ib *IssueBlocker) ToLightDTO() *dto.IssueBlockerLight {
 		return nil
 	}
 	return &dto.IssueBlockerLight{
-		Id:          ib.Id,
+		Id:          ib.Id.String(),
 		BlockId:     ib.BlockId.String(),
 		BlockedById: ib.BlockedById.String(),
 		Block:       ib.Block.ToLightDTO(),

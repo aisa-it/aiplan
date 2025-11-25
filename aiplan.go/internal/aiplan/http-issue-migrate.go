@@ -1530,7 +1530,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 			if _, ok := idsMap[block.BlockId]; !ok {
 				continue
 			}
-			blocker[i].Id = dao.GenID()
+			blocker[i].Id = dao.GenUUID()
 			blocker[i].BlockId = idsMap[block.BlockId]
 			blocker[i].BlockedById = idsMap[block.BlockedById]
 			blocker[i].ProjectId = issue.TargetProject.ID

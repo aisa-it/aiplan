@@ -129,7 +129,7 @@ func (mc *MapperContext) MapLinks() error {
 						mc.c.IssueLinks.Append(mc.getAIPlanIssueLink(link))
 					} else {
 						mc.c.Blocks.Put(link.OutwardIssue.Key, &dao.IssueBlocker{
-							Id:          dao.GenID(),
+							Id:          dao.GenUUID(),
 							BlockedById: mc.issue.ID,
 							ProjectId:   mc.c.Project.ID,
 							WorkspaceId: mc.c.Project.WorkspaceId,
@@ -142,7 +142,7 @@ func (mc *MapperContext) MapLinks() error {
 						mc.c.IssueLinks.Append(mc.getAIPlanIssueLink(link))
 					} else {
 						mc.c.Blocked.Put(link.InwardIssue.Key, &dao.IssueBlocker{
-							Id:          dao.GenID(),
+							Id:          dao.GenUUID(),
 							BlockId:     mc.issue.ID,
 							ProjectId:   mc.c.Project.ID,
 							WorkspaceId: mc.c.Project.WorkspaceId,
