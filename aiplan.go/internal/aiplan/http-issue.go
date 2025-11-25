@@ -1190,7 +1190,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 					return err
 				}
 				newBlockers = append(newBlockers, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockedById: blockerUUID,
 					BlockId:     issue.ID,
 					ProjectId:   issue.ProjectId,
@@ -1291,7 +1291,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 					return err
 				}
 				newBlocked = append(newBlocked, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockId:     blockUUID,
 					BlockedById: issue.ID,
 					ProjectId:   issue.ProjectId,
