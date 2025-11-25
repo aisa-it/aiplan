@@ -93,7 +93,7 @@ type Issue struct {
 
 	AssigneeIDs     []string    `json:"assignees" gorm:"-"`
 	WatcherIDs      []string    `json:"watchers" gorm:"-"`
-	LabelIDs        []string    `json:"labels" gorm:"-"`
+	LabelIDs        []uuid.UUID `json:"labels" gorm:"-"`
 	LinkedIssuesIDs []uuid.UUID `json:"linked_issues_ids" gorm:"-"`
 
 	BlockerIssuesIDs []IssueBlocker `json:"blocker_issues" gorm:"-"`
@@ -445,13 +445,13 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	}
 
 	if issue.Labels != nil && len(*issue.Labels) > 0 {
-		var ids []string
+		var ids []uuid.UUID
 		for _, label := range *issue.Labels {
 			ids = append(ids, label.ID)
 		}
 		issue.LabelIDs = ids
 	} else {
-		issue.LabelIDs = make([]string, 0)
+		issue.LabelIDs = make([]uuid.UUID, 0)
 	}
 
 	if issue.FullLoad {
@@ -1250,7 +1250,7 @@ func (ib *IssueBlocker) ToLightDTO() *dto.IssueBlockerLight {
 }
 
 type IssueLabel struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`

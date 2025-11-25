@@ -258,9 +258,9 @@ func (mc *MapperContext) MapComments() error {
 func (mc *MapperContext) MapLabels() error {
 	for _, label := range mc.origIssue.Fields.Labels {
 		issueLabel, _ := mc.c.Labels.Get(label)
-		if issueLabel.ID == "" {
+		if issueLabel.ID.IsNil() {
 			issueLabel = dao.Label{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				Name:        label,
 				ProjectId:   mc.c.Project.ID,
 				WorkspaceId: mc.c.Project.WorkspaceId,
@@ -269,9 +269,9 @@ func (mc *MapperContext) MapLabels() error {
 		}
 
 		mc.c.IssueLabels.Append(dao.IssueLabel{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			IssueId:     mc.issue.ID.String(),
-			LabelId:     issueLabel.ID,
+			LabelId:     issueLabel.ID.String(),
 			ProjectId:   mc.c.Project.ID,
 			WorkspaceId: mc.c.Project.WorkspaceId,
 		})
@@ -333,7 +333,7 @@ func (mc *MapperContext) MapReleases() error {
 	for _, version := range mc.origIssue.Fields.FixVersions {
 		if !mc.c.ReleasesTags.Contains(version.ID) {
 			mc.c.ReleasesTags.Put(version.ID, dao.Label{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				CreatedAt:   time.Now(),
 				Name:        version.Name,
 				Description: version.Description,
@@ -344,9 +344,9 @@ func (mc *MapperContext) MapReleases() error {
 		tag := mc.c.ReleasesTags.Get(version.ID)
 
 		mc.c.IssueLabels.Append(dao.IssueLabel{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			IssueId:     mc.issue.ID.String(),
-			LabelId:     tag.ID,
+			LabelId:     tag.ID.String(),
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,
 		})

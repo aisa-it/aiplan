@@ -1263,7 +1263,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newLabels []dao.IssueLabel
 			for _, label := range labels {
 				newLabels = append(newLabels, dao.IssueLabel{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					LabelId:     fmt.Sprint(label),
 					IssueId:     issue.ID.String(),
 					ProjectId:   issue.ProjectId,
@@ -3457,13 +3457,6 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Delete(&dao.LinkedIssues{}).Error; err != nil {
 			return err
 		}
-
-		changes, err := utils.CalculateIDChanges(newIDs, oldIDs)
-		if err != nil {
-			return err
-		}
-
-		changes.InvolvedIds = append(changes.InvolvedIds, issue.ID.String())
 
 		for _, newId := range param.IssueIDs {
 			if err := issue.AddLinkedIssue(tx, newId); err != nil {
