@@ -1413,7 +1413,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		for _, label := range issue.TargetLabels {
 			newLabels = append(newLabels, dao.IssueLabel{
 				Id:          dao.GenUUID(),
-				LabelId:     label.ID.String(),
+				LabelId:     label.ID,
 				IssueId:     targetIssue.ID.String(),
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: targetIssue.WorkspaceId,
@@ -1430,7 +1430,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				}
 				newLabels = append(newLabels, dao.IssueLabel{
 					Id:          dao.GenUUID(),
-					LabelId:     v.String(),
+					LabelId:     v,
 					IssueId:     targetIssue.ID.String(),
 					ProjectId:   issue.TargetProject.ID,
 					WorkspaceId: targetIssue.WorkspaceId,

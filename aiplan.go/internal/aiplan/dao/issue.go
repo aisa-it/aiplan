@@ -1250,7 +1250,7 @@ func (ib *IssueBlocker) ToLightDTO() *dto.IssueBlockerLight {
 }
 
 type IssueLabel struct {
-	Id        uuid.UUID      `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1260,7 +1260,7 @@ type IssueLabel struct {
 	// issue_id uuid IS_NULL:NO
 	IssueId string `json:"issue_id" gorm:"index"`
 	// label_id uuid IS_NULL:NO
-	LabelId string `json:"label_id"`
+	LabelId uuid.UUID `json:"label_id" gorm:"foreignKey:ID;references:Label"`
 	// project_id uuid IS_NULL:NO
 	ProjectId string `json:"project_id"`
 	// updated_by_id uuid IS_NULL:YES
@@ -1271,6 +1271,7 @@ type IssueLabel struct {
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
+	Label     *Label     `json:"label_detail,omitempty" gorm:"foreignKey:LabelId" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1284,7 +1285,7 @@ type IssueLabel struct {
 func (IssueLabel) TableName() string { return "issue_labels" }
 
 type IssueComment struct {
-	Id        uuid.UUID      `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1302,8 +1303,8 @@ type IssueComment struct {
 	CommentStripped string             `json:"comment_stripped"`
 
 	IntegrationMeta  string        `json:"-" gorm:"index:integration,priority:2"`
-	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" extensions:"x-nullable"`
-	OriginalComment  *IssueComment `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId" extensions:"x-nullable"`
+	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" gorm:"type:uuid" extensions:"x-nullable"`
+	OriginalComment  *IssueComment `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId;references:Id" extensions:"x-nullable"`
 
 	// Id in system, from that comment was imported
 	OriginalId sql.NullString `gorm:"uniqueIndex:issue_comment_original_id_idx,priority:2"`
@@ -1313,9 +1314,9 @@ type IssueComment struct {
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
 
-	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:CommentId"`
+	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:CommentId;references:Id"`
 
-	Reactions       []CommentReaction `json:"reactions" gorm:"foreignKey:CommentId"`
+	Reactions       []CommentReaction `json:"reactions" gorm:"foreignKey:CommentId;references:Id"`
 	ReactionSummary map[string]int    `json:"reaction_summary,omitempty" gorm:"-"`
 }
 
@@ -1415,15 +1416,15 @@ func (i *IssueComment) ToDTO() *dto.IssueComment {
 }
 
 type CommentReaction struct {
-	Id        uuid.UUID `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	UserId    string    `json:"user_id"`
-	CommentId uuid.UUID `json:"comment_id" gorm:"index"`
+	CommentId uuid.UUID `json:"comment_id" gorm:"index;type:uuid"`
 	Reaction  string    `json:"reaction"`
 
 	User    *User         `json:"-" gorm:"foreignKey:UserId" extensions:"x-nullable"`
-	Comment *IssueComment `json:"-" gorm:"foreignKey:CommentId" extensions:"x-nullable"`
+	Comment *IssueComment `json:"-" gorm:"foreignKey:CommentId;references:Id" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.

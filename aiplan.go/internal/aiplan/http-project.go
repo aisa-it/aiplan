@@ -1760,7 +1760,7 @@ func (s *Services) createIssue(c echo.Context) error {
 			for _, label := range issue.LabelsList {
 				newLabels = append(newLabels, dao.IssueLabel{
 					Id:          dao.GenUUID(),
-					LabelId:     fmt.Sprint(label),
+					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issueId,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,

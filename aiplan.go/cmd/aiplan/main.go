@@ -89,6 +89,22 @@ func main() {
 	sqlDB.SetConnMaxIdleTime(time.Minute * 15)
 
 	if !*noMigration {
+		if err := dao.ReplaceColumnType(db, "issue_comments", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_comments", "reply_to_comment_id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "file_assets", "comment_id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "comment_reactions", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "comment_reactions", "comment_id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+
 		slog.Info("Migrate models without relations")
 		db.Config.DisableForeignKeyConstraintWhenMigrating = true
 		if err := db.AutoMigrate(models...); err != nil {

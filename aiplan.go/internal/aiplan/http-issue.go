@@ -1264,7 +1264,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			for _, label := range labels {
 				newLabels = append(newLabels, dao.IssueLabel{
 					Id:          dao.GenUUID(),
-					LabelId:     fmt.Sprint(label),
+					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issue.ID.String(),
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
@@ -2531,7 +2531,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
-					CommentId:   &comment.Id,
+					CommentId:   uuid.NullUUID{UUID: comment.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
@@ -2748,7 +2748,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
-					CommentId:   &commentOld.Id,
+					CommentId:   uuid.NullUUID{UUID: commentOld.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
