@@ -17171,6 +17171,9 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "pinned": {
+                    "type": "boolean"
+                },
                 "priority": {
                     "type": "string",
                     "x-nullable": true
@@ -18793,6 +18796,9 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "pinned": {
+                    "type": "boolean"
+                },
                 "priority": {
                     "type": "string",
                     "x-nullable": true
@@ -19213,6 +19219,9 @@ const docTemplate = `{
                         }
                     ],
                     "x-nullable": true
+                },
+                "pinned": {
+                    "type": "boolean"
                 },
                 "priority": {
                     "type": "string",

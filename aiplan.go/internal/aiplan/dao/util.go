@@ -526,6 +526,7 @@ func ReplaceColumnType(db *gorm.DB, table string, column string, newType string)
 		fmt.Println()
 
 		// Change types
+		fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", table, column, newType, column, newType)
 		if err := tx.Exec(fmt.Sprintf("alter table %s alter column %s TYPE %s USING %s::%s;", table, column, newType, column, newType)).Error; err != nil {
 			return err
 		}

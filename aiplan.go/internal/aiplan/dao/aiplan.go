@@ -84,7 +84,7 @@ type FileAsset struct {
 
 	WorkspaceId *string       `json:"workspace,omitempty"`
 	IssueId     uuid.NullUUID `json:"issue" gorm:"foreignKey:ID"`
-	CommentId   *uuid.UUID    `json:"comment,omitempty" gorm:"foreignKey:IdActivity" extensions:"x-nullable"`
+	CommentId   uuid.NullUUID `json:"comment" gorm:"foreignKey:Id;type:uuid" extensions:"x-nullable"`
 
 	DocId        uuid.NullUUID `json:"doc" gorm:"foreignKey:ID;type:uuid"`
 	DocCommentId uuid.NullUUID `json:"doc_comment" gorm:"type:uuid"`
@@ -95,8 +95,9 @@ type FileAsset struct {
 	FileSize    int    `json:"size"`
 	ContentType string `json:"content_type"`
 
-	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Author    *User      `json:"-" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	Workspace *Workspace    `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	Author    *User         `json:"-" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	Comment   *IssueComment `json:"-" gorm:"foreignKey:CommentId;references:Id" extensions:"x-nullable"`
 }
 
 // Удаляет запись о сбросе сессии пользователя в базе данных.
@@ -155,7 +156,7 @@ func (asset *FileAsset) ToDTO() *dto.FileAsset {
 }
 
 type ReleaseNote struct {
-	ID          uuid.UUID          `gorm:"primaryKey" json:"id"`
+	ID          uuid.UUID          `gorm:"primaryKey;type:uuid" json:"id"`
 	TagName     string             `json:"tag_name" gorm:"uniqueIndex"`
 	PublishedAt time.Time          `json:"published_at"`
 	Body        types.RedactorHTML `json:"body"`
