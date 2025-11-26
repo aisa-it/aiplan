@@ -225,13 +225,13 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 		}
 
 		issueAttachment := dao.IssueAttachment{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			CreatedById: &userId,
 			UpdatedById: &userId,
 			AssetId:     assetName,
-			IssueId:     issueId,
+			IssueId:     issue.ID,
 			ProjectId:   issue.ProjectId,
 			WorkspaceId: issue.WorkspaceId,
 		}
@@ -678,7 +678,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		selectInterface = []interface{}{
 			s.db.Table("issues as \"child\"").Select("count(*)").Where("\"child\".parent_id = issues.id"),
 			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueLink{}),
-			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueAttachment{}),
+			s.db.Select("count(*)").Where("issue_id = issues.id::uuid").Model(&dao.IssueAttachment{}),
 			s.db.Select("count(*)").Where("id1 = issues.id OR id2 = issues.id").Model(&dao.LinkedIssues{}),
 			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueComment{}),
 		}
@@ -1215,9 +1215,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range assignees {
 				newAssignees = append(newAssignees, dao.IssueAssignee{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					AssigneeId:  fmt.Sprint(assignee),
-					IssueId:     issue.ID.String(),
+					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1239,9 +1239,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range watchers {
 				newWatchers = append(newWatchers, dao.IssueWatcher{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					WatcherId:   fmt.Sprint(watcher),
-					IssueId:     issue.ID.String(),
+					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
 					CreatedById: &user.ID,
@@ -2143,7 +2143,7 @@ func (s *Services) getIssueLinkList(c echo.Context) error {
 func (s *Services) createIssueLink(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID.String()
+	issue := c.(IssueContext).Issue
 
 	var req IssueLinkRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
@@ -2155,12 +2155,12 @@ func (s *Services) createIssueLink(c echo.Context) error {
 	}
 
 	link := dao.IssueLink{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		Title:       req.Title,
 		Url:         req.Url,
 		CreatedById: &user.ID,
 		UpdatedById: &user.ID,
-		IssueId:     issueId,
+		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: project.WorkspaceId,
 	}
@@ -3199,14 +3199,14 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 	}
 
 	issueAttachment := dao.IssueAttachment{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		CreatedById: &user.ID,
 		UpdatedById: &user.ID,
 		Attributes:  attributes,
 		AssetId:     assetName,
-		IssueId:     issue.ID.String(),
+		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: issue.WorkspaceId,
 	}

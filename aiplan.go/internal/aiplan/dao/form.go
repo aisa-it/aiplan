@@ -518,7 +518,7 @@ func (fa *FormAttachment) ToDTO() *dto.Attachment {
 		return nil
 	}
 	return &dto.Attachment{
-		Id:        fa.Id,
+		Id:        uuid.Must(uuid.FromString(fa.Id)),
 		CreatedAt: fa.CreatedAt,
 		Asset:     fa.Asset.ToDTO(),
 	}

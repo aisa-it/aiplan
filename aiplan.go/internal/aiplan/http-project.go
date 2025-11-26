@@ -1720,9 +1720,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range issue.AssigneesList {
 				newAssignees = append(newAssignees, dao.IssueAssignee{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					AssigneeId:  fmt.Sprint(assignee),
-					IssueId:     issueId,
+					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1740,9 +1740,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range issue.WatchersList {
 				newWatchers = append(newWatchers, dao.IssueWatcher{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					WatcherId:   fmt.Sprint(watcher),
-					IssueId:     issueId,
+					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: &user.ID,

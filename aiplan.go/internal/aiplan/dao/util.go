@@ -518,29 +518,27 @@ func ReplaceColumnType(db *gorm.DB, table string, column string, newType string)
 	return db.Transaction(func(tx *gorm.DB) error {
 		// Delete FKs
 		for _, fk := range fks {
-			fmt.Printf("ALTER TABLE %s DROP CONSTRAINT %s;\n", fk.ForeignTableName, fk.ConstraintName)
+			//fmt.Printf("ALTER TABLE %s DROP CONSTRAINT %s;\n", fk.ForeignTableName, fk.ConstraintName)
 			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s;", fk.ForeignTableName, fk.ConstraintName)).Error; err != nil {
 				return err
 			}
 		}
-		fmt.Println()
 
 		// Change types
-		fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", table, column, newType, column, newType)
+		//fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", table, column, newType, column, newType)
 		if err := tx.Exec(fmt.Sprintf("alter table %s alter column %s TYPE %s USING %s::%s;", table, column, newType, column, newType)).Error; err != nil {
 			return err
 		}
 		for _, fk := range fks {
-			fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", fk.ForeignTableName, fk.ForeignColumnName, newType, fk.ForeignColumnName, newType)
+			//fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", fk.ForeignTableName, fk.ForeignColumnName, newType, fk.ForeignColumnName, newType)
 			if err := tx.Exec(fmt.Sprintf("alter table %s alter column %s TYPE %s USING %s::%s;", fk.ForeignTableName, fk.ForeignColumnName, newType, fk.ForeignColumnName, newType)).Error; err != nil {
 				return err
 			}
 		}
-		fmt.Println()
 
 		// Add FKs back
 		for _, fk := range fks {
-			fmt.Printf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s);\n", fk.ForeignTableName, fk.ConstraintName, fk.ForeignColumnName, fk.ReferencedTableName, fk.ReferencedColumnName)
+			//fmt.Printf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s);\n", fk.ForeignTableName, fk.ConstraintName, fk.ForeignColumnName, fk.ReferencedTableName, fk.ReferencedColumnName)
 			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s);", fk.ForeignTableName, fk.ConstraintName, fk.ForeignColumnName, fk.ReferencedTableName, fk.ReferencedColumnName)).Error; err != nil {
 				return err
 			}
