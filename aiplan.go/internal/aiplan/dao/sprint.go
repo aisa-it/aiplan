@@ -2,6 +2,7 @@ package dao
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -44,6 +45,7 @@ type Sprint struct {
 	Watchers []User  `gorm:"many2many:sprint_watchers;foreignKey:Id;joinForeignKey:SprintId;references:ID;joinReferences:WatcherId"`
 
 	Stats types.SprintStats `gorm:"-" json:"-"`
+	View  types.ViewProps   `gorm:"-" json:"-"`
 }
 
 // SprintExtendFields
@@ -86,6 +88,25 @@ func (s Sprint) GetWorkspaceId() string {
 
 func (s Sprint) GetSprintId() string {
 	return s.GetId()
+}
+
+func (s *Sprint) AfterFind(tx *gorm.DB) error {
+	if userId, ok := tx.Get("userId"); ok {
+		var sprintView *SprintViews
+		if err := tx.Where("member_id = ?", userId).
+			Where("sprint_id = ?", s.Id).
+			First(&sprintView).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				s.View = types.DefaultViewProps
+			} else {
+				return err
+			}
+		}
+		if sprintView != nil {
+			s.View = sprintView.ViewProps
+		}
+	}
+	return nil
 }
 
 func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
@@ -178,6 +199,7 @@ func (s *Sprint) ToDTO() *dto.Sprint {
 		Watchers: utils.SliceToSlice(&s.Watchers, func(i *User) dto.UserLight {
 			return *i.ToLightDTO()
 		}),
+		View: s.View,
 	}
 }
 
@@ -349,4 +371,22 @@ func (activity *SprintActivity) ToLightDTO() *dto.EntityActivityLight {
 
 		EntityUrl: activity.GetUrl(),
 	}
+}
+
+type SprintViews struct {
+	Id        uuid.UUID `gorm:"primaryKey;type:uuid"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	SprintId uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_sprint_user_unique,priority:1"`
+	MemberId uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_sprint_user_unique,priority:2"`
+
+	Sprint *Sprint `gorm:"foreignKey:SprintId"`
+	Member *User   `gorm:"foreignKey:MemberId"`
+
+	ViewProps types.ViewProps `json:"view_props" gorm:"type:jsonb"`
+}
+
+func (SprintViews) TableName() string {
+	return "sprint_views"
 }

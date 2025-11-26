@@ -43,6 +43,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
+	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -362,9 +363,10 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	authGroup := apiGroup.Group("auth/",
 		AuthMiddleware(AuthConfig{
-			Secret: []byte(cfg.SecretKey),
-			DB:     db,
-			MemDB:  memDB,
+			Secret:      []byte(cfg.SecretKey),
+			DB:          db,
+			MemDB:       memDB,
+			TokensCache: tokenscache.NewTokensCache(),
 		}),
 	)
 
