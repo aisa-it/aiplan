@@ -21,6 +21,7 @@ import (
 	"time"
 
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -593,8 +594,8 @@ func (ns ProjectMemberNS) IsNotify(field *string, entity string, verb string, ro
 	isProject := entity == "project"
 	isPrAdmin := entity == "project" && role == AdminRole
 
-	switch *field {
-	case "name":
+	switch actField.ActivityField(*field) {
+	case actField.FieldName:
 		if isIssue {
 			return !ns.DisableName
 		}
@@ -602,7 +603,7 @@ func (ns ProjectMemberNS) IsNotify(field *string, entity string, verb string, ro
 			return !ns.DisableProjectName
 		}
 
-	case "issue":
+	case actField.FieldIssue:
 		if isProject {
 			return !ns.DisableIssueNew
 		}
@@ -610,119 +611,135 @@ func (ns ProjectMemberNS) IsNotify(field *string, entity string, verb string, ro
 		if isIssue {
 			return !ns.DisableIssueTransfer
 		}
-	case "logo", "emoji":
+	case
+		actField.FieldLogo,
+		actField.FieldEmoj:
 		if isProject {
 			return !ns.DisableProjectLogo
 		}
 
-	case "parent":
+	case actField.FieldParent:
 		if isIssue {
 			return !ns.DisableParent
 		}
-	case "priority":
+	case actField.FieldPriority:
 		if isIssue {
 			return !ns.DisablePriority
 		}
-	case "state":
+	case actField.FieldStatus:
 		if isIssue {
 			return !ns.DisableState
 		}
 		if isPrAdmin {
 			return !ns.DisableProjectStatus
 		}
-	case "description":
+	case actField.FieldDescription:
 		if isIssue {
 			return !ns.DisableDesc
 		}
-	case "target_date":
+	case actField.FieldTargetDate:
 		if isIssue {
 			return !ns.DisableTargetDate
 		}
-	case "labels":
+	case actField.FieldLabel:
 		if isIssue {
 			return !ns.DisableLabels
 		}
-	case "assignees":
-		if isIssue {
-			return !ns.DisableAssignees
-		}
-	case "watchers":
-		if isIssue {
-			return !ns.DisableWatchers
-		}
-	case "blocks":
-		if isIssue {
-			return !ns.DisableBlocks
-		}
-	case "blocking":
-		if isIssue {
-			return !ns.DisableBlockedBy
-		}
-	case "link":
-		if isIssue {
-			return !ns.DisableLinks
-		}
-	case "comment":
-		if isIssue {
-			return !ns.DisableComments
-		}
-	case "attachment":
-		if isIssue {
-			return !ns.DisableAttachments
-		}
-	case "linked":
-		if isIssue {
-			return !ns.DisableLinked
-		}
-	case "sub_issue":
-		if isIssue {
-			return !ns.DisableSubIssue
-		}
-	case "deadline":
-		if isIssue {
-			return !ns.DisableDeadline
-		}
-	case "project":
-		if isIssue {
-			return !ns.DisableIssueTransfer
-		}
-	case "public":
-		if isPrAdmin {
-			return !ns.DisableProjectPublic
-		}
-	case "identifier":
-		if isPrAdmin {
-			return !ns.DisableProjectIdentifier
-		}
-	case "default_assignees":
-		if isPrAdmin {
-			return !ns.DisableProjectDefaultAssignee
-		}
-	case "default_watchers":
-		if isPrAdmin {
-			return !ns.DisableProjectDefaultWatcher
-		}
-	case "member":
-		if isPrAdmin {
-			return !ns.DisableProjectMember
-		}
-	case "owner":
-		if isPrAdmin {
-			return !ns.DisableProjectOwner
-		}
-	case "role":
-		if isPrAdmin {
-			return !ns.DisableProjectRole
-		}
-	case "status_default", "status_name", "status_color", "status_description", "status_group":
-		if isPrAdmin {
-			return !ns.DisableProjectStatus
-		}
-	case "label", "label_name", "label_color":
 		if isPrAdmin {
 			return !ns.DisableProjectLabel
 		}
-	case "template", "template_template", "template_name":
+	case actField.FieldAssignees:
+		if isIssue {
+			return !ns.DisableAssignees
+		}
+	case actField.FieldWatchers:
+		if isIssue {
+			return !ns.DisableWatchers
+		}
+	case actField.FieldBlocks:
+		if isIssue {
+			return !ns.DisableBlocks
+		}
+	case actField.FieldBlocking:
+		if isIssue {
+			return !ns.DisableBlockedBy
+		}
+	case
+		actField.FieldLink,
+		actField.FieldLinkTitle,
+		actField.FieldLinkUrl:
+		if isIssue {
+			return !ns.DisableLinks
+		}
+	case actField.FieldComment:
+		if isIssue {
+			return !ns.DisableComments
+		}
+	case actField.FieldAttachment:
+		if isIssue {
+			return !ns.DisableAttachments
+		}
+	case actField.FieldLinked:
+		if isIssue {
+			return !ns.DisableLinked
+		}
+	case actField.FieldSubIssue:
+		if isIssue {
+			return !ns.DisableSubIssue
+		}
+	case actField.FieldDeadline:
+		if isIssue {
+			return !ns.DisableDeadline
+		}
+	case actField.FieldProject:
+		if isIssue {
+			return !ns.DisableIssueTransfer
+		}
+	case actField.FieldPublic:
+		if isPrAdmin {
+			return !ns.DisableProjectPublic
+		}
+	case actField.FieldIdentifier:
+		if isPrAdmin {
+			return !ns.DisableProjectIdentifier
+		}
+	case actField.FieldDefaultAssignees:
+		if isPrAdmin {
+			return !ns.DisableProjectDefaultAssignee
+		}
+	case actField.FieldDefaultWatchers:
+		if isPrAdmin {
+			return !ns.DisableProjectDefaultWatcher
+		}
+	case actField.FieldMember:
+		if isPrAdmin {
+			return !ns.DisableProjectMember
+		}
+	case actField.FieldProjectLead:
+		if isPrAdmin {
+			return !ns.DisableProjectOwner
+		}
+	case actField.FieldRole:
+		if isPrAdmin {
+			return !ns.DisableProjectRole
+		}
+	case
+		actField.FieldStatusDefault,
+		actField.FieldStatusName,
+		actField.FieldStatusColor,
+		actField.FieldStatusDescription,
+		actField.FieldStatusGroup:
+		if isPrAdmin {
+			return !ns.DisableProjectStatus
+		}
+	case actField.FieldLabelName, actField.FieldLabelColor:
+		if isPrAdmin {
+			return !ns.DisableProjectLabel
+		}
+	case
+		actField.FieldTemplate,
+		actField.FieldTemplateTemplate,
+		actField.FieldTemplateName:
 		if isPrAdmin {
 			return !ns.DisableProjectTemplate
 		}
@@ -795,35 +812,39 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 	isWorkspace := entity == "workspace"
 	isWorkspaceAdmin := entity == "workspace" && role == AdminRole
 
-	switch *field {
-	case "title":
+	switch actField.ActivityField(*field) {
+	case actField.FieldTitle:
 		if isDoc {
 			return !ns.DisableDocTitle
 		}
-	case "description":
+	case actField.FieldDescription:
 		if isDoc {
 			return !ns.DisableDocDesc
 		}
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceDesc
 		}
-	case "reader_role", "editor_role", "editors", "readers":
+	case
+		actField.FieldReaderRole,
+		actField.FieldEditorRole,
+		actField.FieldEditors,
+		actField.FieldReaders:
 		if isDoc {
 			return !ns.DisableDocRole
 		}
-	case "attachment":
+	case actField.FieldAttachment:
 		if isDoc {
 			return !ns.DisableDocAttachment
 		}
-	case "comment":
+	case actField.FieldComment:
 		if isDoc {
 			return !ns.DisableDocComment
 		}
-	case "watchers":
+	case actField.FieldWatchers:
 		if isDoc {
 			return !ns.DisableDocWatchers
 		}
-	case "doc":
+	case actField.FieldDoc:
 		if isDoc {
 			switch verb {
 			case "created":
@@ -848,39 +869,39 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceDoc
 		}
-	case "project":
+	case actField.FieldProject:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceProject
 		}
-	case "form":
+	case actField.FieldForm:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceForm
 		}
-	case "name":
+	case actField.FieldName:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceName
 		}
-	case "integration_token":
+	case actField.FieldToken:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceToken
 		}
-	case "logo":
+	case actField.FieldLogo:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceLogo
 		}
-	case "member":
+	case actField.FieldMember:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceMember
 		}
-	case "role":
+	case actField.FieldRole:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceRole
 		}
-	case "integration":
+	case actField.FieldIntegration:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceIntegration
 		}
-	case "owner":
+	case actField.FieldWorkspaceOwner:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceOwner
 		}

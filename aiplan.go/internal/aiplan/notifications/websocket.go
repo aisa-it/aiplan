@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/coder/websocket"
@@ -107,7 +108,7 @@ func (wns *WebsocketNotificationService) Send(userId, notifyId string, data inte
 	msg.CreatedAt = time.Now().UTC()
 	switch v := data.(type) {
 	case dao.IssueActivity:
-		if v.Verb == "deleted" && *v.Field != "linked" {
+		if v.Verb == "deleted" && *v.Field != actField.FieldLinked.String() {
 			return nil
 		}
 		msg.Type = "activity"
@@ -142,7 +143,7 @@ func (wns *WebsocketNotificationService) Send(userId, notifyId string, data inte
 		}
 		msg.Data = v.ToLightDTO()
 	case dao.EntityActivity:
-		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != "linked" {
+		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.FieldLinked.String() {
 			return nil
 		}
 		msg.Type = "activity"
@@ -157,7 +158,7 @@ func (wns *WebsocketNotificationService) Send(userId, notifyId string, data inte
 		//tmp.NewEntity = v.AffectedUser.ToLightDTO()
 		msg.Data = tmp
 	case dao.FullActivity:
-		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != "linked" {
+		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.FieldLinked.String() {
 			return nil
 		}
 		msg.Type = "activity"

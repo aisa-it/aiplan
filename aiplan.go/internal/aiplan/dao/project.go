@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"time"
 
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/lib/pq"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -97,7 +98,7 @@ func (p Project) GetString() string {
 }
 
 func (p Project) GetEntityType() string {
-	return "project"
+	return actField.FieldProject.String()
 }
 
 func (p Project) GetProjectId() string {
@@ -530,7 +531,7 @@ func (pm ProjectMember) GetString() string {
 }
 
 func (pm ProjectMember) GetEntityType() string {
-	return "member"
+	return actField.FieldMember.String()
 }
 
 func (pm ProjectMember) GetProjectId() string {
@@ -899,6 +900,10 @@ type Label struct {
 	Parent    *Label     `json:"parent_detail,omitempty" gorm:"foreignKey:ParentId" extensions:"x-nullable"`
 }
 
+func (Label) TableName() string {
+	return "labels"
+}
+
 // GetId возвращает строку, представляющую собой идентификатор Issue.
 //
 // Параметры:
@@ -929,7 +934,7 @@ func (l Label) GetString() string {
 // Возвращает:
 //   - string: тип сущности (issue).
 func (l Label) GetEntityType() string {
-	return "label"
+	return actField.FieldLabel.String()
 }
 
 func (l Label) GetWorkspaceId() string {
@@ -963,8 +968,8 @@ func (l *Label) ToLightDTO() *dto.LabelLight {
 // LabelExtendFields
 // -migration
 type LabelExtendFields struct {
-	NewLabel *Label `json:"-" gorm:"-" field:"label" extensions:"x-nullable"`
-	OldLabel *Label `json:"-" gorm:"-" field:"label" extensions:"x-nullable"`
+	NewLabel *Label `json:"-" gorm:"-" field:"labels" extensions:"x-nullable"`
+	OldLabel *Label `json:"-" gorm:"-" field:"labels" extensions:"x-nullable"`
 }
 
 func (l *Label) BeforeDelete(tx *gorm.DB) error {
@@ -1065,8 +1070,8 @@ func (state *State) ToLightDTO() *dto.StateLight {
 // StateExtendFields
 // -migration
 type StateExtendFields struct {
-	NewState *State `json:"-" gorm:"-" field:"state" extensions:"x-nullable"`
-	OldState *State `json:"-" gorm:"-" field:"state" extensions:"x-nullable"`
+	NewState *State `json:"-" gorm:"-" field:"status" extensions:"x-nullable"`
+	OldState *State `json:"-" gorm:"-" field:"status" extensions:"x-nullable"`
 }
 
 func (s State) GetId() string {
@@ -1078,7 +1083,7 @@ func (s State) GetString() string {
 }
 
 func (s State) GetEntityType() string {
-	return "state"
+	return actField.FieldStatus.String()
 }
 
 func (s State) GetWorkspaceId() string {
@@ -1373,7 +1378,7 @@ func (it IssueTemplate) GetString() string {
 }
 
 func (it IssueTemplate) GetEntityType() string {
-	return "template"
+	return actField.FieldTemplate.String()
 }
 
 func (it IssueTemplate) GetProjectId() string {
