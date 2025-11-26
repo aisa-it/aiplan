@@ -177,10 +177,10 @@ func NewImportContext(
 		}),
 
 		IssueAssignees: atomic.NewConvertMap(func(ia dao.IssueAssignee) string {
-			return ia.IssueId + ia.AssigneeId
+			return ia.IssueId.String() + ia.AssigneeId
 		}),
 		IssueWatchers: atomic.NewConvertMap(func(iw dao.IssueWatcher) string {
-			return iw.IssueId + iw.WatcherId
+			return iw.IssueId.String() + iw.WatcherId
 		}),
 
 		Blockers: atomic.NewConvertMap(func(block *dao.IssueBlocker) string {

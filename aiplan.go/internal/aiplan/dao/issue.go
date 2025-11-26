@@ -895,7 +895,7 @@ type IssueLinkedExtendFields struct {
 func (LinkedIssues) TableName() string { return "linked_issues" }
 
 type IssueLink struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -907,7 +907,7 @@ type IssueLink struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
-	IssueId string `json:"issue_id" gorm:"index"`
+	IssueId uuid.UUID `json:"issue_id" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
 	ProjectId string `json:"project_id"`
 	// updated_by_id uuid IS_NULL:YES
@@ -934,7 +934,7 @@ type IssueLinkExtendFields struct {
 }
 
 func (i IssueLink) GetId() string {
-	return i.Id
+	return i.Id.String()
 }
 
 func (i IssueLink) GetString() string {
@@ -954,7 +954,7 @@ func (i IssueLink) GetProjectId() string {
 }
 
 func (i IssueLink) GetIssueId() string {
-	return i.IssueId
+	return i.IssueId.String()
 }
 
 func (il *IssueLink) BeforeDelete(tx *gorm.DB) error {
@@ -982,7 +982,7 @@ func (il *IssueLink) ToLightDTO() *dto.IssueLinkLight {
 	}
 
 	return &dto.IssueLinkLight{
-		Id:    il.Id,
+		Id:    il.Id.String(),
 		Title: il.Title,
 		Url:   il.Url,
 
@@ -997,7 +997,7 @@ type IssueAttachment struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	// attributes jsonb IS_NULL:NO
 	Attributes map[string]interface{} `json:"attributes" gorm:"serializer:json"`
 	// asset character varying IS_NULL:NO
@@ -1006,7 +1006,7 @@ type IssueAttachment struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
-	IssueId string `json:"issue" gorm:"index"`
+	IssueId uuid.UUID `json:"issue" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
 	ProjectId string `json:"project"`
 	// updated_by_id uuid IS_NULL:YES
@@ -1036,7 +1036,7 @@ type IssueAttachmentExtendFields struct {
 }
 
 func (ia IssueAttachment) GetId() string {
-	return ia.Id
+	return ia.Id.String()
 }
 
 func (ia IssueAttachment) GetString() string {
@@ -1059,7 +1059,7 @@ func (i IssueAttachment) GetProjectId() string {
 }
 
 func (i IssueAttachment) GetIssueId() string {
-	return i.IssueId
+	return i.IssueId.String()
 }
 
 func (attachment *IssueAttachment) AfterFind(tx *gorm.DB) error {
@@ -1124,17 +1124,17 @@ func (attachment *IssueAttachment) AfterDelete(tx *gorm.DB) error {
 }
 
 type IssueAssignee struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	AssigneeId  string  `json:"assignee_id" gorm:"uniqueIndex:assignees_idx,priority:2"`
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	IssueId     string  `json:"issue_id" gorm:"index;uniqueIndex:assignees_idx,priority:1"`
-	ProjectId   string  `json:"project_id"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string  `json:"workspace_id"`
+	AssigneeId  string    `json:"assignee_id" gorm:"uniqueIndex:assignees_idx,priority:2"`
+	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:assignees_idx,priority:1;type:uuid"`
+	ProjectId   string    `json:"project_id"`
+	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	WorkspaceId string    `json:"workspace_id"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
@@ -1160,17 +1160,17 @@ type IssueAssigneeExtendFields struct {
 }
 
 type IssueWatcher struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	WatcherId   string  `json:"watcher_id" gorm:"uniqueIndex:watchers_idx,priority:2"`
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	IssueId     string  `json:"issue_id" gorm:"index;uniqueIndex:watchers_idx,priority:1"`
-	ProjectId   string  `json:"project_id"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string  `json:"workspace_id"`
+	WatcherId   string    `json:"watcher_id" gorm:"uniqueIndex:watchers_idx,priority:2"`
+	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:watchers_idx,priority:1;type:uuid"`
+	ProjectId   string    `json:"project_id"`
+	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	WorkspaceId string    `json:"workspace_id"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`

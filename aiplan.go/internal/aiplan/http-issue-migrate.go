@@ -1205,9 +1205,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range issue.TargetProject.DefaultAssignees {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				AssigneeId:  fmt.Sprint(assignee),
-				IssueId:     srcIssue.ID.String(),
+				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1232,9 +1232,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range issue.TargetProject.DefaultWatchers {
 			newWatchers = append(newWatchers, dao.IssueWatcher{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				WatcherId:   fmt.Sprint(watcher),
-				IssueId:     srcIssue.ID.String(),
+				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1368,9 +1368,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range assigneesList {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				AssigneeId:  fmt.Sprint(assignee),
-				IssueId:     targetIssue.ID.String(),
+				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1393,9 +1393,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range watchersList {
 			newWatchers = append(newWatchers, dao.IssueWatcher{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				WatcherId:   fmt.Sprint(watcher),
-				IssueId:     targetIssue.ID.String(),
+				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1491,8 +1491,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 
 		for i := range attachments {
-			attachments[i].Id = dao.GenID()
-			attachments[i].IssueId = targetIssue.ID.String()
+			attachments[i].Id = dao.GenUUID()
+			attachments[i].IssueId = targetIssue.ID
 			attachments[i].ProjectId = issue.TargetProject.ID
 		}
 
@@ -1509,8 +1509,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 
 		for i := range links {
-			links[i].Id = dao.GenID()
-			links[i].IssueId = targetIssue.ID.String()
+			links[i].Id = dao.GenUUID()
+			links[i].IssueId = targetIssue.ID
 			links[i].ProjectId = issue.TargetProject.ID
 		}
 

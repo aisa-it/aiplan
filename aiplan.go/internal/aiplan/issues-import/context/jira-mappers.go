@@ -178,8 +178,8 @@ func (mc *MapperContext) MapLinks() error {
 
 	// Link for original issue
 	mc.c.IssueLinks.Append(dao.IssueLink{
-		Id:          dao.GenID(),
-		IssueId:     mc.issue.ID.String(),
+		Id:          dao.GenUUID(),
+		IssueId:     mc.issue.ID,
 		Title:       mc.origIssue.Key,
 		Url:         utils.GetJiraIssueURL(mc.origIssue).String(),
 		ProjectId:   mc.c.Project.ID,
@@ -200,10 +200,10 @@ func (mc *MapperContext) MapAttachments() error {
 			JiraKey:    mc.origIssue.Key,
 			DstAssetID: dstID,
 			IssueAttachment: &dao.IssueAttachment{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				AssetId:     dstID,
 				Attributes:  attributes,
-				IssueId:     mc.issue.ID.String(),
+				IssueId:     mc.issue.ID,
 				ProjectId:   mc.c.Project.ID,
 				WorkspaceId: mc.c.Project.WorkspaceId,
 			},
@@ -287,10 +287,10 @@ func (mc *MapperContext) MapAssignees() error {
 			return err
 		}
 		mc.c.IssueAssignees.Put(dao.IssueAssignee{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			AssigneeId:  assignee.ID,
-			IssueId:     mc.issue.ID.String(),
+			IssueId:     mc.issue.ID,
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,
 		})
@@ -318,10 +318,10 @@ func (mc *MapperContext) MapWatchers() error {
 			return err
 		}
 		mc.c.IssueWatchers.Put(dao.IssueWatcher{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			WatcherId:   watcher.ID,
-			IssueId:     mc.issue.ID.String(),
+			IssueId:     mc.issue.ID,
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,
 		})
@@ -377,8 +377,8 @@ func (mc *MapperContext) getAIPlanIssueLink(link *jira.IssueLink) dao.IssueLink 
 	linkUrl := mc.c.WebURL.ResolveReference(u)
 
 	return dao.IssueLink{
-		Id:          dao.GenID(),
-		IssueId:     mc.issue.ID.String(),
+		Id:          dao.GenUUID(),
+		IssueId:     mc.issue.ID,
 		Title:       fmt.Sprintf("%s %s", linkType, outerIssueKey),
 		Url:         linkUrl.String(),
 		ProjectId:   mc.c.Project.ID,

@@ -107,6 +107,15 @@ func main() {
 		if err := dao.ReplaceColumnType(db, "issue_blockers", "id", "uuid"); err != nil {
 			slog.Error("Replace columnt type", "err", err)
 		}
+		if err := dao.ReplaceColumnType(db, "issue_assignees", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_watchers", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_attachments", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
 
 		slog.Info("Migrate models without relations")
 		db.Config.DisableForeignKeyConstraintWhenMigrating = true

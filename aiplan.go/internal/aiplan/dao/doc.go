@@ -862,7 +862,7 @@ func (da *DocAttachment) ToLightDTO() *dto.Attachment {
 		return nil
 	}
 	return &dto.Attachment{
-		Id:        da.Id,
+		Id:        uuid.Must(uuid.FromString(da.Id)),
 		CreatedAt: da.CreatedAt,
 		Asset:     da.Asset.ToDTO(),
 	}
