@@ -51,6 +51,8 @@ type User struct {
 	IsEmailVerified bool `json:"-"`
 	IsOnboarded     bool `json:"is_onboarded"`
 
+	Tutorial int `json:"tutorial" gorm:"default:0"`
+
 	Token     string  `json:"-" gorm:"index"`
 	AuthToken *string `json:"-" gorm:"uniqueIndex" extensions:"x-nullable"`
 
@@ -158,6 +160,7 @@ func (u *User) ToDTO() *dto.User {
 		Theme:             u.Theme,
 		ViewProps:         u.ViewProps,
 		Settings:          u.Settings,
+		Tutorial:          u.Tutorial,
 		LastWorkspaceId:   u.LastWorkspaceId,
 		NotificationCount: 0,
 		AttachmentsAllow:  nil,

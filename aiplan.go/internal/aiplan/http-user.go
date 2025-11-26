@@ -94,6 +94,8 @@ func (s *Services) AddUserServices(g *echo.Group) {
 	g.DELETE("users/me/notifications/", s.deleteMyNotifications)
 	g.POST("users/me/notifications/", s.updateToReadMyNotifications)
 
+	g.POST("users/me/tutorial/", s.updateUserTutorial)
+
 	// Search Filters
 	g.GET("filters/", s.getSearchFilterList)
 	g.POST("filters/", s.createSearchFilter)
@@ -1807,6 +1809,43 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, NotificationIdResponse{count})
+}
+
+// updateUserTutorial godoc
+// @id updateUserTutorial
+// @Summary Пользователи: прохождение обучения
+// @Description Обновляет шаги прохождения обучения на платформе
+// @Tags Users
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param step query int true "Шаг обучения"
+// @Success 200 {object} dto.User "пользователь"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 409 {object} apierrors.DefinedError "Конфликт действия"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/users/me/tutorial/ [post]
+func (s *Services) updateUserTutorial(c echo.Context) error {
+	user := *c.(AuthContext).User
+	var step int
+
+	if err := echo.QueryParamsBinder(c).
+		Int("step", &step).BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	if step < -1 {
+		return EError(c, apierrors.ErrGeneric)
+	}
+	user.Tutorial = step
+
+	if err := s.db.Model(&user).Select("tutorial").Updates(&user).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, user.ToDTO())
 }
 
 // ############# Search filters ###################
