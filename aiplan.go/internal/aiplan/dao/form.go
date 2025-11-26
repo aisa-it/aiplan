@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/lib/pq"
 
 	"html"
@@ -55,7 +56,7 @@ func (f Form) GetString() string {
 }
 
 func (f Form) GetEntityType() string {
-	return "form"
+	return actField.FieldForm.String()
 }
 
 func (f Form) GetWorkspaceId() string {
@@ -495,7 +496,7 @@ func (fa FormAttachment) GetString() string {
 // Возвращает:
 //   - string: имя файла или тип объекта.
 func (fa FormAttachment) GetEntityType() string {
-	return "attachment"
+	return actField.FieldAttachment.String()
 }
 
 func (f *FormAttachment) GetWorkspaceId() string {

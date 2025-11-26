@@ -13,11 +13,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"iter"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
@@ -287,4 +288,8 @@ func FormatDateToSqlNullTime(dateStr string) sql.NullTime {
 		return sql.NullTime{}
 	}
 	return sql.NullTime{Valid: true, Time: date}
+}
+
+func ToPtr[T any](src T) *T {
+	return &src
 }

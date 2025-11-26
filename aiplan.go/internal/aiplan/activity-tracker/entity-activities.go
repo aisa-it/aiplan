@@ -15,6 +15,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -52,93 +53,93 @@ func (t *ActivitiesTracker) RegisterHandler(handler ActivityHandler) {
 }
 
 // attachment (issue(+),)
-func getFuncUpdate[E dao.Entity, A dao.Activity](field string) activityFuncGen[E, A] {
+func getFuncUpdate[E dao.Entity, A dao.Activity](field actField.ActivityField) activityFuncGen[E, A] {
 	switch field {
-	case FIELD_ASSIGNEES: // issue(+)
+	case actField.ReqFieldAssignees: // issue(+)
 		return issueAssigneesUpdate[E, A]
-	case FIELD_WATCHERS: // issue(+)
+	case actField.ReqFieldWatchers: // issue(+)
 		return entityWatchersUpdate[E, A]
-	case FIELD_READERS:
+	case actField.ReqFieldReaders:
 		return entityReadersUpdate[E, A]
-	case FIELD_EDITORS:
+	case actField.ReqFieldEditors:
 		return entityEditorsUpdate[E, A]
-	case FIELD_ISSUES:
+	case actField.ReqFieldIssues:
 		return entityIssuesUpdate[E, A]
-	case FIELD_SPRINT:
+	case actField.ReqFieldSprint:
 		return entitySprintUpdate[E, A]
-	case FIELD_NAME: // issue(+)
+	case actField.ReqFieldName: // issue(+)
 		return entityNameUpdate[E, A]
-	case FIELD_TEMPLATE:
+	case actField.ReqFieldTemplate:
 		return entityTemplateUpdate[E, A]
-	case FIELD_LOGO: // issue(+)
+	case actField.ReqFieldLogo: // issue(+)
 		return entityLogoUpdate[E, A]
-	case FIELD_TOKEN:
+	case actField.ReqFieldToken:
 		return entityTokenUpdate[E, A]
-	case FIELD_OWNER:
+	case actField.ReqFieldOwner:
 		return entityOwnerUpdate[E, A]
-	case FIELD_TITLE:
+	case actField.ReqFieldTitle:
 		return entityTitleUpdate[E, A]
-	case FIELD_EMOJI:
+	case actField.ReqFieldEmoj:
 		return entityEmojiUpdate[E, A]
-	case FIELD_PUBLIC:
+	case actField.ReqFieldPublic:
 		return entityPublicUpdate[E, A]
-	case FIELD_IDENTIFIER:
+	case actField.ReqFieldIdentifier:
 		return entityIdentifierUpdate[E, A]
-	case FIELD_PROJECT_LEAD:
+	case actField.ReqFieldProjectLead:
 		return entityProjectLeadUpdate[E, A]
-	case FIELD_PRIORITY: // issue(+)
+	case actField.ReqFieldPriority: // issue(+)
 		return entityPriorityUpdate[E, A]
-	case FIELD_ROLE:
+	case actField.ReqFieldRole:
 		return entityRoleUpdate[E, A]
-	case FIELD_DEFAULT_ASSIGNES:
+	case actField.ReqFieldDefaultAssignees:
 		return entityDefaultAssigneesUpdate[E, A]
-	case FIELD_DEFAULT_WATCHERS:
+	case actField.ReqFieldDefaultWatchers:
 		return entityDefaultWatchersUpdate[E, A]
-	case FIELD_DESCRIPTION: // issue(+)
+	case actField.ReqFieldDescription: // issue(+)
 		return entityDescriptionUpdate[E, A]
-	case FIELD_DESCRIPTION_HTML: // issue(+)
+	case actField.ReqFieldDescriptionHtml: // issue(+)
 		return entityDescriptionHtmlUpdate[E, A]
-	case FIELD_COLOR:
+	case actField.ReqFieldColor:
 		return entityColorUpdate[E, A]
-	case FIELD_TARGET_DATE: // issue(+)
+	case actField.ReqFieldTargetDate: // issue(+)
 		return entityTargetDateUpdate[E, A]
-	case FIELD_START_DATE:
+	case actField.ReqFieldStartDate:
 		return entityStartDateUpdate[E, A]
-	case FIELD_COMPLETED_AT:
+	case actField.ReqFieldCompletedAt:
 		return entityCompletedAtUpdate[E, A]
-	case FIELD_END_DATE:
+	case actField.ReqFieldEndDate:
 		return entityEndDateUpdate[E, A]
-	case FIELD_LABEL: // issue(+)
+	case actField.ReqFieldLabel: // issue(+)
 		return entityLabelUpdate[E, A]
-	case FIELD_AUTH_REQUIRE:
+	case actField.ReqFieldAuthRequire:
 		return entityAuthRequireUpdate[E, A]
-	case FIELD_FIELDS:
+	case actField.ReqFieldFields:
 		return entityFieldsUpdate[E, A]
-	case FIELD_GROUP:
+	case actField.ReqFieldGroup:
 		return entityGroupUpdate[E, A]
-	case FIELD_STATE: // issue(+)
+	case actField.ReqFieldState: // issue(+)
 		return entityStateUpdate[E, A]
-	case FIELD_PARENT:
+	case actField.ReqFieldParent:
 		return issueParentUpdate[E, A]
-	case FIELD_DEFAULT:
+	case actField.ReqFieldDefault:
 		return entityDefaultUpdate[E, A]
-	case FIELD_ESIMATE_POINT:
+	case actField.ReqFieldEstimatePoint:
 		return entityEstimatePointUpdate[E, A]
-	case FIELD_BLOCKS_LIST:
+	case actField.ReqFieldBlocksList:
 		return issueBlocksListUpdate[E, A]
-	case FIELD_BLOCKERS_LIST:
+	case actField.ReqFieldBlockersList:
 		return issueBlockersListUpdate[E, A]
-	case FIELD_URL: // issue(+)
+	case actField.ReqFieldUrl: // issue(+)
 		return entityUrlUpdate[E, A]
-	case FIELD_COMMENT_HTML: // issue(+)
+	case actField.ReqFieldCommentHtml: // issue(+)
 		return entityCommentHtmlUpdate[E, A]
-	case FIELD_DOC_SORT:
+	case actField.ReqFieldDocSort:
 		return entityDocSortUpdate[E, A]
-	case FIELD_LINKED:
+	case actField.ReqFieldLinked:
 		return issueLinkedUpdate[E, A]
-	case FIELD_EDITOR_ROLE:
+	case actField.ReqFieldEditorRole:
 		return entityEditorRoleUpdate[E, A]
-	case FIELD_READER_ROLE:
+	case actField.ReqFieldReaderRole:
 		return entityReaderRoleUpdate[E, A]
 	}
 	return nil

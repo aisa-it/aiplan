@@ -17,6 +17,7 @@ import (
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -28,23 +29,23 @@ import (
 )
 
 var fieldsTranslation map[string]string = map[string]string{
-	"name":           "Название",
-	"parent":         "Родитель",
-	"priority":       "Приоритет",
-	"state":          "Статус",
-	"description":    "Описание",
-	"target_date":    "Срок исполнения",
-	"start_date":     "Дата начала",
-	"completed_at":   "Дата завершения",
-	"labels":         "Теги",
-	"assignees":      "Исполнители",
-	"blocking":       "Блокирует",
-	"blocks":         "Заблокирована",
-	"estimate_point": "Оценки",
-	"sub_issue":      "Подзадачи",
-	"identifier":     "Идентификатор",
-	"emoji":          "Emoji",
-	"title":          "Название",
+	actField.FieldName.String():          "Название",
+	actField.FieldParent.String():        "Родитель",
+	actField.FieldPriority.String():      "Приоритет",
+	actField.FieldStatus.String():        "Статус",
+	actField.FieldDescription.String():   "Описание",
+	actField.FieldTargetDate.String():    "Срок исполнения",
+	actField.FieldStartDate.String():     "Дата начала",
+	actField.FieldCompletedAt.String():   "Дата завершения",
+	actField.FieldLabel.String():         "Теги",
+	actField.FieldAssignees.String():     "Исполнители",
+	actField.FieldBlocking.String():      "Блокирует",
+	actField.FieldBlocks.String():        "Заблокирована",
+	actField.FieldEstimatePoint.String(): "Оценки",
+	actField.FieldSubIssue.String():      "Подзадачи",
+	actField.FieldIdentifier.String():    "Идентификатор",
+	actField.FieldEmoj.String():          "Emoji",
+	actField.FieldTitle.String():         "Название",
 }
 
 var priorityTranslation map[string]string = map[string]string{
@@ -186,7 +187,7 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 
 						if act.Issue != nil {
 							var identifier uuid.UUID
-							if act.Field != nil && *act.Field == "comment" && act.NewIdentifier != nil {
+							if act.Field != nil && *act.Field == actField.FieldComment.String() && act.NewIdentifier != nil {
 								identifier = uuid.FromStringOrNil(*act.NewIdentifier)
 							}
 							err := bl.CreateIssueComment(*act.Issue, user, update.Message.Text, identifier, true)
@@ -203,7 +204,7 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 
 						if act.Doc != nil {
 							var identifier uuid.NullUUID
-							if act.Field != nil && *act.Field == "comment" && act.NewIdentifier != nil {
+							if act.Field != nil && *act.Field == actField.FieldComment.String() && act.NewIdentifier != nil {
 								if v, err := uuid.FromString(*act.NewIdentifier); err == nil {
 									identifier = uuid.NullUUID{UUID: v, Valid: true}
 								}

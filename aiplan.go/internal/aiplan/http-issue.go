@@ -26,6 +26,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
@@ -991,8 +992,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		issueMapOld["state_activity_val"] = issue.State.Name
-		data["state_activity_val"] = newState.Name
+		issueMapOld[actField.FieldStatus.WithActivityValStr()] = issue.State.Name
+		data[actField.FieldStatus.WithActivityValStr()] = newState.Name
 		if newState.Group == "started" && issue.State.Group != "started" {
 			data["start_date"] = &types.TargetDate{Time: time.Now()}
 		}
@@ -2797,7 +2798,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 
 	newMap := StructToJSONMap(commentOld)
 	newMap["updateScopeId"] = commentId
-	newMap["field_log"] = "comment"
+	newMap["field_log"] = actField.FieldComment
 
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = commentId
@@ -3014,7 +3015,7 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		Order("ia.created_at DESC")
 
 	if field != "" {
-		query = query.Where("ia.field = ?", field)
+		query = query.Where("ia.field = ?", actField.FieldStatus)
 		if field == "state" {
 			query = query.Select("ia.*, round(extract('epoch' from ia.created_at - (LAG(ia.created_at, 1, \"Issue\".created_at) over (order by ia.created_at))) * 1000) as state_lag")
 
@@ -3022,7 +3023,7 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 			query = query.Select("ia.*")
 		}
 	} else {
-		query = query.Where("ia.field <> ?", "state")
+		query = query.Where("ia.field <> ?", actField.FieldStatus)
 	}
 
 	type fullActivityWithLag struct {

@@ -8,7 +8,9 @@ package tracker
 
 import (
 	"fmt"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 )
@@ -26,8 +28,8 @@ import (
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func issueAssigneesUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "users"
-	return entityFieldsListUpdate[E, A, dao.User]("assignees", "assignees_list", tracker, requestedData, currentInstance, entity, actor)
+	requestedData["current_table"] = dao.User{}.TableName()
+	return entityFieldsListUpdate[E, A, dao.User](actField.FieldAssignees, actField.ReqFieldAssignees, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityWatchersUpdate Обновляет список наблюдателей для сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -43,32 +45,32 @@ func issueAssigneesUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrack
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityWatchersUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "users"
-	return entityFieldsListUpdate[E, A, dao.User]("watchers", "watchers_list", tracker, requestedData, currentInstance, entity, actor)
+	requestedData["current_table"] = dao.User{}.TableName()
+	return entityFieldsListUpdate[E, A, dao.User](actField.FieldWatchers, actField.ReqFieldWatchers, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityEditorsUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "users"
-	return entityFieldsListUpdate[E, A, dao.User]("editors", "editors_list", tracker, requestedData, currentInstance, entity, actor)
+	requestedData["current_table"] = dao.User{}.TableName()
+	return entityFieldsListUpdate[E, A, dao.User](actField.FieldEditors, actField.ReqFieldEditors, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityIssuesUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "issues"
-	requestedData["field_log"] = "issue"
+	requestedData["current_table"] = dao.Issue{}.TableName()
+	requestedData["field_log"] = actField.FieldIssues
 
-	return entityFieldsListUpdate[E, A, dao.Issue]("issues", "issue_list", tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldsListUpdate[E, A, dao.Issue](actField.FieldIssues, actField.ReqFieldIssues, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entitySprintUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "issues"
-	requestedData["field_log"] = "issue"
+	requestedData["current_table"] = dao.Issue{}.TableName()
+	requestedData["field_log"] = actField.FieldIssues
 
-	return entityFieldsListUpdate[E, A, dao.Issue]("issues", "issue_list", tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldsListUpdate[E, A, dao.Issue](actField.FieldIssues, actField.ReqFieldIssues, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityReadersUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "users"
-	return entityFieldsListUpdate[E, A, dao.User]("readers", "readers_list", tracker, requestedData, currentInstance, entity, actor)
+	requestedData["current_table"] = dao.User{}.TableName()
+	return entityFieldsListUpdate[E, A, dao.User](actField.FieldReaders, actField.ReqFieldReaders, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func issueLinkedUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
@@ -79,25 +81,25 @@ func issueLinkedUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 		return nil
 	}
 
-	r := requestedData["linked_issues_ids"]
+	r := requestedData[actField.ReqFieldLinked]
 	if rSlice, ok := r.([]interface{}); ok {
-		requestedData["linked_issues_ids"] = utils.SliceToSlice(&rSlice, uuidToStr)
+		requestedData[actField.ReqFieldLinked] = utils.SliceToSlice(&rSlice, uuidToStr)
 	}
 
-	c := currentInstance["linked_issues_ids"]
+	c := currentInstance[actField.ReqFieldLinked]
 	if cSlice, ok := c.([]interface{}); ok {
-		currentInstance["linked_issues_ids"] = utils.SliceToSlice(&cSlice, uuidToStr)
+		currentInstance[actField.ReqFieldLinked] = utils.SliceToSlice(&cSlice, uuidToStr)
 	}
 
-	requestedData["field_log"] = "linked"
+	requestedData["field_log"] = actField.FieldLinked
 
-	return updateEntityRelationsLog[E, A, dao.Issue]("linked_issues_ids", "linked_issues_ids", tracker, requestedData, currentInstance, entity, actor)
+	return updateEntityRelationsLog[E, A, dao.Issue](actField.FieldLinked, actField.ReqFieldLinked, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func issueBlocksListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	c := currentInstance["blocked_issues"]
 	if cSlice, ok := c.([]interface{}); ok {
-		currentInstance["blocks_list"] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
+		currentInstance[actField.ReqFieldBlocksList] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
 			if v, ok := (*t).(map[string]interface{}); ok {
 				return v["block"].(uuid.UUID).String()
 			}
@@ -105,10 +107,10 @@ func issueBlocksListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrac
 		})
 	}
 
-	requestedData["field_log_source"] = "blocks"
-	requestedData["field_log_target"] = "blocking"
+	requestedData["field_log_source"] = actField.FieldBlocks
+	requestedData["field_log_target"] = actField.FieldBlocking
 
-	return updateEntityRelationsLog[E, A, dao.Issue]("blocks_list", "blocks_list", tracker, requestedData, currentInstance, entity, actor)
+	return updateEntityRelationsLog[E, A, dao.Issue](actField.FieldBlocks, actField.ReqFieldBlocksList, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // issueBlockersListUpdate Обновляет список заблокированных сущностей.  Функция принимает объект ActivitiesTracker, данные для обновления, текущее состояние сущности, саму сущность и пользователя, выполняющего обновление. Возвращает список обновленных Activity и ошибку, если произошла ошибка.
@@ -126,7 +128,7 @@ func issueBlocksListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrac
 func issueBlockersListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	c := currentInstance["blocker_issues"]
 	if cSlice, ok := c.([]interface{}); ok {
-		currentInstance["blockers_list"] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
+		currentInstance[actField.ReqFieldBlockersList] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
 			if v, ok := (*t).(map[string]interface{}); ok {
 				return v["blocked_by"].(uuid.UUID).String()
 			}
@@ -134,10 +136,10 @@ func issueBlockersListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 		})
 	}
 
-	requestedData["field_log_source"] = "blocking"
-	requestedData["field_log_target"] = "blocks"
+	requestedData["field_log_source"] = actField.FieldBlocking
+	requestedData["field_log_target"] = actField.FieldBlocks
 
-	return updateEntityRelationsLog[E, A, dao.Issue]("blockers_list", "blockers_list", tracker, requestedData, currentInstance, entity, actor)
+	return updateEntityRelationsLog[E, A, dao.Issue](actField.FieldBlocking, actField.ReqFieldBlockersList, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityDefaultAssigneesUpdate Обновляет поле дефолтных назначенных пользователей для сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -153,8 +155,8 @@ func issueBlockersListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityDefaultAssigneesUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "users"
-	return entityFieldsListUpdate[E, A, dao.User]("default_assignees", "default_assignees", tracker, requestedData, currentInstance, entity, actor)
+	requestedData["current_table"] = dao.User{}.TableName()
+	return entityFieldsListUpdate[E, A, dao.User](actField.FieldDefaultAssignees, actField.ReqFieldDefaultAssignees, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityDefaultWatchersUpdate Обновляет список дефолтных наблюдателей для сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -170,8 +172,8 @@ func entityDefaultAssigneesUpdate[E dao.Entity, A dao.Activity](tracker *Activit
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityDefaultWatchersUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "users"
-	return entityFieldsListUpdate[E, A, dao.User]("default_watchers", "default_watchers", tracker, requestedData, currentInstance, entity, actor)
+	requestedData["current_table"] = dao.User{}.TableName()
+	return entityFieldsListUpdate[E, A, dao.User](actField.FieldDefaultWatchers, actField.ReqFieldDefaultWatchers, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityTitleUpdate Обновляет заголовок сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -187,7 +189,7 @@ func entityDefaultWatchersUpdate[E dao.Entity, A dao.Activity](tracker *Activiti
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityTitleUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("title", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldTitle, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityEmojiUpdate Обновляет эмодзи сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -203,7 +205,7 @@ func entityTitleUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityEmojiUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("emoji", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldEmoj, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityPublicUpdate Обновляет поле публичности сущности. Позволяет установить, видна ли сущность посторонним пользователям.
@@ -219,7 +221,7 @@ func entityEmojiUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityPublicUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("public", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldPublic, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityIdentifierUpdate Обновляет идентификатор сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -235,7 +237,7 @@ func entityPublicUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityIdentifierUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("identifier", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldIdentifier, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityProjectLeadUpdate Обновляет поле руководителя проекта сущности.
@@ -251,18 +253,18 @@ func entityIdentifierUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTra
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityProjectLeadUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("project_lead", strToPointer(fmt.Sprint(requestedData["project_lead"])), strToPointer(fmt.Sprint(currentInstance["project_lead"])), tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldProjectLead, strToPointer(fmt.Sprint(requestedData["project_lead"])), strToPointer(fmt.Sprint(currentInstance["project_lead"])), tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Обновляет поле приоритета сущности. Принимает данные для обновления приоритета, текущее состояние сущности, объект сущности и пользователя, выполняющего обновление. Возвращает список обновленных Activity и ошибку, если произошла ошибка.
 func entityPriorityUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("priority", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldPriority, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Обновляет роль сущности, принимая идентификатор роли из данных, переданных в параметре requestedData.  Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.  Возвращает список обновленных Activity и ошибку, если произошла ошибка.
 func entityRoleUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	memberID := fmt.Sprint(requestedData["member_id"])
-	return entityFieldUpdate[E, A]("role", &memberID, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldRole, &memberID, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityNameUpdate Обновляет имя сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -278,23 +280,23 @@ func entityRoleUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, 
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityNameUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("name", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldName, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityTemplateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("template", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldTemplate, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityLogoUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("logo", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldLogo, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityTokenUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("integration_token", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldToken, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityOwnerUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("owner_id", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldOwner, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityDescriptionUpdate Обновляет описание сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -310,13 +312,13 @@ func entityOwnerUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityDescriptionUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("description", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldDescription, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Обновляет HTML описание сущности, добавляя тег 'comment_html' в данные для обновления.
 func entityDescriptionHtmlUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["field_log"] = "description"
-	return entityFieldUpdate[E, A]("description_html", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	requestedData["field_log"] = actField.FieldDescription
+	return entityFieldUpdate[E, A](actField.FieldDescriptionHtml, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Обновляет цвет сущности, получая значение из данных, переданных в параметре requestedData.  Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.  Цвет может быть представлен в виде строки, например, 'red', 'blue' и т.д.  Если цвет не указан, поле остается без изменений.
@@ -332,7 +334,7 @@ func entityDescriptionHtmlUpdate[E dao.Entity, A dao.Activity](tracker *Activiti
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityColorUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("color", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldColor, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityTargetDateUpdate Обновляет поле даты старта сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -348,15 +350,15 @@ func entityColorUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityTargetDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	if v, ok := requestedData["target_date"]; ok && v != nil {
+	if v, ok := requestedData[actField.FieldTargetDate.String()]; ok && v != nil {
 		d, _ := utils.FormatDateStr(v.(string), "2006-01-02T15:04:05Z07:00", nil)
-		requestedData["target_date"] = d
+		requestedData[actField.FieldTargetDate.String()] = d
 	}
-	if v, ok := currentInstance["target_date"]; ok && v != nil {
+	if v, ok := currentInstance[actField.FieldTargetDate.String()]; ok && v != nil {
 		d, _ := utils.FormatDateStr(v.(string), "2006-01-02T15:04:05Z07:00", nil)
-		currentInstance["target_date"] = d
+		currentInstance[actField.FieldTargetDate.String()] = d
 	}
-	return entityFieldUpdate[E, A]("target_date", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldTargetDate, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityStartDateUpdate Обновляет поле даты старта сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -380,22 +382,22 @@ func entityStartDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrac
 		}
 	}
 
-	requestedData["start_date_func"] = format
-	currentInstance["start_date_func"] = format
+	requestedData[actField.FieldStartDate.WithFuncStr()] = format
+	currentInstance[actField.FieldStartDate.WithFuncStr()] = format
 
-	if v, exists := requestedData["start_date"]; exists {
+	if v, exists := requestedData[actField.FieldStartDate.String()]; exists {
 		if startDate, ok := v.(map[string]interface{}); ok {
-			requestedData["start_date"] = startDate["Time"]
+			requestedData[actField.FieldStartDate.String()] = startDate["Time"]
 		}
 	}
 
-	if v, exists := currentInstance["start_date"]; exists {
+	if v, exists := currentInstance[actField.FieldStartDate.String()]; exists {
 		if startDate, ok := v.(map[string]interface{}); ok {
-			currentInstance["start_date"] = startDate["Time"]
+			currentInstance[actField.FieldStartDate.String()] = startDate["Time"]
 		}
 	}
 
-	return entityFieldUpdate[E, A]("start_date", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldStartDate, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityCompletedAtUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
@@ -407,10 +409,10 @@ func entityCompletedAtUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 		}
 	}
 
-	requestedData["completed_at_func"] = format
-	currentInstance["completed_at_func"] = format
+	requestedData[actField.FieldCompletedAt.WithFuncStr()] = format
+	currentInstance[actField.FieldCompletedAt.WithFuncStr()] = format
 
-	return entityFieldUpdate[E, A]("completed_at", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldCompletedAt, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityEndDateUpdate Обновляет поле даты окончания сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -434,22 +436,22 @@ func entityEndDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 		}
 	}
 
-	requestedData["end_date_func"] = format
-	currentInstance["end_date_func"] = format
+	requestedData[actField.FieldEndDate.WithFuncStr()] = format
+	currentInstance[actField.FieldEndDate.WithFuncStr()] = format
 
-	if v, exists := requestedData["end_date"]; exists {
+	if v, exists := requestedData[actField.FieldEndDate.String()]; exists {
 		if startDate, ok := v.(map[string]interface{}); ok {
-			requestedData["end_date"] = startDate["Time"]
+			requestedData[actField.FieldEndDate.String()] = startDate["Time"]
 		}
 	}
 
-	if v, exists := currentInstance["end_date"]; exists {
+	if v, exists := currentInstance[actField.FieldEndDate.String()]; exists {
 		if startDate, ok := v.(map[string]interface{}); ok {
-			currentInstance["end_date"] = startDate["Time"]
+			currentInstance[actField.FieldEndDate.String()] = startDate["Time"]
 		}
 	}
 
-	return entityFieldUpdate[E, A]("end_date", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldEndDate, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityLabelUpdate Обновляет список тегов сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -465,8 +467,8 @@ func entityEndDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityLabelUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["current_table"] = "labels"
-	return entityFieldsListUpdate[E, A, dao.Label]("labels", "labels_list", tracker, requestedData, currentInstance, entity, actor)
+	requestedData["current_table"] = dao.Label{}.TableName()
+	return entityFieldsListUpdate[E, A, dao.Label](actField.FieldLabel, actField.ReqFieldLabel, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityAuthRequireUpdate Обновляет поле авторизации сущности.  Устанавливает, требуется ли авторизация для доступа к сущности.
@@ -482,12 +484,12 @@ func entityLabelUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityAuthRequireUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("auth_require", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldAuthRequire, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Обновляет произвольные поля сущности, используя общую логику обновления полей.  Функция принимает карту данных для обновления, текущее состояние сущности, объект сущности и пользователя, выполняющего обновление.  Возвращает список обновленных Activity и ошибку, если таковая возникла.
 func entityFieldsUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("fields", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldFields, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityGroupUpdate Обновляет поле группы сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -503,7 +505,7 @@ func entityFieldsUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityGroupUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("group", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldGroup, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Обновляет поле дефолтного значения сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -519,7 +521,7 @@ func entityGroupUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityDefaultUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("default", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldDefault, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityEstimatePointUpdate Обновляет поле оценки в сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -535,7 +537,7 @@ func entityDefaultUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityEstimatePointUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("estimate_point", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldEstimatePoint, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityUrlUpdate Обновляет URL сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -551,7 +553,7 @@ func entityEstimatePointUpdate[E dao.Entity, A dao.Activity](tracker *Activities
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityUrlUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("url", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldUrl, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityCommentHtmlUpdate Обновляет поле HTML комментария сущности.  Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
@@ -567,7 +569,7 @@ func entityUrlUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, r
 //   - []A: список обновленных Activity (если произошла ошибка, возвращает nil и ошибку).
 //   - error: ошибка, произошедшая при обновлении (если произошла ошибка, возвращает nil).
 func entityCommentHtmlUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("comment_html", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldCommentHtml, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Сортирует сущность по полю doc_sort.  Функция принимает объект ActivitiesTracker, данные для обновления, текущее состояние сущности, саму сущность и пользователя, выполняющего обновление. Возвращает список обновленных Activity и ошибку, если таковая произошла.
@@ -577,22 +579,22 @@ func entityDocSortUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 	default:
 		return nil, nil
 	}
-	return entityFieldUpdate[E, A]("doc_sort", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldDocSort, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityReaderRoleUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("reader_role", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldReaderRole, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 func entityEditorRoleUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A]("editor_role", nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldEditorRole, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // Обновляет поле статуса сущности, принимая значение из данных для обновления и текущее состояние сущности.  Функция принимает объект ActivitiesTracker, данные для обновления, текущее состояние сущности, саму сущность и пользователя, выполняющего обновление. Возвращает список обновленных Activity и ошибку, если произошла ошибка.
 func entityStateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	newId := fmt.Sprint(requestedData["state_id"])
 	oldId := fmt.Sprint(currentInstance["state"])
-	return entityFieldUpdate[E, A]("state", &newId, &oldId, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.FieldStatus, &newId, &oldId, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // issueParentUpdate Обновляет поле родительской сущности.  Функция принимает объект ActivitiesTracker, данные для обновления, текущее состояние сущности, саму сущность и пользователя, выполняющего обновление.  Возвращает список обновленных Activity и ошибку, если таковая произошла.
@@ -614,7 +616,7 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 	}
 
 	field := "parent"
-	fieldSub := "sub_issue"
+	fieldSub := actField.FieldSubIssue
 
 	var result []A
 
@@ -652,16 +654,16 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 
 	if oldParentId == nil && newParentId != nil {
 		entityI := issueMap[*newParentId]
-		requestedData["parent_activity_val"] = entityI.GetString()
-		ta = dao.NewTemplateActivity(dao.ACTIVITY_ADDED, &fieldSub, nil, e.GetString(), issueId, nil, &actor, e.GetString())
+		requestedData[actField.FieldParent.WithActivityValStr()] = entityI.GetString()
+		ta = dao.NewTemplateActivity(dao.ACTIVITY_ADDED, fieldSub, nil, e.GetString(), issueId, nil, &actor, e.GetString())
 		if act, err := CreateActivity[E, A](any(entityI).(E), ta); err == nil {
 			result = append(result, *act)
 		}
 
 	} else if newParentId == nil && oldParentId != nil {
 		entityI := issueMap[*oldParentId]
-		currentInstance["parent_activity_val"] = entityI.GetString()
-		ta = dao.NewTemplateActivity(dao.ACTIVITY_REMOVED, &fieldSub, strToPointer(e.GetString()), "", nil, issueId, &actor, e.GetString())
+		currentInstance[actField.FieldParent.WithActivityValStr()] = entityI.GetString()
+		ta = dao.NewTemplateActivity(dao.ACTIVITY_REMOVED, fieldSub, strToPointer(e.GetString()), "", nil, issueId, &actor, e.GetString())
 		if act, err := CreateActivity[E, A](any(entityI).(E), ta); err == nil {
 			result = append(result, *act)
 		}
@@ -669,19 +671,19 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 	} else if newParentId != nil && oldParentId != nil {
 		entityIRem := issueMap[*oldParentId]
 		entityIAdd := issueMap[*newParentId]
-		currentInstance["parent_activity_val"] = entityIRem.GetString()
-		requestedData["parent_activity_val"] = entityIAdd.GetString()
-		ta = dao.NewTemplateActivity(dao.ACTIVITY_REMOVED, &fieldSub, strToPointer(e.GetString()), "", nil, issueId, &actor, e.GetString())
+		currentInstance[actField.FieldParent.WithActivityValStr()] = entityIRem.GetString()
+		requestedData[actField.FieldParent.WithActivityValStr()] = entityIAdd.GetString()
+		ta = dao.NewTemplateActivity(dao.ACTIVITY_REMOVED, fieldSub, strToPointer(e.GetString()), "", nil, issueId, &actor, e.GetString())
 		if act, err := CreateActivity[E, A](any(entityIRem).(E), ta); err == nil {
 			result = append(result, *act)
 		}
-		ta = dao.NewTemplateActivity(dao.ACTIVITY_ADDED, &fieldSub, nil, e.GetString(), issueId, nil, &actor, e.GetString())
+		ta = dao.NewTemplateActivity(dao.ACTIVITY_ADDED, fieldSub, nil, e.GetString(), issueId, nil, &actor, e.GetString())
 		if act, err := CreateActivity[E, A](any(entityIAdd).(E), ta); err == nil {
 			result = append(result, *act)
 		}
 	}
 
-	res, err := entityFieldUpdate[E, A]("parent", newParentId, oldParentId, tracker, requestedData, currentInstance, entity, actor)
+	res, err := entityFieldUpdate[E, A](actField.FieldParent, newParentId, oldParentId, tracker, requestedData, currentInstance, entity, actor)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
@@ -1224,7 +1225,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	}
 	newMap := StructToJSONMap(comment)
 	newMap["updateScopeId"] = commentId
-	newMap["field_log"] = "comment"
+	newMap["field_log"] = actField.FieldComment
 
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = commentId

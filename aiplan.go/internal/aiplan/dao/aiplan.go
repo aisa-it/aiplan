@@ -522,13 +522,13 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 					targetField = strings.Split(targetField, "_")[0]
 				}
 
-				if targetField == "status" {
-					targetField = "state"
-				}
+				//if targetField == "status" {
+				//	targetField = "state"
+				//}
 
-				if targetField == "labels" {
-					targetField = "label"
-				}
+				//if targetField == "labels" {
+				//	targetField = "label"
+				//}
 
 				if fieldTag != targetField && fieldTag != targetFieldExt {
 					continue
