@@ -121,7 +121,7 @@ func CreateLabels(context *context.ImportContext, tx *gorm.DB) error {
 	context.Log.Info("Create labels", "count", context.Labels.Len())
 
 	context.ReleasesTags.Range(func(key string, value dao.Label) {
-		context.Labels.Put(value.ID, value)
+		context.Labels.Put(value.ID.String(), value)
 	})
 
 	return tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(context.Labels.Array(), 100).Error

@@ -133,7 +133,7 @@ func (c *ImportContext) replaceAttachments(src string, issue *dao.Issue, comment
 					attach.InlineAsset.IssueId = uuid.NullUUID{Valid: true, UUID: issue.ID}
 					attach.InlineAsset.WorkspaceId = &issue.WorkspaceId
 				} else if comment != nil {
-					attach.InlineAsset.CommentId = &comment.Id
+					attach.InlineAsset.CommentId = uuid.NullUUID{UUID: comment.Id, Valid: true}
 					attach.InlineAsset.WorkspaceId = &comment.WorkspaceId
 				} else {
 					slog.Warn("Empty issue and comment for img formatting", "attachmentId", attach.JiraAttachment.ID)

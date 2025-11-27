@@ -205,9 +205,9 @@ func (ghi *GithubIntegration) GithubPushEvent(event GithubPushEvent, workspace d
 		}
 
 		link := dao.IssueLink{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedById: &ghi.User.ID,
-			IssueId:     issue.ID.String(),
+			IssueId:     issue.ID,
 			ProjectId:   issue.ProjectId,
 			WorkspaceId: issue.WorkspaceId,
 			Url:         commit.Url,

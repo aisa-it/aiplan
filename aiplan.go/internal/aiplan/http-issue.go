@@ -226,13 +226,13 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 		}
 
 		issueAttachment := dao.IssueAttachment{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			CreatedById: &userId,
 			UpdatedById: &userId,
 			AssetId:     assetName,
-			IssueId:     issueId,
+			IssueId:     issue.ID,
 			ProjectId:   issue.ProjectId,
 			WorkspaceId: issue.WorkspaceId,
 		}
@@ -679,7 +679,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		selectInterface = []interface{}{
 			s.db.Table("issues as \"child\"").Select("count(*)").Where("\"child\".parent_id = issues.id"),
 			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueLink{}),
-			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueAttachment{}),
+			s.db.Select("count(*)").Where("issue_id = issues.id::uuid").Model(&dao.IssueAttachment{}),
 			s.db.Select("count(*)").Where("id1 = issues.id OR id2 = issues.id").Model(&dao.LinkedIssues{}),
 			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueComment{}),
 		}
@@ -1085,6 +1085,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if err := s.db.Where("project_id = ?", project.ID).Find(&allProjectLabels).Error; err != nil {
 			return EError(c, err)
 		}
+		data[actField.FieldLabel.WithGetFieldStr()] = "labels"
 	}
 
 	// Reset sort order
@@ -1191,7 +1192,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 					return err
 				}
 				newBlockers = append(newBlockers, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockedById: blockerUUID,
 					BlockId:     issue.ID,
 					ProjectId:   issue.ProjectId,
@@ -1216,9 +1217,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range assignees {
 				newAssignees = append(newAssignees, dao.IssueAssignee{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					AssigneeId:  fmt.Sprint(assignee),
-					IssueId:     issue.ID.String(),
+					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1240,9 +1241,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range watchers {
 				newWatchers = append(newWatchers, dao.IssueWatcher{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					WatcherId:   fmt.Sprint(watcher),
-					IssueId:     issue.ID.String(),
+					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1264,8 +1265,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newLabels []dao.IssueLabel
 			for _, label := range labels {
 				newLabels = append(newLabels, dao.IssueLabel{
-					Id:          dao.GenID(),
-					LabelId:     fmt.Sprint(label),
+					Id:          dao.GenUUID(),
+					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issue.ID.String(),
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
@@ -1292,7 +1293,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 					return err
 				}
 				newBlocked = append(newBlocked, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockId:     blockUUID,
 					BlockedById: issue.ID,
 					ProjectId:   issue.ProjectId,
@@ -2144,7 +2145,7 @@ func (s *Services) getIssueLinkList(c echo.Context) error {
 func (s *Services) createIssueLink(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID.String()
+	issue := c.(IssueContext).Issue
 
 	var req IssueLinkRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
@@ -2156,12 +2157,12 @@ func (s *Services) createIssueLink(c echo.Context) error {
 	}
 
 	link := dao.IssueLink{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		Title:       req.Title,
 		Url:         req.Url,
 		CreatedById: &user.ID,
 		UpdatedById: &user.ID,
-		IssueId:     issueId,
+		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: project.WorkspaceId,
 	}
@@ -2532,7 +2533,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
-					CommentId:   &comment.Id,
+					CommentId:   uuid.NullUUID{UUID: comment.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
@@ -2749,7 +2750,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
-					CommentId:   &commentOld.Id,
+					CommentId:   uuid.NullUUID{UUID: commentOld.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
@@ -2947,7 +2948,7 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 	// Создаем новую реакцию
 	commentUUID := uuid.Must(uuid.FromString(commentId))
 	reaction := dao.CommentReaction{
-		Id:        dao.GenID(),
+		Id:        dao.GenUUID(),
 		CreatedAt: time.Now(),
 		UserId:    user.ID,
 		CommentId: commentUUID,
@@ -3200,14 +3201,14 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 	}
 
 	issueAttachment := dao.IssueAttachment{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		CreatedById: &user.ID,
 		UpdatedById: &user.ID,
 		Attributes:  attributes,
 		AssetId:     assetName,
-		IssueId:     issue.ID.String(),
+		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: issue.WorkspaceId,
 	}
@@ -3458,13 +3459,6 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Delete(&dao.LinkedIssues{}).Error; err != nil {
 			return err
 		}
-
-		changes, err := utils.CalculateIDChanges(newIDs, oldIDs)
-		if err != nil {
-			return err
-		}
-
-		changes.InvolvedIds = append(changes.InvolvedIds, issue.ID.String())
 
 		for _, newId := range param.IssueIDs {
 			if err := issue.AddLinkedIssue(tx, newId); err != nil {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 )
 
 type EntityActivityLight struct {
@@ -107,7 +108,7 @@ type HistoryBody struct {
 }
 
 type Attachment struct {
-	Id        string     `json:"id"`
+	Id        uuid.UUID  `json:"id"`
 	CreatedAt time.Time  `json:"created_at"`
 	Asset     *FileAsset `json:"asset"`
 }

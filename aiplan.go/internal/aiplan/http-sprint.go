@@ -412,16 +412,13 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 			errStack.GetError(c, err)
 		}
 
-		changes, err := utils.CalculateIDChanges(newIssuesIds, oldIssueIds)
-		if err != nil {
-			return EError(c, err)
-		}
+		changes := utils.CalculateIDChanges(newIssuesIds, oldIssueIds)
 		var issues []dao.Issue
 		if err := s.db.Where("workspace_id = ?", workspace.ID).Where("id IN (?)", changes.InvolvedIds).Find(&issues).Error; err != nil {
 			return EError(c, err)
 		}
 
-		issueMap := utils.SliceToMap(&issues, func(t *dao.Issue) string { return t.ID.String() })
+		issueMap := utils.SliceToMap(&issues, func(t *dao.Issue) uuid.UUID { return t.ID })
 
 		data := map[string]interface{}{
 			"issue_key":           "sprint",
