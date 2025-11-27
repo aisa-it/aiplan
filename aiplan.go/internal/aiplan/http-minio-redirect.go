@@ -7,6 +7,7 @@
 package aiplan
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -106,6 +107,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	}
 
 	c.Response().Header().Set("ETag", stats.ETag)
+	c.Response().Header().Set("Content-Length", fmt.Sprint(stats.Size))
 
 	r, err := s.storage.LoadReader(asset.Id)
 	if err != nil {

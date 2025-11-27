@@ -342,6 +342,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		Skipper: func(c echo.Context) bool {
 			return c.Path() == "/api/auth/ws/notifications/" ||
 				c.Path() == "/api/ws/notifications/" ||
+				strings.HasPrefix(c.Path(), "/api/auth/file/") ||
 				strings.Contains(c.Request().URL.Path, "swagger")
 		},
 	}))
