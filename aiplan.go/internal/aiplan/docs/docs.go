@@ -5501,6 +5501,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/users/me/tutorial/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет шаги прохождения обучения на платформе",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи: прохождение обучения",
+                "operationId": "updateUserTutorial",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Шаг обучения",
+                        "name": "step",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "пользователь",
+                        "schema": {
+                            "$ref": "#/definitions/dto.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "409": {
+                        "description": "Конфликт действия",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/users/me/verification-email/": {
             "post": {
                 "security": [
@@ -17171,6 +17239,9 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "pinned": {
+                    "type": "boolean"
+                },
                 "priority": {
                     "type": "string",
                     "x-nullable": true
@@ -18793,6 +18864,9 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "pinned": {
+                    "type": "boolean"
+                },
                 "priority": {
                     "type": "string",
                     "x-nullable": true
@@ -19213,6 +19287,9 @@ const docTemplate = `{
                         }
                     ],
                     "x-nullable": true
+                },
+                "pinned": {
+                    "type": "boolean"
                 },
                 "priority": {
                     "type": "string",
@@ -20024,6 +20101,9 @@ const docTemplate = `{
                 },
                 "theme": {
                     "$ref": "#/definitions/types.Theme"
+                },
+                "tutorial": {
+                    "type": "integer"
                 },
                 "user_timezone": {
                     "type": "string"

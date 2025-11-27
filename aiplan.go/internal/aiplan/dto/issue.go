@@ -16,11 +16,11 @@ import (
 )
 
 type LabelLight struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	ProjectId   string `json:"project"`
-	Color       string `json:"color" `
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	ProjectId   string    `json:"project"`
+	Color       string    `json:"color" `
 }
 type IssueLight struct {
 	Id         string        `json:"id"`

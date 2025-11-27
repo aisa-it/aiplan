@@ -872,7 +872,7 @@ type ImportedProject struct {
 // Шильдик
 type Label struct {
 	// id uuid NOT NULL,
-	ID string `gorm:"column:id;primaryKey" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey" json:"id"`
 	// created_at timestamp with time zone NOT NULL,
 	CreatedAt time.Time `json:"created_at"`
 	// updated_at timestamp with time zone NOT NULL,
@@ -912,7 +912,7 @@ func (Label) TableName() string {
 // Возвращает:
 //   - string: строка, представляющая собой идентификатор Issue.
 func (l Label) GetId() string {
-	return l.ID
+	return l.ID.String()
 }
 
 // GetString возвращает строку из идентификатора Issue.
@@ -968,8 +968,8 @@ func (l *Label) ToLightDTO() *dto.LabelLight {
 // LabelExtendFields
 // -migration
 type LabelExtendFields struct {
-	NewLabel *Label `json:"-" gorm:"-" field:"labels" extensions:"x-nullable"`
-	OldLabel *Label `json:"-" gorm:"-" field:"labels" extensions:"x-nullable"`
+	NewLabel *Label `json:"-" gorm:"-" field:"label" extensions:"x-nullable"`
+	OldLabel *Label `json:"-" gorm:"-" field:"label" extensions:"x-nullable"`
 }
 
 func (l *Label) BeforeDelete(tx *gorm.DB) error {

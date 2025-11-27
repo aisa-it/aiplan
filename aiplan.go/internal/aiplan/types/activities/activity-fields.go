@@ -92,7 +92,7 @@ const (
 	FieldStartDate        ActivityField = "start_date"
 	FieldCompletedAt      ActivityField = "completed_at"
 	FieldEndDate          ActivityField = "end_date"
-	FieldLabel            ActivityField = "labels"
+	FieldLabel            ActivityField = "label"
 	FieldAuthRequire      ActivityField = "auth_require"
 	FieldFields           ActivityField = "fields"
 	FieldGroup            ActivityField = "group"
@@ -135,4 +135,8 @@ func (a ActivityField) WithActivityValStr() string {
 
 func (a ActivityField) WithFuncStr() string {
 	return fmt.Sprintf("%s_%s", a.String(), "func")
+}
+
+func (a ActivityField) WithGetFieldStr() string {
+	return fmt.Sprintf("%s_%s", a.String(), "get_field")
 }

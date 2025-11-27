@@ -719,9 +719,9 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		var newAssignees []dao.IssueAssignee
 		for _, watcher := range defaultAssignees {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				AssigneeId:  fmt.Sprint(watcher),
-				IssueId:     issue.ID.String(),
+				IssueId:     issue.ID,
 				ProjectId:   issue.ProjectId,
 				WorkspaceId: issue.WorkspaceId,
 				CreatedById: &systemUser.ID,

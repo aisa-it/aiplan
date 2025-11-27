@@ -106,7 +106,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var labelIds, stateIds []string
+	var labelIds []uuid.UUID
+	var stateIds []string
 	stateMap := make(map[string]dao.State)
 
 	var targetProject, srcProject dao.Project
@@ -291,7 +292,11 @@ func (s *Services) migrateIssues(c echo.Context) error {
 				case "state":
 					stateIds = append(stateIds, errClause.Entities...)
 				case "label":
-					labelIds = append(labelIds, errClause.Entities...)
+					for _, entity := range errClause.Entities {
+						if uuid, err := uuid.FromString(entity); err == nil {
+							labelIds = append(labelIds, uuid)
+						}
+					}
 				default:
 					newErr = append(newErr, errClause)
 				}
@@ -320,7 +325,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			for _, label := range labels {
 				id := dao.GenUUID()
 				l := dao.Label{
-					ID:          id.String(),
+					ID:          id,
 					Name:        label.Name,
 					Description: label.Description,
 					Color:       label.Color,
@@ -331,10 +336,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					ProjectId:   targetProject.ID,
 				}
 				newLabels = append(newLabels, l)
-				uuidLabel, err := uuid.FromString(label.ID)
-				if err != nil {
-					return err
-				}
+				uuidLabel := label.ID
 				idsMap[uuidLabel] = id
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
@@ -603,7 +605,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var labelIds, stateIds []string
+	var labelIds []uuid.UUID
+	var stateIds []string
 	stateMap := make(map[string]dao.State)
 
 	var targetProject, srcProject dao.Project
@@ -734,7 +737,11 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 				case "state":
 					stateIds = append(stateIds, errClause.Entities...)
 				case "label":
-					labelIds = append(labelIds, errClause.Entities...)
+					for _, entity := range errClause.Entities {
+						if uuid, err := uuid.FromString(entity); err == nil {
+							labelIds = append(labelIds, uuid)
+						}
+					}
 				default:
 					newErr = append(newErr, errClause)
 				}
@@ -763,7 +770,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			for _, label := range labels {
 				id := dao.GenUUID()
 				l := dao.Label{
-					ID:          id.String(),
+					ID:          id,
 					Name:        label.Name,
 					Description: label.Description,
 					Color:       label.Color,
@@ -774,10 +781,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					ProjectId:   targetProject.ID,
 				}
 				newLabels = append(newLabels, l)
-				uuidLabel, err := uuid.FromString(label.ID)
-				if err != nil {
-					return err
-				}
+				uuidLabel := label.ID
 				idsMap[uuidLabel] = id
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
@@ -1025,7 +1029,7 @@ type IssueCheckResult struct {
 
 	TargetState  dao.State
 	TargetLabels []dao.Label
-	MapLabelIds  map[string]string
+	MapLabelIds  map[uuid.UUID]uuid.UUID
 
 	Migrate bool
 	Errors  []ErrClause
@@ -1154,7 +1158,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 			SrcIssueId:      &srcIssue.ID,
 			IssueSequenceId: srcIssue.SequenceId,
 		}
-		res.MapLabelIds = make(map[string]string, len(*srcIssue.Labels))
+		res.MapLabelIds = make(map[uuid.UUID]uuid.UUID, len(*srcIssue.Labels))
 
 		for _, label := range *srcIssue.Labels {
 			var targetLabel dao.Label
@@ -1163,7 +1167,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 				Where("project_id = ?", targetProject.ID).
 				First(&targetLabel).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
-					labelsError.Entities = append(labelsError.Entities, label.ID)
+					labelsError.Entities = append(labelsError.Entities, label.ID.String())
 				} else {
 					return res, err
 				}
@@ -1201,9 +1205,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range issue.TargetProject.DefaultAssignees {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				AssigneeId:  fmt.Sprint(assignee),
-				IssueId:     srcIssue.ID.String(),
+				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1228,9 +1232,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range issue.TargetProject.DefaultWatchers {
 			newWatchers = append(newWatchers, dao.IssueWatcher{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				WatcherId:   fmt.Sprint(watcher),
-				IssueId:     srcIssue.ID.String(),
+				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1245,16 +1249,12 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	// Labels
 	{
 		for srcLabelId, targetLabelId := range issue.MapLabelIds {
-			if targetLabelId == "" {
-				uuidLabel, err := uuid.FromString(srcLabelId)
-				if err != nil {
-					return err
-				}
-				v, ok := idsMap[uuidLabel]
+			if targetLabelId.IsNil() {
+				v, ok := idsMap[srcLabelId]
 				if !ok {
-					return err
+					return fmt.Errorf("label mapping not found for %s", srcLabelId)
 				}
-				targetLabelId = v.String()
+				targetLabelId = v
 			}
 			if err := tx.Model(&dao.IssueLabel{}).
 				Where("issue_id = ? and label_id = ?", srcIssue.ID, srcLabelId).
@@ -1368,9 +1368,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range assigneesList {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				AssigneeId:  fmt.Sprint(assignee),
-				IssueId:     targetIssue.ID.String(),
+				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1393,9 +1393,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range watchersList {
 			newWatchers = append(newWatchers, dao.IssueWatcher{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				WatcherId:   fmt.Sprint(watcher),
-				IssueId:     targetIssue.ID.String(),
+				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
 				CreatedById: &user.ID,
@@ -1412,7 +1412,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		var newLabels []dao.IssueLabel
 		for _, label := range issue.TargetLabels {
 			newLabels = append(newLabels, dao.IssueLabel{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				LabelId:     label.ID,
 				IssueId:     targetIssue.ID.String(),
 				ProjectId:   issue.TargetProject.ID,
@@ -1423,18 +1423,14 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 
 		for k, v := range issue.MapLabelIds {
-			if v == "" {
-				uuidLabel, err := uuid.FromString(k)
-				if err != nil {
-					return err
-				}
-				v, ok := idsMap[uuidLabel]
+			if v.IsNil() {
+				v, ok := idsMap[k]
 				if !ok {
-					return err
+					return fmt.Errorf("label mapping not found for %s", k)
 				}
 				newLabels = append(newLabels, dao.IssueLabel{
-					Id:          dao.GenID(),
-					LabelId:     v.String(),
+					Id:          dao.GenUUID(),
+					LabelId:     v,
 					IssueId:     targetIssue.ID.String(),
 					ProjectId:   issue.TargetProject.ID,
 					WorkspaceId: targetIssue.WorkspaceId,
@@ -1478,7 +1474,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 
 		for i := range reactions {
-			reactions[i].Id = dao.GenID()
+			reactions[i].Id = dao.GenUUID()
 			reactions[i].CommentId = idsCommentMap[reactions[i].CommentId]
 		}
 
@@ -1495,8 +1491,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 
 		for i := range attachments {
-			attachments[i].Id = dao.GenID()
-			attachments[i].IssueId = targetIssue.ID.String()
+			attachments[i].Id = dao.GenUUID()
+			attachments[i].IssueId = targetIssue.ID
 			attachments[i].ProjectId = issue.TargetProject.ID
 		}
 
@@ -1513,8 +1509,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 
 		for i := range links {
-			links[i].Id = dao.GenID()
-			links[i].IssueId = targetIssue.ID.String()
+			links[i].Id = dao.GenUUID()
+			links[i].IssueId = targetIssue.ID
 			links[i].ProjectId = issue.TargetProject.ID
 		}
 
@@ -1534,7 +1530,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 			if _, ok := idsMap[block.BlockId]; !ok {
 				continue
 			}
-			blocker[i].Id = dao.GenID()
+			blocker[i].Id = dao.GenUUID()
 			blocker[i].BlockId = idsMap[block.BlockId]
 			blocker[i].BlockedById = idsMap[block.BlockedById]
 			blocker[i].ProjectId = issue.TargetProject.ID

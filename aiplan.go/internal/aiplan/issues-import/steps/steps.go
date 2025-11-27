@@ -128,7 +128,7 @@ func DownloadAttachmentsStep(c *context.ImportContext) error {
 					if v.IssueAttachment != nil {
 						metadata.WorkspaceId = v.IssueAttachment.WorkspaceId
 						metadata.ProjectId = v.IssueAttachment.ProjectId
-						metadata.IssueId = v.IssueAttachment.IssueId
+						metadata.IssueId = v.IssueAttachment.IssueId.String()
 					} else if v.InlineAsset != nil {
 						// Inline asset
 						metadata.WorkspaceId = *v.InlineAsset.WorkspaceId

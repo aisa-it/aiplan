@@ -24,7 +24,7 @@ import (
 
 var version string = "DEV"
 
-var models = []any{&dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Doc{}, &dao.DocActivity{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocEditor{}, &dao.DocFavorites{}, &dao.DocReader{}, &dao.DocWatcher{}, &dao.EntityActivity{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.Form{}, &dao.FormActivity{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueActivity{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.Project{}, &dao.ProjectActivity{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ReleaseNote{}, &dao.RootActivity{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintActivity{}, &dao.SprintIssue{}, &dao.SprintViews{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserFeedback{}, &dao.UserNotifications{}, &dao.Workspace{}, &dao.WorkspaceActivity{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}}
+var models = []any{&dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Doc{}, &dao.DocActivity{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocEditor{}, &dao.DocFavorites{}, &dao.DocReader{}, &dao.DocWatcher{}, &dao.EntityActivity{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.ForeignKey{}, &dao.Form{}, &dao.FormActivity{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueActivity{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.Project{}, &dao.ProjectActivity{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ReleaseNote{}, &dao.RootActivity{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintActivity{}, &dao.SprintIssue{}, &dao.SprintViews{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserFeedback{}, &dao.UserNotifications{}, &dao.Workspace{}, &dao.WorkspaceActivity{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}}
 
 //go:embed triggers.sql
 var triggersSQL string
@@ -89,6 +89,34 @@ func main() {
 	sqlDB.SetConnMaxIdleTime(time.Minute * 15)
 
 	if !*noMigration {
+		if err := dao.ReplaceColumnType(db, "issue_comments", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_comments", "reply_to_comment_id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "file_assets", "comment_id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "comment_reactions", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "comment_reactions", "comment_id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_blockers", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_assignees", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_watchers", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+		if err := dao.ReplaceColumnType(db, "issue_attachments", "id", "uuid"); err != nil {
+			slog.Error("Replace columnt type", "err", err)
+		}
+
 		slog.Info("Migrate models without relations")
 		db.Config.DisableForeignKeyConstraintWhenMigrating = true
 		if err := db.AutoMigrate(models...); err != nil {
