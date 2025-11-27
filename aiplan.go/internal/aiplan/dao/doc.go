@@ -16,6 +16,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
@@ -88,7 +89,7 @@ func (d Doc) GetString() string {
 
 // Возвращает тип сущности документа (doc). Используется для определения типа данных при работе с базой данных.
 func (d Doc) GetEntityType() string {
-	return "doc"
+	return actField.FieldDoc.String()
 }
 
 func (d Doc) GetWorkspaceId() string {
@@ -416,7 +417,7 @@ func (dc DocComment) GetString() string {
 
 // Возвращает тип сущности Doc (doc). Используется для представления сущности Doc в API.
 func (dс DocComment) GetEntityType() string {
-	return "comment"
+	return actField.FieldComment.String()
 }
 
 func (dc DocComment) GetWorkspaceId() string {
@@ -839,7 +840,7 @@ func (da DocAttachment) GetString() string {
 
 // Возвращает тип сущности Doc (doc). Используется для представления сущности Doc в API.
 func (da DocAttachment) GetEntityType() string {
-	return "attachment"
+	return actField.FieldAttachment.String()
 }
 
 func (da DocAttachment) GetWorkspaceId() string {

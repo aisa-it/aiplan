@@ -289,3 +289,7 @@ func FormatDateToSqlNullTime(dateStr string) sql.NullTime {
 	}
 	return sql.NullTime{Valid: true, Time: date}
 }
+
+func ToPtr[T any](src T) *T {
+	return &src
+}

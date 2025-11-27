@@ -313,15 +313,6 @@ func (n *WorkspaceNotification) Handle(activity dao.ActivityI) error {
 		}
 	}
 
-	//doc := a.Doc
-	//
-	//authorId := doc.CreatedById
-	//readerIds := doc.ReaderIDs
-	//editorsIds := doc.EditorsIDs
-	//watcherIds := doc.WatcherIDs
-
-	//userIds := append(append(append([]string{authorId}, editorsIds...), readerIds...), watcherIds...)
-
 	var workspaceAdminMembers []dao.WorkspaceMember
 	if err := n.Db.Joins("Member").
 		Where("workspace_id = ?", a.WorkspaceId).
