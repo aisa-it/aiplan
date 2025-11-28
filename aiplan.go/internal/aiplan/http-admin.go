@@ -972,6 +972,8 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 			}
 		}
 
+		oldMemberRole := member.Role
+
 		member.Role = role.Role
 		member.UpdatedById = &superUser.ID
 
@@ -980,6 +982,47 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 			Save(&member).Error; err != nil {
 			return apierrors.ErrGeneric
 		}
+
+		var projects []dao.Project
+		if err := tx.Where("workspace_id = ?", workspace.ID).Find(&projects).Error; err != nil {
+			return err
+		}
+
+		if role.Role == types.AdminRole {
+			for _, project := range projects {
+				if err := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
+					DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": superUser.ID}),
+				}).Create(&dao.ProjectMember{
+					ID:                              dao.GenID(),
+					CreatedAt:                       time.Now(),
+					CreatedById:                     &superUser.ID,
+					WorkspaceId:                     workspace.ID,
+					ProjectId:                       project.ID,
+					Role:                            types.AdminRole,
+					MemberId:                        user.ID,
+					ViewProps:                       types.DefaultViewProps,
+					NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
+					NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
+					NotificationAuthorSettingsTG:    types.DefaultProjectMemberNS,
+					NotificationSettingsEmail:       types.DefaultProjectMemberNS,
+					NotificationSettingsApp:         types.DefaultProjectMemberNS,
+					NotificationSettingsTG:          types.DefaultProjectMemberNS,
+				}).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		if role.Role != types.AdminRole && oldMemberRole == types.AdminRole {
+			if err := tx.
+				Where("workspace_id = ?", workspace.ID).
+				Where("member_id = ?", user.ID).
+				Delete(&dao.ProjectMember{}).Error; err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}); err != nil {
 		return EError(c, err)
