@@ -179,7 +179,7 @@ func (es *EmailService) NewUserPasswordNotify(user dao.User, password string) er
 }
 
 func (es *EmailService) UserChangeEmailNotify(user dao.User, newEmail, code string) error {
-	subject := "Проверочный код для смены email"
+	subject := "Подтверждение смены email"
 
 	context := struct {
 		Code string
@@ -197,7 +197,7 @@ func (es *EmailService) UserChangeEmailNotify(user dao.User, newEmail, code stri
 		return err
 	}
 
-	content, err := es.getHTML("Проверочный код для смены email", buf.String())
+	content, err := es.getHTML("Ссылка для верификации email", buf.String())
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (es *EmailService) UserChangeEmailNotify(user dao.User, newEmail, code stri
 func (es *EmailService) UserPasswordForgotNotify(user dao.User, token string) error {
 	subject := "Сброс пароля для входа в АИПлан"
 	link := fmt.Sprintf("%s/reset-password?uidb64=%s&token=%s", es.cfg.WebURL, base64.StdEncoding.EncodeToString([]byte(user.ID)), token)
-
+	fmt.Println("link", link)
 	context := struct {
 		URL string
 	}{

@@ -96,3 +96,12 @@ func (s *Services) shortSearchFilterURLRedirect(c echo.Context) error {
 	path := cfg.WebURL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }
+
+func (s *Services) shortUrlEmailVerify(c echo.Context) error {
+	token := c.Param("token")
+	ref, _ := url.Parse(fmt.Sprintf(
+		"/api/auth/users/me/verify-email/%s/",
+		token))
+	path := cfg.WebURL.ResolveReference(ref)
+	return c.Redirect(http.StatusTemporaryRedirect, path.String())
+}

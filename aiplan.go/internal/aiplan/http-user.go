@@ -12,25 +12,21 @@ package aiplan
 
 import (
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
-	uuid5 "github.com/gofrs/uuid/v5"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/golang-jwt/jwt/v5"
 
-	memErr "github.com/aisa-it/aiplan-mem/apierror"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -67,7 +63,7 @@ func (s *Services) AddUserServices(g *echo.Group) {
 	g.POST("users/me/view-props/", s.updateUserViewProps)
 
 	g.POST("users/me/change-email/", s.changeMyEmail)
-	g.POST("users/me/verification-email/", s.verifyMyEmail)
+	g.GET("users/me/verify-email/:token/", s.confirmEmail)
 
 	g.GET("users/me/activities/", s.getMyActivityList)
 	g.GET("users/:userId/activities/", s.getUserActivityList)
@@ -880,19 +876,12 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
 	}
 
-	code, err := s.memDB.SaveEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail)
+	token, err := GenTokenChangeMail(newEmail)
 	if err != nil {
-		if errors.Is(err, memErr.ErrEmailCodeTooSoon) {
-			return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
-		}
-		return EError(c, err)
+		return err
 	}
 
-	if len(code) == 0 {
-		return EErrorDefined(c, apierrors.ErrEmailChangeLimit)
-	}
-
-	err = s.emailService.UserChangeEmailNotify(user, newEmail, code)
+	err = s.emailService.UserChangeEmailNotify(user, newEmail, fmt.Sprintf("%s/confirm-email/%s", cfg.WebURL, token))
 	if err != nil {
 		return EError(c, err)
 	}
@@ -900,8 +889,8 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// verifyMyEmail godoc
-// @id verifyMyEmail
+// confirmEmail godoc
+// @id confirmEmail
 // @Summary Пользователи (управление доступом): Верификация Email
 // @Description Позволяет текущему пользователю изменить свой Email. Сравнивает код верификации отправленый на новый Email.
 // @Tags Users
@@ -913,59 +902,64 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 // @Failure 400 {object} apierrors.DefinedError "Oшибка"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/users/me/verification-email/ [post]
-func (s *Services) verifyMyEmail(c echo.Context) error {
+// @Router /api/auth/users/me/verify-email/{token}/ [get]
+func (s *Services) confirmEmail(c echo.Context) error {
 	user := *c.(AuthContext).User
+	token := c.Param("token")
 
-	var data EmailVerifyRequest
-	if err := c.Bind(&data); err != nil {
-		return EError(c, err)
+	ref, _ := url.Parse("/not-found")
+	ErrPath := cfg.WebURL.ResolveReference(ref)
+
+	jwtToken, errJwt := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(cfg.SecretKey), nil
+	})
+
+	if errJwt != nil {
+		return c.Redirect(http.StatusTemporaryRedirect, ErrPath.String())
+	}
+	var newEmail string
+	claims, ok := jwtToken.Claims.(jwt.MapClaims)
+	if !ok || !jwtToken.Valid {
+		return c.Redirect(http.StatusTemporaryRedirect, ErrPath.String())
 	}
 
-	newEmail := strings.TrimSpace(strings.ToLower(data.NewEmail))
+	newEmail = claims["email"].(string)
 
 	if newEmail == user.Email {
-		return EErrorDefined(c, apierrors.ErrEmailIsExist)
-	}
-
-	if !ValidateEmail(newEmail) {
-		return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(newEmail))
+		return c.Redirect(http.StatusTemporaryRedirect, ErrPath.String())
 	}
 
 	var existUser dao.User
 	if err := s.db.Where("email = ?", newEmail).Find(&existUser).Error; err != nil {
-		return EError(c, err)
-	}
-
-	code, _ := s.memDB.VerifyEmailCode(uuid5.UUID(uuid.FromStringOrNil(user.ID)), newEmail, data.Code)
-
-	if !code {
-		return EErrorDefined(c, apierrors.ErrEmailVerify)
+		return c.Redirect(http.StatusTemporaryRedirect, ErrPath.String())
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+
+		if !c.(AuthContext).TokenAuth {
+			if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+				return err
+			}
+
+			if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+				return err
+			}
+
+			clearAuthCookies(c)
+		}
+
 		if existUser.ID != "" {
 			if err := s.business.ReplaceUser(tx, user.ID, existUser.ID); err != nil {
 				return err
 			}
-
 			//Reset all old user sessions
 			if err := dao.ResetUserSessions(tx, &user); err != nil {
 				return err
 			}
 			s.notificationsService.Ws.CloseUserSessions(user.ID)
-
-			if !c.(AuthContext).TokenAuth {
-				if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
-					return err
-				}
-
-				if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
-					return err
-				}
-
-				clearAuthCookies(c)
-			}
 
 			if err := tx.Where("id = ?", user.ID).Delete(&dao.User{}).Error; err != nil {
 				return err
@@ -977,10 +971,13 @@ func (s *Services) verifyMyEmail(c echo.Context) error {
 		user.Email = newEmail
 		return tx.Select("email").Updates(&user).Error
 	}); err != nil {
-		return EError(c, err)
+		return c.Redirect(http.StatusTemporaryRedirect, ErrPath.String())
 	}
 
-	return c.NoContent(http.StatusOK)
+	refSignIn, _ := url.Parse("/signin")
+	path := cfg.WebURL.ResolveReference(refSignIn)
+
+	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }
 
 // resetPassword godoc
