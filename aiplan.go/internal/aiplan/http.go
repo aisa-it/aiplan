@@ -432,6 +432,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.GET("i/:issue/", s.shortIssueURLRedirect)
 	e.GET("d/:slug/:docNum/", s.shortDocURLRedirect)
 	e.GET("sf/:base/", s.shortSearchFilterURLRedirect)
+	e.GET("confirm-email/:token/", s.shortUrlEmailVerify)
 
 	// Get minio file
 	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy, remove after front migration to new endpoint
@@ -633,6 +634,17 @@ func GenInviteToken(email string) (string, error) {
 	return ret, err
 }
 
+func GenTokenChangeMail(email string) (string, error) {
+	claim := jwt.MapClaims{
+		"exp":   jwt.NewNumericDate(time.Now().Add(types.EmailCodeLifeTime)),
+		"iat":   jwt.NewNumericDate(time.Now()),
+		"email": email,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
+	ret, err := token.SignedString([]byte(cfg.SecretKey))
+	return ret, err
+}
+
 func StructToJSONMap(obj interface{}) map[string]interface{} {
 	val := reflect.ValueOf(obj)
 	if val.Kind() == reflect.Ptr {
@@ -801,6 +813,7 @@ func CheckWorkspaceSlug(slug string) bool {
 		"swagger",
 		"filters",
 		"sf",
+		"confirm-email",
 	}, slug)
 }
 
