@@ -1700,7 +1700,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					return err
 				}
 				newBlockers = append(newBlockers, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockedById: blockerUUID,
 					BlockId:     issueNew.ID,
 					ProjectId:   project.ID,
@@ -1720,9 +1720,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range issue.AssigneesList {
 				newAssignees = append(newAssignees, dao.IssueAssignee{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					AssigneeId:  fmt.Sprint(assignee),
-					IssueId:     issueId,
+					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1740,9 +1740,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range issue.WatchersList {
 				newWatchers = append(newWatchers, dao.IssueWatcher{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					WatcherId:   fmt.Sprint(watcher),
-					IssueId:     issueId,
+					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1759,8 +1759,8 @@ func (s *Services) createIssue(c echo.Context) error {
 			var newLabels []dao.IssueLabel
 			for _, label := range issue.LabelsList {
 				newLabels = append(newLabels, dao.IssueLabel{
-					Id:          dao.GenID(),
-					LabelId:     fmt.Sprint(label),
+					Id:          dao.GenUUID(),
+					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issueId,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
@@ -1782,7 +1782,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					return err
 				}
 				newBlocked = append(newBlocked, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockId:     blockUUID,
 					BlockedById: issueNew.ID,
 					ProjectId:   project.ID,
@@ -1894,7 +1894,7 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	label.ID = dao.GenID()
+	label.ID = dao.GenUUID()
 	label.CreatedAt = time.Now()
 	label.UpdatedAt = time.Now()
 	label.CreatedById = &user.ID

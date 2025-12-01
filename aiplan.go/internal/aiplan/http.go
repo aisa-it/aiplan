@@ -44,6 +44,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
+	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -343,6 +344,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		Skipper: func(c echo.Context) bool {
 			return c.Path() == "/api/auth/ws/notifications/" ||
 				c.Path() == "/api/ws/notifications/" ||
+				strings.HasPrefix(c.Path(), "/api/auth/file/") ||
 				strings.Contains(c.Request().URL.Path, "swagger")
 		},
 	}))
@@ -364,9 +366,10 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	authGroup := apiGroup.Group("auth/",
 		AuthMiddleware(AuthConfig{
-			Secret: []byte(cfg.SecretKey),
-			DB:     db,
-			MemDB:  memDB,
+			Secret:      []byte(cfg.SecretKey),
+			DB:          db,
+			MemDB:       memDB,
+			TokensCache: tokenscache.NewTokensCache(),
 		}),
 	)
 

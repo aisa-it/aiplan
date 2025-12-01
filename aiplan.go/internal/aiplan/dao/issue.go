@@ -93,7 +93,7 @@ type Issue struct {
 
 	AssigneeIDs     []string    `json:"assignees" gorm:"-"`
 	WatcherIDs      []string    `json:"watchers" gorm:"-"`
-	LabelIDs        []string    `json:"labels" gorm:"-"`
+	LabelIDs        []uuid.UUID `json:"labels" gorm:"-"`
 	LinkedIssuesIDs []uuid.UUID `json:"linked_issues_ids" gorm:"-"`
 
 	BlockerIssuesIDs []IssueBlocker `json:"blocker_issues" gorm:"-"`
@@ -288,6 +288,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 		DescriptionType:     i.DescriptionType,
 		EstimatePoint:       i.EstimatePoint,
 		Draft:               i.Draft,
+		Pinned:              i.Pinned,
 		ParentId:            parent,
 		Parent:              i.Parent.ToLightDTO(),
 		Workspace:           i.Workspace.ToLightDTO(),
@@ -353,6 +354,7 @@ type IssueWithCount struct {
 	LinkCount         int64 `json:"link_count" gorm:"->;-:migration"`
 	AttachmentCount   int64 `json:"attachment_count" gorm:"->;-:migration"`
 	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->;-:migration"`
+	CommentsCount     int64 `json:"comments_count" gorm:"->;-:migration"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 	DescHighlighted string `json:"desc_highlighted,omitempty" gorm:"->;-:migration"`
@@ -380,6 +382,7 @@ func (iwc *IssueWithCount) ToDTO() *dto.IssueWithCount {
 		LinkCount:         int(iwc.LinkCount),
 		AttachmentCount:   int(iwc.AttachmentCount),
 		LinkedIssuesCount: int(iwc.LinkedIssuesCount),
+		CommentsCount:     int(iwc.CommentsCount),
 		NameHighlighted:   iwc.NameHighlighted,
 		DescHighlighted:   iwc.DescHighlighted,
 	}
@@ -407,7 +410,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 		if issue.State != nil && issue.State.Group == "cancelled" {
 			issue.IssueProgress.Status = types.Cancelled
 		} else {
-			if issue.StartDate == nil {
+			if issue.StartDate == nil && issue.CompletedAt == nil {
 				issue.IssueProgress.Status = types.Pending
 			} else if issue.StartDate != nil && issue.CompletedAt == nil {
 				issue.IssueProgress.Status = types.InProgress
@@ -442,13 +445,13 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	}
 
 	if issue.Labels != nil && len(*issue.Labels) > 0 {
-		var ids []string
+		var ids []uuid.UUID
 		for _, label := range *issue.Labels {
 			ids = append(ids, label.ID)
 		}
 		issue.LabelIDs = ids
 	} else {
-		issue.LabelIDs = make([]string, 0)
+		issue.LabelIDs = make([]uuid.UUID, 0)
 	}
 
 	if issue.FullLoad {
@@ -892,7 +895,7 @@ type IssueLinkedExtendFields struct {
 func (LinkedIssues) TableName() string { return "linked_issues" }
 
 type IssueLink struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -904,7 +907,7 @@ type IssueLink struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
-	IssueId string `json:"issue_id" gorm:"index"`
+	IssueId uuid.UUID `json:"issue_id" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
 	ProjectId string `json:"project_id"`
 	// updated_by_id uuid IS_NULL:YES
@@ -931,7 +934,7 @@ type IssueLinkExtendFields struct {
 }
 
 func (i IssueLink) GetId() string {
-	return i.Id
+	return i.Id.String()
 }
 
 func (i IssueLink) GetString() string {
@@ -951,7 +954,7 @@ func (i IssueLink) GetProjectId() string {
 }
 
 func (i IssueLink) GetIssueId() string {
-	return i.IssueId
+	return i.IssueId.String()
 }
 
 func (il *IssueLink) BeforeDelete(tx *gorm.DB) error {
@@ -979,7 +982,7 @@ func (il *IssueLink) ToLightDTO() *dto.IssueLinkLight {
 	}
 
 	return &dto.IssueLinkLight{
-		Id:    il.Id,
+		Id:    il.Id.String(),
 		Title: il.Title,
 		Url:   il.Url,
 
@@ -994,7 +997,7 @@ type IssueAttachment struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	// attributes jsonb IS_NULL:NO
 	Attributes map[string]interface{} `json:"attributes" gorm:"serializer:json"`
 	// asset character varying IS_NULL:NO
@@ -1003,7 +1006,7 @@ type IssueAttachment struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
-	IssueId string `json:"issue" gorm:"index"`
+	IssueId uuid.UUID `json:"issue" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
 	ProjectId string `json:"project"`
 	// updated_by_id uuid IS_NULL:YES
@@ -1033,7 +1036,7 @@ type IssueAttachmentExtendFields struct {
 }
 
 func (ia IssueAttachment) GetId() string {
-	return ia.Id
+	return ia.Id.String()
 }
 
 func (ia IssueAttachment) GetString() string {
@@ -1056,7 +1059,7 @@ func (i IssueAttachment) GetProjectId() string {
 }
 
 func (i IssueAttachment) GetIssueId() string {
-	return i.IssueId
+	return i.IssueId.String()
 }
 
 func (attachment *IssueAttachment) AfterFind(tx *gorm.DB) error {
@@ -1121,17 +1124,17 @@ func (attachment *IssueAttachment) AfterDelete(tx *gorm.DB) error {
 }
 
 type IssueAssignee struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	AssigneeId  string  `json:"assignee_id" gorm:"uniqueIndex:assignees_idx,priority:2"`
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	IssueId     string  `json:"issue_id" gorm:"index;uniqueIndex:assignees_idx,priority:1"`
-	ProjectId   string  `json:"project_id"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string  `json:"workspace_id"`
+	AssigneeId  string    `json:"assignee_id" gorm:"uniqueIndex:assignees_idx,priority:2"`
+	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:assignees_idx,priority:1;type:uuid"`
+	ProjectId   string    `json:"project_id"`
+	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	WorkspaceId string    `json:"workspace_id"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
@@ -1157,17 +1160,17 @@ type IssueAssigneeExtendFields struct {
 }
 
 type IssueWatcher struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	WatcherId   string  `json:"watcher_id" gorm:"uniqueIndex:watchers_idx,priority:2"`
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	IssueId     string  `json:"issue_id" gorm:"index;uniqueIndex:watchers_idx,priority:1"`
-	ProjectId   string  `json:"project_id"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string  `json:"workspace_id"`
+	WatcherId   string    `json:"watcher_id" gorm:"uniqueIndex:watchers_idx,priority:2"`
+	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:watchers_idx,priority:1;type:uuid"`
+	ProjectId   string    `json:"project_id"`
+	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	WorkspaceId string    `json:"workspace_id"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
@@ -1193,7 +1196,7 @@ type IssueWatchersExtendFields struct {
 }
 
 type IssueBlocker struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1238,7 +1241,7 @@ func (ib *IssueBlocker) ToLightDTO() *dto.IssueBlockerLight {
 		return nil
 	}
 	return &dto.IssueBlockerLight{
-		Id:          ib.Id,
+		Id:          ib.Id.String(),
 		BlockId:     ib.BlockId.String(),
 		BlockedById: ib.BlockedById.String(),
 		Block:       ib.Block.ToLightDTO(),
@@ -1247,7 +1250,7 @@ func (ib *IssueBlocker) ToLightDTO() *dto.IssueBlockerLight {
 }
 
 type IssueLabel struct {
-	Id        string         `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1257,7 +1260,7 @@ type IssueLabel struct {
 	// issue_id uuid IS_NULL:NO
 	IssueId string `json:"issue_id" gorm:"index"`
 	// label_id uuid IS_NULL:NO
-	LabelId string `json:"label_id"`
+	LabelId uuid.UUID `json:"label_id" gorm:"foreignKey:ID;references:Label"`
 	// project_id uuid IS_NULL:NO
 	ProjectId string `json:"project_id"`
 	// updated_by_id uuid IS_NULL:YES
@@ -1268,6 +1271,7 @@ type IssueLabel struct {
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
+	Label     *Label     `json:"label_detail,omitempty" gorm:"foreignKey:LabelId" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1281,7 +1285,7 @@ type IssueLabel struct {
 func (IssueLabel) TableName() string { return "issue_labels" }
 
 type IssueComment struct {
-	Id        uuid.UUID      `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -1299,8 +1303,8 @@ type IssueComment struct {
 	CommentStripped string             `json:"comment_stripped"`
 
 	IntegrationMeta  string        `json:"-" gorm:"index:integration,priority:2"`
-	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" extensions:"x-nullable"`
-	OriginalComment  *IssueComment `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId" extensions:"x-nullable"`
+	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" gorm:"type:uuid" extensions:"x-nullable"`
+	OriginalComment  *IssueComment `json:"original_comment,omitempty" gorm:"foreignKey:ReplyToCommentId;references:Id" extensions:"x-nullable"`
 
 	// Id in system, from that comment was imported
 	OriginalId sql.NullString `gorm:"uniqueIndex:issue_comment_original_id_idx,priority:2"`
@@ -1310,9 +1314,9 @@ type IssueComment struct {
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
 
-	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:CommentId"`
+	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:CommentId;references:Id"`
 
-	Reactions       []CommentReaction `json:"reactions" gorm:"foreignKey:CommentId"`
+	Reactions       []CommentReaction `json:"reactions" gorm:"foreignKey:CommentId;references:Id"`
 	ReactionSummary map[string]int    `json:"reaction_summary,omitempty" gorm:"-"`
 }
 
@@ -1412,15 +1416,15 @@ func (i *IssueComment) ToDTO() *dto.IssueComment {
 }
 
 type CommentReaction struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	UserId    string    `json:"user_id"`
-	CommentId uuid.UUID `json:"comment_id" gorm:"index"`
+	CommentId uuid.UUID `json:"comment_id" gorm:"index;type:uuid"`
 	Reaction  string    `json:"reaction"`
 
 	User    *User         `json:"-" gorm:"foreignKey:UserId" extensions:"x-nullable"`
-	Comment *IssueComment `json:"-" gorm:"foreignKey:CommentId" extensions:"x-nullable"`
+	Comment *IssueComment `json:"-" gorm:"foreignKey:CommentId;references:Id" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1445,7 +1449,7 @@ func (cr CommentReaction) ToDTO() *dto.CommentReaction {
 		Id:        cr.Id,
 		CreatedAt: cr.CreatedAt,
 		UpdatedAt: cr.UpdatedAt,
-		CommentId: cr.CommentId.String(),
+		CommentId: cr.CommentId,
 		UserId:    cr.UserId,
 		Reaction:  cr.Reaction,
 	}

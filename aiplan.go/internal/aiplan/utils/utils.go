@@ -53,51 +53,51 @@ var (
 )
 
 type IDChangeSet struct {
-	AddIds      []string
-	DelIds      []string
-	InvolvedIds []string
+	AddIds      []uuid.UUID
+	DelIds      []uuid.UUID
+	InvolvedIds []uuid.UUID
 }
 
-func CalculateIDChanges(reqIDs, curIDs []interface{}) (*IDChangeSet, error) {
+func CalculateIDChanges(reqIDs, curIDs []any) *IDChangeSet {
 	result := IDChangeSet{}
-	oldMap := make(map[string]struct{})
-	newMap := make(map[string]struct{})
-	uniqueMap := make(map[string]int)
-	var involvedIds []string
+	oldMap := make(map[uuid.UUID]struct{})
+	newMap := make(map[uuid.UUID]struct{})
 
 	for _, v := range reqIDs {
-		newMap[v.(string)] = struct{}{}
-		uniqueMap[v.(string)] = 0
+		switch vv := v.(type) {
+		case string:
+			newMap[uuid.Must(uuid.FromString(vv))] = struct{}{}
+		case uuid.UUID:
+			newMap[vv] = struct{}{}
+		}
 	}
+
+	// Find deleted ids
 	for _, v := range curIDs {
-		oldMap[v.(string)] = struct{}{}
-		uniqueMap[v.(string)] = 0
-	}
-
-	for k, _ := range uniqueMap {
-		if _, ok := newMap[k]; ok {
-			uniqueMap[k] += 1
+		var key uuid.UUID
+		switch vv := v.(type) {
+		case string:
+			key = uuid.Must(uuid.FromString(vv))
+		case uuid.UUID:
+			key = vv
 		}
-		if _, ok := oldMap[k]; ok {
-			uniqueMap[k] -= 1
-		}
+		oldMap[key] = struct{}{}
 
-		if uniqueMap[k] != 0 {
-			involvedIds = append(involvedIds, k)
+		if _, ok := newMap[key]; !ok {
+			result.DelIds = append(result.DelIds, key)
 		}
 	}
 
-	for _, id := range involvedIds {
-		switch uniqueMap[id] {
-		case -1:
-			result.DelIds = append(result.DelIds, id)
-		case 1:
-			result.AddIds = append(result.AddIds, id)
+	// Find added ids
+	for key, _ := range newMap {
+		if _, ok := oldMap[key]; !ok {
+			result.AddIds = append(result.AddIds, key)
 		}
 	}
-	result.InvolvedIds = involvedIds
 
-	return &result, nil
+	result.InvolvedIds = append(result.AddIds, result.DelIds...)
+
+	return &result
 }
 
 func SliceToSet[T comparable](ids []T) map[T]struct{} {

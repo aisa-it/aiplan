@@ -19,6 +19,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/gofrs/uuid"
+	"github.com/stretchr/testify/assert"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -36,6 +37,10 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 	os.Exit(code)
+}
+
+func TestReplaceType(t *testing.T) {
+	assert.NoError(t, ReplaceColumnType(db, "issue_comments", "id", "uuid"))
 }
 
 func TestGetIssueRoot(t *testing.T) {
