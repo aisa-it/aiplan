@@ -598,10 +598,10 @@ func (dcr *DocCommentReaction) ToDTO() *dto.CommentReaction {
 		return nil
 	}
 	return &dto.CommentReaction{
-		Id:        dcr.Id.String(),
+		Id:        dcr.Id,
 		CreatedAt: dcr.CreatedAt,
 		UpdatedAt: dcr.UpdatedAt,
-		CommentId: dcr.CommentId.String(),
+		CommentId: dcr.CommentId,
 		UserId:    dcr.UserId,
 		Reaction:  dcr.Reaction,
 	}
@@ -908,7 +908,7 @@ func (da *DocAttachment) ToLightDTO() *dto.Attachment {
 		return nil
 	}
 	return &dto.Attachment{
-		Id:        da.Id,
+		Id:        uuid.Must(uuid.FromString(da.Id)),
 		CreatedAt: da.CreatedAt,
 		Asset:     da.Asset.ToDTO(),
 	}

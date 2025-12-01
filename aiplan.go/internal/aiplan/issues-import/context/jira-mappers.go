@@ -129,7 +129,7 @@ func (mc *MapperContext) MapLinks() error {
 						mc.c.IssueLinks.Append(mc.getAIPlanIssueLink(link))
 					} else {
 						mc.c.Blocks.Put(link.OutwardIssue.Key, &dao.IssueBlocker{
-							Id:          dao.GenID(),
+							Id:          dao.GenUUID(),
 							BlockedById: mc.issue.ID,
 							ProjectId:   mc.c.Project.ID,
 							WorkspaceId: mc.c.Project.WorkspaceId,
@@ -142,7 +142,7 @@ func (mc *MapperContext) MapLinks() error {
 						mc.c.IssueLinks.Append(mc.getAIPlanIssueLink(link))
 					} else {
 						mc.c.Blocked.Put(link.InwardIssue.Key, &dao.IssueBlocker{
-							Id:          dao.GenID(),
+							Id:          dao.GenUUID(),
 							BlockId:     mc.issue.ID,
 							ProjectId:   mc.c.Project.ID,
 							WorkspaceId: mc.c.Project.WorkspaceId,
@@ -178,8 +178,8 @@ func (mc *MapperContext) MapLinks() error {
 
 	// Link for original issue
 	mc.c.IssueLinks.Append(dao.IssueLink{
-		Id:          dao.GenID(),
-		IssueId:     mc.issue.ID.String(),
+		Id:          dao.GenUUID(),
+		IssueId:     mc.issue.ID,
 		Title:       mc.origIssue.Key,
 		Url:         utils.GetJiraIssueURL(mc.origIssue).String(),
 		ProjectId:   mc.c.Project.ID,
@@ -200,10 +200,10 @@ func (mc *MapperContext) MapAttachments() error {
 			JiraKey:    mc.origIssue.Key,
 			DstAssetID: dstID,
 			IssueAttachment: &dao.IssueAttachment{
-				Id:          dao.GenID(),
+				Id:          dao.GenUUID(),
 				AssetId:     dstID,
 				Attributes:  attributes,
-				IssueId:     mc.issue.ID.String(),
+				IssueId:     mc.issue.ID,
 				ProjectId:   mc.c.Project.ID,
 				WorkspaceId: mc.c.Project.WorkspaceId,
 			},
@@ -258,9 +258,9 @@ func (mc *MapperContext) MapComments() error {
 func (mc *MapperContext) MapLabels() error {
 	for _, label := range mc.origIssue.Fields.Labels {
 		issueLabel, _ := mc.c.Labels.Get(label)
-		if issueLabel.ID == "" {
+		if issueLabel.ID.IsNil() {
 			issueLabel = dao.Label{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				Name:        label,
 				ProjectId:   mc.c.Project.ID,
 				WorkspaceId: mc.c.Project.WorkspaceId,
@@ -269,7 +269,7 @@ func (mc *MapperContext) MapLabels() error {
 		}
 
 		mc.c.IssueLabels.Append(dao.IssueLabel{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			IssueId:     mc.issue.ID.String(),
 			LabelId:     issueLabel.ID,
 			ProjectId:   mc.c.Project.ID,
@@ -287,10 +287,10 @@ func (mc *MapperContext) MapAssignees() error {
 			return err
 		}
 		mc.c.IssueAssignees.Put(dao.IssueAssignee{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			AssigneeId:  assignee.ID,
-			IssueId:     mc.issue.ID.String(),
+			IssueId:     mc.issue.ID,
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,
 		})
@@ -318,10 +318,10 @@ func (mc *MapperContext) MapWatchers() error {
 			return err
 		}
 		mc.c.IssueWatchers.Put(dao.IssueWatcher{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			WatcherId:   watcher.ID,
-			IssueId:     mc.issue.ID.String(),
+			IssueId:     mc.issue.ID,
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,
 		})
@@ -333,7 +333,7 @@ func (mc *MapperContext) MapReleases() error {
 	for _, version := range mc.origIssue.Fields.FixVersions {
 		if !mc.c.ReleasesTags.Contains(version.ID) {
 			mc.c.ReleasesTags.Put(version.ID, dao.Label{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				CreatedAt:   time.Now(),
 				Name:        version.Name,
 				Description: version.Description,
@@ -344,7 +344,7 @@ func (mc *MapperContext) MapReleases() error {
 		tag := mc.c.ReleasesTags.Get(version.ID)
 
 		mc.c.IssueLabels.Append(dao.IssueLabel{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			IssueId:     mc.issue.ID.String(),
 			LabelId:     tag.ID,
 			ProjectId:   mc.issue.ProjectId,
@@ -377,8 +377,8 @@ func (mc *MapperContext) getAIPlanIssueLink(link *jira.IssueLink) dao.IssueLink 
 	linkUrl := mc.c.WebURL.ResolveReference(u)
 
 	return dao.IssueLink{
-		Id:          dao.GenID(),
-		IssueId:     mc.issue.ID.String(),
+		Id:          dao.GenUUID(),
+		IssueId:     mc.issue.ID,
 		Title:       fmt.Sprintf("%s %s", linkType, outerIssueKey),
 		Url:         linkUrl.String(),
 		ProjectId:   mc.c.Project.ID,

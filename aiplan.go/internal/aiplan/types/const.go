@@ -5,7 +5,7 @@ import "time"
 
 const (
 	TokenExpiresPeriod        = time.Minute
-	RefreshTokenExpiresPeriod = 24 * 265 * time.Hour // Year
+	RefreshTokenExpiresPeriod = 24 * 30 * time.Hour // Month
 
 	GuestRole  = 5
 	MemberRole = 10

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 )
 
 type Doc struct {
@@ -79,10 +80,10 @@ type DocComment struct {
 }
 
 type CommentReaction struct {
-	Id        string    `json:"id"`
+	Id        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	CommentId string    `json:"comment_id"`
+	CommentId uuid.UUID `json:"comment_id"`
 	UserId    string    `json:"user_id"`
 	Reaction  string    `json:"reaction"`
 }

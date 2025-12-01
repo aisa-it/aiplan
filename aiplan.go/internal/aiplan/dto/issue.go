@@ -16,11 +16,11 @@ import (
 )
 
 type LabelLight struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	ProjectId   string `json:"project"`
-	Color       string `json:"color" `
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	ProjectId   string    `json:"project"`
+	Color       string    `json:"color" `
 }
 type IssueLight struct {
 	Id         string        `json:"id"`
@@ -68,6 +68,7 @@ type Issue struct {
 	DescriptionType     int     `json:"description_type"`
 	EstimatePoint       int     `json:"estimate_point"`
 	Draft               bool    `json:"draft"`
+	Pinned              bool    `json:"pinned"`
 
 	Parent    *IssueLight      `json:"parent_detail"  extensions:"x-nullable"`
 	Workspace *WorkspaceLight  `json:"workspace_detail"  extensions:"x-nullable"`
@@ -122,6 +123,7 @@ type IssueWithCount struct {
 	LinkCount         int `json:"link_count"`
 	AttachmentCount   int `json:"attachment_count"`
 	LinkedIssuesCount int `json:"linked_issues_count"`
+	CommentsCount     int `json:"comments_count"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
 	DescHighlighted string `json:"desc_highlighted,omitempty"`

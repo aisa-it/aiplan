@@ -53,6 +53,7 @@ type User struct {
 	Theme     types.Theme        `json:"theme"`
 	ViewProps types.ViewProps    `json:"view_props"`
 	Settings  types.UserSettings `json:"settings"`
+	Tutorial  int                `json:"tutorial"`
 
 	LastWorkspaceId   *string `json:"last_workspace_id"  extensions:"x-nullable"`
 	LastWorkspaceSlug *string `json:"last_workspace_slug"  extensions:"x-nullable"`

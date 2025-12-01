@@ -225,13 +225,13 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 		}
 
 		issueAttachment := dao.IssueAttachment{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			CreatedById: &userId,
 			UpdatedById: &userId,
 			AssetId:     assetName,
-			IssueId:     issueId,
+			IssueId:     issue.ID,
 			ProjectId:   issue.ProjectId,
 			WorkspaceId: issue.WorkspaceId,
 		}
@@ -414,12 +414,18 @@ func (s *Services) getIssueList(c echo.Context) error {
 	globalSearch := false
 	var user dao.User
 	var projectMember dao.ProjectMember
+	var sprint *dao.Sprint
 	if context, ok := c.(ProjectContext); ok {
 		projectMember = context.ProjectMember
 		user = *context.User
 	}
 	if context, ok := c.(AuthContext); ok {
 		user = *context.User
+		globalSearch = true
+	}
+	if context, ok := c.(SprintContext); ok {
+		user = *context.User
+		sprint = &context.Sprint
 		globalSearch = true
 	}
 
@@ -462,7 +468,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Fill filters
-	if !globalSearch {
+	if !globalSearch && projectMember.ProjectId != "" {
 		query = query.
 			Where("issues.workspace_id = ?", projectMember.WorkspaceId).
 			Where("issues.project_id = ?", projectMember.ProjectId)
@@ -473,6 +479,15 @@ func (s *Services) getIssueList(c echo.Context) error {
 				Where("member_id = ?", user.ID).
 				Model(&dao.ProjectMember{}),
 			)
+	}
+
+	// Filter only sprint issues
+	if sprint != nil {
+		issuesID := make([]uuid.UUID, len(sprint.Issues))
+		for i, issue := range sprint.Issues {
+			issuesID[i] = issue.ID
+		}
+		query = query.Where("issues.id in (?)", issuesID)
 	}
 
 	// Filters
@@ -658,12 +673,14 @@ func (s *Services) getIssueList(c echo.Context) error {
 			"(?) as link_count",
 			"(?) as attachment_count",
 			"(?) as linked_issues_count",
+			"(?) as comments_count",
 		}
 		selectInterface = []interface{}{
 			s.db.Table("issues as \"child\"").Select("count(*)").Where("\"child\".parent_id = issues.id"),
 			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueLink{}),
-			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueAttachment{}),
+			s.db.Select("count(*)").Where("issue_id = issues.id::uuid").Model(&dao.IssueAttachment{}),
 			s.db.Select("count(*)").Where("id1 = issues.id OR id2 = issues.id").Model(&dao.LinkedIssues{}),
+			s.db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueComment{}),
 		}
 	} else {
 		selectExprs = []string{
@@ -739,7 +756,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 
 	// Get groups
 	if searchParams.GroupByParam != "" {
-		groupSize, err := GetIssuesGroupsSize(s.db, &user, projectMember.ProjectId, searchParams)
+		groupSize, err := GetIssuesGroups(s.db, &user, projectMember.ProjectId, sprint, searchParams)
 		if err != nil {
 			return EError(c, err)
 		}
@@ -1173,7 +1190,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 					return err
 				}
 				newBlockers = append(newBlockers, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockedById: blockerUUID,
 					BlockId:     issue.ID,
 					ProjectId:   issue.ProjectId,
@@ -1198,9 +1215,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range assignees {
 				newAssignees = append(newAssignees, dao.IssueAssignee{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					AssigneeId:  fmt.Sprint(assignee),
-					IssueId:     issue.ID.String(),
+					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1222,9 +1239,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range watchers {
 				newWatchers = append(newWatchers, dao.IssueWatcher{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					WatcherId:   fmt.Sprint(watcher),
-					IssueId:     issue.ID.String(),
+					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
 					CreatedById: &user.ID,
@@ -1246,8 +1263,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			var newLabels []dao.IssueLabel
 			for _, label := range labels {
 				newLabels = append(newLabels, dao.IssueLabel{
-					Id:          dao.GenID(),
-					LabelId:     fmt.Sprint(label),
+					Id:          dao.GenUUID(),
+					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issue.ID.String(),
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
@@ -1274,7 +1291,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 					return err
 				}
 				newBlocked = append(newBlocked, dao.IssueBlocker{
-					Id:          dao.GenID(),
+					Id:          dao.GenUUID(),
 					BlockId:     blockUUID,
 					BlockedById: issue.ID,
 					ProjectId:   issue.ProjectId,
@@ -2126,7 +2143,7 @@ func (s *Services) getIssueLinkList(c echo.Context) error {
 func (s *Services) createIssueLink(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID.String()
+	issue := c.(IssueContext).Issue
 
 	var req IssueLinkRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
@@ -2138,12 +2155,12 @@ func (s *Services) createIssueLink(c echo.Context) error {
 	}
 
 	link := dao.IssueLink{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		Title:       req.Title,
 		Url:         req.Url,
 		CreatedById: &user.ID,
 		UpdatedById: &user.ID,
-		IssueId:     issueId,
+		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: project.WorkspaceId,
 	}
@@ -2514,7 +2531,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
-					CommentId:   &comment.Id,
+					CommentId:   uuid.NullUUID{UUID: comment.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
@@ -2731,7 +2748,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
-					CommentId:   &commentOld.Id,
+					CommentId:   uuid.NullUUID{UUID: commentOld.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
@@ -2929,7 +2946,7 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 	// Создаем новую реакцию
 	commentUUID := uuid.Must(uuid.FromString(commentId))
 	reaction := dao.CommentReaction{
-		Id:        dao.GenID(),
+		Id:        dao.GenUUID(),
 		CreatedAt: time.Now(),
 		UserId:    user.ID,
 		CommentId: commentUUID,
@@ -3182,14 +3199,14 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 	}
 
 	issueAttachment := dao.IssueAttachment{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		CreatedById: &user.ID,
 		UpdatedById: &user.ID,
 		Attributes:  attributes,
 		AssetId:     assetName,
-		IssueId:     issue.ID.String(),
+		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: issue.WorkspaceId,
 	}
@@ -3441,13 +3458,6 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 			return err
 		}
 
-		changes, err := utils.CalculateIDChanges(newIDs, oldIDs)
-		if err != nil {
-			return err
-		}
-
-		changes.InvolvedIds = append(changes.InvolvedIds, issue.ID.String())
-
 		for _, newId := range param.IssueIDs {
 			if err := issue.AddLinkedIssue(tx, newId); err != nil {
 				return err
@@ -3616,7 +3626,7 @@ func (s *Services) issueDescriptionUnlock(c echo.Context) error {
 func (s *Services) issuePin(c echo.Context) error {
 	issue := c.(IssueContext).Issue
 
-	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
+	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -3639,7 +3649,7 @@ func (s *Services) issuePin(c echo.Context) error {
 func (s *Services) issueUnpin(c echo.Context) error {
 	issue := c.(IssueContext).Issue
 
-	if err := s.db.Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
+	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
