@@ -376,6 +376,12 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 	var editorListOk, readerListOk, watcherListOk bool
 
+	fieldChange := getLastActivityFields[dao.DocActivity](s.db.Where("doc_id = ?", doc.ID), user.ID)
+
+	if utils.CheckInSet(fieldChange, fields...) {
+		return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
+	}
+
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
