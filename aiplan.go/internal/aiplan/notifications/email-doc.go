@@ -277,6 +277,9 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 
 // Для пропуска активностей
 func (ia *docActivity) skip(activity dao.DocActivity) bool {
+	if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "created" && activity.NewDoc == nil {
+		return true
+	}
 	return false
 }
 
@@ -369,7 +372,7 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 
 func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
 	var newDocCreate *dao.Doc
-	if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "created" {
+	if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "created" && activity.NewDoc != nil {
 		if tx.
 			Joins("Author").
 			Joins("Workspace").
