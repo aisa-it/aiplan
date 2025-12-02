@@ -636,6 +636,17 @@ func GenInviteToken(email string) (string, error) {
 	return ret, err
 }
 
+func GenTokenChangeMail(email string) (string, error) {
+	claim := jwt.MapClaims{
+		"exp":   jwt.NewNumericDate(time.Now().Add(types.EmailCodeLifeTime)),
+		"iat":   jwt.NewNumericDate(time.Now()),
+		"email": email,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
+	ret, err := token.SignedString([]byte(cfg.SecretKey))
+	return ret, err
+}
+
 func StructToJSONMap(obj interface{}) map[string]interface{} {
 	val := reflect.ValueOf(obj)
 	if val.Kind() == reflect.Ptr {

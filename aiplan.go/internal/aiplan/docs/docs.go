@@ -5569,8 +5569,8 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/users/me/verification-email/": {
-            "post": {
+        "/api/auth/users/me/verify-email/{token}/": {
+            "get": {
                 "security": [
                     {
                         "ApiKeyAuth": []
@@ -5587,7 +5587,7 @@ const docTemplate = `{
                     "Users"
                 ],
                 "summary": "Пользователи (управление доступом): Верификация Email",
-                "operationId": "verifyMyEmail",
+                "operationId": "confirmEmail",
                 "parameters": [
                     {
                         "description": "Новые данные email",
