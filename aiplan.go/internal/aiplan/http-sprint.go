@@ -190,6 +190,11 @@ func (s *Services) createSprint(c echo.Context) error {
 	}
 
 	sprint, err := req.toDao(c)
+	if sprint.EndDate.Valid && sprint.StartDate.Valid {
+		if !sprint.EndDate.Time.After(sprint.StartDate.Time) {
+			return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
+		}
+	}
 	if err != nil {
 		return EError(c, err)
 	}
@@ -281,6 +286,11 @@ func (s *Services) updateSprint(c echo.Context) error {
 		sprint.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
 		sprint.UpdatedBy = user
 		fields = append(fields, "updated_by_id")
+		if sprint.EndDate.Valid && sprint.StartDate.Valid {
+			if !sprint.EndDate.Time.After(sprint.StartDate.Time) {
+				return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
+			}
+		}
 		if err := s.db.Omit(clause.Associations).Select(fields).Updates(&sprint).Error; err != nil {
 			return EError(c, err)
 		}

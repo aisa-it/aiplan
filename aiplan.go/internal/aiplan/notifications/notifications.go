@@ -241,9 +241,7 @@ func (n *DocNotification) Handle(activity dao.ActivityI) error {
 			Joins("Workspace").
 			Joins("Author").
 			Joins("ParentDoc").
-			Preload("Editors").
-			Preload("Readers").
-			Preload("Watchers").
+			Joins("LEFT JOIN doc_access_rules dar ON dar.doc_id = docs.id").
 			Where("docs.id = ?", a.DocId).
 			Find(&a.Doc).Error; err != nil {
 			slog.Error("Get doc for activity", "activityId", a.Id, "err", err)
