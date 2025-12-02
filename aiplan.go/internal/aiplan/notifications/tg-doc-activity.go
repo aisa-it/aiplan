@@ -42,9 +42,7 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 		if err := tnd.db.Unscoped().
 			Joins("Workspace").
 			Joins("Author").
-			Preload("Editors").
-			Preload("Readers").
-			Preload("Watchers").
+			Preload("AccessRules.Member").
 			Where("docs.id = ?", activity.DocId).
 			First(&activity.Doc).Error; err != nil {
 			slog.Error("Get doc for activity", "activityId", activity.Id, "err", err)

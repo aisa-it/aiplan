@@ -41,18 +41,14 @@ func (s *Services) DocMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			Set("member_id", workspaceMember.MemberId).
 			Set("member_role", workspaceMember.Role).
 			Set("breadcrumbs", true).
-			Joins("LEFT JOIN doc_readers ON doc_readers.doc_id = docs.id").
-			Joins("LEFT JOIN doc_editors ON doc_editors.doc_id = docs.id").
-			Joins("LEFT JOIN doc_watchers ON doc_watchers.doc_id = docs.id").
-			Preload("Readers").
-			Preload("Editors").
-			Preload("Watchers").
+			Preload("AccessRules.Member").
 			Preload("ParentDoc").
 			Preload("Author").
 			Preload("Workspace").
 			Preload("InlineAttachments").
 			Where("docs.workspace_id = ?", workspace.ID).
-			Where("docs.reader_role <= ? OR docs.editor_role <= ? OR doc_readers.reader_id = ? OR doc_editors.editor_id = ? OR doc_watchers.watcher_id = ? OR docs.created_by_id = ?", workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId).
+			Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+				workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 			Where("docs.id = ?", docId).
 			First(&doc).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -129,17 +125,15 @@ func (s *Services) AddDocServices(g *echo.Group) {
 func (s *Services) getRootDocList(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	workspaceMember := c.(WorkspaceContext).WorkspaceMember
-	//user := c.(WorkspaceContext).User
 
 	var docs []dao.Doc
 	if err := s.db.
 		Set("member_role", workspaceMember.Role).
 		Set("member_id", workspaceMember.MemberId).
-		Joins("LEFT JOIN doc_readers ON doc_readers.doc_id = docs.id").
-		Joins("LEFT JOIN doc_editors ON doc_editors.doc_id = docs.id").
-		Joins("LEFT JOIN doc_watchers ON doc_watchers.doc_id = docs.id").
+		Preload("Author").
 		Where("docs.workspace_id = ?", workspace.ID).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR doc_readers.reader_id = ? OR doc_editors.editor_id = ? OR doc_watchers.watcher_id = ? OR docs.created_by_id = ?", workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId).
+		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 		Where("docs.parent_doc_id IS NULL").
 		Order("seq_id ASC").
 		Group("docs.id").
@@ -400,18 +394,65 @@ func (s *Services) updateDoc(c echo.Context) error {
 			}
 		}
 
-		userMap := utils.SliceToMap(&users, func(u *dao.User) string { return u.ID })
-
 		if len(fields) > 0 {
-			memberIdSet := make(map[string]struct{})
-			if utils.CheckInSlice(fields, "editor_list", "reader_list", "watcher_list") {
-				var workspaceMembers []dao.WorkspaceMember
-				if err := tx.Where("workspace_id = ?", workspace.ID).Find(&workspaceMembers).Error; err != nil {
-					return err
-				}
+			workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
+			userUUID := uuid.Must(uuid.FromString(user.ID))
 
-				for _, member := range workspaceMembers {
-					memberIdSet[member.MemberId] = struct{}{}
+			memberAccess := make(map[string]dao.DocAccessRules)
+
+			newIdsSet := make(map[string]bool)
+			updateIdsSet := make(map[string]bool)
+			deleteIdsSet := make(map[string]bool)
+
+			oldRoleAccess := utils.SliceToMap(&doc.AccessRules, func(r *dao.DocAccessRules) string { return r.MemberId.String() })
+
+			newMemberAccess := func(id string) dao.DocAccessRules {
+				return dao.DocAccessRules{
+					Id:          dao.GenUUID(),
+					MemberId:    uuid.Must(uuid.FromString(id)),
+					CreatedById: userUUID,
+					DocId:       doc.ID,
+					UpdatedById: uuid.NullUUID{},
+					WorkspaceId: workspaceUUID,
+					Edit:        false,
+					Watch:       false,
+					Workspace:   &workspace,
+					Doc:         &doc,
+					Member:      user,
+				}
+			}
+
+			updateMember := func(id string, editor, watcher *bool) {
+				if v, exists := oldRoleAccess[id]; exists {
+					if editor != nil {
+						v.Edit = *editor
+					}
+					if watcher != nil {
+						v.Watch = *watcher
+					}
+					v.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
+					memberAccess[id] = v
+					updateIdsSet[id] = true
+				} else if val, ok := memberAccess[id]; ok {
+					if editor != nil {
+						val.Edit = *editor
+					}
+					if watcher != nil {
+						val.Watch = *watcher
+					}
+					val.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
+					memberAccess[id] = val
+					updateIdsSet[id] = true
+				} else {
+					ma := newMemberAccess(id)
+					if editor != nil {
+						ma.Edit = *editor
+					}
+					if watcher != nil {
+						ma.Watch = *watcher
+					}
+					memberAccess[id] = ma
+					newIdsSet[id] = true
 				}
 			}
 
@@ -448,88 +489,79 @@ func (s *Services) updateDoc(c echo.Context) error {
 						}
 					}
 
-				case "editor_list":
-					editorListOk = true
-					if err := tx.Where("doc_id = ?", newDoc.ID).Delete(&dao.DocEditor{}).Error; err != nil {
-						return err
-					}
-
-					var newEditors []dao.DocEditor
-					for _, editor := range newDoc.EditorsIDs {
-						if _, ok := memberIdSet[editor]; !ok {
-							continue
-						}
-						newEditors = append(newEditors, dao.DocEditor{
-							Id:          dao.GenID(),
-							EditorId:    editor,
-							DocId:       newDoc.ID.String(),
-							WorkspaceId: newDoc.WorkspaceId,
-							CreatedById: &user.ID,
-							UpdatedById: &user.ID,
-						})
-					}
-
-					if err := tx.CreateInBatches(&newEditors, 10).Error; err != nil {
-						return err
-					}
-					if len(newEditors) > 0 {
-						usersTmp := utils.SliceToSlice(&newEditors, func(dw *dao.DocEditor) dao.User { return userMap[dw.EditorId] })
-						newDoc.Editors = &usersTmp
-					}
-
 				case "reader_list":
 					readerListOk = true
-					if err := tx.Where("doc_id = ?", newDoc.ID).Delete(&dao.DocReader{}).Error; err != nil {
-						return err
+					for _, readerID := range newDoc.ReaderIDs {
+						updateMember(readerID, utils.ToPtr(false), nil)
 					}
-					var newReaders []dao.DocReader
-					for _, reader := range newDoc.ReaderIDs {
-						if _, ok := memberIdSet[reader]; !ok {
-							continue
-						}
-						newReaders = append(newReaders, dao.DocReader{
-							Id:          dao.GenID(),
-							ReaderId:    reader,
-							DocId:       newDoc.ID.String(),
-							WorkspaceId: newDoc.WorkspaceId,
-							CreatedById: &user.ID,
-							UpdatedById: &user.ID,
-						})
-					}
-					if err := tx.CreateInBatches(&newReaders, 10).Error; err != nil {
-						return err
-					}
-					if len(newReaders) > 0 {
-						usersTmp := utils.SliceToSlice(&newReaders, func(dw *dao.DocReader) dao.User { return userMap[dw.ReaderId] })
-						newDoc.Readers = &usersTmp
+
+				case "editor_list":
+					editorListOk = true
+					for _, editorID := range newDoc.EditorsIDs {
+						updateMember(editorID, utils.ToPtr(true), nil)
 					}
 
 				case "watcher_list":
 					watcherListOk = true
-					if err := tx.Where("doc_id = ?", newDoc.ID).Delete(&dao.DocWatcher{}).Error; err != nil {
-						return err
+					for _, watcherID := range newDoc.WatcherIDs {
+						updateMember(watcherID, nil, utils.ToPtr(true))
 					}
-					var newWatchers []dao.DocWatcher
-					for _, watcher := range doc.WatcherIDs {
-						if _, ok := memberIdSet[watcher]; !ok {
-							continue
+
+					_, removedWatchers := calculateChanges(newDoc.WatcherIDs, doc.WatcherIDs)
+					for _, removedID := range removedWatchers {
+						if existing, exists := oldRoleAccess[removedID]; exists {
+							existing.Watch = false
+							existing.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
+							memberAccess[removedID] = existing
+							updateIdsSet[removedID] = true
 						}
-						newWatchers = append(newWatchers, dao.DocWatcher{
-							Id:          dao.GenID(),
-							WatcherId:   watcher,
-							DocId:       newDoc.ID.String(),
-							WorkspaceId: newDoc.WorkspaceId,
-							CreatedById: &user.ID,
-							UpdatedById: &user.ID,
-						})
 					}
-					if err := tx.Omit(clause.Associations).CreateInBatches(&newWatchers, 10).Error; err != nil {
+				}
+			}
+
+			if readerListOk || editorListOk {
+				oldAccessIds := utils.MergeSlices(doc.EditorsIDs, doc.ReaderIDs)
+				newAccessIds := utils.MergeSlices(newDoc.EditorsIDs, newDoc.ReaderIDs)
+
+				_, removedAccessIds := calculateChanges(newAccessIds, oldAccessIds)
+				for _, removedID := range removedAccessIds {
+					deleteIdsSet[removedID] = true
+				}
+			}
+
+			if len(newIdsSet) > 0 {
+				newRoles := make([]dao.DocAccessRules, 0, len(newIdsSet))
+				for id := range newIdsSet {
+					newRoles = append(newRoles, memberAccess[id])
+				}
+				if err := tx.Omit(clause.Associations).CreateInBatches(&newRoles, 10).Error; err != nil {
+					return err
+				}
+			}
+
+			if len(updateIdsSet) > 0 {
+				for id := range updateIdsSet {
+					accessRule := memberAccess[id]
+					if err := tx.Model(&dao.DocAccessRules{}).
+						Where("doc_id = ?", doc.ID, id).
+						Where("member_id = ?", id).
+						Updates(map[string]interface{}{
+							"edit":          accessRule.Edit,
+							"watch":         accessRule.Watch,
+							"updated_by_id": accessRule.UpdatedById,
+						}).Error; err != nil {
 						return err
 					}
-					if len(newWatchers) > 0 {
-						usersTmp := utils.SliceToSlice(&newWatchers, func(dw *dao.DocWatcher) dao.User { return userMap[dw.WatcherId] })
-						newDoc.Watchers = &usersTmp
-					}
+				}
+			}
+
+			if len(deleteIdsSet) > 0 {
+				deleteIds := make([]string, 0, len(deleteIdsSet))
+				for id := range deleteIdsSet {
+					deleteIds = append(deleteIds, id)
+				}
+				if err := tx.Where("doc_id = ? AND member_id IN (?)", doc.ID, deleteIds).Delete(&dao.DocAccessRules{}).Error; err != nil {
+					return err
 				}
 			}
 
@@ -570,6 +602,31 @@ func (s *Services) updateDoc(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, newDoc.ToDTO())
+}
+
+func calculateChanges(newIds, oldIds []string) (added []string, removed []string) {
+	newSet := make(map[string]bool)
+	oldSet := make(map[string]bool)
+
+	for _, id := range newIds {
+		newSet[id] = true
+	}
+	for _, id := range oldIds {
+		oldSet[id] = true
+	}
+
+	for id := range newSet {
+		if !oldSet[id] {
+			added = append(added, id)
+		}
+	}
+	for id := range oldSet {
+		if !newSet[id] {
+			removed = append(removed, id)
+		}
+	}
+
+	return added, removed
 }
 
 // deleteDoc godoc
@@ -922,14 +979,11 @@ func (s *Services) getChildDocList(c echo.Context) error {
 	if err := s.db.
 		Set("member_id", workspaceMember.MemberId).
 		Set("member_role", workspaceMember.Role).
-		Joins("LEFT JOIN doc_readers ON doc_readers.doc_id = docs.id").
-		Joins("LEFT JOIN doc_editors ON doc_editors.doc_id = docs.id").
-		Joins("LEFT JOIN doc_watchers ON doc_watchers.doc_id = docs.id").
-		Preload("Readers").
-		Preload("Editors").
-		Preload("Watchers").
+		Preload("AccessRules.Member").
+		Preload("Author").
 		Where("docs.workspace_id = ?", workspace.ID).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR doc_readers.reader_id = ? OR doc_editors.editor_id = ? OR doc_watchers.watcher_id = ? OR docs.created_by_id = ?", workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId).
+		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 		Where("docs.parent_doc_id = ?", currentDoc.ID).
 		Order("seq_id ASC").
 		Group("docs.id").
@@ -1663,14 +1717,12 @@ func (s *Services) getFavoriteDocList(c echo.Context) error {
 		Set("member_role", workspaceMember.Role).
 		Preload("Doc").
 		Joins("LEFT JOIN docs ON docs.id = doc_favorites.doc_id").
-		Joins("LEFT JOIN doc_readers ON doc_readers.doc_id = doc_favorites.doc_id").
-		Joins("LEFT JOIN doc_editors ON doc_editors.doc_id = doc_favorites.doc_id").
-		Joins("LEFT JOIN doc_watchers ON doc_watchers.doc_id = doc_favorites.doc_id").
 		Where("doc_favorites.user_id = ?", user.ID).
 		Where("doc_favorites.workspace_id = ?", workspace.ID).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR doc_readers.reader_id = ? OR doc_editors.editor_id = ? OR doc_watchers.watcher_id = ? OR docs.created_by_id = ?", workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId, workspaceMember.MemberId).
+		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = doc_favorites.doc_id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 		Order("lower(docs.title)").
-		Group("doc_favorites.id,  docs.title").
+		Group("doc_favorites.id, docs.title").
 		Find(&favorites).Error; err != nil {
 		return EError(c, err)
 	}
@@ -1985,6 +2037,7 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 			workspace = c.(DocContext).Workspace
 			user = c.(DocContext).User
 		}
+
 		return &dao.Doc{
 			ID:          dao.GenUUID(),
 			Author:      user,
@@ -2003,38 +2056,40 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 			WatcherIDs:  req.WatcherList,
 		}, fields, nil
 	} else {
+		docCopy := *doc
+
 		var resFields []string
 		for _, field := range fields {
 			switch field {
 			case "title":
-				_ = CompareAndAddFields(&doc.Title, &req.Title, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.Title, &req.Title, field, &resFields)
 			case "content":
 				if doc.Content.Body != req.Content.Body {
 					doc.Content = req.Content
 					resFields = append(resFields, field)
 				}
 			case "reader_role":
-				_ = CompareAndAddFields(&doc.ReaderRole, &req.ReaderRole, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.ReaderRole, &req.ReaderRole, field, &resFields)
 			case "editor_role":
-				_ = CompareAndAddFields(&doc.EditorRole, &req.EditorRole, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.EditorRole, &req.EditorRole, field, &resFields)
 			case "seq_id":
-				_ = CompareAndAddFields(&doc.SeqId, &req.SeqId, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.SeqId, &req.SeqId, field, &resFields)
 			case "draft":
-				_ = CompareAndAddFields(&doc.Draft, &req.Draft, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.Draft, &req.Draft, field, &resFields)
 			case "editor_list":
-				_ = CompareAndAddFields(&doc.EditorsIDs, &req.EditorList, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.EditorsIDs, &req.EditorList, field, &resFields)
 			case "reader_list":
-				_ = CompareAndAddFields(&doc.ReaderIDs, &req.ReaderList, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.ReaderIDs, &req.ReaderList, field, &resFields)
 			case "watcher_list":
-				_ = CompareAndAddFields(&doc.WatcherIDs, &req.WatcherList, field, &resFields)
+				_ = CompareAndAddFields(&docCopy.WatcherIDs, &req.WatcherList, field, &resFields)
 			}
 		}
 		if len(resFields) > 0 {
-			doc.UpdatedById = &c.(DocContext).User.ID
+			docCopy.UpdatedById = &c.(DocContext).User.ID
 			resFields = append(resFields, "updated_by_id")
 		}
 
-		return doc, resFields, nil
+		return &docCopy, resFields, nil
 	}
 }
 
