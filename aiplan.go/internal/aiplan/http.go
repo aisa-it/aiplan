@@ -43,6 +43,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -186,6 +187,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
+	migration.New(db).Run()
 
 	jobRegistry := cronmanager.JobRegistry{
 		"notification_processing": cronmanager.Job{
@@ -342,6 +344,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		Skipper: func(c echo.Context) bool {
 			return c.Path() == "/api/auth/ws/notifications/" ||
 				c.Path() == "/api/ws/notifications/" ||
+				strings.HasPrefix(c.Path(), "/api/auth/file/") ||
 				strings.Contains(c.Request().URL.Path, "swagger")
 		},
 	}))

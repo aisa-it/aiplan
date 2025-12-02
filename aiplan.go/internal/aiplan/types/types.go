@@ -876,7 +876,8 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 		}
 	case actField.FieldForm:
 		if isWorkspaceAdmin {
-			return !ns.DisableWorkspaceForm
+			return false // TODO disabled BAK-317
+			//return !ns.DisableWorkspaceForm
 		}
 	case actField.FieldName:
 		if isWorkspaceAdmin {

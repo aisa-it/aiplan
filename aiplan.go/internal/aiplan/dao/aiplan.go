@@ -464,7 +464,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				if formatted, err := utils.FormatDateStr(v.NewValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
 					v.NewValue = formatted
 				} else {
-					slog.Error("data format", "error", err, "value", v.NewValue)
+					slog.Error("date format", "newValue", v.NewValue, "id", v.Id, "comment", v.Comment, "error", err)
 				}
 			}
 
@@ -472,7 +472,8 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				if formatted, err := utils.FormatDateStr(*v.OldValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
 					v.OldValue = &formatted
 				} else {
-					slog.Error("data format", "error", err, "value", v.NewValue)
+					slog.Error("date format", "oldValue", *v.OldValue, "id", v.Id, "comment", v.Comment, "error", err)
+
 				}
 			}
 			//date, err := utils.FormatDateStr(v.NewValue, "2006-01-02T15:04:05Z07:00", nil)
