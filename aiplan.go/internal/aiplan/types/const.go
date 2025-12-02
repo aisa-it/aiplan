@@ -11,4 +11,7 @@ const (
 	MemberRole = 10
 	AdminRole  = 15
 	ForbidRole = 20
+
+	EmailCodeLifeTime time.Duration = time.Minute * 5
+	EmailCodeLimitReq               = time.Minute
 )
