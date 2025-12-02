@@ -432,7 +432,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.GET("i/:issue/", s.shortIssueURLRedirect)
 	e.GET("d/:slug/:docNum/", s.shortDocURLRedirect)
 	e.GET("sf/:base/", s.shortSearchFilterURLRedirect)
-	e.GET("confirm-email/:token/", s.shortUrlEmailVerify)
 
 	// Get minio file
 	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy, remove after front migration to new endpoint
@@ -813,7 +812,6 @@ func CheckWorkspaceSlug(slug string) bool {
 		"swagger",
 		"filters",
 		"sf",
-		"confirm-email",
 	}, slug)
 }
 
