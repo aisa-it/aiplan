@@ -30,8 +30,7 @@ SELECT
     AND (
         f.doc_id IS NULL
         OR wm.role >= d.reader_role
-        OR dr.id IS NOT NULL
-        OR de.id IS NOT NULL
+        OR dar.id IS NOT NULL
     ) AS allowed
 FROM file_assets f
 LEFT JOIN workspace_members wm
@@ -47,12 +46,9 @@ LEFT JOIN project_members pm
     )
 LEFT JOIN docs d
     ON d.id = f.doc_id
-LEFT JOIN doc_readers dr
-    ON dr.doc_id = f.doc_id
-    AND dr.reader_id = ?
-LEFT JOIN doc_editors de
-    ON de.doc_id = f.doc_id
-    AND de.editor_id = ?
+LEFT JOIN doc_access_rules dar
+    ON dar.doc_id = f.doc_id
+    AND dar.member_id = ?
 `
 )
 
@@ -84,7 +80,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 		dao.FileAsset
 		Allowed bool
 	}
-	if err := s.db.Raw(query, user.ID, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
+	if err := s.db.Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
 		return EError(c, err)
 	}
 
