@@ -618,14 +618,12 @@ func activityMigrate(db *gorm.DB) {
 }
 
 func getLastActivityFields[A dao.Activity](tx *gorm.DB, userId string, fields ...string) bool {
-	var act []A
-	if err := tx.
+	var model A
+	err := tx.Model(&model).
 		Where("actor_id = ?", userId).
 		Where("created_at > NOW() - INTERVAL '2 seconds'").
 		Where("field IN (?)", fields).
-		Find(&act).Error; err != nil {
-		return false
-	}
+		Take(&model).Error
 
-	return len(act) > 0
+	return err == nil
 }
