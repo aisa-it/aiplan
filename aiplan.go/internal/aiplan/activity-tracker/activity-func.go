@@ -16,17 +16,6 @@ import (
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 )
 
-const (
-	//New
-	//MEMBER_ADDED            = "member.added"
-	ENTITY_UPDATED_ACTIVITY = "entity.updated"
-	ENTITY_CREATE_ACTIVITY  = "entity.create"
-	ENTITY_DELETE_ACTIVITY  = "entity.delete"
-	ENTITY_ADD_ACTIVITY     = "entity.add"
-	ENTITY_REMOVE_ACTIVITY  = "entity.remove"
-	ENTITY_MOVE_ACTIVITY    = "entity.move"
-)
-
 // entityUpdateActivity Обновляет существующую сущность и генерирует запись в журнале активности.
 func entityUpdatedActivity[E dao.Entity, A dao.Activity](
 	tracker *ActivitiesTracker,
@@ -79,7 +68,7 @@ func entityCreateActivity[E dao.Entity, A dao.Activity](
 	if e, ok := requestedData["entityParent"].(E); ok {
 		entity = e
 	}
-	verb := "created"
+	verb := actField.VerbCreated
 	if e, ok := requestedData["custom_verb"].(string); ok {
 		verb = e
 	}
@@ -131,7 +120,7 @@ func entityDeleteActivity[E dao.Entity, A dao.Activity](
 
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenID(),
-		Verb:          "deleted",
+		Verb:          actField.VerbDeleted,
 		Field:         strToPointer(entityI.GetEntityType()),
 		OldValue:      strToPointer(oldVal),
 		Comment:       fmt.Sprintf("%s deleted %s: %s", actor.Email, entityI.GetEntityType(), oldVal),
@@ -194,7 +183,7 @@ func entityAddActivity[E dao.Entity, A dao.Activity](
 
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenID(),
-		Verb:          "added",
+		Verb:          actField.VerbAdded,
 		Field:         strToPointer(key),
 		OldValue:      nil,
 		NewValue:      newV,
@@ -257,7 +246,7 @@ func entityRemoveActivity[E dao.Entity, A dao.Activity](
 
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenID(),
-		Verb:          "removed",
+		Verb:          actField.VerbRemoved,
 		Field:         strToPointer(key),
 		OldValue:      &oldV,
 		Comment:       fmt.Sprintf("%s remove %s: %s", actor.Email, key, oldV),
@@ -336,7 +325,7 @@ func entityMoveActivity[E dao.Entity, A dao.Activity](
 		entityFrom = v.(string)
 	}
 
-	verb := "move"
+	verb := actField.VerbMove
 	if v, ok := requestedData["field_move"]; ok {
 		verb = fmt.Sprintf("move_%s", v.(string))
 	}

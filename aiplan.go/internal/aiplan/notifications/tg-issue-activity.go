@@ -96,7 +96,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 				}
 			} else {
 				switch actField.ActivityField(*activity.Field) {
-				case actField.FieldComment:
+				case actField.Comment:
 					if activity.NewIssueComment == nil {
 						return
 					}
@@ -105,15 +105,15 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 						HtmlToTg(activity.NewIssueComment.CommentHtml.Body),
 					)
 
-				case actField.FieldLink:
+				case actField.Link:
 					msg.Text = act.Title("добавил(-a) ссылку в")
 					msg.Text += Stelegramf("[%s](%s)",
 						activity.NewLink.Title,
 						activity.NewLink.Url,
 					)
-				case actField.FieldAttachment:
+				case actField.Attachment:
 					msg.Text = act.Title("добавил(-a) вложение в")
-				case actField.FieldLinked:
+				case actField.Linked:
 					msg.Text = act.Title("добавил(-a) связь к задаче")
 					msg.Text += Stelegramf("%s",
 						activity.NewValue,
@@ -122,25 +122,25 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 			}
 		case "added":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldLabel:
+			case actField.Label:
 				msg.Text = act.Title("добавил(-a) тег в")
 				msg.Text += Stelegramf("%s",
 					activity.NewLabel.Name,
 				)
-			case actField.FieldSubIssue:
+			case actField.SubIssue:
 				activity.NewSubIssue.Project = activity.Issue.Project
 				msg.Text = act.Title("изменил(-a)")
 				msg.Text += Stelegramf("*Подзадача*: [%s](%s)",
 					activity.NewSubIssue.FullIssueName(),
 					activity.NewSubIssue.URL,
 				)
-			case actField.FieldAssignees:
+			case actField.Assignees:
 				msg.Text = act.Title("добавил(-a) нового исполнителя в")
 				msg.Text += Stelegramf("%s %s",
 					activity.NewAssignee.FirstName,
 					activity.NewAssignee.LastName,
 				)
-			case actField.FieldWatchers:
+			case actField.Watchers:
 				msg.Text = act.Title("добавил(-a) нового наблюдателя в")
 				msg.Text += Stelegramf("%s %s",
 					activity.NewWatcher.FirstName,
@@ -150,25 +150,25 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 
 		case "removed":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldLabel:
+			case actField.Label:
 				msg.Text = act.Title("убрал(-a) тег из")
 				msg.Text += Stelegramf("%s",
 					activity.OldLabel.Name,
 				)
-			case actField.FieldSubIssue:
+			case actField.SubIssue:
 				activity.OldSubIssue.Project = activity.Issue.Project
 				msg.Text = act.Title("изменил(-a)")
 				msg.Text += Stelegramf("*Подзадача*: ~[%s](%s)~",
 					activity.OldSubIssue.FullIssueName(),
 					activity.OldSubIssue.URL,
 				)
-			case actField.FieldAssignees:
+			case actField.Assignees:
 				msg.Text = act.Title("убрал(-а) исполнителя из")
 				msg.Text += Stelegramf("%s %s",
 					activity.OldAssignee.FirstName,
 					activity.OldAssignee.LastName,
 				)
-			case actField.FieldWatchers:
+			case actField.Watchers:
 				msg.Text = act.Title("убрал(-а) наблюдателя из")
 				msg.Text += Stelegramf("%s %s",
 					activity.OldWatcher.FirstName,
@@ -178,17 +178,17 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 
 		case "updated":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldDescription:
+			case actField.Description:
 				msg.Text = act.Title("изменил(-а) описание")
 				msg.Text += Stelegramf("```\n%s```",
 					HtmlToTg(activity.NewValue),
 				)
-			case actField.FieldComment:
+			case actField.Comment:
 				msg.Text = act.Title("изменил(-a) комментарий")
 				msg.Text += Stelegramf("```\n%s```",
 					HtmlToTg(activity.NewIssueComment.CommentHtml.Body),
 				)
-			case actField.FieldLink:
+			case actField.Link:
 				var old string
 				if activity.OldValue != nil {
 					old = *activity.OldValue
@@ -199,7 +199,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					activity.NewLink.Title,
 					activity.NewLink.Url,
 				)
-			case actField.FieldLinkTitle:
+			case actField.LinkTitle:
 				var old string
 				if activity.OldValue != nil {
 					old = *activity.OldValue
@@ -211,7 +211,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					activity.NewLink.Url,
 				)
 
-			case actField.FieldLinkUrl:
+			case actField.LinkUrl:
 				var old string
 				if activity.OldValue != nil {
 					old = *activity.OldValue
@@ -223,7 +223,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					activity.NewLink.Url,
 				)
 
-			case actField.FieldLinked:
+			case actField.Linked:
 				var targetIssue dao.Issue
 
 				if activity.OldIdentifier == nil && activity.NewIdentifier != nil {
@@ -241,7 +241,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					targetIssue.URL,
 				)
 
-			case actField.FieldTargetDate:
+			case actField.TargetDate:
 				oldValue := ""
 				newValue := activity.NewValue
 				if activity.OldValue != nil && *activity.OldValue != "<nil>" {
@@ -276,7 +276,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					)
 				}
 
-			case actField.FieldParent:
+			case actField.Parent:
 				msg.Text = act.Title("изменил(-a)")
 				var newName, newUrl, oldName, oldUrl string
 				if activity.NewParentIssue != nil {
@@ -328,7 +328,7 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 				}
 
 				if activity.Field != nil {
-					if actField.ActivityField(*activity.Field) == actField.FieldPriority {
+					if actField.ActivityField(*activity.Field) == actField.Priority {
 						oldValue = translateMap(priorityTranslation, activity.OldValue)
 						newValue = translateMap(priorityTranslation, &activity.NewValue)
 						if newValue == "" {
@@ -337,8 +337,8 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 						oldValue = capitalizeFirst(oldValue)
 						newValue = capitalizeFirst(newValue)
 
-					} else if actField.ActivityField(*activity.Field) == actField.FieldStartDate ||
-						actField.ActivityField(*activity.Field) == actField.FieldCompletedAt {
+					} else if actField.ActivityField(*activity.Field) == actField.StartDate ||
+						actField.ActivityField(*activity.Field) == actField.CompletedAt {
 						newT, err := FormatDate(newValue, "02.01.2006 15:04 MST", nil)
 						oldValue, _ = FormatDate(oldValue, "02.01.2006 15:04 MST", nil)
 						if newValue == "<nil>" {
@@ -373,13 +373,13 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					activity.Actor.LastName,
 					activity.Issue.FullIssueName(),
 				)
-			case actField.FieldLink:
+			case actField.Link:
 				msg.Text = act.Title("удалил(-a) ссылку из")
-			case actField.FieldAttachment:
+			case actField.Attachment:
 				msg.Text = act.Title("удалил(-a) вложение из")
-			case actField.FieldComment:
+			case actField.Comment:
 				msg.Text = act.Title("удалил(-a) комментарий из")
-			case actField.FieldLinked:
+			case actField.Linked:
 				msg.Text = act.Title("удалил(-a) связь из")
 				msg.Text += Stelegramf("%s",
 					fmt.Sprint(*activity.OldValue),

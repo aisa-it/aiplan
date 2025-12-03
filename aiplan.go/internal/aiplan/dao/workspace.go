@@ -77,7 +77,7 @@ func (w Workspace) GetString() string {
 }
 
 func (w Workspace) GetEntityType() string {
-	return actField.FieldWorkspace.String()
+	return actField.Workspace.String()
 }
 
 // WorkspaceExtendFields
@@ -373,7 +373,7 @@ func (wm WorkspaceMember) GetString() string {
 }
 
 func (wm WorkspaceMember) GetEntityType() string {
-	return actField.FieldMember.String()
+	return actField.Member.String()
 }
 
 func (wm WorkspaceMember) GetWorkspaceId() string {

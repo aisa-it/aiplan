@@ -22,12 +22,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	ACTIVITY_UPDATED = "updated"
-	ACTIVITY_REMOVED = "removed"
-	ACTIVITY_ADDED   = "added"
-)
-
 type Entity interface {
 	User |
 		Workspace | WorkspaceMember |
@@ -93,11 +87,11 @@ type TemplateActivity struct {
 func NewTemplateActivity(verb string, field actField.ActivityField, oldVal *string, newVal string, newId, oldId *string, actor *User, valToComment string) TemplateActivity {
 	var comment string
 	switch verb {
-	case ACTIVITY_UPDATED:
+	case actField.VerbUpdated:
 		comment = fmt.Sprintf("%s updated %s to %s", actor.Email, strings.Replace(field.String(), "_", " ", 1), valToComment)
-	case ACTIVITY_REMOVED:
+	case actField.VerbRemoved:
 		comment = fmt.Sprintf("%s removed from %s - %s", actor.Email, strings.Replace(field.String(), "_", " ", 1), valToComment)
-	case ACTIVITY_ADDED:
+	case actField.VerbAdded:
 		comment = fmt.Sprintf("%s added to %s - %s", actor.Email, strings.Replace(field.String(), "_", " ", 1), valToComment)
 	}
 

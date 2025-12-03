@@ -158,7 +158,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	//slog.Info("Migrate old activities")
 	//activityMigrate(db) //TODO migrate to newActivities
-	activityFieldUpdate(db)
 	// Query counter
 	ql := dao.NewQueryLogger()
 	if err := db.Callback().

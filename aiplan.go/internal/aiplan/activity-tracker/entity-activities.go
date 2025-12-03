@@ -20,7 +20,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type activityFunc func(map[string]interface{}, map[string]interface{}, string, string, *dao.Project, dao.User, *[]dao.EntityActivity) error
 type activityFuncGen[E dao.Entity, A dao.Activity] func(*ActivitiesTracker, map[string]interface{}, map[string]interface{}, E, dao.User) ([]A, error)
 
 type ActivityHandler interface {
@@ -28,9 +27,6 @@ type ActivityHandler interface {
 }
 type ActivitiesTracker struct {
 	db *gorm.DB
-
-	activitiesMapper  map[string]activityFunc
-	fieldUpdateMapper map[string]activityFunc
 
 	activityLogFunc  []func(activity dao.EntityActivity)
 	activityLogFuncI []func(activity dao.ActivityI)
@@ -55,91 +51,91 @@ func (t *ActivitiesTracker) RegisterHandler(handler ActivityHandler) {
 // attachment (issue(+),)
 func getFuncUpdate[E dao.Entity, A dao.Activity](field actField.ActivityField) activityFuncGen[E, A] {
 	switch field {
-	case actField.ReqFieldAssignees: // issue(+)
+	case actField.ReqAssignees: // issue(+)
 		return issueAssigneesUpdate[E, A]
-	case actField.ReqFieldWatchers: // issue(+)
+	case actField.ReqWatchers: // issue(+)
 		return entityWatchersUpdate[E, A]
-	case actField.ReqFieldReaders:
+	case actField.ReqReaders:
 		return entityReadersUpdate[E, A]
-	case actField.ReqFieldEditors:
+	case actField.ReqEditors:
 		return entityEditorsUpdate[E, A]
-	case actField.ReqFieldIssues:
+	case actField.ReqIssues:
 		return entityIssuesUpdate[E, A]
-	case actField.ReqFieldSprint:
+	case actField.ReqSprint:
 		return entitySprintUpdate[E, A]
-	case actField.ReqFieldName: // issue(+)
+	case actField.ReqName: // issue(+)
 		return entityNameUpdate[E, A]
-	case actField.ReqFieldTemplate:
+	case actField.ReqTemplate:
 		return entityTemplateUpdate[E, A]
-	case actField.ReqFieldLogo: // issue(+)
+	case actField.ReqLogo: // issue(+)
 		return entityLogoUpdate[E, A]
-	case actField.ReqFieldToken:
+	case actField.ReqToken:
 		return entityTokenUpdate[E, A]
-	case actField.ReqFieldOwner:
+	case actField.ReqOwner:
 		return entityOwnerUpdate[E, A]
-	case actField.ReqFieldTitle:
+	case actField.ReqTitle:
 		return entityTitleUpdate[E, A]
-	case actField.ReqFieldEmoj:
+	case actField.ReqEmoj:
 		return entityEmojiUpdate[E, A]
-	case actField.ReqFieldPublic:
+	case actField.ReqPublic:
 		return entityPublicUpdate[E, A]
-	case actField.ReqFieldIdentifier:
+	case actField.ReqIdentifier:
 		return entityIdentifierUpdate[E, A]
-	case actField.ReqFieldProjectLead:
+	case actField.ReqProjectLead:
 		return entityProjectLeadUpdate[E, A]
-	case actField.ReqFieldPriority: // issue(+)
+	case actField.ReqPriority: // issue(+)
 		return entityPriorityUpdate[E, A]
-	case actField.ReqFieldRole:
+	case actField.ReqRole:
 		return entityRoleUpdate[E, A]
-	case actField.ReqFieldDefaultAssignees:
+	case actField.ReqDefaultAssignees:
 		return entityDefaultAssigneesUpdate[E, A]
-	case actField.ReqFieldDefaultWatchers:
+	case actField.ReqDefaultWatchers:
 		return entityDefaultWatchersUpdate[E, A]
-	case actField.ReqFieldDescription: // issue(+)
+	case actField.ReqDescription: // issue(+)
 		return entityDescriptionUpdate[E, A]
-	case actField.ReqFieldDescriptionHtml: // issue(+)
+	case actField.ReqDescriptionHtml: // issue(+)
 		return entityDescriptionHtmlUpdate[E, A]
-	case actField.ReqFieldColor:
+	case actField.ReqColor:
 		return entityColorUpdate[E, A]
-	case actField.ReqFieldTargetDate: // issue(+)
+	case actField.ReqTargetDate: // issue(+)
 		return entityTargetDateUpdate[E, A]
-	case actField.ReqFieldStartDate:
+	case actField.ReqStartDate:
 		return entityStartDateUpdate[E, A]
-	case actField.ReqFieldCompletedAt:
+	case actField.ReqCompletedAt:
 		return entityCompletedAtUpdate[E, A]
-	case actField.ReqFieldEndDate:
+	case actField.ReqEndDate:
 		return entityEndDateUpdate[E, A]
-	case actField.ReqFieldLabel: // issue(+)
+	case actField.ReqLabel: // issue(+)
 		return entityLabelUpdate[E, A]
-	case actField.ReqFieldAuthRequire:
+	case actField.ReqAuthRequire:
 		return entityAuthRequireUpdate[E, A]
-	case actField.ReqFieldFields:
+	case actField.ReqFields:
 		return entityFieldsUpdate[E, A]
-	case actField.ReqFieldGroup:
+	case actField.ReqGroup:
 		return entityGroupUpdate[E, A]
-	case actField.ReqFieldState: // issue(+)
+	case actField.ReqState: // issue(+)
 		return entityStateUpdate[E, A]
-	case actField.ReqFieldParent:
+	case actField.ReqParent:
 		return issueParentUpdate[E, A]
-	case actField.ReqFieldDefault:
+	case actField.ReqDefault:
 		return entityDefaultUpdate[E, A]
-	case actField.ReqFieldEstimatePoint:
+	case actField.ReqEstimatePoint:
 		return entityEstimatePointUpdate[E, A]
-	case actField.ReqFieldBlocksList:
+	case actField.ReqBlocksList:
 		return issueBlocksListUpdate[E, A]
-	case actField.ReqFieldBlockersList:
+	case actField.ReqBlockersList:
 		return issueBlockersListUpdate[E, A]
-	case actField.ReqFieldUrl: // issue(+)
+	case actField.ReqUrl: // issue(+)
 		return entityUrlUpdate[E, A]
-	case actField.ReqFieldCommentHtml: // issue(+)
+	case actField.ReqCommentHtml: // issue(+)
 		return entityCommentHtmlUpdate[E, A]
-	case actField.ReqFieldDocSort:
+	case actField.ReqDocSort:
 		return entityDocSortUpdate[E, A]
-	case actField.ReqFieldLinked:
+	case actField.ReqLinked:
 		return issueLinkedUpdate[E, A]
-	case actField.ReqFieldEditorRole:
+	case actField.ReqEditorRole:
 		return entityEditorRoleUpdate[E, A]
-	case actField.ReqFieldReaderRole:
+	case actField.ReqReaderRole:
 		return entityReaderRoleUpdate[E, A]
 	}
 	return nil
@@ -154,17 +150,17 @@ func getFuncUpdate[E dao.Entity, A dao.Activity](field actField.ActivityField) a
 //   - activityFunc: Функция, которая принимает параметры и возвращает список dao.EntityActivity.
 func getFuncActivity[E dao.Entity, A dao.Activity](activityType string) activityFuncGen[E, A] {
 	switch activityType {
-	case ENTITY_UPDATED_ACTIVITY:
+	case actField.EntityUpdatedActivity:
 		return entityUpdatedActivity[E, A]
-	case ENTITY_CREATE_ACTIVITY:
+	case actField.EntityCreateActivity:
 		return entityCreateActivity[E, A]
-	case ENTITY_DELETE_ACTIVITY:
+	case actField.EntityDeleteActivity:
 		return entityDeleteActivity[E, A]
-	case ENTITY_ADD_ACTIVITY:
+	case actField.EntityAddActivity:
 		return entityAddActivity[E, A]
-	case ENTITY_REMOVE_ACTIVITY:
+	case actField.EntityRemoveActivity:
 		return entityRemoveActivity[E, A]
-	case ENTITY_MOVE_ACTIVITY:
+	case actField.EntityMoveActivity:
 		return entityMoveActivity[E, A]
 	}
 	return nil

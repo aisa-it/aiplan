@@ -56,7 +56,7 @@ func (f Form) GetString() string {
 }
 
 func (f Form) GetEntityType() string {
-	return actField.FieldForm.String()
+	return actField.Form.String()
 }
 
 func (f Form) GetWorkspaceId() string {
@@ -496,7 +496,7 @@ func (fa FormAttachment) GetString() string {
 // Возвращает:
 //   - string: имя файла или тип объекта.
 func (fa FormAttachment) GetEntityType() string {
-	return actField.FieldAttachment.String()
+	return actField.Attachment.String()
 }
 
 func (f *FormAttachment) GetWorkspaceId() string {

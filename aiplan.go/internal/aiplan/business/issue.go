@@ -9,6 +9,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 )
 
@@ -59,7 +60,7 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 		data["tg_sender"] = *user.TelegramId
 	}
 
-	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](b.tracker, tracker.ENTITY_CREATE_ACTIVITY, data, nil, comment, &user)
+	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](b.tracker, activities.EntityCreateActivity, data, nil, comment, &user)
 	if err != nil {
 		errStack.GetError(nil, err)
 	}
