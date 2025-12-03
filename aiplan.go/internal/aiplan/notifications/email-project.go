@@ -224,7 +224,7 @@ func (pa *projectActivity) AddActivity(activity dao.ProjectActivity) bool {
 }
 
 func (pa *projectActivity) skip(activity dao.ProjectActivity) bool {
-	if activity.Verb != "created" {
+	if activity.Verb != actField.VerbCreated {
 		return true
 	}
 	if activity.Field != nil && *activity.Field != actField.Issue.String() {
@@ -352,7 +352,7 @@ func getProjectNotificationHTML(tx *gorm.DB, activities []dao.ProjectActivity, t
 }
 
 func newIssue(tx *gorm.DB, user *dao.User, act *dao.ProjectActivity) string {
-	if act.Field != nil && *act.Field == actField.Issue.String() && act.Verb == "created" {
+	if act.Field != nil && *act.Field == actField.Issue.String() && act.Verb == actField.VerbCreated {
 		var template dao.Template
 		if err := tx.Where("name = ?", "issue_activity_new").First(&template).Error; err != nil {
 			return ""
