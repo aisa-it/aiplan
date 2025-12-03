@@ -3,6 +3,7 @@ package business
 import (
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -78,7 +79,7 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 
 	if err := b.db.Transaction(func(tx *gorm.DB) error {
 		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](
-			b.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, *requestedMember, b.workspaceCtx.user)
+			b.tracker, activities.EntityRemoveActivity, data, nil, *requestedMember, b.workspaceCtx.user)
 		if err != nil {
 			return err
 		}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -267,7 +268,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			oldWorkspaceMap["owner_id_field_log"] = "owner"
 		}
 
-		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newWorkspaceMap, oldWorkspaceMap, workspace, user)
+		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newWorkspaceMap, oldWorkspaceMap, workspace, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -352,7 +353,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 			"logo": fileAsset.Id.String(),
 		}
 
-		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, workspace, user)
+		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -409,7 +410,7 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 		"logo": uuid.NullUUID{}.UUID.String(),
 	}
 
-	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, workspace, user)
+	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -439,7 +440,7 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDeleteWorkspaceForbidden)
 	}
 
-	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, workspace, user)
+	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 		return err
@@ -800,7 +801,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		}
 	}
 
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMemberMap, oldMemberMap, requestedMember, &user)
+	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMemberMap, oldMemberMap, requestedMember, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1249,7 +1250,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 		}
 
 		for _, m := range createMemberLog {
-			err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, tracker.ENTITY_ADD_ACTIVITY, m.data, nil, m.pm, &issuer)
+			err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, m.data, nil, m.pm, &issuer)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -1260,7 +1261,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			"member_activity_val": workspaceMember.Role,
 		}
 
-		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_ADD_ACTIVITY, data, nil, workspaceMember, &issuer)
+		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityAddActivity, data, nil, workspaceMember, &issuer)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -1408,7 +1409,7 @@ func (s *Services) createWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, workspace, &user)
+	err = tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, activities.EntityCreateActivity, nil, nil, workspace, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1545,7 +1546,7 @@ func (s *Services) resetWorkspaceToken(c echo.Context) error {
 		"integration_token": "******",
 	}
 
-	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, workspace, user)
+	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1811,7 +1812,7 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 		"integration_activity_val": name,
 	}
 
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_ADD_ACTIVITY, data, nil, workspaceMember, user)
+	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityAddActivity, data, nil, workspaceMember, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1859,7 +1860,7 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, wm, c.(WorkspaceContext).User)
+		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityRemoveActivity, data, nil, wm, c.(WorkspaceContext).User)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err

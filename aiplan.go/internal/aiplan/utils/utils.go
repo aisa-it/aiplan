@@ -262,6 +262,8 @@ func Base64ToUUID(encoded string) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 
+	uuid.Must(uuid.FromString("2f4c55e4-d688-4b5d-96c2-09fb6770f3e1"))
+
 	return uuid.FromBytes(data)
 }
 

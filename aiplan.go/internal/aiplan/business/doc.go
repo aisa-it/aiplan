@@ -9,6 +9,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 )
 
@@ -57,7 +58,7 @@ func (b *Business) CreateDocComment(doc dao.Doc, user dao.User, text string, rep
 		data["tg_sender"] = *user.TelegramId
 	}
 
-	err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](b.tracker, tracker.ENTITY_CREATE_ACTIVITY, data, nil, comment, &user)
+	err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](b.tracker, activities.EntityCreateActivity, data, nil, comment, &user)
 	if err != nil {
 		errStack.GetError(nil, err)
 	}
