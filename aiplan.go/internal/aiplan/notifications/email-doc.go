@@ -278,6 +278,9 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 
 // Для пропуска активностей
 func (ia *docActivity) skip(activity dao.DocActivity) bool {
+	if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbCreated && activity.NewDoc == nil {
+		return true
+	}
 	return false
 }
 
@@ -370,7 +373,8 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 
 func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
 	var newDocCreate *dao.Doc
-	if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == "created" {
+	if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbCreated && activity.NewDoc != nil {
+
 		if tx.
 			Joins("Author").
 			Joins("Workspace").
@@ -410,7 +414,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		activity.Doc.AfterFind(tx)
 		doc.AfterFind(tx)
 
-		if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == "deleted" {
+		if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbDeleted {
 			var template dao.Template
 			if err := tx.Where("name = ?", "doc_activity_delete").First(&template).Error; err != nil {
 				return "", "", err
@@ -438,7 +442,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		}
 
 		// new doc
-		if activity.Verb == "created" {
+		if activity.Verb == actField.VerbCreated {
 			result += gocGetEmailHtml(tx, targetUser, &activity)
 		}
 
@@ -451,9 +455,9 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			newComment := false
 			deleted := false
 			switch activity.Verb {
-			case "created":
+			case actField.VerbCreated:
 				newComment = true
-			case "deleted":
+			case actField.VerbDeleted:
 				deleted = true
 			}
 
@@ -499,7 +503,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			activity.OldValue = &oldValue
 			activity.NewValue = newValue
 		}
-		if field == actField.Doc.String() && activity.Verb == "created" {
+		if field == actField.Doc.String() && activity.Verb == actField.VerbCreated {
 			continue
 		}
 
@@ -594,7 +598,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 		return ""
 	}
 
-	if act.Verb == "deleted" {
+	if act.Verb == actField.VerbDeleted {
 		var template dao.Template
 		if err := tx.Where("name = ?", "doc_activity_delete").First(&template).Error; err != nil {
 			return ""
@@ -620,7 +624,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 		return buf.String()
 	}
 
-	if act.Verb != "deleted" {
+	if act.Verb != actField.VerbDeleted {
 		var template dao.Template
 		if err := tx.Where("name = ?", "doc_activity_new").First(&template).Error; err != nil {
 			return ""
@@ -650,7 +654,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 		}
 		var description, oldVal string
 
-		if act.Verb != "removed" {
+		if act.Verb != actField.VerbRemoved {
 			description = replaceTablesToText(replaceImageToText(act.NewDoc.Content.Body))
 			description = policy.ProcessCustomHtmlTag(description)
 			description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))

@@ -568,9 +568,9 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			newComment := false
 			deleted := false
 			switch activity.Verb {
-			case "created":
+			case actField.VerbCreated:
 				newComment = true
-			case "deleted":
+			case actField.VerbDeleted:
 				deleted = true
 			}
 

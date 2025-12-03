@@ -267,7 +267,7 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 				}
 				continue
 			}
-			if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == "deleted" {
+			if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbDeleted {
 				if *activity.ActorId == member.User.ID {
 					sendActivities = append(sendActivities, activity)
 					continue
