@@ -9,6 +9,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"gorm.io/gorm"
 )
@@ -223,10 +224,10 @@ func (pa *projectActivity) AddActivity(activity dao.ProjectActivity) bool {
 }
 
 func (pa *projectActivity) skip(activity dao.ProjectActivity) bool {
-	if activity.Verb != "created" {
+	if activity.Verb != actField.VerbCreated {
 		return true
 	}
-	if activity.Field != nil && *activity.Field != "issue" {
+	if activity.Field != nil && *activity.Field != actField.Issue.String() {
 		return true
 	}
 	return false
@@ -280,7 +281,7 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 			}
 
 			if member.ProjectAdmin {
-				if activity.Field != nil && *activity.Field == "issue" {
+				if activity.Field != nil && *activity.Field == actField.Issue.String() {
 					continue
 				}
 				sendActivities = append(sendActivities, activity)
@@ -351,7 +352,7 @@ func getProjectNotificationHTML(tx *gorm.DB, activities []dao.ProjectActivity, t
 }
 
 func newIssue(tx *gorm.DB, user *dao.User, act *dao.ProjectActivity) string {
-	if act.Field != nil && *act.Field == "issue" && act.Verb == "created" {
+	if act.Field != nil && *act.Field == actField.Issue.String() && act.Verb == actField.VerbCreated {
 		var template dao.Template
 		if err := tx.Where("name = ?", "issue_activity_new").First(&template).Error; err != nil {
 			return ""

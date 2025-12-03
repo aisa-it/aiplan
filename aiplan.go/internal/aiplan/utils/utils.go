@@ -161,6 +161,39 @@ func SliceToMap[K comparable, V any](in *[]V, f func(*V) K) map[K]V {
 	return out
 }
 
+func MergeSlices[T any](slices ...[]T) []T {
+	lenSl := 0
+	for _, s := range slices {
+		lenSl += len(s)
+	}
+
+	result := make([]T, 0, lenSl)
+	for _, s := range slices {
+		result = append(result, s...)
+	}
+	return result
+}
+
+func ToPtr[T any](b T) *T {
+	return &b
+}
+
+func MergeUniqueSlices[T comparable](slices ...[]T) []T {
+	seen := make(map[T]bool)
+	result := make([]T, 0)
+
+	for _, slice := range slices {
+		for _, item := range slice {
+			if !seen[item] {
+				result = append(result, item)
+				seen[item] = true
+			}
+		}
+	}
+
+	return result
+}
+
 func Filter[T any](seq iter.Seq[T], by func(T) bool) iter.Seq[T] {
 	return func(yield func(T) bool) {
 		for i := range seq {
@@ -237,6 +270,8 @@ func Base64ToUUID(encoded string) (uuid.UUID, error) {
 	if err != nil {
 		return uuid.Nil, err
 	}
+
+	uuid.Must(uuid.FromString("2f4c55e4-d688-4b5d-96c2-09fb6770f3e1"))
 
 	return uuid.FromBytes(data)
 }

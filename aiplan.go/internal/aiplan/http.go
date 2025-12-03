@@ -43,6 +43,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -157,7 +158,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	//slog.Info("Migrate old activities")
 	//activityMigrate(db) //TODO migrate to newActivities
-
 	// Query counter
 	ql := dao.NewQueryLogger()
 	if err := db.Callback().
@@ -186,6 +186,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
+	migration.New(db).Run()
 
 	jobRegistry := cronmanager.JobRegistry{
 		"notification_processing": cronmanager.Job{
@@ -628,6 +629,17 @@ func GenInviteToken(email string) (string, error) {
 	claim := jwt.MapClaims{
 		"email":     email,
 		"timestamp": time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
+	ret, err := token.SignedString([]byte(cfg.SecretKey))
+	return ret, err
+}
+
+func GenTokenChangeMail(email string) (string, error) {
+	claim := jwt.MapClaims{
+		"exp":   jwt.NewNumericDate(time.Now().Add(types.EmailCodeLifeTime)),
+		"iat":   jwt.NewNumericDate(time.Now()),
+		"email": email,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
 	ret, err := token.SignedString([]byte(cfg.SecretKey))

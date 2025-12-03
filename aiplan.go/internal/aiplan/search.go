@@ -55,8 +55,8 @@ func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.
 			Model(&dao.State{}).
 			Joins("LEFT JOIN issues i on states.id = i.state_id and i.project_id in (?) and i.deleted_at is null", projectQuery).
 			Where("states.project_id in (?)", projectQuery).
-			Select("count(i.state_id) as Count, states.id as \"Key\", max(states.name) as state_name").
-			Group(`"Key", states.group`).
+			Select("count(i.state_id) as Count, max(states.id) as \"Key\", max(states.name) as state_name, states.name || states.color as state_ident").
+			Group(`state_ident, states.group`).
 			Order("case when states.group='cancelled' then 5 when states.group='completed' then 4 when states.group='started' then 3 when states.group='unstarted' then 2 when states.group='backlog' then 1 end, state_name")
 
 		if searchParams.OnlyActive {

@@ -13,61 +13,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
-)
-
-const (
-	//New
-	//MEMBER_ADDED            = "member.added"
-	ENTITY_UPDATED_ACTIVITY = "entity.updated"
-	ENTITY_CREATE_ACTIVITY  = "entity.create"
-	ENTITY_DELETE_ACTIVITY  = "entity.delete"
-	ENTITY_ADD_ACTIVITY     = "entity.add"
-	ENTITY_REMOVE_ACTIVITY  = "entity.remove"
-	ENTITY_MOVE_ACTIVITY    = "entity.move"
-
-	FIELD_NAME             = "name"
-	FIELD_TITLE            = "title"
-	FIELD_TEMPLATE         = "template"
-	FIELD_WATCHERS         = "watchers_list"
-	FIELD_ASSIGNEES        = "assignees_list"
-	FIELD_READERS          = "readers_list"
-	FIELD_EDITORS          = "editors_list"
-	FIELD_ISSUES           = "issue_list"
-	FIELD_SPRINT           = "sprint"
-	FIELD_EMOJI            = "emoji"
-	FIELD_PUBLIC           = "public"
-	FIELD_IDENTIFIER       = "identifier"
-	FIELD_PROJECT_LEAD     = "project_lead"
-	FIELD_PRIORITY         = "priority"
-	FIELD_ROLE             = "role"
-	FIELD_DEFAULT_ASSIGNES = "default_assignees"
-	FIELD_DEFAULT_WATCHERS = "default_watchers"
-	FIELD_DESCRIPTION      = "description"
-	FIELD_DESCRIPTION_HTML = "description_html"
-	FIELD_COLOR            = "color"
-	FIELD_TARGET_DATE      = "target_date"
-	FIELD_START_DATE       = "start_date"
-	FIELD_COMPLETED_AT     = "completed_at"
-	FIELD_END_DATE         = "end_date"
-	FIELD_LABEL            = "labels_list"
-	FIELD_AUTH_REQUIRE     = "auth_require"
-	FIELD_FIELDS           = "fields"
-	FIELD_GROUP            = "group"
-	FIELD_STATE            = "state"
-	FIELD_PARENT           = "parent"
-	FIELD_DEFAULT          = "default"
-	FIELD_ESIMATE_POINT    = "estimate_point"
-	FIELD_BLOCKS_LIST      = "blocks_list"
-	FIELD_BLOCKERS_LIST    = "blockers_list"
-	FIELD_URL              = "url"
-	FIELD_COMMENT_HTML     = "comment_html"
-	FIELD_DOC_SORT         = "doc_sort"
-	FIELD_READER_ROLE      = "reader_role"
-	FIELD_EDITOR_ROLE      = "editor_role"
-	FIELD_LINKED           = "linked_issues_ids"
-	FIELD_LOGO             = "logo"
-	FIELD_TOKEN            = "integration_token"
-	FIELD_OWNER            = "owner_id"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 )
 
 // entityUpdateActivity Обновляет существующую сущность и генерирует запись в журнале активности.
@@ -79,7 +25,7 @@ func entityUpdatedActivity[E dao.Entity, A dao.Activity](
 	actor dao.User) ([]A, error) {
 	result := make([]A, 0)
 	for key := range requestedData {
-		if f := getFuncUpdate[E, A](key); f != nil {
+		if f := getFuncUpdate[E, A](actField.ActivityField(key)); f != nil {
 			acts, err := f(tracker, requestedData, currentInstance, entity, actor)
 			if err != nil {
 				return nil, ErrStack.TrackErrorStack(err)
@@ -122,7 +68,7 @@ func entityCreateActivity[E dao.Entity, A dao.Activity](
 	if e, ok := requestedData["entityParent"].(E); ok {
 		entity = e
 	}
-	verb := "created"
+	verb := actField.VerbCreated
 	if e, ok := requestedData["custom_verb"].(string); ok {
 		verb = e
 	}
@@ -174,7 +120,7 @@ func entityDeleteActivity[E dao.Entity, A dao.Activity](
 
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenID(),
-		Verb:          "deleted",
+		Verb:          actField.VerbDeleted,
 		Field:         strToPointer(entityI.GetEntityType()),
 		OldValue:      strToPointer(oldVal),
 		Comment:       fmt.Sprintf("%s deleted %s: %s", actor.Email, entityI.GetEntityType(), oldVal),
@@ -237,7 +183,7 @@ func entityAddActivity[E dao.Entity, A dao.Activity](
 
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenID(),
-		Verb:          "added",
+		Verb:          actField.VerbAdded,
 		Field:         strToPointer(key),
 		OldValue:      nil,
 		NewValue:      newV,
@@ -300,7 +246,7 @@ func entityRemoveActivity[E dao.Entity, A dao.Activity](
 
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenID(),
-		Verb:          "removed",
+		Verb:          actField.VerbRemoved,
 		Field:         strToPointer(key),
 		OldValue:      &oldV,
 		Comment:       fmt.Sprintf("%s remove %s: %s", actor.Email, key, oldV),
@@ -379,7 +325,7 @@ func entityMoveActivity[E dao.Entity, A dao.Activity](
 		entityFrom = v.(string)
 	}
 
-	verb := "move"
+	verb := actField.VerbMove
 	if v, ok := requestedData["field_move"]; ok {
 		verb = fmt.Sprintf("move_%s", v.(string))
 	}

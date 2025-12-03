@@ -1,9 +1,11 @@
 package business
 
 import (
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"log/slog"
 	"strings"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -44,7 +46,7 @@ func (b *Business) DeleteProject() error {
 		return apierrors.ErrDeleteProjectForbidden
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](b.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, *b.projectCtx.project, b.projectCtx.user)
+	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](b.tracker, activities.EntityDeleteActivity, nil, nil, *b.projectCtx.project, b.projectCtx.user)
 	if err != nil {
 		errStack.GetError(nil, err)
 		return err
@@ -212,7 +214,7 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 	}
 
 	if err := b.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](b.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, *requestedMember, actor.Member)
+		err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](b.tracker, activities.EntityRemoveActivity, data, nil, *requestedMember, actor.Member)
 		if err != nil {
 			errStack.GetError(nil, err)
 			return err
