@@ -12,7 +12,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
@@ -618,23 +617,15 @@ func activityMigrate(db *gorm.DB) {
 	})
 }
 
-func getLastActivityFields[A dao.Activity](tx *gorm.DB, userId string) map[string]struct{} {
-	result := make(map[string]struct{})
-
+func getLastActivityFields[A dao.Activity](tx *gorm.DB, userId string, fields ...string) bool {
 	var act []A
 	if err := tx.
 		Where("actor_id = ?", userId).
 		Where("created_at > NOW() - INTERVAL '2 seconds'").
+		Where("field IN (?)", fields).
 		Find(&act).Error; err != nil {
-		return result
+		return false
 	}
 
-	fields := utils.SliceToSlice(&act, func(t *A) string {
-		if a, ok := any(t).(dao.ActivityI); ok {
-			return a.GetField()
-		}
-		return ""
-	})
-
-	return utils.SliceToSet(fields)
+	return len(act) > 0
 }

@@ -371,9 +371,11 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 	var editorListOk, readerListOk, watcherListOk bool
 
-	fieldChange := getLastActivityFields[dao.DocActivity](s.db.Where("doc_id = ?", doc.ID), user.ID)
-
-	if utils.CheckInSet(fieldChange, fields...) {
+	if getLastActivityFields[dao.DocActivity](
+		s.db.Where("doc_id = ?", doc.ID),
+		user.ID,
+		utils.SliceToSlice(&fields, func(t *string) string { return actField.ReqFieldMapping(*t) })...,
+	) {
 		return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 	}
 

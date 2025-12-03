@@ -1178,10 +1178,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			}
 		}
 
-		fieldChange := getLastActivityFields[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID)
-		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return k })
-
-		if utils.CheckInSet(fieldChange, dataField...) {
+		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return actField.ReqFieldMapping(k) })
+		if getLastActivityFields[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
 			return apierrors.ErrUpdateTooFrequent
 		}
 
