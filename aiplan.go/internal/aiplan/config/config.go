@@ -75,6 +75,13 @@ type Config struct {
 	SSHPort             int    `env:"SSH_PORT"`
 	SSHHostKeyPath      string `env:"SSH_HOST_KEY_PATH"`
 	SSHRateLimitEnabled bool   `env:"SSH_RATE_LIMIT_ENABLED"`
+
+	// LDAP configuration
+	LDAPServerURL    *url.URL `env:"LDAP_URL"`
+	LDAPBaseDN       string   `env:"LDAP_BASE_DN"`
+	LDAPBindUser     string   `env:"LDAP_BIND_DN"`
+	LDAPBindPassword string   `env:"LDAP_BIND_PASSWORD"`
+	LDAPFilter       string   `env:"LDAP_FILTER"`
 }
 
 // ReadConfig загружает конфигурацию приложения из переменных окружения и выполняет валидацию. Возвращает структуру Config с загруженными параметрами. Если WebURL не задан, приложение завершает работу с ошибкой.  Обязательные переменные валидируются, типы данных преобразуются из строк, а секретные значения маскируются в логах.  Также обрабатываются ошибки при парсинге URL и предоставляются значения по умолчанию для некоторых параметров. Ограничение значений для некоторых параметров (например, NotificationsSleep, EmailWorkers) также выполняется в этой функции.  Возвращает указатель на структуру Config, заполненную данными из переменных окружения и обработанную в соответствии с заданными правилами.
@@ -96,12 +103,15 @@ func ReadConfig() *Config {
 	if config.EmailWorkers <= 0 {
 		config.EmailWorkers = 5
 	}
+	if config.LDAPServerURL != nil && config.LDAPFilter == "" {
+		config.LDAPFilter = "(&(uniqueIdentifier={email}))"
+	}
 
 	return config
 }
 
 // Присваивает полям в переданной структуре значения переменных. Название переменной для каждого поля лежит в теге этого поля.
-func envConfig(key string, s interface{}) {
+func envConfig(key string, s any) {
 	v := reflect.ValueOf(s).Elem()
 	typeParam := v.Type()
 	for i := 0; i < v.NumField(); i++ {
