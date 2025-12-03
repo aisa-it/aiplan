@@ -24,6 +24,7 @@ func New(db *gorm.DB) *Migration {
 		db: db,
 		sources: []IMigration{
 			NewMigrateDocAccessRule(db),
+			NewMigrateActivityFieldsUpdate(db),
 		},
 	}
 }

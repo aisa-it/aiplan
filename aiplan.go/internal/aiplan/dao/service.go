@@ -15,15 +15,11 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-)
-
-const (
-	ACTIVITY_UPDATED = "updated"
-	ACTIVITY_REMOVED = "removed"
-	ACTIVITY_ADDED   = "added"
 )
 
 type Entity interface {
@@ -88,21 +84,21 @@ type TemplateActivity struct {
 }
 
 // Создает новую активность шаблона.
-func NewTemplateActivity(verb string, field *string, oldVal *string, newVal string, newId, oldId *string, actor *User, valToComment string) TemplateActivity {
+func NewTemplateActivity(verb string, field actField.ActivityField, oldVal *string, newVal string, newId, oldId *string, actor *User, valToComment string) TemplateActivity {
 	var comment string
 	switch verb {
-	case ACTIVITY_UPDATED:
-		comment = fmt.Sprintf("%s updated %s to %s", actor.Email, strings.Replace(*field, "_", " ", 1), valToComment)
-	case ACTIVITY_REMOVED:
-		comment = fmt.Sprintf("%s removed from %s - %s", actor.Email, strings.Replace(*field, "_", " ", 1), valToComment)
-	case ACTIVITY_ADDED:
-		comment = fmt.Sprintf("%s added to %s - %s", actor.Email, strings.Replace(*field, "_", " ", 1), valToComment)
+	case actField.VerbUpdated:
+		comment = fmt.Sprintf("%s updated %s to %s", actor.Email, strings.Replace(field.String(), "_", " ", 1), valToComment)
+	case actField.VerbRemoved:
+		comment = fmt.Sprintf("%s removed from %s - %s", actor.Email, strings.Replace(field.String(), "_", " ", 1), valToComment)
+	case actField.VerbAdded:
+		comment = fmt.Sprintf("%s added to %s - %s", actor.Email, strings.Replace(field.String(), "_", " ", 1), valToComment)
 	}
 
 	return TemplateActivity{
 		IdActivity:    GenID(),
 		Verb:          verb,
-		Field:         field,
+		Field:         utils.ToPtr(field.String()),
 		OldValue:      oldVal,
 		NewValue:      newVal,
 		Comment:       comment,
