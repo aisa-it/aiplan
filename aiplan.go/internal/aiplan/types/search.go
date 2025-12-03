@@ -1,6 +1,7 @@
 package types
 
 import (
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/labstack/echo/v4"
 )
 
@@ -21,8 +22,28 @@ type SearchParams struct {
 	Filters IssuesListFilters
 }
 
+var validSortFields = map[string]struct{}{
+	"id":                  {},
+	"created_at":          {},
+	"updated_at":          {},
+	"name":                {},
+	"priority":            {},
+	"target_date":         {},
+	"sequence_id":         {},
+	"state":               {},
+	"labels":              {},
+	"sub_issues_count":    {},
+	"link_count":          {},
+	"attachment_count":    {},
+	"linked_issues_count": {},
+	"assignees":           {},
+	"watchers":            {},
+	"author":              {},
+	"search_rank":         {},
+}
+
 func ParseSearchParams(c echo.Context) (*SearchParams, error) {
-	sp := &SearchParams{OrderByParam: "sequence_id"}
+	sp := &SearchParams{}
 	if err := echo.QueryParamsBinder(c).
 		Bool("show_sub_issues", &sp.ShowSubIssues).
 		Bool("draft", &sp.Draft).
@@ -38,6 +59,18 @@ func ParseSearchParams(c echo.Context) (*SearchParams, error) {
 		Bool("stream", &sp.Stream).
 		BindError(); err != nil {
 		return nil, err
+	}
+
+	if sp.OrderByParam == "" {
+		if sp.Filters.SearchQuery == "" {
+			sp.OrderByParam = "sequence_id"
+		} else {
+			sp.OrderByParam = "search_rank"
+		}
+	}
+
+	if _, ok := validSortFields[sp.OrderByParam]; !ok {
+		return nil, apierrors.ErrUnsupportedSortParam.WithFormattedMessage(sp.OrderByParam)
 	}
 
 	if sp.Limit == 0 {
