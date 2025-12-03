@@ -116,7 +116,7 @@ func entityFieldUpdate[E dao.Entity, A dao.Activity](
 		return result, nil
 	}
 
-	templateActivity := dao.NewTemplateActivity(dao.ACTIVITY_UPDATED, field, old, newV, newIdentifier, oldIdentifier, &actor, valToComment)
+	templateActivity := dao.NewTemplateActivity(actField.VerbUpdated, field, old, newV, newIdentifier, oldIdentifier, &actor, valToComment)
 
 	if newAct, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 		return nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment)
@@ -181,7 +181,7 @@ func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 		oldV := entityMap[id.String()].GetString()
 		oldId := id.String()
-		templateActivity := dao.NewTemplateActivity(dao.ACTIVITY_REMOVED, field, &oldV, "", nil, &oldId, &actor, oldV)
+		templateActivity := dao.NewTemplateActivity(actField.VerbRemoved, field, &oldV, "", nil, &oldId, &actor, oldV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -194,7 +194,7 @@ func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 		newV := entityMap[id.String()].GetString()
 		newId := id.String()
-		templateActivity := dao.NewTemplateActivity(dao.ACTIVITY_ADDED, field, nil, newV, &newId, nil, &actor, newV)
+		templateActivity := dao.NewTemplateActivity(actField.VerbAdded, field, nil, newV, &newId, nil, &actor, newV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -269,7 +269,7 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 		oldV := oldIEntity.GetString()
 
 		oldId := id.String()
-		templateActivity := dao.NewTemplateActivity(dao.ACTIVITY_UPDATED, sourceField, &oldV, "", nil, &oldId, &actor, oldV)
+		templateActivity := dao.NewTemplateActivity(actField.VerbUpdated, sourceField, &oldV, "", nil, &oldId, &actor, oldV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -279,7 +279,7 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 		oldVTarget := ie.GetString()
 		idE := ie.GetId()
-		templateActivity = dao.NewTemplateActivity(dao.ACTIVITY_UPDATED, targetField, &oldVTarget, "", nil, &idE, &actor, oldVTarget)
+		templateActivity = dao.NewTemplateActivity(actField.VerbUpdated, targetField, &oldVTarget, "", nil, &idE, &actor, oldVTarget)
 		if act, err := CreateActivity[E, A](oldEntity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -295,7 +295,7 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 		newV := newIEntity.GetString()
 
 		newId := id.String()
-		templateActivity := dao.NewTemplateActivity(dao.ACTIVITY_UPDATED, sourceField, nil, newV, &newId, nil, &actor, newV)
+		templateActivity := dao.NewTemplateActivity(actField.VerbUpdated, sourceField, nil, newV, &newId, nil, &actor, newV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -305,7 +305,7 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 		newV = ie.GetString()
 		idE := ie.GetId()
-		templateActivity = dao.NewTemplateActivity(dao.ACTIVITY_UPDATED, targetField, nil, newV, &idE, nil, &actor, newV)
+		templateActivity = dao.NewTemplateActivity(actField.VerbUpdated, targetField, nil, newV, &idE, nil, &actor, newV)
 		if act, err := CreateActivity[E, A](newEntity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue

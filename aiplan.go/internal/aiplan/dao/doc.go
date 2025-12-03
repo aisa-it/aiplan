@@ -147,7 +147,7 @@ func (d Doc) GetString() string {
 
 // Возвращает тип сущности документа (doc). Используется для определения типа данных при работе с базой данных.
 func (d Doc) GetEntityType() string {
-	return actField.FieldDoc.String()
+	return actField.Doc.String()
 }
 
 func (d Doc) GetWorkspaceId() string {
@@ -463,7 +463,7 @@ func (dc DocComment) GetString() string {
 
 // Возвращает тип сущности Doc (doc). Используется для представления сущности Doc в API.
 func (dс DocComment) GetEntityType() string {
-	return actField.FieldComment.String()
+	return actField.Comment.String()
 }
 
 func (dc DocComment) GetWorkspaceId() string {
@@ -886,7 +886,7 @@ func (da DocAttachment) GetString() string {
 
 // Возвращает тип сущности Doc (doc). Используется для представления сущности Doc в API.
 func (da DocAttachment) GetEntityType() string {
-	return actField.FieldAttachment.String()
+	return actField.Attachment.String()
 }
 
 func (da DocAttachment) GetWorkspaceId() string {

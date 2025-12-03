@@ -21,6 +21,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -531,12 +532,12 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			requestMap["parent_title"] = targetProject.Identifier
 			currentMap["parent_title"] = srcProject.Identifier
 
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, tracker.ENTITY_MOVE_ACTIVITY, requestMap, currentMap, issue, &user)
+			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_ADD_ACTIVITY, nil, nil, issue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -545,7 +546,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			delIssue.Project = &srcProject
 			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_REMOVE_ACTIVITY, requestMap, nil, delIssue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -556,7 +557,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 		for _, issue := range newIssues {
 			data := map[string]interface{}{"custom_verb": "copied"}
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, data, nil, issue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, data, nil, issue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -988,12 +989,12 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			requestMap["parent_title"] = targetProject.Identifier
 			currentMap["parent_title"] = srcProject.Identifier
 
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, tracker.ENTITY_MOVE_ACTIVITY, requestMap, currentMap, issue, &user)
+			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_ADD_ACTIVITY, nil, nil, issue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -1002,7 +1003,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			delIssue.Project = &srcProject
 			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_REMOVE_ACTIVITY, requestMap, nil, delIssue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -1012,7 +1013,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		s.db.Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, issue, &user)
+			err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}

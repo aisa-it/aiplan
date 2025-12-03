@@ -227,7 +227,7 @@ func (pa *projectActivity) skip(activity dao.ProjectActivity) bool {
 	if activity.Verb != "created" {
 		return true
 	}
-	if activity.Field != nil && *activity.Field != actField.FieldIssue.String() {
+	if activity.Field != nil && *activity.Field != actField.Issue.String() {
 		return true
 	}
 	return false
@@ -281,7 +281,7 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 			}
 
 			if member.ProjectAdmin {
-				if activity.Field != nil && *activity.Field == actField.FieldIssue.String() {
+				if activity.Field != nil && *activity.Field == actField.Issue.String() {
 					continue
 				}
 				sendActivities = append(sendActivities, activity)
@@ -352,7 +352,7 @@ func getProjectNotificationHTML(tx *gorm.DB, activities []dao.ProjectActivity, t
 }
 
 func newIssue(tx *gorm.DB, user *dao.User, act *dao.ProjectActivity) string {
-	if act.Field != nil && *act.Field == actField.FieldIssue.String() && act.Verb == "created" {
+	if act.Field != nil && *act.Field == actField.Issue.String() && act.Verb == "created" {
 		var template dao.Template
 		if err := tx.Where("name = ?", "issue_activity_new").First(&template).Error; err != nil {
 			return ""

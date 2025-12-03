@@ -29,23 +29,23 @@ import (
 )
 
 var fieldsTranslation map[string]string = map[string]string{
-	actField.FieldName.String():          "Название",
-	actField.FieldParent.String():        "Родитель",
-	actField.FieldPriority.String():      "Приоритет",
-	actField.FieldStatus.String():        "Статус",
-	actField.FieldDescription.String():   "Описание",
-	actField.FieldTargetDate.String():    "Срок исполнения",
-	actField.FieldStartDate.String():     "Дата начала",
-	actField.FieldCompletedAt.String():   "Дата завершения",
-	actField.FieldLabel.String():         "Теги",
-	actField.FieldAssignees.String():     "Исполнители",
-	actField.FieldBlocking.String():      "Блокирует",
-	actField.FieldBlocks.String():        "Заблокирована",
-	actField.FieldEstimatePoint.String(): "Оценки",
-	actField.FieldSubIssue.String():      "Подзадачи",
-	actField.FieldIdentifier.String():    "Идентификатор",
-	actField.FieldEmoj.String():          "Emoji",
-	actField.FieldTitle.String():         "Название",
+	actField.Name.String():          "Название",
+	actField.Parent.String():        "Родитель",
+	actField.Priority.String():      "Приоритет",
+	actField.Status.String():        "Статус",
+	actField.Description.String():   "Описание",
+	actField.TargetDate.String():    "Срок исполнения",
+	actField.StartDate.String():     "Дата начала",
+	actField.CompletedAt.String():   "Дата завершения",
+	actField.Label.String():         "Теги",
+	actField.Assignees.String():     "Исполнители",
+	actField.Blocking.String():      "Блокирует",
+	actField.Blocks.String():        "Заблокирована",
+	actField.EstimatePoint.String(): "Оценки",
+	actField.SubIssue.String():      "Подзадачи",
+	actField.Identifier.String():    "Идентификатор",
+	actField.Emoj.String():          "Emoji",
+	actField.Title.String():         "Название",
 }
 
 var priorityTranslation map[string]string = map[string]string{
@@ -187,7 +187,7 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 
 						if act.Issue != nil {
 							var identifier uuid.UUID
-							if act.Field != nil && *act.Field == actField.FieldComment.String() && act.NewIdentifier != nil {
+							if act.Field != nil && *act.Field == actField.Comment.String() && act.NewIdentifier != nil {
 								identifier = uuid.FromStringOrNil(*act.NewIdentifier)
 							}
 							err := bl.CreateIssueComment(*act.Issue, user, update.Message.Text, identifier, true)
@@ -204,7 +204,7 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 
 						if act.Doc != nil {
 							var identifier uuid.NullUUID
-							if act.Field != nil && *act.Field == actField.FieldComment.String() && act.NewIdentifier != nil {
+							if act.Field != nil && *act.Field == actField.Comment.String() && act.NewIdentifier != nil {
 								if v, err := uuid.FromString(*act.NewIdentifier); err == nil {
 									identifier = uuid.NullUUID{UUID: v, Valid: true}
 								}

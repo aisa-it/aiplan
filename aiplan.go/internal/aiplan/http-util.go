@@ -12,7 +12,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
@@ -616,27 +615,4 @@ func activityMigrate(db *gorm.DB) {
 
 		return nil
 	})
-}
-
-func activityFieldUpdate(db *gorm.DB) {
-	updateInBatches[dao.IssueActivity](db, "state", "status", "actIssueState")
-	updateInBatches[dao.ProjectActivity](db, "state", "status", "actProjectState")
-	updateInBatches[dao.IssueActivity](db, "labels", "label", "actIssueLabel")
-	updateInBatches[dao.ProjectActivity](db, "labels", "label", "actProjectLabel")
-}
-
-func updateInBatches[T dao.ActivityI](db *gorm.DB, oldValue, newValue, actionName string) {
-	var activities []T
-	if err := db.Where("field = ?", oldValue).FindInBatches(&activities, 5, func(tx *gorm.DB, batch int) error {
-		result := tx.Model(new(T)).Where("id IN ?", utils.SliceToSlice(&activities, func(t *T) string {
-			return (*t).GetId()
-		})).Update("field", newValue)
-		if result.Error != nil {
-			return result.Error
-		}
-		slog.Info("activityFieldUpdate", "action", actionName, "batch", batch, "rows", result.RowsAffected)
-		return nil
-	}).Error; err != nil {
-		slog.Error("activityFieldUpdate", "action", actionName, "error", err.Error())
-	}
 }

@@ -22,6 +22,7 @@ import (
 	"net/url"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"github.com/gofrs/uuid"
 
@@ -240,7 +241,7 @@ func (s *Services) createForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	err = tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, *form, user)
+	err = tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, activities.EntityCreateActivity, nil, nil, *form, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -333,7 +334,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	oldForm["end_date"] = currentEndDate
 	oldForm["end_date_activity_val"] = currentEndDate
 
-	err = tracker.TrackActivity[dao.Form, dao.FormActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, data, oldForm, form, user)
+	err = tracker.TrackActivity[dao.Form, dao.FormActivity](s.tracker, activities.EntityUpdatedActivity, data, oldForm, form, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -358,7 +359,7 @@ func (s *Services) deleteForm(c echo.Context) error {
 	form := c.(FormContext).Form
 	user := c.(FormContext).User
 	data := map[string]interface{}{"old_title": form.Title}
-	err := tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, data, nil, form, user)
+	err := tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, data, nil, form, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

@@ -57,13 +57,13 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 		switch activity.Verb {
 		case "created":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldProject:
+			case actField.Project:
 				msg.Text = act.Title("создал(-a) проект в пространстве")
 				msg.Text += Stelegramf("[%s](%s)", activity.NewProject.Name, activity.NewProject.URL.String())
-			case actField.FieldDoc:
+			case actField.Doc:
 				msg.Text = act.Title("создал(-a) корневой документ в пространстве")
 				msg.Text += Stelegramf("[%s](%s)", activity.NewDoc.Title, activity.NewDoc.URL.String())
-			case actField.FieldForm:
+			case actField.Form:
 				msg.Text = act.Title("создал(-a) форму в пространстве")
 				msg.Text += Stelegramf("[%s](%s)", activity.NewForm.Title, activity.NewForm.URL.String())
 
@@ -72,29 +72,29 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 			}
 		case "updated":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldDescription:
+			case actField.Description:
 				msg.Text = act.Title("изменил(-a) в пространстве")
 				msg.Text += Stelegramf("*%s*:", fieldsTranslation[*activity.Field])
 				msg.Text += Stelegramf("```\n%s```",
 					HtmlToTg(activity.NewValue),
 				)
-			case actField.FieldToken:
+			case actField.Token:
 				msg.Text = act.Title("изменил(-a) в пространстве")
 				msg.Text += Stelegramf("*Токен для работы интеграций*")
-			case actField.FieldWorkspaceOwner:
+			case actField.WorkspaceOwner:
 				msg.Text = act.Title("изменил(-a) владельца пространства")
 				msg.Text += Stelegramf("~%s~ %s", getUserName(activity.OldOwner), getUserName(activity.NewOwner))
-			case actField.FieldName:
+			case actField.Name:
 				var oldV string
 				if activity.OldValue != nil {
 					oldV = *activity.OldValue
 				}
 				msg.Text = act.Title("изменил(-a) в пространстве")
 				msg.Text += Stelegramf("*Имя пространства*: ~%s~ %s", oldV, activity.NewValue)
-			case actField.FieldLogo:
+			case actField.Logo:
 				msg.Text = act.Title("изменил(-a) в пространстве")
 				msg.Text += Stelegramf("*Логотип пространства*")
-			case actField.FieldRole:
+			case actField.Role:
 				msg.Text = act.Title("изменил(-a) роль пользователя в пространстве")
 				msg.Text += Stelegramf("%s\n", getUserName(activity.NewRole))
 				msg.Text += Stelegramf("*Роль*: ~%s~ %s", memberRoleStr(fmt.Sprint(*activity.OldValue)), memberRoleStr(activity.NewValue))
@@ -103,11 +103,11 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 			}
 		case "added":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldMember:
+			case actField.Member:
 				msg.Text = act.Title("добавил(-a) участника в пространство")
 				msg.Text += Stelegramf("%s\n", getUserName(activity.NewMember))
 				msg.Text += Stelegramf("*Роль:* %s", memberRoleStr(activity.NewValue))
-			case actField.FieldIntegration:
+			case actField.Integration:
 				msg.Text = act.Title("добавил(-a) интеграцию в пространство")
 				msg.Text += Stelegramf("%s\n", activity.NewValue)
 			default:
@@ -115,10 +115,10 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 			}
 		case "removed":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldMember:
+			case actField.Member:
 				msg.Text = act.Title("убрал(-a) участника из пространства")
 				msg.Text += Stelegramf("%s", getUserName(activity.OldMember))
-			case actField.FieldIntegration:
+			case actField.Integration:
 				msg.Text = act.Title("убрал(-a) интеграцию из пространства")
 				if activity.OldValue != nil {
 					msg.Text += Stelegramf("%s\n", *activity.OldValue)
@@ -130,11 +130,11 @@ func (tnw *TgNotifyWorkspace) LogActivity(activity dao.WorkspaceActivity) {
 			msg.Text = act.Title("удалил(-a) из пространства")
 
 			switch actField.ActivityField(*activity.Field) {
-			case actField.FieldForm:
+			case actField.Form:
 				msg.Text += Stelegramf("*Форму*: ~%s~", fmt.Sprint(*activity.OldValue))
-			case actField.FieldDoc:
+			case actField.Doc:
 				msg.Text += Stelegramf("*Корневой документ*: ~%s~", fmt.Sprint(*activity.OldValue))
-			case actField.FieldProject:
+			case actField.Project:
 				msg.Text += Stelegramf("*Проект*: ~%s~", fmt.Sprint(*activity.OldValue))
 			default:
 				return

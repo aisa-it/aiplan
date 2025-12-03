@@ -233,7 +233,7 @@ func (s *Services) createRootDoc(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.Doc, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, *doc, user)
+	err = tracker.TrackActivity[dao.Doc, dao.WorkspaceActivity](s.tracker, actField.EntityCreateActivity, nil, nil, *doc, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -322,7 +322,7 @@ func (s *Services) createDoc(c echo.Context) error {
 	reqMap := make(map[string]interface{})
 	reqMap["entityParent"] = parentDoc
 
-	err = tracker.TrackActivity[dao.Doc, dao.DocActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, reqMap, nil, *doc, user)
+	err = tracker.TrackActivity[dao.Doc, dao.DocActivity](s.tracker, actField.EntityCreateActivity, reqMap, nil, *doc, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -597,7 +597,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 			return *t
 		})
 	}
-	err = tracker.TrackActivity[dao.Doc, dao.DocActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newDocMap, oldDocMap, doc, user)
+	err = tracker.TrackActivity[dao.Doc, dao.DocActivity](s.tracker, actField.EntityUpdatedActivity, newDocMap, oldDocMap, doc, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -656,7 +656,7 @@ func (s *Services) deleteDoc(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrDocDeleteHasChild)
 		}
 		data := make(map[string]interface{})
-		if err := createDocActivity(s.tracker, tracker.ENTITY_DELETE_ACTIVITY, data, nil, doc, user, nil); err != nil {
+		if err := createDocActivity(s.tracker, actField.EntityDeleteActivity, data, nil, doc, user, nil); err != nil {
 			errStack.GetError(c, err)
 			return err
 		}
@@ -815,13 +815,13 @@ func (s *Services) moveDoc(c echo.Context) error {
 
 				switch v.Type {
 				case ActionAdd, ActionDelete:
-					if err := createDocActivity(s.tracker, tracker.ENTITY_MOVE_ACTIVITY, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
+					if err := createDocActivity(s.tracker, actField.EntityMoveActivity, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
 						errStack.GetError(c, err)
 					}
-					if err := createDocActivity(s.tracker, tracker.ENTITY_ADD_ACTIVITY, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
+					if err := createDocActivity(s.tracker, actField.EntityAddActivity, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
 						errStack.GetError(c, err)
 					}
-					if err := createDocActivity(s.tracker, tracker.ENTITY_REMOVE_ACTIVITY, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
+					if err := createDocActivity(s.tracker, actField.EntityRemoveActivity, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
 						errStack.GetError(c, err)
 					}
 
@@ -829,11 +829,11 @@ func (s *Services) moveDoc(c echo.Context) error {
 					newDocMap["doc_sort"] = "re-sorting"
 					oldDocMap["doc_sort"] = ""
 					if docTmp.ParentDoc != nil {
-						if err := createDocActivity(s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newDocMap, oldDocMap, *docTmp.ParentDoc, user, nil); err != nil {
+						if err := createDocActivity(s.tracker, actField.EntityUpdatedActivity, newDocMap, oldDocMap, *docTmp.ParentDoc, user, nil); err != nil {
 							errStack.GetError(c, err)
 						}
 					} else {
-						if err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newDocMap, oldDocMap, c.(DocContext).Workspace, user); err != nil {
+						if err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, actField.EntityUpdatedActivity, newDocMap, oldDocMap, c.(DocContext).Workspace, user); err != nil {
 							errStack.GetError(c, err)
 						}
 					}
@@ -1141,7 +1141,7 @@ func (s *Services) createDocComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, *comment, user)
+	err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityCreateActivity, nil, nil, *comment, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1279,11 +1279,11 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	}
 	newMap := StructToJSONMap(comment)
 	newMap["updateScopeId"] = commentId
-	newMap["field_log"] = actField.FieldComment
+	newMap["field_log"] = actField.Comment
 
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = commentId
-	err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, *comment, &user)
+	err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, *comment, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1330,7 +1330,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, comment, &user)
+		err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, comment, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
@@ -1573,7 +1573,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, docAttachment, &user)
+	err = tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, actField.EntityCreateActivity, nil, nil, docAttachment, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1618,7 +1618,7 @@ func (s *Services) deleteDocAttachment(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, attachment, user)
+		err := tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, attachment, user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
@@ -1979,7 +1979,7 @@ func (s *Services) updateDocFromHistory(c echo.Context) error {
 
 	newDocMap := StructToJSONMap(doc)
 
-	err := tracker.TrackActivity[dao.Doc, dao.DocActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newDocMap, oldDocMap, doc, user)
+	err := tracker.TrackActivity[dao.Doc, dao.DocActivity](s.tracker, actField.EntityUpdatedActivity, newDocMap, oldDocMap, doc, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2216,25 +2216,25 @@ func createDocActivity(track *tracker.ActivitiesTracker,
 
 	switch activityType {
 	case
-		tracker.ENTITY_UPDATED_ACTIVITY,
-		tracker.ENTITY_MOVE_ACTIVITY:
+		actField.EntityUpdatedActivity,
+		actField.EntityMoveActivity:
 		err = createToDocActivity(track, activityType, requestedData, currentInstance, doc, actor)
 	case
-		tracker.ENTITY_ADD_ACTIVITY:
+		actField.EntityAddActivity:
 		if changes != nil && changes.ToDoc != nil {
 			err = createToDocActivity(track, activityType, requestedData, currentInstance, doc, actor)
 		} else {
 			err = createToWorkspaceActivity(track, activityType, requestedData, currentInstance, doc, actor)
 		}
 	case
-		tracker.ENTITY_REMOVE_ACTIVITY:
+		actField.EntityRemoveActivity:
 		if changes != nil && changes.FromDoc != nil {
 			err = createToDocActivity(track, activityType, requestedData, currentInstance, doc, actor)
 		} else {
 			err = createToWorkspaceActivity(track, activityType, requestedData, currentInstance, doc, actor)
 		}
 	case
-		tracker.ENTITY_DELETE_ACTIVITY:
+		actField.EntityDeleteActivity:
 		if doc.ParentDoc != nil {
 			requestedData["old_title"] = doc.Title
 			err = createToDocActivity(track, activityType, requestedData, currentInstance, *doc.ParentDoc, actor)
