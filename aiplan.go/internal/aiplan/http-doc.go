@@ -2073,8 +2073,8 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 			case "title":
 				_ = CompareAndAddFields(&docCopy.Title, &req.Title, field, &resFields)
 			case "content":
-				if doc.Content.Body != req.Content.Body {
-					doc.Content = req.Content
+				if docCopy.Content.Body != req.Content.Body {
+					docCopy.Content = req.Content
 					resFields = append(resFields, field)
 				}
 			case "reader_role":
