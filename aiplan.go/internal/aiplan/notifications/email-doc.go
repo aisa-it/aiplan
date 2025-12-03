@@ -9,6 +9,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"gorm.io/gorm"
 )
 
@@ -37,9 +38,7 @@ func (e *emailNotifyDoc) Process() {
 		Joins("Workspace").
 		Preload("Doc.ParentDoc").
 		Preload("Doc.Author").
-		Preload("Doc.Editors").
-		Preload("Doc.Readers").
-		Preload("Doc.Watchers").
+		Preload("Doc.AccessRules").
 		Order("doc_activities.created_at").
 		Where("doc_activities.notified = ?", false).
 		Limit(100).
@@ -188,7 +187,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 	}
 
 	for _, author := range da.commentActivityUser {
-		field := "comment"
+		field := actField.Comment.String()
 
 		if len(author.activities) == 0 {
 			continue
@@ -279,6 +278,9 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 
 // Для пропуска активностей
 func (ia *docActivity) skip(activity dao.DocActivity) bool {
+	if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbCreated && activity.NewDoc == nil {
+		return true
+	}
 	return false
 }
 
@@ -354,7 +356,7 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 
 	ia.activities = append(ia.activities, activity)
 
-	if activity.Field != nil && *activity.Field == "comment" && activity.NewIdentifier != nil {
+	if activity.Field != nil && *activity.Field == actField.Comment.String() && activity.NewIdentifier != nil {
 		if activity.Verb == "created" || activity.Verb == "updated" {
 			//TODO
 			var arr []dao.DocActivity
@@ -371,14 +373,13 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 
 func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
 	var newDocCreate *dao.Doc
-	if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "created" {
+	if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbCreated && activity.NewDoc != nil {
+
 		if tx.
 			Joins("Author").
 			Joins("Workspace").
 			Joins("ParentDoc").
-			Preload("Readers").
-			Preload("Editors").
-			Preload("Watchers").
+			Preload("AccessRules.Member").
 			Where("docs.id = ?", activity.NewDoc.ID).First(&newDocCreate).Error != nil {
 		}
 	}
@@ -410,7 +411,10 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 	commentCount := 0
 	for _, activity := range activities {
 		// doc deletion
-		if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "deleted" {
+		activity.Doc.AfterFind(tx)
+		doc.AfterFind(tx)
+
+		if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbDeleted {
 			var template dao.Template
 			if err := tx.Where("name = ?", "doc_activity_delete").First(&template).Error; err != nil {
 				return "", "", err
@@ -438,12 +442,12 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		}
 
 		// new doc
-		if activity.Verb == "created" {
+		if activity.Verb == actField.VerbCreated {
 			result += gocGetEmailHtml(tx, targetUser, &activity)
 		}
 
 		// comment
-		if *activity.Field == "comment" {
+		if *activity.Field == actField.Comment.String() {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_activity_comment").First(&template).Error; err != nil {
 				return "", "", err
@@ -451,9 +455,9 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			newComment := false
 			deleted := false
 			switch activity.Verb {
-			case "created":
+			case actField.VerbCreated:
 				newComment = true
-			case "deleted":
+			case actField.VerbDeleted:
 				deleted = true
 			}
 
@@ -489,7 +493,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		}
 		field := *activity.Field
 
-		if field == "description" {
+		if field == actField.Description.String() {
 			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
@@ -499,7 +503,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			activity.OldValue = &oldValue
 			activity.NewValue = newValue
 		}
-		if field == "doc" && activity.Verb == "created" {
+		if field == actField.Doc.String() && activity.Verb == actField.VerbCreated {
 			continue
 		}
 
@@ -590,11 +594,11 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 }
 
 func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
-	if act.Field != nil && *act.Field != "doc" {
+	if act.Field != nil && *act.Field != actField.Doc.String() {
 		return ""
 	}
 
-	if act.Verb == "deleted" {
+	if act.Verb == actField.VerbDeleted {
 		var template dao.Template
 		if err := tx.Where("name = ?", "doc_activity_delete").First(&template).Error; err != nil {
 			return ""
@@ -620,7 +624,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 		return buf.String()
 	}
 
-	if act.Verb != "deleted" {
+	if act.Verb != actField.VerbDeleted {
 		var template dao.Template
 		if err := tx.Where("name = ?", "doc_activity_new").First(&template).Error; err != nil {
 			return ""
@@ -639,9 +643,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 			Joins("Author").
 			Joins("Workspace").
 			Joins("ParentDoc").
-			Preload("Readers").
-			Preload("Editors").
-			Preload("Watchers").
+			Preload("AccessRules").
 			Where("docs.id = ?", docId).
 			First(&newDoc).Error; err != nil {
 			return ""
@@ -652,7 +654,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 		}
 		var description, oldVal string
 
-		if act.Verb != "removed" {
+		if act.Verb != actField.VerbRemoved {
 			description = replaceTablesToText(replaceImageToText(act.NewDoc.Content.Body))
 			description = policy.ProcessCustomHtmlTag(description)
 			description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))

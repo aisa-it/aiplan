@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 
@@ -168,7 +169,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 		//TODO add activity to notify
 		return nil, 0, nil
 	case dao.IssueActivity:
-		if a.Field != nil && *a.Field == "issue_transfer" && a.Verb == "cloned" {
+		if a.Field != nil && *a.Field == actField.IssueTransfer.String() && a.Verb == "cloned" {
 			return nil, 0, nil
 		}
 
@@ -209,7 +210,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 				IssueActivityId: &a.Id,
 			}
 
-			if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
+			if a.Field != nil && *a.Field == actField.Comment.String() && a.Verb != "deleted" {
 				if a.NewIdentifier != nil {
 					commentUUID := uuid.Must(uuid.FromString(*a.NewIdentifier))
 					notification.CommentId = &commentUUID

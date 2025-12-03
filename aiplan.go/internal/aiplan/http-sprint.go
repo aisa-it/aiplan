@@ -10,6 +10,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -190,6 +191,11 @@ func (s *Services) createSprint(c echo.Context) error {
 	}
 
 	sprint, err := req.toDao(c)
+	if sprint.EndDate.Valid && sprint.StartDate.Valid {
+		if !sprint.EndDate.Time.After(sprint.StartDate.Time) {
+			return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
+		}
+	}
 	if err != nil {
 		return EError(c, err)
 	}
@@ -198,7 +204,7 @@ func (s *Services) createSprint(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, *sprint, user)
+	err = tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, activities.EntityCreateActivity, nil, nil, *sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -281,13 +287,18 @@ func (s *Services) updateSprint(c echo.Context) error {
 		sprint.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
 		sprint.UpdatedBy = user
 		fields = append(fields, "updated_by_id")
+		if sprint.EndDate.Valid && sprint.StartDate.Valid {
+			if !sprint.EndDate.Time.After(sprint.StartDate.Time) {
+				return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
+			}
+		}
 		if err := s.db.Omit(clause.Associations).Select(fields).Updates(&sprint).Error; err != nil {
 			return EError(c, err)
 		}
 	}
 	newSprintMap := StructToJSONMap(sprint)
 
-	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newSprintMap, oldSprintMap, sprint, user)
+	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, newSprintMap, oldSprintMap, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -407,7 +418,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	}
 
 	{ // reg activity
-		err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, reqData, currentInstance, sprint, user)
+		err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, sprint, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -427,13 +438,13 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		}
 
 		for _, id := range changes.AddIds {
-			err = tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, tracker.ENTITY_ADD_ACTIVITY, data, nil, issueMap[id], user)
+			err = tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityAddActivity, data, nil, issueMap[id], user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 		}
 		for _, id := range changes.DelIds {
-			err = tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, tracker.ENTITY_REMOVE_ACTIVITY, data, nil, issueMap[id], user)
+			err = tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityRemoveActivity, data, nil, issueMap[id], user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -464,7 +475,7 @@ func (s *Services) deleteSprint(c echo.Context) error {
 	sprint := c.(SprintContext).Sprint
 	user := c.(SprintContext).User
 
-	err := tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, sprint, user)
+	err := tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 		return err
@@ -573,7 +584,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		"watchers": oldMemberIds,
 	}
 
-	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, reqData, currentInstance, sprint, user)
+	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
