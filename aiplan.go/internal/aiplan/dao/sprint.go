@@ -7,6 +7,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
@@ -78,7 +79,7 @@ func (s Sprint) GetString() string {
 
 // GetEntityType Возвращает тип сущности спринта (sprint). Используется для определения типа данных при работе с активностями.
 func (s Sprint) GetEntityType() string {
-	return "sprint"
+	return actField.Sprint.String()
 }
 
 func (s Sprint) GetWorkspaceId() string {

@@ -18,6 +18,7 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
 )
@@ -237,7 +238,7 @@ func (ts *TelegramService) createIssue(user dao.User, args []interface{}) {
 		slog.Error("Create issue from telegram", "err", err)
 		return
 	}
-	err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](ts.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, issue, &user)
+	err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](ts.tracker, activities.EntityCreateActivity, nil, nil, issue, &user)
 	if err != nil {
 		slog.Error("Track new issue from telegram activity", "err", err)
 		return

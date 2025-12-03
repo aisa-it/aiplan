@@ -21,6 +21,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -337,7 +338,7 @@ func (s *Services) updateProject(c echo.Context) error {
 		newProjectMap["project_lead_activity_val"] = newLead.Member.Email
 	}
 
-	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newProjectMap, oldProjectMap, project, user)
+	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newProjectMap, oldProjectMap, project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -495,7 +496,7 @@ func (s *Services) createProject(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, project, user)
+	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](s.tracker, activities.EntityCreateActivity, nil, nil, project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -874,7 +875,7 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 
 	newMemberMap := StructToJSONMap(requestedProjectMember)
 
-	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMemberMap, oldMemberMap, project, &user)
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMemberMap, oldMemberMap, project, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1017,7 +1018,7 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	newMemberMap["updateScopeId"] = projectMember.MemberId
 	newMemberMap["member_activity_val"] = projectMember.Role
 
-	err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, tracker.ENTITY_ADD_ACTIVITY, newMemberMap, nil, projectMember, &user)
+	err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, newMemberMap, nil, projectMember, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1801,7 +1802,7 @@ func (s *Services) createIssue(c echo.Context) error {
 	}
 
 	issueNew.Project = &project
-	err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, issueNew, &user)
+	err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issueNew, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1813,7 +1814,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		oldData["parent"] = nil
 		data["parent"] = issueNew.ParentId.UUID.String()
 
-		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, data, oldData, issueNew, &user)
+		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityUpdatedActivity, data, oldData, issueNew, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -1918,7 +1919,7 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, label, &user)
+	err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, label, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2013,7 +2014,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 		newLabelMap["updateScope"] = "label"
 		newLabelMap["updateScopeId"] = labelId
 
-		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newLabelMap, oldLabelMap, project, &user)
+		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -2052,7 +2053,7 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, label, &user)
+		err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, label, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
@@ -2222,7 +2223,7 @@ func (s *Services) createState(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, state, &user)
+	err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, state, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2400,7 +2401,7 @@ func (s *Services) updateState(c echo.Context) error {
 		newStateMap["default_activity_val"] = state.Name
 	}
 
-	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newStateMap, oldStateMap, project, &user)
+	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newStateMap, oldStateMap, project, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2459,7 +2460,7 @@ func (s *Services) deleteState(c echo.Context) error {
 			return err
 		}
 
-		err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, state, &user)
+		err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, state, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
@@ -2772,7 +2773,7 @@ func (s *Services) createIssueTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, tracker.ENTITY_CREATE_ACTIVITY, nil, nil, it, user)
+	err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, it, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2875,7 +2876,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 		newTemplateMap["updateScope"] = "template"
 		newTemplateMap["updateScopeId"] = templateId
 
-		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newTemplateMap, oldTemplateMap, project, user)
+		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newTemplateMap, oldTemplateMap, project, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -2918,7 +2919,7 @@ func (s *Services) deleteIssueTemplate(c echo.Context) error {
 		}
 
 		if err := s.db.Transaction(func(tx *gorm.DB) error {
-			err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, tracker.ENTITY_DELETE_ACTIVITY, nil, nil, template, user)
+			err := tracker.TrackActivity[dao.IssueTemplate, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, template, user)
 			if err != nil {
 				errStack.GetError(c, err)
 				return err
@@ -3011,7 +3012,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 			"logo": fileAsset.Id.String(),
 		}
 
-		err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, project, user)
+		err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -3069,7 +3070,7 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 		"logo": uuid.NullUUID{}.UUID.String(),
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, tracker.ENTITY_UPDATED_ACTIVITY, newMap, oldMap, project, user)
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

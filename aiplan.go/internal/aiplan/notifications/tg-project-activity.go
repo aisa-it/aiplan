@@ -7,6 +7,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lib/pq"
@@ -57,8 +58,8 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 		}
 		switch activity.Verb {
 		case "created", "copied", "added":
-			switch *activity.Field {
-			case "issue":
+			switch actField.ActivityField(*activity.Field) {
+			case actField.Issue:
 				if err := tnp.db.Unscoped().
 					Joins("Author").
 					Joins("Workspace").
@@ -113,34 +114,34 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 					}
 					msg.Text += fmt.Sprintf("Исполнители: *%s*", strings.Join(assignees, "*, *"))
 				}
-			case "template":
+			case actField.Template:
 				msg.Text = act.Title("создал(-a) шаблон задачи в")
 				msg.Text += Stelegramf("*Название*: %s\n", activity.NewIssueTemplate.Name)
 				msg.Text += Stelegramf("```\n%s```",
 					HtmlToTg(activity.NewIssueTemplate.Template.String()),
 				)
-			case "state":
+			case actField.Status:
 				msg.Text = act.Title("создал(-a) статус в")
 				msg.Text += Stelegramf("*Название*: %s\n*Группа*: %s", activity.NewState.Name, stateTranslate(activity.NewState.Group))
-			case "label":
+			case actField.Label:
 				msg.Text = act.Title("создал(-a) тег в")
 				msg.Text += Stelegramf("*Название*: %s", activity.NewLabel.Name)
-			case "member":
+			case actField.Member:
 				if *activity.Field != "added" {
 					return
 				}
 				msg.Text = act.Title("добавил(-a) участника в")
 				msg.Text += Stelegramf("%s\n", getUserName(activity.NewMember))
 				msg.Text += Stelegramf("*Роль:* %s", memberRoleStr(activity.NewValue))
-			case "default_watchers", "default_assignees":
+			case actField.DefaultWatchers, actField.DefaultAssignees:
 				if *activity.Field != "added" {
 					return
 				}
-				if *activity.Field == "default_watchers" {
+				if *activity.Field == actField.DefaultWatchers.String() {
 					msg.Text = act.Title("добавил(-a) наблюдателя по умолчанию в")
 					msg.Text += Stelegramf("%s\n", getUserName(activity.NewDefaultWatcher))
 				}
-				if *activity.Field == "default_assignees" {
+				if *activity.Field == actField.DefaultAssignees.String() {
 					msg.Text = act.Title("добавил(-a) исполнителя по умолчанию в")
 					msg.Text += Stelegramf("%s\n", getUserName(activity.NewDefaultAssignee))
 				}
@@ -148,8 +149,8 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 				return
 			}
 		case "updated":
-			switch *activity.Field {
-			case "identifier", "name":
+			switch actField.ActivityField(*activity.Field) {
+			case actField.Identifier, actField.Name:
 				var oldV string
 				if activity.OldValue != nil {
 					oldV = *activity.OldValue
@@ -157,17 +158,17 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 				msg.Text = act.Title("изменил(-a) в")
 				msg.Text += Stelegramf("*%s*: ~%s~ %s", fieldsTranslation[*activity.Field], oldV, activity.NewValue)
 
-			case "logo":
+			case actField.Logo:
 				msg.Text = act.Title("изменил(-a) в проекте")
 				msg.Text += Stelegramf("*Логотип проекта*")
-			case "public":
+			case actField.Public:
 				if activity.NewValue == "true" {
 					msg.Text = act.Title("сделал(-a) публичным")
 				} else {
 					msg.Text = act.Title("сделал(-a) приватным")
 				}
 
-			case "label_name", "label_color":
+			case actField.LabelName, actField.LabelColor:
 				action := strings.Split(*activity.Field, "_")[1]
 				msg.Text = act.Title("изменил(-a) в")
 				switch action {
@@ -178,7 +179,7 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 					msg.Text += Stelegramf("*Название Тега*: ~%s~ %s", fmt.Sprint(*activity.OldValue), activity.NewValue)
 				}
 
-			case "status_color", "status_group", "status_description", "status_name":
+			case actField.StatusColor, actField.StatusGroup, actField.StatusDescription, actField.StatusName:
 				action := strings.Split(*activity.Field, "_")[1]
 				msg.Text = act.Title("изменил(-a) в")
 				switch action {
@@ -195,7 +196,8 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 				case "name":
 					msg.Text += Stelegramf("*Название Статуса*: ~%s~ %s", fmt.Sprint(*activity.OldValue), activity.NewValue)
 				}
-			case "template_name", "template_template":
+
+			case actField.TemplateName, actField.TemplateTemplate:
 				action := strings.Split(*activity.Field, "_")[1]
 				msg.Text = act.Title("изменил(-a) в проекте")
 				switch action {
@@ -207,33 +209,33 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 						HtmlToTg(activity.NewValue),
 					)
 				}
-			case "status_default":
+			case actField.StatusDefault:
 				msg.Text = act.Title("изменил(-a) статус по умолчанию в")
 				msg.Text += Stelegramf("~%s~ %s", activity.OldState.Name, activity.NewState.Name)
-			case "role":
+			case actField.Role:
 				msg.Text = act.Title("изменил(-a) роль пользователя в")
 				msg.Text += Stelegramf("%s\n", getUserName(activity.NewRole))
 				msg.Text += Stelegramf("*Роль*: ~%s~ %s", memberRoleStr(fmt.Sprint(*activity.OldValue)), memberRoleStr(activity.NewValue))
-			case "project_lead":
+			case actField.ProjectLead:
 				msg.Text = act.Title("изменил(-a) лидера проекта в")
 				msg.Text += Stelegramf("~%s~ %s", getUserName(activity.OldProjectLead), getUserName(activity.NewProjectLead))
 			default:
 				return
 			}
 		case "removed":
-			switch *activity.Field {
-			case "issue":
+			switch actField.ActivityField(*activity.Field) {
+			case actField.Issue:
 				msg.Text = act.Title("убрал(-a) задачу из")
 				msg.Text += Stelegramf("*Задача:* %s", fmt.Sprint(*activity.OldValue))
-			case "member":
+			case actField.Member:
 				msg.Text = act.Title("убрал(-a) участника из")
 				msg.Text += Stelegramf("%s", getUserName(activity.OldMember))
-			case "default_watchers", "default_assignees":
+			case actField.DefaultWatchers, actField.DefaultAssignees:
 				if *activity.Field == "default_watchers" {
 					msg.Text = act.Title("убрал(-a) наблюдателя по умолчанию в")
 					msg.Text += Stelegramf("%s\n", getUserName(activity.OldDefaultWatcher))
 				}
-				if *activity.Field == "default_assignees" {
+				if *activity.Field == actField.DefaultAssignees.String() {
 					msg.Text = act.Title("убрал(-a) исполнителя по умолчанию в")
 					msg.Text += Stelegramf("%s\n", getUserName(activity.OldDefaultAssignee))
 				}
@@ -243,12 +245,12 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 			}
 		case "deleted":
 			msg.Text = act.Title("удалил(-a) из")
-			switch *activity.Field {
-			case "label":
+			switch actField.ActivityField(*activity.Field) {
+			case actField.Label:
 				msg.Text += Stelegramf("*Тег*: ~%s~", fmt.Sprint(*activity.OldValue))
-			case "state":
+			case actField.Status:
 				msg.Text += Stelegramf("*Статус*: ~%s~", fmt.Sprint(*activity.OldValue))
-			case "template":
+			case actField.Template:
 				msg.Text += Stelegramf("*Шаблон*: ~%s~", fmt.Sprint(*activity.OldValue))
 			default:
 				return

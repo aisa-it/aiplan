@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/lib/pq"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -163,7 +164,7 @@ func (i Issue) GetString() string {
 // Возвращает:
 //   - string: строка, представляющая тип сущности (issue). Определяет, к какому типу относится сущность.
 func (i Issue) GetEntityType() string {
-	return "issue"
+	return actField.Issue.String()
 }
 
 func (i Issue) GetWorkspaceId() string {
@@ -942,7 +943,7 @@ func (i IssueLink) GetString() string {
 }
 
 func (i IssueLink) GetEntityType() string {
-	return "link"
+	return actField.Link.String()
 }
 
 func (i IssueLink) GetWorkspaceId() string {
@@ -1047,7 +1048,7 @@ func (ia IssueAttachment) GetString() string {
 }
 
 func (ia IssueAttachment) GetEntityType() string {
-	return "attachment"
+	return actField.Attachment.String()
 }
 
 func (i IssueAttachment) GetWorkspaceId() string {
@@ -1345,7 +1346,7 @@ func (i IssueComment) GetString() string {
 }
 
 func (i IssueComment) GetEntityType() string {
-	return "comment"
+	return actField.Comment.String()
 }
 
 func (i IssueComment) GetWorkspaceId() string {
