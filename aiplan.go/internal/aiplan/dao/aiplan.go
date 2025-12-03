@@ -501,8 +501,6 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 
 	targetFieldExt := fmt.Sprintf("%s::%s", targetField, aI.GetEntity())
 
-	//var affectedUser *User
-
 	var walkStruct func(reflect.Value, reflect.Type) error
 
 	walkStruct = func(v reflect.Value, t reflect.Type) error {
@@ -522,10 +520,8 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				switch targetField {
 				case "link_title", "link_url", "status_color", "status_name", "status_description", "status_group", "label_name", "label_color", "status_default", "template_name", "template_template":
 					targetField = strings.Split(targetField, "_")[0]
-					if targetField == "status" {
-						targetField = "state"
-					}
 				}
+
 				if fieldTag != targetField && fieldTag != targetFieldExt {
 					continue
 				}
@@ -543,9 +539,6 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				err := tx.Where("id = ?", newID).First(ptr.Interface()).Error
 				if err == nil {
 					fieldVal.Set(ptr)
-					//if structField.Type == reflect.TypeOf(&User{}) {
-					//	affectedUser = ptr.Interface().(*User)
-					//}
 				} else if err != gorm.ErrRecordNotFound {
 					continue
 				} else {
@@ -559,10 +552,6 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				err := tx.Where("id = ?", oldID).First(ptr.Interface()).Error
 				if err == nil {
 					fieldVal.Set(ptr)
-
-					//if structField.Type == reflect.TypeOf(&User{}) {
-					//	affectedUser = ptr.Interface().(*User)
-					//}
 				} else if err != gorm.ErrRecordNotFound {
 					continue
 				} else {
@@ -577,11 +566,6 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 	if err := walkStruct(val, typ); err != nil {
 		return err
 	}
-
-	//if affectedUser != nil { // TODO remove affected user
-	//	val.FieldByName("AffectedUser").Set(reflect.ValueOf(affectedUser))
-	//}
-
 	return nil
 }
 

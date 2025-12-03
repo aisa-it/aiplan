@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"time"
 
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/lib/pq"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -76,7 +77,7 @@ func (w Workspace) GetString() string {
 }
 
 func (w Workspace) GetEntityType() string {
-	return "workspace"
+	return actField.Workspace.String()
 }
 
 // WorkspaceExtendFields
@@ -372,7 +373,7 @@ func (wm WorkspaceMember) GetString() string {
 }
 
 func (wm WorkspaceMember) GetEntityType() string {
-	return "member"
+	return actField.Member.String()
 }
 
 func (wm WorkspaceMember) GetWorkspaceId() string {

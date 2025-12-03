@@ -8,6 +8,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"gorm.io/gorm"
 )
@@ -207,7 +208,7 @@ func (wa *workspaceActivity) AddActivity(activity dao.WorkspaceActivity) bool {
 }
 
 func (wa *workspaceActivity) skip(activity dao.WorkspaceActivity) bool {
-	if activity.Field != nil && *activity.Field != "doc" {
+	if activity.Field != nil && *activity.Field != actField.Doc.String() {
 		return true
 	}
 
@@ -266,7 +267,7 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 				}
 				continue
 			}
-			if activity.Field != nil && *activity.Field == "doc" && activity.Verb == "deleted" {
+			if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbDeleted {
 				if *activity.ActorId == member.User.ID {
 					sendActivities = append(sendActivities, activity)
 					continue
@@ -274,7 +275,7 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 			}
 
 			if member.WorkspaceAdmin {
-				if activity.Field != nil && *activity.Field == "doc" {
+				if activity.Field != nil && *activity.Field == actField.Doc.String() {
 					continue
 				}
 				//sendActivities = append(sendActivities, activity)
@@ -309,7 +310,7 @@ func getWorkspaceNotificationHTML(tx *gorm.DB, activities []dao.WorkspaceActivit
 	//actorsMap := make(map[string]dao.User)
 
 	for _, act := range activities {
-		if act.Field != nil && *act.Field == "doc" {
+		if act.Field != nil && *act.Field == actField.Doc.String() {
 			a := dao.DocActivity{
 				CreatedAt:     act.CreatedAt,
 				Verb:          act.Verb,
