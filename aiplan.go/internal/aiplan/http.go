@@ -41,6 +41,7 @@ import (
 	"syscall"
 	"time"
 
+	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
@@ -186,6 +187,22 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
+
+	var ldapProvider *authprovider.LdapProvider
+	if cfg.LDAPServerURL != nil {
+		ldapProvider, err = authprovider.InitLDAP(
+			cfg.LDAPServerURL,
+			cfg.LDAPBindUser,
+			cfg.LDAPBindPassword,
+			cfg.LDAPBaseDN,
+			cfg.LDAPFilter,
+		)
+		if err != nil {
+			slog.Error("Connect to LDAP server", "err", err)
+			os.Exit(1)
+		}
+	}
+
 	migration.New(db).Run()
 
 	jobRegistry := cronmanager.JobRegistry{
@@ -356,7 +373,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	e.Validator = NewRequestValidator()
 
-	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es)
+	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es, ldapProvider)
 
 	//services with auth
 	apiGroup := e.Group("/api/")
