@@ -38,6 +38,7 @@ const (
 	ReqDefaultWatchers  = "default_watchers"
 	ReqDescription      = "description"
 	ReqDescriptionHtml  = "description_html"
+	ReqContent          = "content"
 	ReqColor            = "color"
 	ReqTargetDate       = "target_date"
 	ReqStartDate        = "start_date"
@@ -153,4 +154,99 @@ func (a ActivityField) WithFuncStr() string {
 
 func (a ActivityField) WithGetFieldStr() string {
 	return fmt.Sprintf("%s_%s", a.String(), "get_field")
+}
+
+func ReqFieldMapping(in string) string {
+	switch in {
+	case ReqName:
+		return Name.String()
+	case ReqTitle:
+		return Title.String()
+	case ReqTemplate:
+		return Template.String()
+	case ReqWatchers:
+		return Watchers.String()
+	case ReqAssignees:
+		return Assignees.String()
+	case ReqReaders:
+		return Readers.String()
+	case ReqEditors:
+		return Editors.String()
+	case ReqIssues:
+		return Issues.String()
+	case ReqSprint:
+		return Sprint.String()
+	case ReqEmoj:
+		return Emoj.String()
+	case ReqPublic:
+		return Public.String()
+	case ReqIdentifier:
+		return Identifier.String()
+	case ReqProjectLead:
+		return ProjectLead.String()
+	case ReqPriority:
+		return Priority.String()
+	case ReqRole:
+		return Role.String()
+	case ReqDefaultAssignees:
+		return DefaultAssignees.String()
+	case ReqDefaultWatchers:
+		return DefaultWatchers.String()
+	case ReqDescription:
+		return Description.String()
+	case ReqDescriptionHtml:
+		return Description.String()
+	case ReqContent:
+		return Description.String()
+	case ReqColor:
+		return Color.String()
+	case ReqTargetDate:
+		return TargetDate.String()
+	case ReqStartDate:
+		return StartDate.String()
+	case ReqCompletedAt:
+		return CompletedAt.String()
+	case ReqEndDate:
+		return EndDate.String()
+	case ReqLabel:
+		return Label.String()
+	case ReqAuthRequire:
+		return AuthRequire.String()
+	case ReqFields:
+		return Fields.String()
+	case ReqGroup:
+		return Group.String()
+	case ReqState:
+		return Status.String()
+	case ReqParent:
+		return Parent.String()
+	case ReqDefault:
+		return Default.String()
+	case ReqEstimatePoint:
+		return EstimatePoint.String()
+	case ReqBlocksList:
+		return Blocks.String()
+	case ReqBlockersList:
+		return Blocking.String()
+	case ReqUrl:
+		return Url.String()
+	case ReqCommentHtml:
+		return Comment.String()
+	case ReqDocSort:
+		return DocSort.String()
+	case ReqReaderRole:
+		return ReaderRole.String()
+	case ReqEditorRole:
+		return EditorRole.String()
+	case ReqLinked:
+		return Linked.String()
+	case ReqLogo:
+		return Logo.String()
+	case ReqToken:
+		return Token.String()
+	case ReqOwner:
+		return Owner.String()
+	default:
+		return in
+	}
 }
