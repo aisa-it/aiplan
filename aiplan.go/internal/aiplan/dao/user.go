@@ -68,6 +68,8 @@ type User struct {
 	BlockedUntil    sql.NullTime
 	TokenUpdatedAt  *time.Time `json:"-" extensions:"x-nullable"`
 
+	AuthProvider string `json:"-" gorm:"default:'local'"`
+
 	LastWorkspaceId *string `json:"-" gorm:"index" extensions:"x-nullable"`
 
 	Role *string `json:"role" extensions:"x-nullable"`
