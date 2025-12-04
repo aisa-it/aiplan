@@ -297,7 +297,6 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 	}
 
 	userMap := make(map[string]userTg)
-	maps.Copy(userMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId))
 
 	query := tx.Joins("Member").
 		Where("project_id = ?", act.ProjectId)
@@ -305,6 +304,8 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 	if act.NewIssue != nil {
 		act.NewIssue.Author = act.Actor
 		act.NewIssue.Workspace = act.Workspace
+
+		maps.Copy(userMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId))
 		maps.Copy(userMap, GetUserTgIdFromIssue(act.NewIssue))
 
 		ids := make([]string, 0, len(userMap))

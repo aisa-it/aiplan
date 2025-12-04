@@ -289,12 +289,13 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 					slog.Info("Create new user from LDAP", "email", req.Email)
 
 					user = dao.User{
-						ID:          dao.GenID(),
-						Email:       req.Email,
-						Password:    dao.GenPasswordHash(req.Password),
-						Theme:       types.DefaultTheme,
-						IsActive:    true,
-						IsOnboarded: false,
+						ID:           dao.GenID(),
+						Email:        req.Email,
+						Password:     dao.GenPasswordHash(req.Password),
+						Theme:        types.DefaultTheme,
+						IsActive:     true,
+						IsOnboarded:  false,
+						AuthProvider: "ldap",
 					}
 
 					if err := a.db.Create(&user).Error; err != nil {
@@ -326,7 +327,10 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	if !checkPassword(req.Password, user.Password) {
 		if a.ldapProvider != nil && a.ldapProvider.AuthUser(req.Email, req.Password) {
 			// If LDAP auth success - update user password to LDAP password
-			if err := a.db.Model(&user).UpdateColumn("password", dao.GenPasswordHash(req.Password)).Error; err != nil {
+			if err := a.db.Model(&user).Updates(map[string]any{
+				"password":      dao.GenPasswordHash(req.Password),
+				"auth_provider": "ldap",
+			}).Error; err != nil {
 				return EError(c, err)
 			}
 		} else {

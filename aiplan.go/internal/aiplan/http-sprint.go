@@ -2,7 +2,9 @@ package aiplan
 
 import (
 	"errors"
+	"maps"
 	"net/http"
+	"slices"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -107,6 +109,8 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 	sprintGroup.POST("/sprint-view/", s.updateSprintView)
 
 	sprintGroup.POST("/issues/search/", s.getIssueList)
+
+	sprintGroup.GET("/states/", s.getSprintStates)
 }
 
 // getSprintList godoc
@@ -697,6 +701,42 @@ func (s *Services) updateSprintView(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+// getSprintStates godoc
+// @id getSprintStates
+// @Summary Спринты: получение состояний задач в спринте
+// @Description Возвращает список всех состояний задач, которые используются в задачах текущего спринта.
+// @Tags Sprint
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
+// @Success 200 {array} dto.StateLight "Список состояний задач"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Спринт не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/states/ [get]
+func (s *Services) getSprintStates(c echo.Context) error {
+	sprint := c.(SprintContext).Sprint
+
+	projectMap := make(map[uuid.UUID]struct{})
+
+	for _, i := range sprint.Issues {
+		projectId := uuid.FromStringOrNil(i.ProjectId)
+		projectMap[projectId] = struct{}{}
+	}
+
+	var states []dao.State
+	if err := s.db.
+		Where("project_id in (?)", slices.Collect(maps.Keys(projectMap))).
+		Order("sequence").
+		Find(&states).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(t *dao.State) *dto.StateLight { return t.ToLightDTO() }))
 }
 
 //

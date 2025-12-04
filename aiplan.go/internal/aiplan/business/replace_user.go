@@ -29,7 +29,7 @@ var (
 	}
 
 	updateByIdFK = []userFK{
-		{Table: dao.Doc{}.TableName(), Field: "updated_by_id"},
+		{Table: dao.Doc{}.TableName(), Field: "updated_by_id"}, //TODO после переезда на uuid сделать fk и убрать
 	}
 )
 
