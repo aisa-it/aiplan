@@ -327,7 +327,7 @@ func (sf *SearchFilter) SetUrl() {
 		return
 	}
 	urlFilter := fmt.Sprintf("/filters/%s/", sf.ID.String())
-	shortUrl := fmt.Sprintf("/sf/%s/", utils.UUIDToBase64(sf.ID))
+	shortUrl := fmt.Sprintf("/sf/%s/", sf.ID)
 
 	u, _ := url.Parse(urlFilter)
 	shortU, _ := url.Parse(shortUrl)

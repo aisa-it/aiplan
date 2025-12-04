@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -752,7 +753,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 					First(&newParent).Error; err != nil {
 					return err
 				}
-				if utils.CheckInSlice(newParent.Breadcrumbs, doc.ID.String()) {
+				if slices.Contains(newParent.Breadcrumbs, doc.ID.String()) {
 					return apierrors.ErrDocMoveIntoOwnChild
 				}
 			}

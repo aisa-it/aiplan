@@ -3,6 +3,7 @@ package notifications
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -463,8 +464,10 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 		}
 	}
 
-	defaultWatcherUserTgId := GetUserTgIgDefaultWatchers(tx, act.ProjectId)
-	resMap := utils.MergeMaps(defaultWatcherUserTgId, issueUserTgId)
+	resMap := make(map[string]userTg)
+
+	maps.Copy(resMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId))
+	maps.Copy(resMap, issueUserTgId)
 
 	userIds := make([]string, 0, len(resMap))
 	for k := range resMap {

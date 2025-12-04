@@ -12,6 +12,7 @@ package dao
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -1100,8 +1101,8 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 			DocId:       doc.ID,
 			UpdatedById: uuid.NullUUID{},
 			WorkspaceId: uuid.Must(uuid.FromString(doc.WorkspaceId)),
-			Edit:        utils.CheckInSlice(doc.EditorsIDs, id),
-			Watch:       utils.CheckInSlice(doc.WatcherIDs, id),
+			Edit:        slices.Contains(doc.EditorsIDs, id),
+			Watch:       slices.Contains(doc.WatcherIDs, id),
 		})
 	}
 

@@ -27,6 +27,10 @@ var (
 		{Table: dao.RootActivity{}.TableName(), Field: "new_identifier"},
 		{Table: dao.RootActivity{}.TableName(), Field: "old_identifier"},
 	}
+
+	updateByIdFK = []userFK{
+		{Table: dao.Doc{}.TableName(), Field: "updated_by_id"},
+	}
 )
 
 type userFK struct {
@@ -86,5 +90,7 @@ WHERE
 	}
 
 	userFKs = append(userFKs, activitiesFk...)
+	userFKs = append(userFKs, updateByIdFK...)
+
 	return nil
 }
