@@ -262,10 +262,10 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 		if changeOwner {
 			newWorkspaceMap["owner_id_activity_val"] = newMemberOwnerEmail
 			newWorkspaceMap["owner_id_updateScopeId"] = newMemberOwnerId
-			newWorkspaceMap["owner_id_field_log"] = "owner"
+			newWorkspaceMap["owner_id_field_log"] = activities.Owner
 			oldWorkspaceMap["owner_id_activity_val"] = user.Email
 			oldWorkspaceMap["owner_id_updateScopeId"] = user.ID
-			oldWorkspaceMap["owner_id_field_log"] = "owner"
+			oldWorkspaceMap["owner_id_field_log"] = activities.Owner
 		}
 
 		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newWorkspaceMap, oldWorkspaceMap, workspace, user)
