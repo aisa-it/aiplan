@@ -33,7 +33,7 @@ type Doc struct {
 
 	UpdatedAt   time.Time `json:"updated_at"`
 	UpdatedById *string   `json:"updated_by" extensions:"x-nullable"`
-	Updater     *User     `json:"update_author,omitempty"  gorm:"-" extensions:"x-nullable"`
+	Updater     *User     `json:"update_author,omitempty"  gorm:"-" extensions:"x-nullable"` // TODO после переезда на uuid сделать fk и убрать из []userFKs
 
 	Tokens types.TsVector `json:"-" gorm:"index:doc_tokens_gin,type:gin;->:false"`
 
