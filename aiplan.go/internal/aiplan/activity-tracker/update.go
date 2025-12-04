@@ -296,7 +296,7 @@ func entityTokenUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 }
 
 func entityOwnerUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	return entityFieldUpdate[E, A](actField.Owner, nil, nil, tracker, requestedData, currentInstance, entity, actor)
+	return entityFieldUpdate[E, A](actField.OwnerId, nil, nil, tracker, requestedData, currentInstance, entity, actor)
 }
 
 // entityDescriptionUpdate Обновляет описание сущности. Использует общую логику обновления полей, абстрагируясь от конкретного типа сущности.
