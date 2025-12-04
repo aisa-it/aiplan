@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -1587,9 +1588,8 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	elements := utils.All(*resp.Result.(*[]dao.UserNotifications))
-	elements = utils.Filter(
-		elements,
+	elementsRes := utils.Filter(
+		slices.All(*resp.Result.(*[]dao.UserNotifications)),
 		func(t dao.UserNotifications) bool {
 			if id := getActivityId(&t); id != nil {
 				return true
@@ -1597,7 +1597,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 			return false
 		})
 
-	res := utils.Collect(elements)
+	res := slices.Collect(elementsRes)
 
 	qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) string {
 		if id := getActivityId(t); id != nil {

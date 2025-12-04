@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -261,8 +262,8 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 					Where("issues.id = ?", activity.NewIssue.ID).First(&issue).Error; err != nil {
 					continue
 				}
-				isWatcher := utils.CheckInSlice([]string{member.User.ID}, issue.WatcherIDs...) || member.DefaultWatcher
-				isAssignee := utils.CheckInSlice([]string{member.User.ID}, issue.AssigneeIDs...) || member.DefaultAssigner
+				isWatcher := slices.Contains(issue.WatcherIDs, member.User.ID) || member.DefaultWatcher
+				isAssignee := slices.Contains(issue.AssigneeIDs, member.User.ID) || member.DefaultAssigner
 
 				if isWatcher || isAssignee || issue.CreatedById == member.User.ID {
 					if issue.CreatedById == member.User.ID {
