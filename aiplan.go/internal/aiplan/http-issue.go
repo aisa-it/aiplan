@@ -1042,7 +1042,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 				return EError(c, err.ClientError())
 			}
 		}
-		issue.StateId = &newState.ID
+		issue.StateId = newState.ID
 	}
 
 	blockers, blockersOk := data["blockers_list"].([]interface{}) // задача блокирует [blocker_issues]

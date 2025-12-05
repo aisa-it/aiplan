@@ -145,11 +145,11 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 	if linkedIssues == false && param != nil {
 
-		if v, ok := param.StateId.GetValue(); ok {
+		if v, ok := param.StateId.GetValue(); ok && v != nil {
 			var state dao.State
 			if err := s.db.Where("workspace_id = ?", srcIssue.WorkspaceId).
 				Where("project_id = ?", srcIssue.ProjectId).
-				Where("id = ?", param.StateId.String()).
+				Where("id = ?", *v).
 				First(&state).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return c.JSON(http.StatusBadRequest, map[string]interface{}{
@@ -164,7 +164,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 				return EError(c, err)
 			}
 
-			srcIssue.StateId = v
+			srcIssue.StateId = *v
 			srcIssue.State = &state
 		}
 
@@ -248,8 +248,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			if deleteSrc {
 				srcIssues[i].ProjectId = targetProjectId
 				srcIssues[i].Project = &targetProject
-				srcIssues[i].StateId = &result.TargetState.ID
-				if result.TargetState.ID != "" {
+				srcIssues[i].StateId = result.TargetState.ID
+				if result.TargetState.ID != uuid.Nil {
 					srcIssues[i].State = &result.TargetState
 				}
 			}
@@ -356,7 +356,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			for _, state := range states {
 				id := dao.GenUUID()
 				st := dao.State{
-					ID:          id.String(),
+					ID:          id,
 					Name:        state.Name,
 					Description: state.Description,
 					Color:       state.Color,
@@ -370,14 +370,10 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					ProjectId:   targetProject.ID,
 				}
 
-				stateMap[st.ID] = st
+				stateMap[st.ID.String()] = st
 				if err := updateStatesGroup(tx, &st, "create"); err != nil {
 				}
-				uuidState, err := uuid.FromString(state.ID)
-				if err != nil {
-					return err
-				}
-				idsMap[uuidState] = id
+				idsMap[state.ID] = id
 			}
 		}
 		return nil
@@ -437,15 +433,11 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					srcIssues[i].ParentId = uuid.NullUUID{}
 				}
 
-				if stateCreated && srcIssues[i].StateId != nil && *srcIssues[i].StateId == "" {
+				if stateCreated && srcIssues[i].StateId == uuid.Nil {
 					id := srcIssues[i].State.ID
-					idSt, err := uuid.FromString(id)
-					if err != nil {
-						return err
-					}
-					stateTmp := stateMap[idsMap[idSt].String()]
+					stateTmp := stateMap[idsMap[id].String()]
 					srcIssues[i].State = &stateTmp
-					srcIssues[i].StateId = &stateTmp.ID
+					srcIssues[i].StateId = stateTmp.ID
 				}
 			}
 
@@ -694,8 +686,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			if deleteSrc {
 				srcIssues[i].ProjectId = targetProjectId
 				srcIssues[i].Project = &targetProject
-				srcIssues[i].StateId = &result.TargetState.ID
-				if result.TargetState.ID != "" {
+				srcIssues[i].StateId = result.TargetState.ID
+				if result.TargetState.ID != uuid.Nil {
 					srcIssues[i].State = &result.TargetState
 				}
 			}
@@ -801,7 +793,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			for _, state := range states {
 				id := dao.GenUUID()
 				st := dao.State{
-					ID:          id.String(),
+					ID:          id,
 					Name:        state.Name,
 					Description: state.Description,
 					Color:       state.Color,
@@ -815,14 +807,10 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					ProjectId:   targetProject.ID,
 				}
 
-				stateMap[st.ID] = st
+				stateMap[st.ID.String()] = st
 				if err := updateStatesGroup(tx, &st, "create"); err != nil {
 				}
-				uuidState, err := uuid.FromString(state.ID)
-				if err != nil {
-					return err
-				}
-				idsMap[uuidState] = id
+				idsMap[state.ID] = id
 			}
 		}
 		return nil
@@ -884,15 +872,11 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					}
 				}
 
-				if stateCreated && srcIssues[i].StateId != nil && *srcIssues[i].StateId == "" {
+				if stateCreated && srcIssues[i].StateId == uuid.Nil {
 					id := srcIssues[i].State.ID
-					idSt, err := uuid.FromString(id)
-					if err != nil {
-						return err
-					}
-					stateTmp := stateMap[idsMap[idSt].String()]
+					stateTmp := stateMap[idsMap[id].String()]
 					srcIssues[i].State = &stateTmp
-					srcIssues[i].StateId = &stateTmp.ID
+					srcIssues[i].StateId = stateTmp.ID
 				}
 			}
 
@@ -1038,13 +1022,14 @@ type IssueCheckResult struct {
 
 type stateTarget struct {
 	Str      string
-	Id       string
+	Id       uuid.UUID
 	Relation bool
 }
 
 func (st *stateTarget) getID() *string {
 	if st.Relation {
-		return &st.Id
+		idStr := st.Id.String()
+		return &idStr
 	}
 	return nil
 }
@@ -1143,7 +1128,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 					SrcIssueId:      &srcIssue.ID,
 					IssueSequenceId: srcIssue.SequenceId,
 					Type:            "state",
-					Entities:        []string{srcIssue.State.ID},
+					Entities:        []string{srcIssue.State.ID.String()},
 				})
 			} else {
 				return res, err
@@ -1332,16 +1317,15 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	targetIssue := issue.SrcIssue
 	targetIssue.ID = issue.TargetId
 	targetIssue.ProjectId = issue.TargetProject.ID
-	if issue.TargetState.ID == "" {
-		ii, _ := uuid.FromString(*issue.SrcIssue.StateId)
+	if issue.TargetState.ID == uuid.Nil {
 		if err := tx.Where("workspace_id = ?", issue.SrcIssue.WorkspaceId).
 			Where("project_id = ?", issue.TargetProject.ID).
-			Where("id = ?", idsMap[ii]).
+			Where("id = ?", idsMap[issue.SrcIssue.StateId]).
 			First(&issue.TargetState).Error; err != nil {
 			return err
 		}
 	}
-	targetIssue.StateId = &issue.TargetState.ID
+	targetIssue.StateId = issue.TargetState.ID
 	targetIssue.State = &issue.TargetState
 
 	if targetIssue.ParentId.Valid {
@@ -1571,7 +1555,7 @@ func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[st
 	for _, state := range srcStates {
 		tmp := stateTarget{
 			Str:      strState(state),
-			Id:       "",
+			Id:       uuid.Nil,
 			Relation: false,
 		}
 		for _, target := range targetStates {
@@ -1580,7 +1564,7 @@ func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[st
 				tmp.Relation = true
 			}
 		}
-		result[state.ID] = tmp
+		result[state.ID.String()] = tmp
 	}
 
 	return nil, result
@@ -1641,5 +1625,5 @@ type NewIssueParam struct {
 	Priority     types.JSONField[string]   `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
 	TargetDate   types.JSONField[string]   `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
 	AssignersIds types.JSONField[[]string] `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
-	StateId      types.JSONField[string]   `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	StateId      types.JSONField[uuid.UUID]   `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
 }

@@ -1007,7 +1007,7 @@ func (l *Label) BeforeDelete(tx *gorm.DB) error {
 // Состояния задач
 type State struct {
 	// id uuid NOT NULL,
-	ID string `gorm:"column:id;primaryKey;autoIncrement:true;unique" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
 	// created_at timestamp with time zone NOT NULL,
 	CreatedAt time.Time `json:"created_at"`
 	// updated_at timestamp with time zone NOT NULL,
@@ -1075,7 +1075,7 @@ type StateExtendFields struct {
 }
 
 func (s State) GetId() string {
-	return s.ID
+	return s.ID.String()
 }
 
 func (s State) GetString() string {

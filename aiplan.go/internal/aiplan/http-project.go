@@ -453,7 +453,7 @@ func (s *Services) createProject(c echo.Context) error {
 
 		return tx.Create(&[]dao.State{
 			{
-				ID: dao.GenID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
 				Name:     "Новая",
 				Color:    "#26b5ce",
 				Sequence: 15000,
@@ -461,28 +461,28 @@ func (s *Services) createProject(c echo.Context) error {
 				Default:  true,
 			},
 			{
-				ID: dao.GenID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
 				Name:     "Открыта",
 				Color:    "#f2c94c",
 				Sequence: 25000,
 				Group:    "unstarted",
 			},
 			{
-				ID: dao.GenID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
 				Name:     "В работе",
 				Color:    "#5e6ad2",
 				Sequence: 35000,
 				Group:    "started",
 			},
 			{
-				ID: dao.GenID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
 				Name:     "Выполнена",
 				Color:    "#4cb782",
 				Sequence: 45000,
 				Group:    "completed",
 			},
 			{
-				ID: dao.GenID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
 				Name:     "Отменена",
 				Color:    "#eb5757",
 				Sequence: 55000,
@@ -2211,7 +2211,7 @@ func (s *Services) createState(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	state.ID = dao.GenID()
+	state.ID = dao.GenUUID()
 	state.ProjectId = project.ID
 	state.WorkspaceId = project.WorkspaceId
 	state.CreatedById = &user.ID
@@ -2246,7 +2246,10 @@ func (s *Services) createState(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/{stateId} [get]
 func (s *Services) getState(c echo.Context) error {
 	project := c.(ProjectContext).Project
-	stateId := c.Param("stateId")
+	stateId, err := uuid.FromString(c.Param("stateId"))
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
+	}
 
 	var state dao.State
 	if err := s.db.
@@ -2316,7 +2319,10 @@ func (s *UpdateStateRequest) Update(fields []string, state *dao.State) {
 func (s *Services) updateState(c echo.Context) error {
 	user := *c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-	stateId := c.Param("stateId")
+	stateId, err := uuid.FromString(c.Param("stateId"))
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
+	}
 
 	var req UpdateStateRequest
 	fields, err := BindData(c, "", &req)
@@ -2336,7 +2342,7 @@ func (s *Services) updateState(c echo.Context) error {
 	// Pre-update activity tracking
 	oldStateMap := StructToJSONMap(state)
 	oldStateMap["updateScope"] = "status"
-	oldStateMap["updateScopeId"] = stateId
+	oldStateMap["updateScopeId"] = stateId.String()
 
 	var currentDefaultState dao.State
 	if err := s.db.
@@ -2396,7 +2402,7 @@ func (s *Services) updateState(c echo.Context) error {
 	newStateMap := StructToJSONMap(state)
 
 	newStateMap["updateScope"] = "status"
-	newStateMap["updateScopeId"] = stateId
+	newStateMap["updateScopeId"] = stateId.String()
 	if req.Default != nil && *req.Default == true {
 		newStateMap["default_activity_val"] = state.Name
 	}
@@ -2426,7 +2432,10 @@ func (s *Services) updateState(c echo.Context) error {
 func (s *Services) deleteState(c echo.Context) error {
 	user := *c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-	stateId := c.Param("stateId")
+	stateId, err := uuid.FromString(c.Param("stateId"))
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
+	}
 
 	var state dao.State
 	if err := s.db.
