@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -177,7 +178,7 @@ func (np *NotificationProcessor) sendToApp(notification *dao.DeferredNotificatio
 
 	if sender.isNotifyApp(np.db, notification) {
 		if un, countNotify, _ := np.createUserNotify(notification, sender); un != nil {
-			np.websocketService.Send(notification.UserID, un.ID, *un, countNotify)
+			np.websocketService.Send(uuid.FromStringOrNil(notification.UserID), un.ID, *un, countNotify)
 		}
 	}
 	return true

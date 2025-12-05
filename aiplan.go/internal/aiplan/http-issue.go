@@ -136,11 +136,7 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 	if accessCookie == nil {
 		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 	}
-	user_id_str, err := getUserIdFromJWT(accessCookie.Value)
-	if err != nil {
-		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
-	}
-	user_id, err := uuid.FromString(user_id_str)
+	user_id, err := getUserIdFromJWT(accessCookie.Value)
 	if err != nil {
 		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 	}
@@ -2578,7 +2574,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			}
 			if !replyNotMember {
 				if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, authorOriginalComment.ID, comment); err == nil {
-					s.notificationsService.Ws.Send(authorIdStr, notify.ID, comment, countNotify)
+					s.notificationsService.Ws.Send(authorOriginalComment.ID, notify.ID, comment, countNotify)
 				}
 			}
 		}
@@ -2597,7 +2593,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 
 			s.notificationsService.Tg.UserMentionNotification(u, comment)
 			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, u.ID, comment); err == nil {
-				s.notificationsService.Ws.Send(u.ID.String(), notify.ID, notifications.Mention{IssueComment: comment}, countNotify)
+				s.notificationsService.Ws.Send(u.ID, notify.ID, notifications.Mention{IssueComment: comment}, countNotify)
 			}
 		}
 
@@ -2802,7 +2798,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				comment.WorkspaceId = issue.WorkspaceId
 				comment.Issue = &issue
 				if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, authorOriginalComment.ID, comment); err == nil {
-					s.notificationsService.Ws.Send(authorIdStr, notify.ID, comment, countNotify)
+					s.notificationsService.Ws.Send(authorOriginalComment.ID, notify.ID, comment, countNotify)
 				}
 			}
 		}
@@ -2820,7 +2816,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			}
 			s.notificationsService.Tg.UserMentionNotification(u, commentOld)
 			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, u.ID, commentOld); err == nil {
-				s.notificationsService.Ws.Send(u.ID.String(), notify.ID, commentOld, countNotify)
+				s.notificationsService.Ws.Send(u.ID, notify.ID, commentOld, countNotify)
 			}
 		}
 

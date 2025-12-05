@@ -103,11 +103,12 @@ func (wns *WebsocketNotificationService) CloseUserSessions(userId uuid.UUID) {
 	}
 }
 
-func (wns *WebsocketNotificationService) Send(userId, notifyId string, data interface{}, countNotify int) error {
+func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId string, data interface{}, countNotify int) error {
 	msg := WebsocketMsg{}
 	msg.Id = notifyId
 	msg.CountNotify = countNotify
 	msg.CreatedAt = time.Now().UTC()
+	userIdStr := userId.String()
 	switch v := data.(type) {
 	case dao.IssueActivity:
 		if v.Verb == "deleted" && *v.Field != actField.Linked.String() {
@@ -218,7 +219,7 @@ func (wns *WebsocketNotificationService) Send(userId, notifyId string, data inte
 	}
 
 	wns.mutex.RLock()
-	cons, ok := wns.sessions[userId]
+	cons, ok := wns.sessions[userIdStr]
 	wns.mutex.RUnlock()
 	if !ok {
 		return nil
@@ -226,7 +227,7 @@ func (wns *WebsocketNotificationService) Send(userId, notifyId string, data inte
 	for _, session := range cons {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		if err := wsjson.Write(ctx, session, msg); err != nil {
-			slog.Error("Write notification to websocket", "userId", userId, "err", err)
+			slog.Error("Write notification to websocket", "userId", userIdStr, "err", err)
 		}
 		cancel()
 	}
