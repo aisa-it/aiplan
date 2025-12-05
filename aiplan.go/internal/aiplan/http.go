@@ -450,7 +450,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.GET("i/:slug/:projectIdent/:issueNum/", s.shortIssueURLRedirect)
 	e.GET("i/:issue/", s.shortIssueURLRedirect)
 	e.GET("d/:slug/:docNum/", s.shortDocURLRedirect)
-	e.GET("sf/:base/", s.shortSearchFilterURLRedirect)
+	e.GET("sf/:id/", s.shortSearchFilterURLRedirect)
 
 	// Get minio file
 	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy, remove after front migration to new endpoint

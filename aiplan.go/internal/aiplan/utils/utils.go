@@ -10,7 +10,6 @@ package utils
 
 import (
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"iter"
@@ -117,11 +116,6 @@ func CheckInSet[T comparable](set map[T]struct{}, all ...T) bool {
 	return false
 }
 
-func CheckInSlice[T comparable](in []T, all ...T) bool {
-	set := SliceToSet(in)
-	return CheckInSet(set, all...)
-}
-
 func SliceToSlice[T any, U any](in *[]T, f func(*T) U) []U {
 	if in == nil {
 		return make([]U, 0)
@@ -185,35 +179,16 @@ func MergeUniqueSlices[T comparable](slices ...[]T) []T {
 	return result
 }
 
-func Filter[T any](seq iter.Seq[T], by func(T) bool) iter.Seq[T] {
+func Filter[T any](seq iter.Seq2[int, T], by func(T) bool) iter.Seq[T] {
 	return func(yield func(T) bool) {
-		for i := range seq {
-			if by(i) {
-				if !yield(i) {
+		for _, v := range seq {
+			if by(v) {
+				if !yield(v) {
 					return
 				}
 			}
 		}
 	}
-}
-
-func All[T any](res []T) iter.Seq[T] {
-	return func(yield func(T) bool) {
-		for i := range res {
-			if !yield(res[i]) {
-				return
-			}
-		}
-	}
-}
-
-func Collect[T any](seq iter.Seq[T]) []T {
-	var out []T
-	seq(func(val T) bool {
-		out = append(out, val)
-		return true
-	})
-	return out
 }
 
 func CheckHttps(u *url.URL) *url.URL {
@@ -229,16 +204,6 @@ func CheckHttps(u *url.URL) *url.URL {
 	return u
 }
 
-func MergeMaps[K comparable, V any](maps ...map[K]V) map[K]V {
-	merged := make(map[K]V)
-	for _, m := range maps {
-		for k, v := range m {
-			merged[k] = v
-		}
-	}
-	return merged
-}
-
 func CompareUsers(a *dto.UserLight, b *dto.UserLight) int {
 	if a == b {
 		return 0
@@ -250,21 +215,6 @@ func CompareUsers(a *dto.UserLight, b *dto.UserLight) int {
 		return 1
 	}
 	return 0
-}
-
-func UUIDToBase64(u uuid.UUID) string {
-	return base64.RawURLEncoding.EncodeToString(u[:])
-}
-
-func Base64ToUUID(encoded string) (uuid.UUID, error) {
-	data, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	uuid.Must(uuid.FromString("2f4c55e4-d688-4b5d-96c2-09fb6770f3e1"))
-
-	return uuid.FromBytes(data)
 }
 
 func FormatDateStr(dateStr, outFormat string, tz *types.TimeZone) (string, error) {

@@ -3,12 +3,12 @@ package notifications
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -295,7 +295,8 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 	} else {
 		return []userTg{}
 	}
-	var issueUserTgId, defaultWatcherUserTgId map[string]userTg
+
+	userMap := make(map[string]userTg)
 
 	query := tx.Joins("Member").
 		Where("project_id = ?", act.ProjectId)
@@ -303,9 +304,10 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 	if act.NewIssue != nil {
 		act.NewIssue.Author = act.Actor
 		act.NewIssue.Workspace = act.Workspace
-		issueUserTgId = GetUserTgIdFromIssue(act.NewIssue)
-		defaultWatcherUserTgId = GetUserTgIgDefaultWatchers(tx, act.ProjectId)
-		userMap := utils.MergeMaps(issueUserTgId, defaultWatcherUserTgId)
+
+		maps.Copy(userMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId))
+		maps.Copy(userMap, GetUserTgIdFromIssue(act.NewIssue))
+
 		ids := make([]string, 0, len(userMap))
 		for id, _ := range userMap {
 			ids = append(ids, id)
@@ -313,7 +315,6 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 		query = query.Where("member_id in (?)", ids)
 	} else {
 		query = query.Where("project_members.role = ?", types.AdminRole)
-
 	}
 
 	var projectMembers []dao.ProjectMember
@@ -322,12 +323,11 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 		return []userTg{}
 	}
 
-	iMember := utils.MergeMaps(defaultWatcherUserTgId, issueUserTgId)
 	adminMemberIssue := make(map[string]struct{})
 
 	projMap := make(map[string]userTg)
 	for _, member := range projectMembers {
-		if _, ok := iMember[member.MemberId]; ok {
+		if _, ok := userMap[member.MemberId]; ok {
 			adminMemberIssue[member.MemberId] = struct{}{}
 		}
 		if member.Member.TelegramId != nil && member.Member.CanReceiveNotifications() && !member.Member.Settings.TgNotificationMute {
@@ -337,10 +337,8 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 			}
 		}
 	}
-
-	resMap := utils.MergeMaps(defaultWatcherUserTgId, issueUserTgId, projMap)
-
-	return filterProjectTgIdIsNotify(projectMembers, *act.ActorId, resMap, act.Field, act.Verb, adminMemberIssue)
+	maps.Copy(userMap, projMap)
+	return filterProjectTgIdIsNotify(projectMembers, *act.ActorId, userMap, act.Field, act.Verb, adminMemberIssue)
 }
 
 func filterProjectTgIdIsNotify(wm []dao.ProjectMember, authorId string, userTgId map[string]userTg, field *string, verb string, adminMembers map[string]struct{}) []userTg {
