@@ -26,6 +26,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -396,7 +397,7 @@ func (s *Services) exportUsersList(c echo.Context) error {
 	s.db.FindInBatches(&users, 100, func(tx *gorm.DB, batch int) error {
 		for _, user := range users {
 			if err := w.Write([]string{
-				user.ID,
+				user.ID.String(),
 				user.FirstName,
 				user.LastName,
 				getNilString(user.Username),
@@ -469,13 +470,14 @@ func (s *Services) createUser(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrWorkspaceRoleRequired)
 	}
 
+	createdById := user.ID.String()
 	u := dao.User{
-		ID:          dao.GenID(),
+		ID:          dao.GenUUID(),
 		Email:       req.Email,
 		FirstName:   req.FirstName,
 		LastName:    req.LastName,
 		Password:    dao.GenPasswordHash(req.Password),
-		CreatedByID: &user.ID,
+		CreatedByID: &createdById,
 		Theme:       types.DefaultTheme,
 		IsActive:    true,
 	}
@@ -497,9 +499,9 @@ func (s *Services) createUser(c echo.Context) error {
 			return s.db.Create(&dao.WorkspaceMember{
 				ID:          dao.GenID(),
 				WorkspaceId: workspace.ID,
-				MemberId:    u.ID,
+				MemberId:    u.ID.String(),
 				Role:        req.Role,
-				CreatedById: &user.ID,
+				CreatedById: &createdById,
 			}).Error
 		}
 		return nil
@@ -616,7 +618,11 @@ func (s *Services) updateUser(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/users/{userId} [delete]
 func (s *Services) deleteUser(c echo.Context) error {
-	userId := c.Param("userId")
+	userIdStr := c.Param("userId")
+	userId, err := uuid.FromString(userIdStr)
+	if err != nil {
+		return EError(c, err)
+	}
 
 	if err := s.business.DeleteUser(userId); err != nil {
 		return EError(c, err)
@@ -875,7 +881,7 @@ func (s *Services) createMessageForMember(c echo.Context) error {
 			tmpNotify := dao.DeferredNotifications{
 				ID: dao.GenID(),
 
-				UserID: member.ID,
+				UserID: member.ID.String(),
 				User:   &member,
 
 				NotificationType:    "service_message",
@@ -956,11 +962,12 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 			Where("workspace_id = ?", workspaceId).
 			First(&member).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
+				superUserIdStr := superUser.ID.String()
 				member = dao.WorkspaceMember{
 					ID:          dao.GenID(),
 					WorkspaceId: workspace.ID,
-					MemberId:    user.ID,
-					CreatedById: &superUser.ID,
+					MemberId:    user.ID.String(),
+					CreatedById: &superUserIdStr,
 					Role:        role.Role,
 				}
 				if err := tx.Model(&dao.WorkspaceMember{}).Create(&member).Error; err != nil {
@@ -974,8 +981,9 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 
 		oldMemberRole := member.Role
 
+		superUserIdStr := superUser.ID.String()
 		member.Role = role.Role
-		member.UpdatedById = &superUser.ID
+		member.UpdatedById = &superUserIdStr
 
 		if err := tx.Model(&dao.WorkspaceMember{}).
 			Where("id = ?", member.ID).
@@ -992,15 +1000,15 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 			for _, project := range projects {
 				if err := tx.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
-					DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": superUser.ID}),
+					DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": superUserIdStr}),
 				}).Create(&dao.ProjectMember{
 					ID:                              dao.GenID(),
 					CreatedAt:                       time.Now(),
-					CreatedById:                     &superUser.ID,
+					CreatedById:                     &superUserIdStr,
 					WorkspaceId:                     workspace.ID,
 					ProjectId:                       project.ID,
 					Role:                            types.AdminRole,
-					MemberId:                        user.ID,
+					MemberId:                        user.ID.String(),
 					ViewProps:                       types.DefaultViewProps,
 					NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
 					NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
@@ -1073,7 +1081,7 @@ func (s *Services) deleteWorkspaceMemberAdmin(c echo.Context) error {
 			First(&requestedMember).Error; err != nil {
 			return err
 		}
-		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != c.(AuthContext).User.ID {
+		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != c.(AuthContext).User.ID.String() {
 			return apierrors.ErrDeleteSuperUser
 		}
 
@@ -1162,12 +1170,13 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 			Where("project_id = ?", projectId).
 			First(&member).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
+				superUserIdStr := superUser.ID.String()
 				member = dao.ProjectMember{
 					ID:          dao.GenID(),
 					ProjectId:   projectId,
-					MemberId:    user.ID,
+					MemberId:    user.ID.String(),
 					WorkspaceId: workspaceId,
-					CreatedById: &superUser.ID,
+					CreatedById: &superUserIdStr,
 					CreatedAt:   time.Now(),
 					ViewProps:   types.DefaultViewProps,
 					Role:        role.Role,
@@ -1181,8 +1190,9 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 			}
 		}
 
+		superUserIdStr := superUser.ID.String()
 		member.Role = role.Role
-		member.UpdatedById = &superUser.ID
+		member.UpdatedById = &superUserIdStr
 		if err := tx.Model(&dao.ProjectMember{}).
 			Where("id = ?", member.ID).
 			Save(&member).Error; err != nil {
@@ -1261,7 +1271,7 @@ func (s *Services) createReleaseNote(c echo.Context) error {
 	if err := c.Bind(&note); err != nil {
 		return EError(c, err)
 	}
-	note.AuthorId = c.(AuthContext).User.ID
+	note.AuthorId = c.(AuthContext).User.ID.String()
 	note.TagName = appVersion
 	note.PublishedAt = time.Now()
 	if len(note.Body.Body) == 0 {
@@ -1319,7 +1329,7 @@ func (s *Services) updateReleaseNote(c echo.Context) error {
 
 	data.ID = c.(ReleaseNoteContext).ReleaseNote.ID
 	data.TagName = c.(ReleaseNoteContext).ReleaseNote.TagName
-	data.AuthorId = c.(ReleaseNoteContext).User.ID
+	data.AuthorId = c.(ReleaseNoteContext).User.ID.String()
 	if len(data.Body.Body) == 0 {
 		return EErrorDefined(c, apierrors.ErrReleaseNoteEmptyBody)
 	}

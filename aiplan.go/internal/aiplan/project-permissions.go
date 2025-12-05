@@ -96,7 +96,7 @@ func (s *Services) hasProjectPermissions(c echo.Context) (bool, error) {
 			return true, nil
 		}
 
-		if projectMember.Role == 15 || projectContext.Project.ProjectLeadId == projectContext.User.ID {
+		if projectMember.Role == 15 || projectContext.Project.ProjectLeadId == projectContext.User.ID.String() {
 			return true, nil
 		}
 	}
@@ -151,7 +151,7 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 	}
 
 	if strings.HasSuffix(c.Path(), "/issue-labels/") && c.Request().Method == http.MethodPost {
-		if issueContext.Issue.CreatedById == issueContext.User.ID {
+		if issueContext.Issue.CreatedById == issueContext.User.ID.String() {
 			return true, nil
 		}
 		for _, user := range *issueContext.Issue.Assignees {
@@ -185,11 +185,11 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 			return true, nil
 		}
 
-		if issueContext.Issue.CreatedById == issueContext.User.ID {
+		if issueContext.Issue.CreatedById == issueContext.User.ID.String() {
 			// If issue author
 			return true, nil
 		} else {
-			return issueContext.Issue.IsAssignee(issueContext.User.ID), nil
+			return issueContext.Issue.IsAssignee(issueContext.User.ID.String()), nil
 		}
 	}
 

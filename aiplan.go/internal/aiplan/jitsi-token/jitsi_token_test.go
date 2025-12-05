@@ -13,7 +13,7 @@ func TestIssueToken(t *testing.T) {
 		FirstName: "Egor",
 		LastName:  "Shevtsov",
 		Email:     "egor@aisa.ru",
-		ID:        dao.GenID(),
+		ID:        dao.GenUUID(),
 	}, true, "aiplan")
 	if err != nil {
 		t.Fatal(err)

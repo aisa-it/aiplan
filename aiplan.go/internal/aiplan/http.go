@@ -533,13 +533,14 @@ func checkPassword(password string, pass string) bool {
 }
 
 // Генерация ключа доступа
-func createAccessToken(userId string) (*Token, *Token, error) {
-	ta, err := GenJwtToken([]byte(cfg.SecretKey), "access", userId)
+func createAccessToken(userId uuid.UUID) (*Token, *Token, error) {
+	userIdStr := userId.String()
+	ta, err := GenJwtToken([]byte(cfg.SecretKey), "access", userIdStr)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tr, err := GenJwtToken([]byte(cfg.SecretKey), "refresh", userId)
+	tr, err := GenJwtToken([]byte(cfg.SecretKey), "refresh", userIdStr)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -272,8 +272,9 @@ func (s *Services) updateProject(c echo.Context) error {
 	}
 	var newLead dao.ProjectMember
 
+	userIdStr := user.ID.String()
 	project.ID = id
-	project.UpdatedById = &user.ID
+	project.UpdatedById = &userIdStr
 	project.Name = strings.TrimSpace(project.Name)
 
 	err := c.Validate(project)
@@ -298,7 +299,7 @@ func (s *Services) updateProject(c echo.Context) error {
 		oldProjectMap["project_lead_activity_val"] = project.ProjectLead.Email
 	}
 
-	if !user.IsSuperuser && user.ID != oldLead && changeProjectLead {
+	if !user.IsSuperuser && userIdStr != oldLead && changeProjectLead {
 		return EErrorDefined(c, apierrors.ErrChangeProjectLeadForbidden)
 	}
 
@@ -418,10 +419,11 @@ func (s *Services) createProject(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrProjectLimitExceed)
 	}
 
+	userIdStr := user.ID.String()
 	project := dao.Project{
 		ID:          dao.GenID(),
 		WorkspaceId: workspace.ID,
-		CreatedById: user.ID,
+		CreatedById: userIdStr,
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -443,7 +445,7 @@ func (s *Services) createProject(c echo.Context) error {
 			return errors.New("project identifier empty")
 		}
 		if project.ProjectLeadId == "" {
-			project.ProjectLeadId = user.ID
+			project.ProjectLeadId = userIdStr
 		}
 
 		// Create project
@@ -453,7 +455,7 @@ func (s *Services) createProject(c echo.Context) error {
 
 		return tx.Create(&[]dao.State{
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
 				Name:     "Новая",
 				Color:    "#26b5ce",
 				Sequence: 15000,
@@ -461,28 +463,28 @@ func (s *Services) createProject(c echo.Context) error {
 				Default:  true,
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
 				Name:     "Открыта",
 				Color:    "#f2c94c",
 				Sequence: 25000,
 				Group:    "unstarted",
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
 				Name:     "В работе",
 				Color:    "#5e6ad2",
 				Sequence: 35000,
 				Group:    "started",
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
 				Name:     "Выполнена",
 				Color:    "#4cb782",
 				Sequence: 45000,
 				Group:    "completed",
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &user.ID,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
 				Name:     "Отменена",
 				Color:    "#eb5757",
 				Sequence: 55000,
@@ -828,9 +830,10 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotUpdateHigherRole)
 	}
 
+	userIdStr := user.ID.String()
 	oldMemberMap := StructToJSONMap(requestedProjectMember)
 	requestedProjectMember.Role = data["role"]
-	requestedProjectMember.UpdatedById = &user.ID
+	requestedProjectMember.UpdatedById = &userIdStr
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if requestedProjectMember.Role == types.GuestRole {
@@ -989,9 +992,10 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrUserAlreadyInProject)
 	}
 
+	userIdStr := user.ID.String()
 	projectMember.ID = dao.GenID()
 	projectMember.ProjectId = project.ID
-	projectMember.CreatedById = &user.ID
+	projectMember.CreatedById = &userIdStr
 	projectMember.WorkspaceId = workspaceMember.WorkspaceId
 	projectMember.ViewProps = types.DefaultViewProps
 	projectMember.NotificationAuthorSettingsEmail = types.DefaultProjectMemberNS
@@ -1115,13 +1119,14 @@ func (s *Services) joinProjects(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrProjectIsPrivate.WithFormattedMessage(projectId))
 		}
 
+		userIdStr := user.ID.String()
 		memberships = append(memberships, dao.ProjectMember{
 			ID:                              dao.GenID(),
 			ProjectId:                       projectId,
-			MemberId:                        user.ID,
+			MemberId:                        userIdStr,
 			Role:                            role,
 			WorkspaceId:                     workspaceMember.WorkspaceId,
-			CreatedById:                     &user.ID,
+			CreatedById:                     &userIdStr,
 			CreatedAt:                       time.Now(),
 			ViewProps:                       types.DefaultViewProps,
 			NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
@@ -1259,7 +1264,8 @@ func (s *Services) addProjectToFavorites(c echo.Context) error {
 
 	projectID := req.ProjectID
 
-	project, err := dao.GetProject(s.db, workspace.Slug, user.ID, projectID)
+	userIdStr := user.ID.String()
+	project, err := dao.GetProject(s.db, workspace.Slug, userIdStr, projectID)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -1268,9 +1274,9 @@ func (s *Services) addProjectToFavorites(c echo.Context) error {
 		Id:          dao.GenID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &user.ID,
+		CreatedById: &userIdStr,
 		ProjectId:   project.ID,
-		UserId:      user.ID,
+		UserId:      userIdStr,
 		WorkspaceId: project.Workspace.ID,
 	}
 	if err := s.db.Create(&projectFavorite).Error; err != nil {
@@ -1299,13 +1305,14 @@ func (s *Services) removeProjectFromFavorites(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	projectId := c.Param("projectId")
 
-	project, err := dao.GetProject(s.db, workspace.Slug, user.ID, projectId)
+	userIdStr := user.ID.String()
+	project, err := dao.GetProject(s.db, workspace.Slug, userIdStr, projectId)
 	if err != nil {
 		return EError(c, err)
 	}
 
 	if err := s.db.Where("project_id = ?", project.ID).
-		Where("user_id = ?", user.ID).
+		Where("user_id = ?", userIdStr).
 		Where("workspace_id = ?", project.Workspace.ID).
 		Delete(&dao.ProjectFavorites{}).Error; err != nil {
 		return EError(c, err)
@@ -1408,11 +1415,12 @@ func (s *Services) createProjectEstimate(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrEstimatePointsRequired)
 	}
 
+	userIdStr := user.ID.String()
 	data.Estimate.Id = dao.GenID()
 	data.Estimate.CreatedAt = time.Now()
-	data.Estimate.CreatedById = &user.ID
+	data.Estimate.CreatedById = &userIdStr
 	data.Estimate.UpdatedAt = time.Now()
-	data.Estimate.UpdatedById = &user.ID
+	data.Estimate.UpdatedById = &userIdStr
 	data.Estimate.WorkspaceId = project.WorkspaceId
 	data.Estimate.ProjectId = project.ID
 
@@ -1423,9 +1431,9 @@ func (s *Services) createProjectEstimate(c echo.Context) error {
 	for i := 0; i < len(data.EstimatePoints); i++ {
 		data.EstimatePoints[i].Id = dao.GenID()
 		data.EstimatePoints[i].CreatedAt = time.Now()
-		data.EstimatePoints[i].CreatedById = &user.ID
+		data.EstimatePoints[i].CreatedById = &userIdStr
 		data.EstimatePoints[i].UpdatedAt = time.Now()
-		data.EstimatePoints[i].UpdatedById = &user.ID
+		data.EstimatePoints[i].UpdatedById = &userIdStr
 		data.EstimatePoints[i].WorkspaceId = project.WorkspaceId
 		data.EstimatePoints[i].ProjectId = project.ID
 		data.EstimatePoints[i].EstimateId = data.Estimate.Id
@@ -1627,6 +1635,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		}
 	}
 
+	userIdStr := user.ID.String()
 	issueNew := dao.Issue{
 		ID:                  dao.GenUUID(),
 		Name:                issue.Name,
@@ -1635,11 +1644,11 @@ func (s *Services) createIssue(c echo.Context) error {
 		TargetDate:          issue.TargetDate,
 		CompletedAt:         issue.CompletedAt,
 		SequenceId:          issue.SequenceId,
-		CreatedById:         user.ID,
+		CreatedById:         userIdStr,
 		ParentId:            parentId,
 		ProjectId:           project.ID,
 		StateId:             issue.StateId,
-		UpdatedById:         &user.ID,
+		UpdatedById:         &userIdStr,
 		WorkspaceId:         workspace.ID,
 		DescriptionHtml:     issue.DescriptionHtml,
 		DescriptionStripped: issue.DescriptionStripped,
@@ -1669,7 +1678,7 @@ func (s *Services) createIssue(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &user.ID,
+					CreatedById: &userIdStr,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issueNew.WorkspaceId,
@@ -1706,8 +1715,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					BlockId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
@@ -1726,8 +1735,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1746,8 +1755,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1765,8 +1774,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					IssueId:     issueId,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
@@ -1788,8 +1797,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					BlockedById: issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlocked, 10).Error; err != nil {
@@ -1895,11 +1904,12 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userIdStr := user.ID.String()
 	label.ID = dao.GenUUID()
 	label.CreatedAt = time.Now()
 	label.UpdatedAt = time.Now()
-	label.CreatedById = &user.ID
-	label.UpdatedById = &user.ID
+	label.CreatedById = &userIdStr
+	label.UpdatedById = &userIdStr
 	label.ProjectId = project.ID
 	label.WorkspaceId = project.WorkspaceId
 
@@ -1994,7 +2004,8 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	label.UpdatedById = &user.ID
+	userIdStr := user.ID.String()
+	label.UpdatedById = &userIdStr
 	label.UpdatedAt = time.Now()
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -2211,11 +2222,12 @@ func (s *Services) createState(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userIdStr := user.ID.String()
 	state.ID = dao.GenUUID()
 	state.ProjectId = project.ID
 	state.WorkspaceId = project.WorkspaceId
-	state.CreatedById = &user.ID
-	state.UpdatedById = &user.ID
+	state.CreatedById = &userIdStr
+	state.UpdatedById = &userIdStr
 	state.CreatedAt = time.Now()
 	state.UpdatedAt = time.Now()
 
@@ -2358,7 +2370,7 @@ func (s *Services) updateState(c echo.Context) error {
 		}
 	}
 
-	req.UpdatedById = user.ID
+	req.UpdatedById = user.ID.String()
 	fields = append(fields, "updated_by")
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -2765,8 +2777,8 @@ func (s *Services) createIssueTemplate(c echo.Context) error {
 
 	it := dao.IssueTemplate{
 		Id:          dao.GenUUID(),
-		CreatedById: uuid.Must(uuid.FromString(user.ID)),
-		UpdatedById: uuid.Must(uuid.FromString(user.ID)),
+		CreatedById: user.ID,
+		UpdatedById: user.ID,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		WorkspaceId: uuid.Must(uuid.FromString(project.WorkspaceId)),
@@ -2872,7 +2884,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 
 	if len(fields) > 0 {
 		fields = append(fields, "updated_by_id")
-		template.UpdatedById = uuid.Must(uuid.FromString(user.ID))
+		template.UpdatedById = user.ID
 		if err := s.db.
 			Select(fields).
 			Updates(&template).Error; err != nil {
@@ -2977,9 +2989,10 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userIdStr := user.ID.String()
 	fileAsset := dao.FileAsset{
 		Id:          dao.GenUUID(),
-		CreatedById: &user.ID,
+		CreatedById: &userIdStr,
 		WorkspaceId: &project.WorkspaceId,
 	}
 
@@ -3054,8 +3067,9 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 	project := c.(ProjectContext).Project
 	oldLogoId := project.LogoId.UUID.String()
 
+	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		project.UpdatedById = &user.ID
+		project.UpdatedById = &userIdStr
 		project.LogoId = uuid.NullUUID{}
 		if err := tx.Select("logo_id").Updates(&project).Error; err != nil {
 			return err

@@ -61,7 +61,7 @@ func (c *ImportContext) mapJiraIssue(issue *jira.Issue) (*dao.Issue, error) {
 		SequenceId:      sequenceId,
 		CreatedAt:       time.Time(issue.Fields.Created),
 		UpdatedAt:       time.Time(issue.Fields.Updated),
-		CreatedById:     author.ID,
+		CreatedById:     author.ID.String(),
 		ProjectId:       c.Project.ID,
 		WorkspaceId:     c.Project.WorkspaceId,
 	}
@@ -289,7 +289,7 @@ func (mc *MapperContext) MapAssignees() error {
 		mc.c.IssueAssignees.Put(dao.IssueAssignee{
 			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
-			AssigneeId:  assignee.ID,
+			AssigneeId:  assignee.ID.String(),
 			IssueId:     mc.issue.ID,
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,
@@ -320,7 +320,7 @@ func (mc *MapperContext) MapWatchers() error {
 		mc.c.IssueWatchers.Put(dao.IssueWatcher{
 			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
-			WatcherId:   watcher.ID,
+			WatcherId:   watcher.ID.String(),
 			IssueId:     mc.issue.ID,
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,

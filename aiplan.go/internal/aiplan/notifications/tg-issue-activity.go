@@ -444,7 +444,7 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 	}
 
 	issueUserTgId := GetUserTgIdFromIssue(act.Issue)
-	authorId := act.Issue.Author.ID
+	authorId := act.Issue.Author.ID.String()
 
 	if act.NewIssueComment != nil && act.NewIssueComment.ReplyToCommentId.Valid {
 		if err := tx.Preload("Actor").
@@ -456,7 +456,7 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 			if act.NewIssueComment.OriginalComment.Actor.TelegramId != nil &&
 				act.NewIssueComment.OriginalComment.Actor.CanReceiveNotifications() &&
 				!act.NewIssueComment.OriginalComment.Actor.Settings.TgNotificationMute {
-				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID] = userTg{
+				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID.String()] = userTg{
 					id:  *act.NewIssueComment.OriginalComment.Actor.TelegramId,
 					loc: act.NewIssueComment.OriginalComment.Actor.UserTimezone,
 				}

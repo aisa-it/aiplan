@@ -200,7 +200,7 @@ func (is *ImportService) Close() {
 	is.closeCh <- true
 }
 
-func (is *ImportService) GetUserImports(userId string) ([]ImportStatus, error) {
+func (is *ImportService) GetUserImports(userId uuid.UUID) ([]ImportStatus, error) {
 	var imports []Import
 	if err := is.memDB.
 		Where("actor_id = ?", userId).

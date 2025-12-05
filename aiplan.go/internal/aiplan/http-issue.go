@@ -136,7 +136,11 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 	if accessCookie == nil {
 		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 	}
-	user_id, err := getUserIdFromJWT(accessCookie.Value)
+	user_id_str, err := getUserIdFromJWT(accessCookie.Value)
+	if err != nil {
+		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
+	}
+	user_id, err := uuid.FromString(user_id_str)
 	if err != nil {
 		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 	}
@@ -988,7 +992,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 		} else {
 			if issue.Parent != nil {
-				unpinTask = issue.Parent.CreatedById == user.ID && len(data) == 4
+				unpinTask = issue.Parent.CreatedById == user.ID.String() && len(data) == 4
 			}
 		}
 		data["parent_id"] = parentId
@@ -1138,8 +1142,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 	}
 
-	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID || unpinTask
+	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID.String() || unpinTask
 
+	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Upload new files
 		if form != nil {
@@ -1148,7 +1153,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &user.ID,
+					CreatedById: &userIdStr,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
@@ -1187,8 +1192,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					BlockId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
@@ -1212,8 +1217,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1236,8 +1241,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1260,8 +1265,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					IssueId:     issue.ID.String(),
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
@@ -1288,8 +1293,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					BlockedById: issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlocked, 10).Error; err != nil {
@@ -1336,7 +1341,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 					targetDate = &dateStr
 				}
-				*notifyUserIds = append(*notifyUserIds, issue.Author.ID)
+				*notifyUserIds = append(*notifyUserIds, issue.Author.ID.String())
 
 				err := notifications.CreateDeadlineNotification(tx, &issue, targetDate, notifyUserIds)
 				if err != nil {
@@ -1347,10 +1352,10 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		issue.UpdatedAt = time.Now()
-		issue.UpdatedById = &user.ID
+		issue.UpdatedById = &userIdStr
 
 		data["updated_at"] = time.Now()
-		data["updated_by_id"] = user.ID
+		data["updated_by_id"] = userIdStr
 
 		var err error
 		if updateAll {
@@ -1415,7 +1420,7 @@ func (s *Services) deleteIssue(c echo.Context) error {
 	//project := c.(IssueContext).Project
 	issue := c.(IssueContext).Issue
 	//currentInst := StructToJSONMap(issue)
-	if c.(IssueContext).ProjectMember.Role != types.AdminRole && issue.CreatedById != user.ID {
+	if c.(IssueContext).ProjectMember.Role != types.AdminRole && issue.CreatedById != user.ID.String() {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
 
@@ -1584,12 +1589,13 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	}
 	parentId := uuid.NullUUID{UUID: id, Valid: true}
 
+	userIdStr := user.ID.String()
 	for i := range subIssues {
-		if project.CurrentUserMembership.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
+		if project.CurrentUserMembership.Role != types.AdminRole && subIssues[i].CreatedById != userIdStr {
 			return EErrorDefined(c, apierrors.ErrPermissionParentIssue)
 		}
 		subIssues[i].ParentId = parentId
-		subIssues[i].UpdatedById = &user.ID
+		subIssues[i].UpdatedById = &userIdStr
 		subIssues[i].SortOrder = i + maxSortOrder + 1
 	}
 
@@ -2146,12 +2152,13 @@ func (s *Services) createIssueLink(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrURLAndTitleRequired)
 	}
 
+	userIdStr := user.ID.String()
 	link := dao.IssueLink{
 		Id:          dao.GenUUID(),
 		Title:       req.Title,
 		Url:         req.Url,
-		CreatedById: &user.ID,
-		UpdatedById: &user.ID,
+		CreatedById: &userIdStr,
+		UpdatedById: &userIdStr,
 		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: project.WorkspaceId,
@@ -2217,8 +2224,9 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 		return c.JSON(http.StatusOK, oldLink)
 	}
 
+	userIdStr := user.ID.String()
 	oldLink.UpdatedAt = time.Now()
-	oldLink.UpdatedById = &user.ID
+	oldLink.UpdatedById = &userIdStr
 	oldLink.Title = newLink.Title
 	oldLink.Url = newLink.Url
 
@@ -2493,6 +2501,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
+	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		comment.Id = dao.GenUUID()
 		comment.ProjectId = project.ID
@@ -2500,7 +2509,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		comment.IssueId = issue.ID.String()
 		comment.WorkspaceId = project.WorkspaceId
 		comment.Workspace = issue.Workspace
-		comment.ActorId = &user.ID
+		comment.ActorId = &userIdStr
 		comment.Issue = &issue
 		comment.CommentStripped = types.RemoveInvisibleChars(comment.CommentStripped)
 
@@ -2519,7 +2528,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &user.ID,
+					CreatedById: &userIdStr,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
@@ -2550,15 +2559,16 @@ func (s *Services) createIssueComment(c echo.Context) error {
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
-			if authorOriginalComment.ID != issue.CreatedById {
+			authorIdStr := authorOriginalComment.ID.String()
+			if authorIdStr != issue.CreatedById {
 				for _, id := range issue.AssigneeIDs {
-					if id == authorOriginalComment.ID {
+					if id == authorIdStr {
 						replyNotMember = true
 						break
 					}
 				}
 				for _, id := range issue.WatcherIDs {
-					if id == authorOriginalComment.ID {
+					if id == authorIdStr {
 						replyNotMember = true
 						break
 					}
@@ -2568,7 +2578,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			}
 			if !replyNotMember {
 				if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, authorOriginalComment.ID, comment); err == nil {
-					s.notificationsService.Ws.Send(authorOriginalComment.ID, notify.ID, comment, countNotify)
+					s.notificationsService.Ws.Send(authorIdStr, notify.ID, comment, countNotify)
 				}
 			}
 		}
@@ -2578,16 +2588,16 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			return err
 		}
 		comment.Actor = &user
-		for _, user := range users {
+		for _, u := range users {
 			if authorOriginalComment != nil && !replyNotMember {
-				if user.ID == authorOriginalComment.ID {
+				if u.ID == authorOriginalComment.ID {
 					continue
 				}
 			}
 
-			s.notificationsService.Tg.UserMentionNotification(user, comment)
-			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, user.ID, comment); err == nil {
-				s.notificationsService.Ws.Send(user.ID, notify.ID, notifications.Mention{IssueComment: comment}, countNotify)
+			s.notificationsService.Tg.UserMentionNotification(u, comment)
+			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, u.ID, comment); err == nil {
+				s.notificationsService.Ws.Send(u.ID.String(), notify.ID, notifications.Mention{IssueComment: comment}, countNotify)
 			}
 		}
 
@@ -2683,7 +2693,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if *commentOld.ActorId != user.ID {
+	if *commentOld.ActorId != user.ID.String() {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -2719,12 +2729,13 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
+	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		commentOld.Attachments = comment.Attachments
 		commentOld.CommentHtml = comment.CommentHtml
 		commentOld.CommentStripped = comment.CommentStripped
 		commentOld.ReplyToCommentId = comment.ReplyToCommentId
-		commentOld.UpdatedById = &user.ID
+		commentOld.UpdatedById = &userIdStr
 
 		if err := tx.Omit(clause.Associations).Save(&commentOld).Error; err != nil {
 			return err
@@ -2736,7 +2747,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &user.ID,
+					CreatedById: &userIdStr,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
 					WorkspaceId: &issue.WorkspaceId,
@@ -2767,15 +2778,16 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
-			if authorOriginalComment.ID != issue.CreatedById {
+			authorIdStr := authorOriginalComment.ID.String()
+			if authorIdStr != issue.CreatedById {
 				for _, id := range issue.AssigneeIDs {
-					if id == authorOriginalComment.ID {
+					if id == authorIdStr {
 						replyNotMember = true
 						break
 					}
 				}
 				for _, id := range issue.WatcherIDs {
-					if id == authorOriginalComment.ID {
+					if id == authorIdStr {
 						replyNotMember = true
 						break
 					}
@@ -2790,7 +2802,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				comment.WorkspaceId = issue.WorkspaceId
 				comment.Issue = &issue
 				if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, authorOriginalComment.ID, comment); err == nil {
-					s.notificationsService.Ws.Send(authorOriginalComment.ID, notify.ID, comment, countNotify)
+					s.notificationsService.Ws.Send(authorIdStr, notify.ID, comment, countNotify)
 				}
 			}
 		}
@@ -2800,15 +2812,15 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			return err
 		}
 		commentOld.Actor = &user
-		for _, user := range users {
+		for _, u := range users {
 			if authorOriginalComment != nil && !replyNotMember {
-				if user.ID == authorOriginalComment.ID {
+				if u.ID == authorOriginalComment.ID {
 					continue
 				}
 			}
-			s.notificationsService.Tg.UserMentionNotification(user, commentOld)
-			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, user.ID, commentOld); err == nil {
-				s.notificationsService.Ws.Send(user.ID, notify.ID, commentOld, countNotify)
+			s.notificationsService.Tg.UserMentionNotification(u, commentOld)
+			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, u.ID, commentOld); err == nil {
+				s.notificationsService.Ws.Send(u.ID.String(), notify.ID, commentOld, countNotify)
 			}
 		}
 
@@ -2869,7 +2881,7 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if projectMember.Role != types.AdminRole && *comment.ActorId != user.ID {
+	if projectMember.Role != types.AdminRole && *comment.ActorId != user.ID.String() {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -2940,7 +2952,7 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 	reaction := dao.CommentReaction{
 		Id:        dao.GenUUID(),
 		CreatedAt: time.Now(),
-		UserId:    user.ID,
+		UserId:    user.ID.String(),
 		CommentId: commentUUID,
 		Reaction:  reactionRequest.Reaction,
 	}
@@ -3190,12 +3202,13 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userIdStr := user.ID.String()
 	issueAttachment := dao.IssueAttachment{
 		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &user.ID,
-		UpdatedById: &user.ID,
+		CreatedById: &userIdStr,
+		UpdatedById: &userIdStr,
 		Attributes:  attributes,
 		AssetId:     assetName,
 		IssueId:     issue.ID,
@@ -3205,7 +3218,7 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 
 	issueAttachment.Asset = &dao.FileAsset{
 		Id:          assetName,
-		CreatedById: &user.ID,
+		CreatedById: &userIdStr,
 		WorkspaceId: &issue.WorkspaceId,
 		Name:        asset.Filename,
 		FileSize:    int(asset.Size),
@@ -3544,7 +3557,7 @@ func (s *Services) issueDescriptionLock(c echo.Context) error {
 			if err == gorm.ErrRecordNotFound {
 				// No lock
 				lock := dao.IssueDescriptionLock{
-					UserId:      uuid.Must(uuid.FromString(user.ID)),
+					UserId:      user.ID,
 					IssueId:     issue.ID,
 					LockedUntil: time.Now().Add(descriptionLockTime),
 				}

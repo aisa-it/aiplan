@@ -2,7 +2,9 @@ package business
 
 import (
 	"fmt"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -38,7 +40,7 @@ type userFK struct {
 	Field string
 }
 
-func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId string, newUserId string) error {
+func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId uuid.UUID, newUserId uuid.UUID) error {
 	return mainTx.Transaction(func(tx *gorm.DB) error {
 		for _, fk := range userFKs {
 			tx.SavePoint("preUpdate")
@@ -60,7 +62,7 @@ func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId string, newUserId str
 	})
 }
 
-func (b *Business) DeleteUser(userId string) error {
+func (b *Business) DeleteUser(userId uuid.UUID) error {
 	return b.db.Transaction(func(tx *gorm.DB) error {
 		// Replace all users records to deleted user
 		if err := b.ReplaceUser(tx, userId, deletedServiceUser.ID); err != nil {

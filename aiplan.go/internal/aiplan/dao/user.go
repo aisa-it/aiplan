@@ -23,7 +23,7 @@ import (
 
 // Пользователи
 type User struct {
-	ID string `gorm:"column:id;primaryKey" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
 
 	Password   string  `json:"-"`
 	Username   *string `json:"username" gorm:"uniqueIndex:,where:deleted_at is NULL" validate:"omitempty,username"`
@@ -93,7 +93,7 @@ type User struct {
 }
 
 func (u User) GetId() string {
-	return u.ID
+	return u.ID.String()
 }
 
 func (u User) GetString() string {
@@ -175,8 +175,8 @@ func (u *User) ToDTO() *dto.User {
 }
 
 func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
-	if u.ID == "" {
-		u.ID = GenID()
+	if u.ID == uuid.Nil {
+		u.ID = GenUUID()
 	}
 	u.Settings = types.DefaultSettings
 	u.ViewProps = types.DefaultViewProps

@@ -1090,14 +1090,14 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 
 	doc.ReaderIDs = getUniqueDocMemberIDs(doc.WatcherIDs, doc.ReaderIDs, doc.EditorsIDs)
 
-	userMap := utils.SliceToMap(&users, func(u *User) string { return u.ID })
+	userMap := utils.SliceToMap(&users, func(u *User) string { return u.ID.String() })
 	var newAccessRules []DocAccessRules
 	for id, u := range userMap {
 		newAccessRules = append(newAccessRules, DocAccessRules{
 			Id: GenUUID(),
 
-			MemberId:    uuid.Must(uuid.FromString(u.ID)),
-			CreatedById: uuid.Must(uuid.FromString(user.ID)),
+			MemberId:    u.ID,
+			CreatedById: user.ID,
 			DocId:       doc.ID,
 			UpdatedById: uuid.NullUUID{},
 			WorkspaceId: uuid.Must(uuid.FromString(doc.WorkspaceId)),

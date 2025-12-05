@@ -191,7 +191,7 @@ func (is *ImportService) StartJiraProjectImport(webURL *url.URL, user dao.User, 
 	if err := is.memDB.Save(&Import{
 		ID:                context.ID,
 		TargetWorkspaceID: context.TargetWorkspaceID,
-		ActorID:           user.ID,
+		ActorID:           user.ID.String(),
 		ProjectKey:        context.ProjectKey,
 		Context:           context,
 		StartAt:           time.Now(),

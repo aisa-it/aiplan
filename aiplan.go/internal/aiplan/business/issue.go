@@ -33,12 +33,13 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 	}
 
 	issueId := issue.ID.String()
+	actorId := user.ID.String()
 	comment := dao.IssueComment{
 		Id:          dao.GenUUID(),
 		WorkspaceId: issue.WorkspaceId,
 		ProjectId:   issue.ProjectId,
 		IssueId:     issueId,
-		ActorId:     &user.ID,
+		ActorId:     &actorId,
 		CommentHtml: types.RedactorHTML{Body: text},
 	}
 	if len(meta) > 0 {
