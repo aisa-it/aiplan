@@ -56,7 +56,7 @@ func (c *ImportContext) mapJiraIssue(issue *jira.Issue) (*dao.Issue, error) {
 		Name:            issue.Fields.Summary,
 		DescriptionHtml: issue.RenderedFields.Description,
 		DescriptionType: 1,
-		StateId:         &state.ID,
+		StateId:         state.ID,
 		Priority:        c.mapJiraPriority(*issue.Fields.Priority),
 		SequenceId:      sequenceId,
 		CreatedAt:       time.Time(issue.Fields.Created),

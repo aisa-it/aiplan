@@ -104,3 +104,7 @@ kuber/aiplan/values/*.dec
 api_tests/
 release/
 git-data
+
+.claude/
+CLAUDE.md
+PLAN.md

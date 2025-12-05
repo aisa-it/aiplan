@@ -56,8 +56,8 @@ type Issue struct {
 	ParentId uuid.NullUUID `json:"parent" gorm:"type:text;index;index:issue_sort_order_index,priority:1"`
 	// project_id uuid NOT NULL,
 	ProjectId string `json:"project" gorm:"index:,type:hash,where:deleted_at is not null"`
-	// state_id uuid,
-	StateId *string `json:"state" extensions:"x-nullable"`
+	// state_id uuid NOT NULL,
+	StateId uuid.UUID `json:"state"`
 	// updated_by_id uuid,
 	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
@@ -1583,7 +1583,7 @@ func (IssueProperty) TableName() string { return "issue_properties" }
 //   - error: ошибка, если при создании задачи произошла ошибка, nil в противном случае.
 func CreateIssue(db *gorm.DB, issue *Issue) error {
 	// State fill
-	if issue.StateId == nil || *issue.StateId == "" {
+	if issue.StateId == uuid.Nil {
 		// default state or random
 		var defaultState State
 		if err := db.Where("project_id = ?", issue.ProjectId).Where("states.default = ?", true).First(&defaultState).Error; err != nil {
@@ -1596,7 +1596,7 @@ func CreateIssue(db *gorm.DB, issue *Issue) error {
 				return err
 			}
 		}
-		issue.StateId = &defaultState.ID
+		issue.StateId = defaultState.ID
 		issue.State = &defaultState
 	} else if issue.State == nil {
 		if err := db.

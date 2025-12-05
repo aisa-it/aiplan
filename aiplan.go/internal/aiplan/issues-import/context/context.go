@@ -304,7 +304,7 @@ func (c *ImportContext) getState(id string) (dao.State, error) {
 	for _, status := range c.rawStatuses {
 		if status.ID == id {
 			return dao.State{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				Name:        status.Name,
 				Description: status.Description,
 				Group:       mapJiraStatusCat(status.StatusCategory),

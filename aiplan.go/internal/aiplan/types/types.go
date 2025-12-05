@@ -22,6 +22,7 @@ import (
 
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -363,7 +364,7 @@ type IssuesListFilters struct {
 	AssigneeIds []string `json:"assignees"`
 	WatcherIds  []string `json:"watchers"`
 
-	StateIds       []string `json:"states"`
+	StateIds       []uuid.UUID `json:"states"`
 	Priorities     []string `json:"priorities"`
 	Labels         []string `json:"labels"`
 	WorkspaceIds   []string `json:"workspaces"`
