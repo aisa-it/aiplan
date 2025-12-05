@@ -42,7 +42,7 @@ func (b *Business) ProjectCtxClean() {
 }
 
 func (b *Business) DeleteProject() error {
-	if !b.projectCtx.user.IsSuperuser && b.projectCtx.user.ID != b.projectCtx.project.ProjectLeadId && b.projectCtx.workspaceMember.Role != types.AdminRole {
+	if !b.projectCtx.user.IsSuperuser && b.projectCtx.user.ID.String() != b.projectCtx.project.ProjectLeadId && b.projectCtx.workspaceMember.Role != types.AdminRole {
 		return apierrors.ErrDeleteProjectForbidden
 	}
 

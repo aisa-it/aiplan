@@ -227,7 +227,7 @@ func (p *Project) ChangeLead(tx *gorm.DB, pm *ProjectMember) error {
 	}
 
 	if err := tx.Model(p).Updates(Project{
-		ProjectLeadId: pm.Member.ID,
+		ProjectLeadId: pm.Member.ID.String(),
 		ProjectLead:   pm.Member,
 	}).Error; err != nil {
 		return fmt.Errorf("project lead update")
@@ -740,7 +740,7 @@ func GetProjects(db *gorm.DB, slug string, user string) ([]Project, error) {
 //   - error: ошибка, если произошла ошибка при выполнении запроса.
 func GetAllUserProjects(db *gorm.DB, user User) ([]Project, error) {
 	var ret []Project
-	err := AllProjects(db, user.ID).
+	err := AllProjects(db, user.ID.String()).
 		Where("id in (?)", db.Table("project_members").Select("project_id").Where("member_id = ?", user.ID)).
 		Find(&ret).Error
 
@@ -1304,7 +1304,7 @@ func (activity *ProjectActivity) ToLightDTO() *dto.EntityActivityLight {
 // Возвращает:
 //   - int: роль пользователя в проекте (например, 1 - участник, 2 - зритель), или 0, если пользователь не является участником проекта.
 //   - bool: true, если пользователь является участником проекта, false в противном случае.
-func IsProjectMember(tx *gorm.DB, userId string, projectId string) (int, bool) {
+func IsProjectMember(tx *gorm.DB, userId uuid.UUID, projectId string) (int, bool) {
 	var member ProjectMember
 	if err := tx.
 		Where("project_id = ?", projectId).
@@ -1324,7 +1324,7 @@ func IsProjectMember(tx *gorm.DB, userId string, projectId string) (int, bool) {
 //
 // Возвращает:
 //   - bool: true, если пользователь является участником рабочего пространства, false в противном случае.
-func IsWorkspaceMember(tx *gorm.DB, userId string, workspaceId string) (exist bool) {
+func IsWorkspaceMember(tx *gorm.DB, userId uuid.UUID, workspaceId string) (exist bool) {
 	tx.Model(&WorkspaceMember{}).
 		Select("EXISTS(?)",
 			tx.Model(&WorkspaceMember{}).

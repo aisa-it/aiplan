@@ -428,7 +428,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	if issue.Assignees != nil && len(*issue.Assignees) > 0 {
 		var ids []string
 		for _, assignee := range *issue.Assignees {
-			ids = append(ids, assignee.ID)
+			ids = append(ids, assignee.ID.String())
 		}
 		issue.AssigneeIDs = ids
 	} else {
@@ -438,7 +438,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	if issue.Watchers != nil && len(*issue.Watchers) > 0 {
 		var ids []string
 		for _, watcher := range *issue.Watchers {
-			ids = append(ids, watcher.ID)
+			ids = append(ids, watcher.ID.String())
 		}
 		issue.WatcherIDs = ids
 	} else {

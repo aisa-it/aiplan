@@ -72,7 +72,7 @@ func (SessionsReset) TableName() string { return "sessions_resets" }
 func ResetUserSessions(db *gorm.DB, user *User) error {
 	return db.Create(&SessionsReset{
 		Id:        GenID(),
-		UserId:    user.ID,
+		UserId:    user.ID.String(),
 		ResetedAt: time.Now(),
 	}).Error
 }

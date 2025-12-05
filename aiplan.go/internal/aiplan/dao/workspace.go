@@ -744,7 +744,7 @@ func GetWorkspace(db *gorm.DB, slug string, user string) (Workspace, error) {
 	return ret, err
 }
 
-func GetWorkspaceByID(db *gorm.DB, workspaceID string, userID string) (Workspace, error) {
+func GetWorkspaceByID(db *gorm.DB, workspaceID string, userID uuid.UUID) (Workspace, error) {
 	var workspace Workspace
 	err := db.Preload("Owner").Where("id IN (?)", db.Table("workspace_members").Select("workspace_id").Where("member_id = ?", userID)).
 		First(&workspace, "id = ?", workspaceID).Error

@@ -91,7 +91,7 @@ func (s *Services) startJiraImport(c echo.Context) error {
 	user := c.(AuthContext).User
 	projectKey := c.Param("projectKey")
 
-	if !s.importService.CanStartImport(user.ID) {
+	if !s.importService.CanStartImport(user.ID.String()) {
 		return EErrorDefined(c, apierrors.ErrAlreadyImportingProject)
 	}
 
@@ -201,7 +201,7 @@ func (s *Services) getJiraImportStatus(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrImportIDRequired)
 	}
 
-	status, err := s.importService.GetUserImportStatus(importId, user.ID)
+	status, err := s.importService.GetUserImportStatus(importId, user.ID.String())
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.NoContent(http.StatusNotFound)
@@ -235,7 +235,7 @@ func (s *Services) cancelJiraImport(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrImportIDRequired)
 	}
 
-	if err := s.importService.CancelImport(importId, user.ID); err != nil {
+	if err := s.importService.CancelImport(importId, user.ID.String()); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.NoContent(http.StatusNotFound)
 		}

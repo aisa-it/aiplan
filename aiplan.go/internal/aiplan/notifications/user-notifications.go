@@ -33,10 +33,11 @@ func NewNotificationCleaner(db *gorm.DB) *NotificationCleaner {
 	return &NotificationCleaner{db}
 }
 
-func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, activity A) (*string, int, error) {
-	if userId == "" {
+func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUID, activity A) (*string, int, error) {
+	if userId == uuid.Nil {
 		return nil, 0, nil
 	}
+	userIdStr := userId.String()
 
 	var notifyId string
 
@@ -66,7 +67,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 		if member.NotificationSettingsApp.IsNotify(a.Field, "workspace", a.Verb, member.Role) {
 			notification := dao.UserNotifications{
 				ID:                  dao.GenID(),
-				UserId:              userId,
+				UserId:              userIdStr,
 				Type:                "activity",
 				WorkspaceId:         &a.WorkspaceId,
 				WorkspaceActivityId: &a.Id,
@@ -97,7 +98,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 		isMemberNotify = member.NotificationSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
 
 		if a.NewIssue != nil {
-			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
+			isAuthorNotify = a.NewIssue.CreatedById == userIdStr && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
 			notifyOk = isAuthorNotify || (!isAuthorNotify && isMemberNotify)
 		} else {
 			notifyOk = isMemberNotify && isProjectAdm
@@ -106,7 +107,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 		if (isProjectAdm && isMemberNotify) || (!isProjectAdm && notifyOk) {
 			notification := dao.UserNotifications{
 				ID:                dao.GenID(),
-				UserId:            userId,
+				UserId:            userIdStr,
 				Type:              "activity",
 				WorkspaceId:       &a.WorkspaceId,
 				ProjectActivityId: &a.Id,
@@ -135,7 +136,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 
 		var authorOK, authorNotifyOk, memberNotifyOK bool
 
-		if a.Doc.CreatedById == userId {
+		if a.Doc.CreatedById == userIdStr {
 			authorOK = true
 		}
 
@@ -150,7 +151,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 
 			notification := dao.UserNotifications{
 				ID:            dao.GenID(),
-				UserId:        userId,
+				UserId:        userIdStr,
 				Type:          "activity",
 				WorkspaceId:   &a.WorkspaceId,
 				DocActivityId: &a.Id,
@@ -189,7 +190,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 		var authorOK, authorNotifyOk, memberNotifyOK bool
 
 		if a.Issue != nil {
-			if a.Issue.CreatedById == userId {
+			if a.Issue.CreatedById == userIdStr {
 				authorOK = true
 			}
 
@@ -203,7 +204,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
 			notification := dao.UserNotifications{
 				ID:              dao.GenID(),
-				UserId:          userId,
+				UserId:          userIdStr,
 				Type:            "activity",
 				WorkspaceId:     &a.WorkspaceId,
 				IssueId:         &a.IssueId,
@@ -230,7 +231,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 	var count int
 	if err := tx.Select("count(*)").
 		Where("viewed = false").
-		Where("user_id = ?", userId).
+		Where("user_id = ?", userIdStr).
 		Where("deleted_at IS NULL").
 		Model(&dao.UserNotifications{}).
 		Find(&count).Error; err != nil {
@@ -243,8 +244,9 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId string, 
 	return &notifyId, count, nil
 }
 
-func CreateUserNotificationAddComment(tx *gorm.DB, userId string, comment dao.IssueComment) (*dao.UserNotifications, int, error) {
+func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao.IssueComment) (*dao.UserNotifications, int, error) {
 	var user dao.User
+	userIdStr := userId.String()
 
 	if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
 		return nil, 0, err
@@ -260,7 +262,7 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId string, comment dao.Is
 
 	notification := dao.UserNotifications{
 		ID:          dao.GenID(),
-		UserId:      userId,
+		UserId:      userIdStr,
 		Type:        "comment",
 		CommentId:   &comment.Id,
 		Comment:     &comment,
@@ -275,7 +277,7 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId string, comment dao.Is
 	var count int
 	if err := tx.Select("count(*)").
 		Where("viewed = false").
-		Where("user_id = ?", userId).
+		Where("user_id = ?", userIdStr).
 		Where("deleted_at IS NULL").
 		Model(&dao.UserNotifications{}).
 		Find(&count).Error; err != nil {
@@ -382,7 +384,7 @@ func createDeadlineDeferredNotification(targetDate time.Time, user dao.User, iss
 
 	notify := dao.DeferredNotifications{
 		ID:                  dao.GenID(),
-		UserID:              user.ID,
+		UserID:              user.ID.String(),
 		IssueID:             &issueId,
 		ProjectID:           &issue.ProjectId,
 		WorkspaceID:         &issue.WorkspaceId,

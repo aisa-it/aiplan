@@ -282,13 +282,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 	}
 
 	if len(fields) > 0 {
-		var userUUID uuid.UUID
-		if val, err := uuid.FromString(user.ID); err != nil {
-			return EError(c, err)
-		} else {
-			userUUID = val
-		}
-		sprint.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
+		sprint.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		sprint.UpdatedBy = user
 		fields = append(fields, "updated_by_id")
 		if sprint.EndDate.Valid && sprint.StartDate.Valid {
@@ -336,7 +330,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID.String() })
 
 	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
-	userUUID := uuid.Must(uuid.FromString(user.ID))
+	userUUID := user.ID
 
 	var req requestIssueIdList
 
@@ -517,7 +511,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 	oldMemberIds := utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID })
 
 	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
-	userUUID := uuid.Must(uuid.FromString(user.ID))
+	userUUID := user.ID
 
 	var req requestUserIdList
 
@@ -689,7 +683,7 @@ func (s *Services) updateSprintView(c echo.Context) error {
 	view := dao.SprintViews{
 		Id:        dao.GenUUID(),
 		SprintId:  sprint.Id,
-		MemberId:  uuid.Must(uuid.FromString(user.ID)),
+		MemberId:  user.ID,
 		ViewProps: viewProps,
 	}
 

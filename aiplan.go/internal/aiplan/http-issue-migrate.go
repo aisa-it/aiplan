@@ -313,6 +313,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		userIdStr := user.ID.String()
 
 		if len(labelIds) > 0 {
 			var labels []dao.Label
@@ -330,8 +331,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					Name:        label.Name,
 					Description: label.Description,
 					Color:       label.Color,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -363,8 +364,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					Slug:        state.Slug,
 					Group:       state.Group,
 
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -750,6 +751,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		userIdStr := user.ID.String()
 
 		if len(labelIds) > 0 {
 			var labels []dao.Label
@@ -767,8 +769,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					Name:        label.Name,
 					Description: label.Description,
 					Color:       label.Color,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -800,8 +802,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					Slug:        state.Slug,
 					Group:       state.Group,
 
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -1043,7 +1045,8 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 	// Check memberships
 	{
-		if _, exist := dao.IsProjectMember(s.db, srcIssue.CreatedById, targetProject.ID); !exist {
+		createdByUUID, _ := uuid.FromString(srcIssue.CreatedById)
+		if _, exist := dao.IsProjectMember(s.db, createdByUUID, targetProject.ID); !exist {
 			res.Errors = append(res.Errors, ErrClause{
 				Error:           ErrAuthorNotAProjectMember,
 				SrcIssueId:      &srcIssue.ID,
@@ -1068,7 +1071,8 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 		}
 
 		for _, assigneeId := range srcIssue.AssigneeIDs {
-			role, exist := dao.IsProjectMember(s.db, assigneeId, targetProject.ID)
+			assigneeUUID, _ := uuid.FromString(assigneeId)
+			role, exist := dao.IsProjectMember(s.db, assigneeUUID, targetProject.ID)
 			if !exist {
 				assigneeErr.Entities = append(assigneeErr.Entities, assigneeId)
 			}
@@ -1098,7 +1102,8 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 			IssueSequenceId: srcIssue.SequenceId,
 		}
 		for _, watcherId := range srcIssue.WatcherIDs {
-			role, exist := dao.IsProjectMember(s.db, watcherId, targetProject.ID)
+			watcherUUID, _ := uuid.FromString(watcherId)
+			role, exist := dao.IsProjectMember(s.db, watcherUUID, targetProject.ID)
 			if !exist {
 				watcherErr.Entities = append(watcherErr.Entities, watcherId)
 			}
@@ -1188,6 +1193,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 	}
 	if len(srcIssue.AssigneeIDs) == 0 && len(issue.TargetProject.DefaultAssignees) > 0 {
+		userIdStr := user.ID.String()
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range issue.TargetProject.DefaultAssignees {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
@@ -1196,8 +1202,8 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &user.ID,
-				UpdatedById: &user.ID,
+				CreatedById: &userIdStr,
+				UpdatedById: &userIdStr,
 			})
 		}
 		if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1215,6 +1221,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	}
 
 	if len(srcIssue.WatcherIDs) == 0 && len(issue.TargetProject.DefaultWatchers) > 0 {
+		userIdStr := user.ID.String()
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range issue.TargetProject.DefaultWatchers {
 			newWatchers = append(newWatchers, dao.IssueWatcher{
@@ -1223,8 +1230,8 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &user.ID,
-				UpdatedById: &user.ID,
+				CreatedById: &userIdStr,
+				UpdatedById: &userIdStr,
 			})
 		}
 		if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1349,6 +1356,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	} else if len(issue.TargetProject.DefaultAssignees) > 0 {
 		assigneesList = issue.TargetProject.DefaultAssignees
 	}
+	userIdStr := user.ID.String()
 	if len(assigneesList) > 0 {
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range assigneesList {
@@ -1358,8 +1366,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &user.ID,
-				UpdatedById: &user.ID,
+				CreatedById: &userIdStr,
+				UpdatedById: &userIdStr,
 			})
 		}
 		if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1383,8 +1391,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &user.ID,
-				UpdatedById: &user.ID,
+				CreatedById: &userIdStr,
+				UpdatedById: &userIdStr,
 			})
 		}
 		if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1402,8 +1410,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				IssueId:     targetIssue.ID.String(),
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: targetIssue.WorkspaceId,
-				CreatedById: &user.ID,
-				UpdatedById: &user.ID,
+				CreatedById: &userIdStr,
+				UpdatedById: &userIdStr,
 			})
 		}
 
@@ -1419,8 +1427,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 					IssueId:     targetIssue.ID.String(),
 					ProjectId:   issue.TargetProject.ID,
 					WorkspaceId: targetIssue.WorkspaceId,
-					CreatedById: &user.ID,
-					UpdatedById: &user.ID,
+					CreatedById: &userIdStr,
+					UpdatedById: &userIdStr,
 				})
 			}
 		}

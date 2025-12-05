@@ -210,9 +210,10 @@ func (s *Services) createRootDoc(c echo.Context) error {
 			return err
 		}
 
+		userIdStr := user.ID.String()
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
-			CreatedById: &user.ID,
+			CreatedById: &userIdStr,
 			WorkspaceId: &workspace.ID,
 			DocId: uuid.NullUUID{
 				UUID:  doc.ID,
@@ -296,9 +297,10 @@ func (s *Services) createDoc(c echo.Context) error {
 			return apierrors.ErrDocChildRoleTooLow
 		}
 
+		userIdStr := user.ID.String()
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
-			CreatedById: &user.ID,
+			CreatedById: &userIdStr,
 			WorkspaceId: &workspace.ID,
 			DocId: uuid.NullUUID{
 				UUID:  doc.ID,
@@ -365,17 +367,18 @@ func (s *Services) updateDoc(c echo.Context) error {
 	form, _ := c.MultipartForm()
 
 	if utils.CheckInSet(utils.SliceToSet(fields), "editor_role", "reader_role", "editor_list", "reader_list", "watcher_list") {
-		if doc.CreatedById != user.ID && workspaceMember.Role != types.AdminRole {
+		if doc.CreatedById != user.ID.String() && workspaceMember.Role != types.AdminRole {
 			return EErrorDefined(c, apierrors.ErrDocForbidden)
 		}
 	}
 
 	var editorListOk, readerListOk, watcherListOk bool
 
+	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
-			CreatedById: &user.ID,
+			CreatedById: &userIdStr,
 			WorkspaceId: &workspace.ID,
 			DocId: uuid.NullUUID{
 				UUID:  doc.ID,
@@ -398,7 +401,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 		if len(fields) > 0 {
 			workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
-			userUUID := uuid.Must(uuid.FromString(user.ID))
+			userUUID := user.ID
 
 			memberAccess := make(map[string]dao.DocAccessRules)
 
@@ -1106,6 +1109,7 @@ func (s *Services) createDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDocCommentEmpty)
 	}
 
+	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where("id = ?", comment.ReplyToCommentId).First(&comment.OriginalComment).Error; err != nil {
@@ -1122,7 +1126,7 @@ func (s *Services) createDocComment(c echo.Context) error {
 
 		fileAsset := dao.FileAsset{
 			Id:           dao.GenUUID(),
-			CreatedById:  &user.ID,
+			CreatedById:  &userIdStr,
 			WorkspaceId:  &workspace.ID,
 			DocCommentId: uuid.NullUUID{UUID: comment.Id, Valid: true},
 		}
@@ -1229,7 +1233,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 
 	oldMap := StructToJSONMap(commentOld)
 
-	if *commentOld.ActorId != user.ID {
+	if *commentOld.ActorId != user.ID.String() {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -1242,11 +1246,12 @@ func (s *Services) updateDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDocCommentEmpty)
 	}
 
+	userIdStr := user.ID.String()
 	form, _ := c.MultipartForm()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:           dao.GenUUID(),
-			CreatedById:  &user.ID,
+			CreatedById:  &userIdStr,
 			WorkspaceId:  &workspace.ID,
 			DocCommentId: uuid.NullUUID{UUID: comment.Id, Valid: true},
 		}
@@ -1326,7 +1331,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if workspaceMember.Role != types.AdminRole && *comment.ActorId != user.ID {
+	if workspaceMember.Role != types.AdminRole && *comment.ActorId != user.ID.String() {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -1401,7 +1406,7 @@ func (s *Services) addDocCommentReaction(c echo.Context) error {
 	reaction := dao.DocCommentReaction{
 		Id:        dao.GenUUID(),
 		CreatedAt: time.Now(),
-		UserId:    user.ID,
+		UserId:    user.ID.String(),
 		CommentId: comment.Id,
 		Reaction:  reactionRequest.Reaction,
 	}
@@ -1540,12 +1545,13 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userIdStr := user.ID.String()
 	docAttachment := dao.DocAttachment{
 		Id:          dao.GenID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &user.ID,
-		UpdatedById: &user.ID,
+		CreatedById: &userIdStr,
+		UpdatedById: &userIdStr,
 		AssetId:     assetId,
 		DocId:       doc.ID.String(),
 		WorkspaceId: workspace.ID,
@@ -1553,7 +1559,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 
 	fa := dao.FileAsset{
 		Id:          assetId,
-		CreatedById: &user.ID,
+		CreatedById: &userIdStr,
 		WorkspaceId: &workspace.ID,
 		Name:        fileName,
 		ContentType: asset.Header.Get("Content-Type"),
@@ -2087,7 +2093,8 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 			}
 		}
 		if len(resFields) > 0 {
-			docCopy.UpdatedById = &c.(DocContext).User.ID
+			userIdStr := c.(DocContext).User.ID.String()
+			docCopy.UpdatedById = &userIdStr
 			resFields = append(resFields, "updated_by_id")
 		}
 
@@ -2113,13 +2120,14 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 		replyId = uuid.NullUUID{UUID: fromString, Valid: true}
 	}
 	if comment == nil {
+		userIdStr := c.(DocContext).User.ID.String()
 		commentCreate := &dao.DocComment{
 			Id:               dao.GenUUID(),
 			CommentStripped:  "",
-			CreatedById:      &c.(DocContext).User.ID,
+			CreatedById:      &userIdStr,
 			WorkspaceId:      c.(DocContext).Workspace.ID,
 			DocId:            c.(DocContext).Doc.ID.String(),
-			ActorId:          &c.(DocContext).User.ID,
+			ActorId:          &userIdStr,
 			Actor:            c.(DocContext).User,
 			CommentHtml:      req.CommentHtml,
 			ReplyToCommentId: replyId,
@@ -2138,7 +2146,8 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 					comment.CommentHtml = req.CommentHtml
 					comment.CommentStripped = comment.CommentHtml.StripTags()
 					resFields = append(resFields, "comment_html", "comment_stripped", "updated_by_id")
-					comment.UpdatedById = &c.(DocContext).User.ID
+					userIdStr := c.(DocContext).User.ID.String()
+					comment.UpdatedById = &userIdStr
 				}
 			}
 		}

@@ -30,6 +30,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/altcha-org/altcha-lib-go"
+	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -173,7 +174,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 					return EErrorDefined(c, apierrors.ErrTokenInvalid)
 				}
 				user = new(dao.User)
-				user.ID = claims["user_id"].(string)
+				user.ID = uuid.Must(uuid.FromString(claims["user_id"].(string)))
 
 				// Fetch user
 				if err := config.DB.
@@ -289,7 +290,7 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 					slog.Info("Create new user from LDAP", "email", req.Email)
 
 					user = dao.User{
-						ID:           dao.GenID(),
+						ID:           dao.GenUUID(),
 						Email:        req.Email,
 						Password:     dao.GenPasswordHash(req.Password),
 						Theme:        types.DefaultTheme,

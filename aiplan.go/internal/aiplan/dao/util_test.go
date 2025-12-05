@@ -54,6 +54,7 @@ func TestGetIssueRoot(t *testing.T) {
 		db.First(&project)
 
 		ids := []uuid.UUID{GenUUID(), GenUUID(), GenUUID()}
+		userIdStr := user.ID.String()
 
 		issues = []Issue{
 			{
@@ -61,8 +62,8 @@ func TestGetIssueRoot(t *testing.T) {
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     user.ID,
-				UpdatedById:     &user.ID,
+				CreatedById:     userIdStr,
+				UpdatedById:     &userIdStr,
 				Name:            "#1",
 				DescriptionHtml: "",
 			},
@@ -71,8 +72,8 @@ func TestGetIssueRoot(t *testing.T) {
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     user.ID,
-				UpdatedById:     &user.ID,
+				CreatedById:     userIdStr,
+				UpdatedById:     &userIdStr,
 				ParentId:        uuid.NullUUID{UUID: ids[0], Valid: true},
 				Name:            "#2",
 				DescriptionHtml: "",
@@ -82,8 +83,8 @@ func TestGetIssueRoot(t *testing.T) {
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     user.ID,
-				UpdatedById:     &user.ID,
+				CreatedById:     userIdStr,
+				UpdatedById:     &userIdStr,
 				ParentId:        uuid.NullUUID{UUID: ids[1], Valid: true},
 				Name:            "#3",
 				DescriptionHtml: "",
@@ -147,14 +148,15 @@ func TestGetIssueFamily(t *testing.T) {
 		var project Project
 		db.First(&project)
 
+		userIdStr := user.ID.String()
 		for i := 0; i < 7; i++ {
 			issues = append(issues, Issue{
 				ID:              GenUUID(),
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     user.ID,
-				UpdatedById:     &user.ID,
+				CreatedById:     userIdStr,
+				UpdatedById:     &userIdStr,
 				Name:            fmt.Sprintf("#%d", i),
 				DescriptionHtml: "",
 			})
@@ -227,7 +229,8 @@ func TestSplitTSQuery(t *testing.T) {
 }
 
 func TestGetUserPrivilegesOverIssue(t *testing.T) {
-	priv, err := GetUserPrivilegesOverIssue("114c08ce-c9f5-4ca6-b829-63ec337a6238", "cd61d7df-7025-4bf0-85f9-f374f5d10008", db)
+	userId := uuid.Must(uuid.FromString("cd61d7df-7025-4bf0-85f9-f374f5d10008"))
+	priv, err := GetUserPrivilegesOverIssue("114c08ce-c9f5-4ca6-b829-63ec337a6238", userId, db)
 	fmt.Println(err)
 	fmt.Printf("%+v\n", priv)
 }

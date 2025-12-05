@@ -336,7 +336,7 @@ func (c *ImportContext) GetProject(key string) error {
 		ID:            id,
 		Name:          project.Name,
 		Identifier:    project.Key,
-		ProjectLeadId: lead.ID,
+		ProjectLeadId: lead.ID.String(),
 		WorkspaceId:   c.TargetWorkspaceID,
 	}
 	return nil
@@ -393,7 +393,7 @@ func (c *ImportContext) translateUser(user jira.User) dao.User {
 	}
 
 	u := dao.User{
-		ID:           dao.GenID(),
+		ID:           dao.GenUUID(),
 		Username:     &user.Name,
 		Email:        user.EmailAddress,
 		IsActive:     user.Active,
@@ -426,10 +426,11 @@ func (c *ImportContext) mapJiraComment(comment *jira.Comment, issueID string) (*
 		return nil, err
 	}
 
+	actorId := author.ID.String()
 	return &dao.IssueComment{
 		Id:          dao.GenUUID(),
 		CommentHtml: types.RedactorHTML{Body: comment.Body},
-		ActorId:     &author.ID,
+		ActorId:     &actorId,
 		CreatedAt:   created,
 		IssueId:     issueID,
 		ProjectId:   c.Project.ID,

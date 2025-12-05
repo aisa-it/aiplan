@@ -223,13 +223,14 @@ func (ts *TelegramService) createIssue(user dao.User, args []interface{}) {
 		return
 	}
 
+	userIdStr := user.ID.String()
 	issue := dao.Issue{
 		ID:              dao.GenUUID(),
 		WorkspaceId:     project.WorkspaceId,
 		ProjectId:       project.ID,
 		CreatedAt:       time.Now(),
-		CreatedById:     user.ID,
-		UpdatedById:     &user.ID,
+		CreatedById:     userIdStr,
+		UpdatedById:     &userIdStr,
 		Name:            title,
 		DescriptionHtml: description,
 	}

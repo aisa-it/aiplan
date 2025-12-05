@@ -262,11 +262,11 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 					Where("issues.id = ?", activity.NewIssue.ID).First(&issue).Error; err != nil {
 					continue
 				}
-				isWatcher := slices.Contains(issue.WatcherIDs, member.User.ID) || member.DefaultWatcher
-				isAssignee := slices.Contains(issue.AssigneeIDs, member.User.ID) || member.DefaultAssigner
+				isWatcher := slices.Contains(issue.WatcherIDs, member.User.ID.String()) || member.DefaultWatcher
+				isAssignee := slices.Contains(issue.AssigneeIDs, member.User.ID.String()) || member.DefaultAssigner
 
-				if isWatcher || isAssignee || issue.CreatedById == member.User.ID {
-					if issue.CreatedById == member.User.ID {
+				if isWatcher || isAssignee || issue.CreatedById == member.User.ID.String() {
+					if issue.CreatedById == member.User.ID.String() {
 						if member.ProjectAuthorSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
 							sendActivities = append(sendActivities, activity)
 							continue

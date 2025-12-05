@@ -229,7 +229,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 	context.Stage = "users"
 	context.Counters.TotalUsers = context.Users.Len()
 	context.Users.Range(func(k string, v dao.User) {
-		if v.ID == "" {
+		if v.ID == uuid.Nil {
 			context.Log.Warn("Empty user", "key", k)
 			return
 		}
@@ -250,7 +250,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 				dao.WorkspaceMember{
 					ID:          dao.GenID(),
 					Role:        10,
-					MemberId:    user.ID,
+					MemberId:    user.ID.String(),
 					WorkspaceId: context.TargetWorkspaceID,
 				})
 		}
@@ -259,7 +259,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 			dao.ProjectMember{
 				ID:          dao.GenID(),
 				Role:        10,
-				MemberId:    user.ID,
+				MemberId:    user.ID.String(),
 				ProjectId:   context.Project.ID,
 				WorkspaceId: context.TargetWorkspaceID,
 			})

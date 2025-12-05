@@ -164,7 +164,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
 			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
-			if activity.Issue.CreatedById == member.User.ID {
+			if activity.Issue.CreatedById == member.User.ID.String() {
 				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
 			}
 			if (member.IssueAuthor && authorNotify) || (!member.IssueAuthor && memberNotify) {
@@ -267,11 +267,11 @@ func (ia *issueActivity) getCommentNotify(tx *gorm.DB) error {
 func (ia *issueActivity) getNotifySettings(tx *gorm.DB) error {
 	var userIds []string
 	for _, member := range ia.users {
-		userIds = append(userIds, member.User.ID)
+		userIds = append(userIds, member.User.ID.String())
 	}
 
 	for _, author := range ia.commentActivityUser {
-		userIds = append(userIds, author.User.ID)
+		userIds = append(userIds, author.User.ID.String())
 
 	}
 

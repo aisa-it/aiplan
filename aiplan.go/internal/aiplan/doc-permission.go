@@ -44,7 +44,7 @@ func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
 	user := docContext.User
 
 	// Allow Author
-	if user.ID == doc.CreatedById {
+	if user.ID.String() == doc.CreatedById {
 		return true, nil
 	}
 
@@ -62,19 +62,19 @@ func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
 	watcherSet := utils.SliceToSet(doc.WatcherIDs)
 
 	if onlyReadMethod(c) {
-		if hasReadAccess(user.ID, workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
+		if hasReadAccess(user.ID.String(), workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
 			return true, nil
 		}
 		return false, nil
 	}
 
 	if strings.Contains(c.Path(), "/comments/") {
-		if hasReadAccess(user.ID, workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
+		if hasReadAccess(user.ID.String(), workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
 			return true, nil
 		}
 	}
 
-	if hasEditAccess(user.ID, workspaceMember.Role, &doc, editorSet) {
+	if hasEditAccess(user.ID.String(), workspaceMember.Role, &doc, editorSet) {
 		return true, nil
 	}
 

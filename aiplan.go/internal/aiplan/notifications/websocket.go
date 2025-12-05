@@ -50,7 +50,7 @@ func NewWebsocketNotificationService() *WebsocketNotificationService {
 	}
 }
 
-func (wns *WebsocketNotificationService) Handle(userId string, w http.ResponseWriter, req *http.Request) {
+func (wns *WebsocketNotificationService) Handle(userId uuid.UUID, w http.ResponseWriter, req *http.Request) {
 	c, err := websocket.Accept(w, req, &websocket.AcceptOptions{
 		// TODO remove pattern "*"
 		OriginPatterns: []string{"*"},
@@ -62,17 +62,18 @@ func (wns *WebsocketNotificationService) Handle(userId string, w http.ResponseWr
 	defer c.CloseNow()
 
 	conId := uuid.Must(uuid.NewV4())
+	userIdStr := userId.String()
 
 	wns.mutex.Lock()
-	cons, ok := wns.sessions[userId]
+	cons, ok := wns.sessions[userIdStr]
 	if !ok {
 		cons = make(map[uuid.UUID]*websocket.Conn)
 	}
 	cons[conId] = c
-	wns.sessions[userId] = cons
+	wns.sessions[userIdStr] = cons
 	wns.mutex.Unlock()
 
-	go wns.pingLoop(userId, conId, c)
+	go wns.pingLoop(userIdStr, conId, c)
 
 	// Start read until close
 	ctx := context.Background()
@@ -80,19 +81,20 @@ func (wns *WebsocketNotificationService) Handle(userId string, w http.ResponseWr
 	<-ctx.Done()
 
 	wns.mutex.Lock()
-	delete(wns.sessions[userId], conId)
-	if len(wns.sessions[userId]) == 0 {
-		delete(wns.sessions, userId)
+	delete(wns.sessions[userIdStr], conId)
+	if len(wns.sessions[userIdStr]) == 0 {
+		delete(wns.sessions, userIdStr)
 	}
 	wns.mutex.Unlock()
 
 	c.Close(websocket.StatusNormalClosure, "")
 }
 
-func (wns *WebsocketNotificationService) CloseUserSessions(userId string) {
+func (wns *WebsocketNotificationService) CloseUserSessions(userId uuid.UUID) {
 	wns.mutex.Lock()
 	defer wns.mutex.Unlock()
-	cons, ok := wns.sessions[userId]
+	userIdStr := userId.String()
+	cons, ok := wns.sessions[userIdStr]
 	if !ok {
 		return
 	}

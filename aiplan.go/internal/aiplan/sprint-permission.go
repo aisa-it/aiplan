@@ -33,7 +33,7 @@ func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
 	user := sprintContext.User
 
 	// Allow Author
-	if user.ID == sprint.CreatedById.String() {
+	if user.ID.String() == sprint.CreatedById.String() {
 		return true, nil
 	}
 

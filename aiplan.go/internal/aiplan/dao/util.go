@@ -50,7 +50,7 @@ func AddDefaultUser(db *gorm.DB, email string) {
 	ubx := "admin"
 	tm := time.Now()
 	user := User{
-		ID:              u.String(),
+		ID:              u,
 		Email:           email,
 		Password:        pass,
 		Username:        &ubx,
@@ -179,7 +179,7 @@ func ExtractProjectMemberIDs(members []ProjectMember) []string {
 	return ids
 }
 
-func PrepareFilterProjectsQuery(tx *gorm.DB, userID string, workspaceIDs, projectIDs []string) *gorm.DB {
+func PrepareFilterProjectsQuery(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []string) *gorm.DB {
 	projectQuery := tx.Model(&ProjectMember{}).
 		Select("project_id").
 		Where("member_id = ?", userID)
@@ -195,7 +195,7 @@ func PrepareFilterProjectsQuery(tx *gorm.DB, userID string, workspaceIDs, projec
 	return projectQuery
 }
 
-func GetUserNeighbors(tx *gorm.DB, userID string, workspaceIDs, projectIDs []string) *gorm.DB {
+func GetUserNeighbors(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []string) *gorm.DB {
 	query := tx.Model(&ProjectMember{}).
 		Distinct("project_members.member_id").
 		Joins("JOIN project_members u on project_members.project_id = u.project_id").
@@ -218,7 +218,7 @@ func GetUserFromProjectMember(members []User, ids []interface{}) []User {
 		idsMap[id.(string)] = struct{}{}
 	}
 	for _, member := range members {
-		if _, ok := idsMap[member.ID]; ok {
+		if _, ok := idsMap[member.ID.String()]; ok {
 			users = append(users, member)
 		}
 	}
@@ -424,7 +424,7 @@ type UserPrivilegesOverDoc struct {
 	IsWatcher     bool
 }
 
-func GetUserPrivilegesOverIssue(issueId string, userId string, db *gorm.DB) (*UserPrivilegesOverIssue, error) {
+func GetUserPrivilegesOverIssue(issueId string, userId uuid.UUID, db *gorm.DB) (*UserPrivilegesOverIssue, error) {
 	var priv UserPrivilegesOverIssue
 	if err := db.Raw(`select wm.member_id as "user_id", i.id as "issue_id", wm.role as "workspace_role", pm.role as "project_role", i.created_by_id = ? as "is_author", ia.id is not null as "is_assigner", iw.id is not null as "is_watcher" from issues i
 left join issue_assignees ia on i.id = ia.issue_id and ia.assignee_id = ?
@@ -437,7 +437,7 @@ where i.id = ?`, userId, userId, userId, userId, userId, issueId).First(&priv).E
 	return &priv, nil
 }
 
-func GetUserPrivilegesOverDoc(docId string, userId string, db *gorm.DB) (*UserPrivilegesOverDoc, error) {
+func GetUserPrivilegesOverDoc(docId string, userId uuid.UUID, db *gorm.DB) (*UserPrivilegesOverDoc, error) {
 	var priv UserPrivilegesOverDoc
 	if err := db.Raw(`select
 	wm.member_id as "user_id",
@@ -464,7 +464,7 @@ func GetSystemUser(tx *gorm.DB) *User {
 	if err := tx.Where("username = ?", username).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			user = User{
-				ID:        GenID(),
+				ID:        GenUUID(),
 				Email:     "aiplan@aiplan.ru",
 				Password:  "",
 				FirstName: "АИПлан",
