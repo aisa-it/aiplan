@@ -18,6 +18,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -62,19 +63,19 @@ func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
 	watcherSet := utils.SliceToSet(doc.WatcherIDs)
 
 	if onlyReadMethod(c) {
-		if hasReadAccess(user.ID.String(), workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
+		if hasReadAccess(user.ID, workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
 			return true, nil
 		}
 		return false, nil
 	}
 
 	if strings.Contains(c.Path(), "/comments/") {
-		if hasReadAccess(user.ID.String(), workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
+		if hasReadAccess(user.ID, workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
 			return true, nil
 		}
 	}
 
-	if hasEditAccess(user.ID.String(), workspaceMember.Role, &doc, editorSet) {
+	if hasEditAccess(user.ID, workspaceMember.Role, &doc, editorSet) {
 		return true, nil
 	}
 
@@ -90,27 +91,28 @@ func onlyReadMethod(c echo.Context) bool {
 	}
 }
 
-func hasReadAccess(userID string, role int, doc *dao.Doc, readers, editors, watchers map[string]struct{}) bool {
+func hasReadAccess(userID uuid.UUID, role int, doc *dao.Doc, readers, editors, watchers map[string]struct{}) bool {
 	if role >= doc.ReaderRole || role >= doc.EditorRole {
 		return true
 	}
-	if _, ok := readers[userID]; ok {
+	userIDStr := userID.String()
+	if _, ok := readers[userIDStr]; ok {
 		return true
 	}
-	if _, ok := editors[userID]; ok {
+	if _, ok := editors[userIDStr]; ok {
 		return true
 	}
-	if _, ok := watchers[userID]; ok {
+	if _, ok := watchers[userIDStr]; ok {
 		return true
 	}
 	return false
 }
 
-func hasEditAccess(userID string, role int, doc *dao.Doc, editors map[string]struct{}) bool {
+func hasEditAccess(userID uuid.UUID, role int, doc *dao.Doc, editors map[string]struct{}) bool {
 	if role >= doc.EditorRole {
 		return true
 	}
-	if _, ok := editors[userID]; ok {
+	if _, ok := editors[userID.String()]; ok {
 		return true
 	}
 	return false

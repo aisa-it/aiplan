@@ -534,13 +534,12 @@ func checkPassword(password string, pass string) bool {
 
 // Генерация ключа доступа
 func createAccessToken(userId uuid.UUID) (*Token, *Token, error) {
-	userIdStr := userId.String()
-	ta, err := GenJwtToken([]byte(cfg.SecretKey), "access", userIdStr)
+	ta, err := GenJwtToken([]byte(cfg.SecretKey), "access", userId)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tr, err := GenJwtToken([]byte(cfg.SecretKey), "refresh", userIdStr)
+	tr, err := GenJwtToken([]byte(cfg.SecretKey), "refresh", userId)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -610,14 +609,14 @@ type Token struct {
 }
 
 // Генерация JWT ключа
-func GenJwtToken(secret []byte, tokenType string, userid string) (*Token, error) {
+func GenJwtToken(secret []byte, tokenType string, userid uuid.UUID) (*Token, error) {
 	u, _ := uuid.NewV4()
 	claims := jwt.MapClaims{
 		"exp":        jwt.NewNumericDate(time.Now().Add(types.TokenExpiresPeriod)),
 		"iat":        jwt.NewNumericDate(time.Now()),
 		"jti":        fmt.Sprintf("%x", u),
 		"token_type": tokenType,
-		"user_id":    userid,
+		"user_id":    userid.String(),
 	}
 	if tokenType == "refresh" {
 		claims["exp"] = jwt.NewNumericDate(time.Now().Add(types.RefreshTokenExpiresPeriod))

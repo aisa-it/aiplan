@@ -484,14 +484,14 @@ func (a *Authentication) requestCaptcha(c echo.Context) error {
 	return c.JSON(http.StatusOK, challenge)
 }
 
-func getUserIdFromJWT(token string) (string, error) {
+func getUserIdFromJWT(token string) (uuid.UUID, error) {
 	d, err := base64.StdEncoding.DecodeString(strings.Split(token, ".")[1])
 	if err != nil {
-		return "", err
+		return uuid.Nil, err
 	}
 	var payload map[string]interface{}
 	if err := json.Unmarshal(d, &payload); err != nil {
-		return "", err
+		return uuid.Nil, err
 	}
-	return payload["user_id"].(string), nil
+	return uuid.FromString(payload["user_id"].(string))
 }
