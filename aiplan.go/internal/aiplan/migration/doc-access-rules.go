@@ -158,7 +158,7 @@ func (m *MigrateDocAccessRule) migrate() error {
 			if err := m.db.Transaction(func(tx *gorm.DB) error {
 				return processDocument(tx, docID)
 			}); err != nil {
-				slog.Error("process migration error", "document", docID, "batch", batch, "err", err)
+				slog.Error("process migration error", "document", docID, "batch", batchNumber, "err", err)
 				continue
 			}
 			success++

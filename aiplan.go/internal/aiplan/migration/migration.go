@@ -23,6 +23,7 @@ func New(db *gorm.DB) *Migration {
 	return &Migration{
 		db: db,
 		sources: []IMigration{
+			NewMigrateDocUpdateId(db),
 			NewMigrateDocAccessRule(db),
 			NewMigrateActivityFieldsUpdate(db),
 		},

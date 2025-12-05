@@ -11,8 +11,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
 )
@@ -75,12 +73,7 @@ func (s *Services) shortDocURLRedirect(c echo.Context) error {
 }
 
 func (s *Services) shortSearchFilterURLRedirect(c echo.Context) error {
-	base := c.Param("base")
-
-	id, err := utils.Base64ToUUID(base)
-	if err != nil {
-		return c.Redirect(http.StatusTemporaryRedirect, "/not-found/")
-	}
+	id := c.Param("id")
 
 	var sf dao.SearchFilter
 	if err := s.db.
@@ -91,7 +84,7 @@ func (s *Services) shortSearchFilterURLRedirect(c echo.Context) error {
 
 	ref, _ := url.Parse(fmt.Sprintf(
 		"/filters/%s/",
-		id.String(),
+		sf.ID.String(),
 	))
 	path := cfg.WebURL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
