@@ -1168,6 +1168,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 			}
 		}
 
+		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return actField.ReqFieldMapping(k) })
+		if getLastActivityFields[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
+			return apierrors.ErrUpdateTooFrequent
+		}
+
 		// Update blockers
 		if blockersOk && updateAll {
 			// Delete all blockers

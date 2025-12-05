@@ -372,6 +372,14 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 	var editorListOk, readerListOk, watcherListOk bool
 
+	if getLastActivityFields[dao.DocActivity](
+		s.db.Where("doc_id = ?", doc.ID),
+		user.ID,
+		utils.SliceToSlice(&fields, func(t *string) string { return actField.ReqFieldMapping(*t) })...,
+	) {
+		return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
+	}
+
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),

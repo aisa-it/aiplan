@@ -107,6 +107,15 @@ func SliceToSet[T comparable](ids []T) map[T]struct{} {
 	return res
 }
 
+func MapToSlice[T any, K comparable, V any](in map[K]T, fn func(K, T) V) []V {
+	res := make([]V, 0, len(in))
+
+	for k, v := range in {
+		res = append(res, fn(k, v))
+	}
+	return res
+}
+
 func CheckInSet[T comparable](set map[T]struct{}, all ...T) bool {
 	for _, el := range all {
 		if _, ok := set[el]; ok {
