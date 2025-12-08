@@ -438,7 +438,7 @@ func (c *ImportContext) replaceCommentLinks(n *html.Node) bool {
 		n.Attr = []html.Attribute{
 			{Key: "data-type", Val: "issue"},
 			{Key: "data-slug", Val: comment.WorkspaceId},
-			{Key: "data-project-identifier", Val: comment.ProjectId},
+			{Key: "data-project-identifier", Val: comment.ProjectId.String()},
 			{Key: "data-current-issue-id", Val: comment.IssueId},
 			{Key: "data-comment-id", Val: comment.Id.String()},
 			{Key: "class", Val: "special-link-mention"},

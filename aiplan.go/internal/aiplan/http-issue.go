@@ -458,7 +458,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Fill filters
-	if !globalSearch && projectMember.ProjectId != "" {
+	if !globalSearch && projectMember.ProjectId != uuid.Nil {
 		query = query.
 			Where("issues.workspace_id = ?", projectMember.WorkspaceId).
 			Where("issues.project_id = ?", projectMember.ProjectId)
@@ -747,7 +747,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 
 	// Get groups
 	if searchParams.GroupByParam != "" {
-		groupSize, err := GetIssuesGroups(s.db, &user, projectMember.ProjectId, sprint, searchParams)
+		groupSize, err := GetIssuesGroups(s.db, &user, projectMember.ProjectId.String(), sprint, searchParams)
 		if err != nil {
 			return EError(c, err)
 		}
@@ -1159,7 +1159,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
 						WorkspaceId: issue.WorkspaceId,
-						ProjectId:   issue.ProjectId,
+						ProjectId:   issue.ProjectId.String(),
 						IssueId:     issue.ID.String(),
 					}); err != nil {
 					return err
@@ -2534,7 +2534,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
 						WorkspaceId: issue.WorkspaceId,
-						ProjectId:   issue.ProjectId,
+						ProjectId:   issue.ProjectId.String(),
 						IssueId:     issue.ID.String(),
 					}); err != nil {
 					return err
@@ -2753,7 +2753,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
 						WorkspaceId: issue.WorkspaceId,
-						ProjectId:   issue.ProjectId,
+						ProjectId:   issue.ProjectId.String(),
 						IssueId:     issue.ID.String(),
 					}); err != nil {
 					return err
@@ -3191,7 +3191,7 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		asset.Header.Get("Content-Type"),
 		&filestorage.Metadata{
 			WorkspaceId: issue.WorkspaceId,
-			ProjectId:   issue.ProjectId,
+			ProjectId:   issue.ProjectId.String(),
 			IssueId:     issue.ID.String(),
 		},
 	); err != nil {

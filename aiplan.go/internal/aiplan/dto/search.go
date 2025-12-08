@@ -20,7 +20,7 @@ type SearchLightweightResponse struct {
 	WorkspaceId string          `json:"workspace"`
 	Workspace   *WorkspaceLight `json:"workspace_detail"`
 
-	ProjectId  string        `json:"project"`
+	ProjectId  uuid.UUID     `json:"project"`
 	Project    *ProjectLight `json:"project_detail"`
 	SequenceId int           `json:"sequence_id"`
 

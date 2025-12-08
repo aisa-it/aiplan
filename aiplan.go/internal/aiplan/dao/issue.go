@@ -55,7 +55,7 @@ type Issue struct {
 	// parent_id uuid,
 	ParentId uuid.NullUUID `json:"parent" gorm:"type:text;index;index:issue_sort_order_index,priority:1"`
 	// project_id uuid NOT NULL,
-	ProjectId string `json:"project" gorm:"index:,type:hash,where:deleted_at is not null"`
+	ProjectId uuid.UUID `json:"project" gorm:"index:,type:hash,where:deleted_at is not null;type:uuid"`
 	// state_id uuid NOT NULL,
 	StateId uuid.UUID `json:"state"`
 	// updated_by_id uuid,
@@ -172,7 +172,7 @@ func (i Issue) GetWorkspaceId() string {
 }
 
 func (i Issue) GetProjectId() string {
-	return i.ProjectId
+	return i.ProjectId.String()
 }
 
 func (i Issue) GetIssueId() string {
@@ -486,7 +486,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 }
 
 func (issue *Issue) SetUrl() {
-	raw := fmt.Sprintf("/%s/projects/%s/issues/%d", issue.WorkspaceId, issue.ProjectId, issue.SequenceId)
+	raw := fmt.Sprintf("/%s/projects/%s/issues/%d", issue.WorkspaceId, issue.ProjectId.String(), issue.SequenceId)
 	u, _ := url.Parse(raw)
 	issue.URL = Config.WebURL.ResolveReference(u)
 }
@@ -910,7 +910,7 @@ type IssueLink struct {
 	// issue_id uuid IS_NULL:NO
 	IssueId uuid.UUID `json:"issue_id" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project_id"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
@@ -951,7 +951,7 @@ func (i IssueLink) GetWorkspaceId() string {
 }
 
 func (i IssueLink) GetProjectId() string {
-	return i.ProjectId
+	return i.ProjectId.String()
 }
 
 func (i IssueLink) GetIssueId() string {
@@ -1009,7 +1009,7 @@ type IssueAttachment struct {
 	// issue_id uuid IS_NULL:NO
 	IssueId uuid.UUID `json:"issue" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project"`
+	ProjectId uuid.UUID `json:"project" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
@@ -1056,7 +1056,7 @@ func (i IssueAttachment) GetWorkspaceId() string {
 }
 
 func (i IssueAttachment) GetProjectId() string {
-	return i.ProjectId
+	return i.ProjectId.String()
 }
 
 func (i IssueAttachment) GetIssueId() string {
@@ -1133,7 +1133,7 @@ type IssueAssignee struct {
 	AssigneeId  string    `json:"assignee_id" gorm:"uniqueIndex:assignees_idx,priority:2"`
 	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:assignees_idx,priority:1;type:uuid"`
-	ProjectId   string    `json:"project_id"`
+	ProjectId   uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
 	WorkspaceId string    `json:"workspace_id"`
 
@@ -1169,7 +1169,7 @@ type IssueWatcher struct {
 	WatcherId   string    `json:"watcher_id" gorm:"uniqueIndex:watchers_idx,priority:2"`
 	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:watchers_idx,priority:1;type:uuid"`
-	ProjectId   string    `json:"project_id"`
+	ProjectId   uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
 	WorkspaceId string    `json:"workspace_id"`
 
@@ -1208,7 +1208,7 @@ type IssueBlocker struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by,omitempty" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project_id"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by,omitempty" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
@@ -1263,7 +1263,7 @@ type IssueLabel struct {
 	// label_id uuid IS_NULL:NO
 	LabelId uuid.UUID `json:"label_id" gorm:"foreignKey:ID;references:Label"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project_id"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
@@ -1293,9 +1293,9 @@ type IssueComment struct {
 
 	URL *url.URL `json:"-" gorm:"-"`
 
-	IssueId     string `json:"issue_id" gorm:"index;uniqueIndex:issue_comment_original_id_idx,priority:1"`
-	ProjectId   string `json:"project_id"`
-	WorkspaceId string `json:"workspace_id"`
+	IssueId     string    `json:"issue_id" gorm:"index;uniqueIndex:issue_comment_original_id_idx,priority:1"`
+	ProjectId   uuid.UUID `json:"project_id" gorm:"type:uuid"`
+	WorkspaceId string    `json:"workspace_id"`
 
 	ActorId     *string `json:"actor_id,omitempty" gorm:"index;index:integration,priority:1" extensions:"x-nullable"`
 	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
@@ -1354,7 +1354,7 @@ func (i IssueComment) GetWorkspaceId() string {
 }
 
 func (i IssueComment) GetProjectId() string {
-	return i.ProjectId
+	return i.ProjectId.String()
 }
 
 func (i IssueComment) GetIssueId() string {
@@ -1507,7 +1507,7 @@ func (i *IssueComment) AfterFind(tx *gorm.DB) error {
 }
 
 func (i *IssueComment) SetUrl() {
-	raw := fmt.Sprintf("/api/auth/workspaces/%s/projects/%s/issues/%s/comments/%s/", i.WorkspaceId, i.ProjectId, i.IssueId, i.Id)
+	raw := fmt.Sprintf("/api/auth/workspaces/%s/projects/%s/issues/%s/comments/%s/", i.WorkspaceId, i.ProjectId.String(), i.IssueId, i.Id)
 	u, _ := url.Parse(raw)
 	i.URL = Config.WebURL.ResolveReference(u)
 }
@@ -1550,7 +1550,7 @@ type IssueProperty struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by,omitempty" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project" gorm:"index"`
+	ProjectId uuid.UUID `json:"project" gorm:"index;type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by,omitempty" extensions:"x-nullable"`
 	// user_id uuid IS_NULL:NO
@@ -1654,8 +1654,8 @@ type RulesLog struct {
 	CreatedAt time.Time      `json:"created_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 	// project_id uuid NOT NULL,
-	ProjectId string   `json:"project" gorm:"index"`
-	Project   *Project `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
+	ProjectId uuid.UUID `json:"project" gorm:"index;type:uuid"`
+	Project   *Project  `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
 	WorkspaceId string     `json:"workspace"`
 	Workspace   *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
@@ -1702,7 +1702,7 @@ type IssueActivity struct {
 	// issue_id uuid IS_NULL:YES
 	IssueId string `json:"issue_id" gorm:"index:issue_activities_issue_index,priority:1" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:YES
-	ProjectId string `json:"project_id"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId string `json:"workspace"`
 	// actor_id uuid IS_NULL:YES

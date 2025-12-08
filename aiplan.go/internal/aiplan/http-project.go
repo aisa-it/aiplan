@@ -421,7 +421,7 @@ func (s *Services) createProject(c echo.Context) error {
 
 	userIdStr := user.ID.String()
 	project := dao.Project{
-		ID:          dao.GenID(),
+		ID:          dao.GenUUID(),
 		WorkspaceId: workspace.ID,
 		CreatedById: userIdStr,
 	}
@@ -1122,7 +1122,7 @@ func (s *Services) joinProjects(c echo.Context) error {
 		userIdStr := user.ID.String()
 		memberships = append(memberships, dao.ProjectMember{
 			ID:                              dao.GenID(),
-			ProjectId:                       projectId,
+			ProjectId:                       uuid.Must(uuid.FromString(projectId)),
 			MemberId:                        userIdStr,
 			Role:                            role,
 			WorkspaceId:                     workspaceMember.WorkspaceId,
@@ -1688,7 +1688,7 @@ func (s *Services) createIssue(c echo.Context) error {
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
 						WorkspaceId: issueNew.WorkspaceId,
-						ProjectId:   issueNew.ProjectId,
+						ProjectId:   issueNew.ProjectId.String(),
 						IssueId:     issueNew.ID.String(),
 					}); err != nil {
 					return err
@@ -2782,7 +2782,7 @@ func (s *Services) createIssueTemplate(c echo.Context) error {
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		WorkspaceId: uuid.Must(uuid.FromString(project.WorkspaceId)),
-		ProjectId:   uuid.Must(uuid.FromString(project.ID)),
+		ProjectId:   project.ID,
 		Name:        req.Name,
 		Template:    req.Template,
 	}
@@ -3010,7 +3010,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 
 		if err := s.uploadAssetForm(tx, file, &fileAsset, filestorage.Metadata{
 			WorkspaceId: project.WorkspaceId,
-			ProjectId:   project.ID,
+			ProjectId:   project.ID.String(),
 		}); err != nil {
 			return err
 		}

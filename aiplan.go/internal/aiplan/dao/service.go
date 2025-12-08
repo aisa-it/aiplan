@@ -128,6 +128,7 @@ func (a *TemplateActivity) BuildWorkspaceActivity(entity WorkspaceEntityI) Works
 
 func (a *TemplateActivity) BuildProjectActivity(entity ProjectEntityI) ProjectActivity {
 	actorId := a.Actor.ID.String()
+	projectId := uuid.Must(uuid.FromString(entity.GetProjectId()))
 	return ProjectActivity{
 		Id:            a.IdActivity,
 		Verb:          a.Verb,
@@ -136,7 +137,7 @@ func (a *TemplateActivity) BuildProjectActivity(entity ProjectEntityI) ProjectAc
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
 		WorkspaceId:   entity.GetWorkspaceId(),
-		ProjectId:     entity.GetProjectId(),
+		ProjectId:     projectId,
 		ActorId:       &actorId,
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
@@ -167,6 +168,7 @@ func (a *TemplateActivity) BuildSprintActivity(entity SprintEntityI) SprintActiv
 
 func (a *TemplateActivity) BuildIssueActivity(entity IssueEntityI) IssueActivity {
 	actorId := a.Actor.ID.String()
+	projectId := uuid.Must(uuid.FromString(entity.GetProjectId()))
 	return IssueActivity{
 		Id:            a.IdActivity,
 		Verb:          a.Verb,
@@ -175,7 +177,7 @@ func (a *TemplateActivity) BuildIssueActivity(entity IssueEntityI) IssueActivity
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
 		WorkspaceId:   entity.GetWorkspaceId(),
-		ProjectId:     entity.GetProjectId(),
+		ProjectId:     projectId,
 		IssueId:       entity.GetIssueId(),
 		ActorId:       &actorId,
 		NewIdentifier: a.NewIdentifier,

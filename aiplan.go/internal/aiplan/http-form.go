@@ -708,7 +708,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		ID:              dao.GenUUID(),
 		Name:            fmt.Sprintf("Ответ №%d формы \"%s\"", answer.SeqId, form.Title),
 		CreatedById:     systemUser.ID.String(),
-		ProjectId:       form.TargetProjectId.String,
+		ProjectId:       uuid.Must(uuid.FromString(form.TargetProjectId.String)),
 		WorkspaceId:     form.WorkspaceId,
 		DescriptionHtml: buf.String(),
 		//DescriptionStripped: issue.DescriptionStripped,

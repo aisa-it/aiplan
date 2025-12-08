@@ -382,11 +382,12 @@ func createDeadlineDeferredNotification(targetDate time.Time, user dao.User, iss
 		return nil, err
 	}
 
+	projectIdStr := issue.ProjectId.String()
 	notify := dao.DeferredNotifications{
 		ID:                  dao.GenID(),
 		UserID:              user.ID.String(),
 		IssueID:             &issueId,
-		ProjectID:           &issue.ProjectId,
+		ProjectID:           &projectIdStr,
 		WorkspaceID:         &issue.WorkspaceId,
 		NotificationType:    "deadline_notification",
 		DeliveryMethod:      "telegram",

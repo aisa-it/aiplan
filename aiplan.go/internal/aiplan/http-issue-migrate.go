@@ -234,7 +234,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	// Checks
 	{
 		var errors []ErrClause
-		if _, exist := dao.IsProjectMember(s.db, user.ID, targetProjectId); !exist {
+		if _, exist := dao.IsProjectMember(s.db, user.ID, uuid.Must(uuid.FromString(targetProjectId))); !exist {
 			errors = append(errors, ErrClause{
 				Error: ErrUserNotAProjectMember,
 			})
@@ -246,7 +246,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 				return EError(c, err)
 			}
 			if deleteSrc {
-				srcIssues[i].ProjectId = targetProjectId
+				srcIssues[i].ProjectId = uuid.Must(uuid.FromString(targetProjectId))
 				srcIssues[i].Project = &targetProject
 				srcIssues[i].StateId = result.TargetState.ID
 				if result.TargetState.ID != uuid.Nil {
@@ -442,7 +442,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 				}
 			}
 
-			err := stateActivityUpdate(tx, familyIds, srcIssue.ProjectId, targetProjectId)
+			err := stateActivityUpdate(tx, familyIds, srcIssue.ProjectId.String(), targetProjectId)
 			if err != nil {
 				return err
 			}
@@ -673,7 +673,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	// Checks
 	{
 		var errors []ErrClause
-		if _, exist := dao.IsProjectMember(s.db, user.ID, targetProjectId); !exist {
+		if _, exist := dao.IsProjectMember(s.db, user.ID, uuid.Must(uuid.FromString(targetProjectId))); !exist {
 			errors = append(errors, ErrClause{
 				Error: ErrUserNotAProjectMember,
 			})
@@ -685,7 +685,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 				return EError(c, err)
 			}
 			if deleteSrc {
-				srcIssues[i].ProjectId = targetProjectId
+				srcIssues[i].ProjectId = uuid.Must(uuid.FromString(targetProjectId))
 				srcIssues[i].Project = &targetProject
 				srcIssues[i].StateId = result.TargetState.ID
 				if result.TargetState.ID != uuid.Nil {
@@ -882,7 +882,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 				}
 			}
 
-			err := stateActivityUpdate(tx, targetIds, srcProject.ID, targetProjectId)
+			err := stateActivityUpdate(tx, targetIds, srcProject.ID.String(), targetProjectId)
 			if err != nil {
 				return err
 			}

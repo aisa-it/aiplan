@@ -375,7 +375,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		var sprintIssues []dao.SprintIssue
 		for i, issue := range issues {
 
-			projectUUID := uuid.Must(uuid.FromString(issue.ProjectId))
+			projectUUID := issue.ProjectId
 
 			sprintIssues = append(sprintIssues, dao.SprintIssue{
 				Id: dao.GenUUID(),
@@ -719,7 +719,7 @@ func (s *Services) getSprintStates(c echo.Context) error {
 	projectMap := make(map[uuid.UUID]struct{})
 
 	for _, i := range sprint.Issues {
-		projectId := uuid.FromStringOrNil(i.ProjectId)
+		projectId := i.ProjectId
 		projectMap[projectId] = struct{}{}
 	}
 
