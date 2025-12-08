@@ -45,7 +45,7 @@ var deletingProjects *DeletionWatcher = NewDeletionWatcher()
 
 // Проекты
 type Project struct {
-	ID        string         `gorm:"column:id;primaryKey;autoIncrement:true;unique" json:"id"`
+	ID        uuid.UUID      `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -90,7 +90,7 @@ type ProjectWithCount struct {
 }
 
 func (p Project) GetId() string {
-	return p.ID
+	return p.ID.String()
 }
 
 func (p Project) GetString() string {
@@ -359,7 +359,7 @@ func (project *Project) AfterFind(tx *gorm.DB) error {
 }
 
 func (project *Project) SetUrl() {
-	raw := fmt.Sprintf("/%s/projects/%s/issues", project.WorkspaceId, project.ID)
+	raw := fmt.Sprintf("/%s/projects/%s/issues", project.WorkspaceId, project.ID.String())
 	u, err := url.Parse(raw)
 	if err != nil {
 		slog.Error("Parse issue url", "url", raw, "err", err)
@@ -375,12 +375,12 @@ func (project *Project) SetUrl() {
 // Возвращает:
 //   - error: ошибка, если произошла ошибка при обновлении статуса участника проекта или удалении связанных данных.
 func (project *Project) BeforeDelete(tx *gorm.DB) error {
-	if deletingProjects.IsDeleting(project.ID) {
+	if deletingProjects.IsDeleting(project.ID.String()) {
 		return nil
 	}
 
-	deletingProjects.StartDeletion(project.ID)
-	defer deletingProjects.FinishDeletion(project.ID)
+	deletingProjects.StartDeletion(project.ID.String())
+	defer deletingProjects.FinishDeletion(project.ID.String())
 
 	if err := tx.
 		Where("project_activity_id in (?)", tx.Select("id").Where("project_id = ?", project.ID).
@@ -479,7 +479,7 @@ type ProjectMember struct {
 	// member_id uuid,
 	MemberId string `json:"member_id" gorm:"index;uniqueIndex:project_members_idx,priority:2"`
 	// project_id uuid NOT NULL,
-	ProjectId string `json:"project_id" gorm:"uniqueIndex:project_members_idx,priority:1"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;uniqueIndex:project_members_idx,priority:1"`
 	// updated_by_id uuid,
 	UpdatedById *string `json:"updated_by_id" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
@@ -535,7 +535,7 @@ func (pm ProjectMember) GetEntityType() string {
 }
 
 func (pm ProjectMember) GetProjectId() string {
-	return pm.ProjectId
+	return pm.ProjectId.String()
 }
 
 func (pm ProjectMember) GetWorkspaceId() string {
@@ -632,7 +632,7 @@ type ProjectFavorites struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project_id" gorm:"index;uniqueIndex:project_favorites_idx,priority:1"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;index;uniqueIndex:project_favorites_idx,priority:1"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
 	// user_id uuid IS_NULL:NO
@@ -761,7 +761,7 @@ type Estimate struct {
 	// created_by_id uuid IS_NULL:YES
 	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project_id"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
@@ -814,7 +814,7 @@ type EstimatePoint struct {
 	// estimate_id uuid IS_NULL:NO
 	EstimateId string `json:"estimate"`
 	// project_id uuid IS_NULL:NO
-	ProjectId string `json:"project"`
+	ProjectId uuid.UUID `json:"project" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	UpdatedById *string `json:"updated_by,omitempty" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
@@ -861,7 +861,7 @@ type ImportedProject struct {
 	TotalAttachments  int
 	NewUsers          int
 	TargetWorkspaceId string
-	TargetProjectId   string `gorm:"index"`
+	TargetProjectId   uuid.UUID `gorm:"type:uuid;index"`
 	Successfully      bool
 
 	TargetWorkspace Workspace `gorm:"foreignKey:TargetWorkspaceId;constraint:OnDelete:CASCADE"`
@@ -885,7 +885,7 @@ type Label struct {
 	// created_by_id uuid,
 	CreatedById *string `json:"created_by" extensions:"x-nullable"`
 	// project_id uuid NOT NULL,
-	ProjectId string `json:"project" gorm:"uniqueIndex:label_name_color_unique_idx,priority:1"`
+	ProjectId uuid.UUID `json:"project" gorm:"type:uuid;uniqueIndex:label_name_color_unique_idx,priority:1"`
 	// updated_by_id uuid,
 	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
@@ -942,7 +942,7 @@ func (l Label) GetWorkspaceId() string {
 }
 
 func (l Label) GetProjectId() string {
-	return l.ProjectId
+	return l.ProjectId.String()
 }
 
 // ToLightDTO преобразует объект IssueComment в структуру dto.IssueCommentLight для упрощения передачи данных в клиентский код.
@@ -1024,7 +1024,7 @@ type State struct {
 	// created_by_id uuid,
 	CreatedById *string `json:"created_by" extensions:"x-nullable"`
 	// project_id uuid NOT NULL,
-	ProjectId string `json:"project" gorm:"uniqueIndex:unique_state_idx,priority:1"`
+	ProjectId uuid.UUID `json:"project" gorm:"type:uuid;uniqueIndex:unique_state_idx,priority:1"`
 	// updated_by_id uuid,
 	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
@@ -1091,7 +1091,7 @@ func (s State) GetWorkspaceId() string {
 }
 
 func (s State) GetProjectId() string {
-	return s.ProjectId
+	return s.ProjectId.String()
 }
 
 func (s *State) BeforeDelete(tx *gorm.DB) error {
@@ -1138,7 +1138,7 @@ type ProjectActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// project_id uuid IS_NULL:YES
-	ProjectId string `json:"project_id" gorm:"index:project_activities_project_index,priority:1" extensions:"x-nullable"`
+	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;index:project_activities_project_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId string `json:"workspace"`
 	// actor_id uuid IS_NULL:YES
@@ -1304,7 +1304,7 @@ func (activity *ProjectActivity) ToLightDTO() *dto.EntityActivityLight {
 // Возвращает:
 //   - int: роль пользователя в проекте (например, 1 - участник, 2 - зритель), или 0, если пользователь не является участником проекта.
 //   - bool: true, если пользователь является участником проекта, false в противном случае.
-func IsProjectMember(tx *gorm.DB, userId uuid.UUID, projectId string) (int, bool) {
+func IsProjectMember(tx *gorm.DB, userId uuid.UUID, projectId uuid.UUID) (int, bool) {
 	var member ProjectMember
 	if err := tx.
 		Where("project_id = ?", projectId).

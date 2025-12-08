@@ -1605,12 +1605,12 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 	result := make(map[string][]dto.StateLight)
 	hash := sha256.New()
 	for _, state := range states {
-		arr, ok := result[state.ProjectId]
+		arr, ok := result[state.ProjectId.String()]
 		if !ok {
 			arr = make([]dto.StateLight, 0)
 		}
 		arr = append(arr, *state.ToLightDTO())
-		result[state.ProjectId] = arr
+		result[state.ProjectId.String()] = arr
 		hash.Write(state.Hash)
 	}
 	c.Response().Header().Add("ETag", hex.EncodeToString(hash.Sum(nil)))

@@ -1173,7 +1173,7 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 				superUserIdStr := superUser.ID.String()
 				member = dao.ProjectMember{
 					ID:          dao.GenID(),
-					ProjectId:   projectId,
+					ProjectId:   uuid.Must(uuid.FromString(projectId)),
 					MemberId:    user.ID.String(),
 					WorkspaceId: workspaceId,
 					CreatedById: &superUserIdStr,

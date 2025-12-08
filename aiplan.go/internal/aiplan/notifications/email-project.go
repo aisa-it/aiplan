@@ -12,6 +12,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -132,21 +133,22 @@ type projectActivity struct {
 }
 
 func (as *projectActivitySorter) sortEntity(tx *gorm.DB, activity dao.ProjectActivity) {
-	if activity.ProjectId != "" { // TODO check it
+	if activity.ProjectId != uuid.Nil { // TODO check it
 		activity.Project.Workspace = activity.Workspace
-		if v, ok := as.Project[activity.ProjectId]; !ok {
+		projectIdStr := activity.ProjectId.String()
+		if v, ok := as.Project[projectIdStr]; !ok {
 			pa := newProjectActivity(tx, activity.Project)
 			if pa != nil {
 				if !pa.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Project[activity.ProjectId] = *pa
+				as.Project[projectIdStr] = *pa
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Project[activity.ProjectId] = v
+			as.Project[projectIdStr] = v
 		}
 	}
 	return

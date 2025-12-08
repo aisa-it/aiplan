@@ -139,7 +139,7 @@ func (sh *SessionHandler) StartIssueCreationFlow(user dao.User, createFunc func(
 		keys = append(keys, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
 				fmt.Sprintf("%s/%s", project.Workspace.Slug, project.Identifier),
-				project.ID,
+				project.ID.String(),
 			),
 		))
 	}

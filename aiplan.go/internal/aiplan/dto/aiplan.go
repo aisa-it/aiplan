@@ -72,7 +72,7 @@ type StateLight struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Color       string    `json:"color"`
-	ProjectId   string    `json:"project"`
+	ProjectId   uuid.UUID `json:"project"`
 	WorkspaceId string    `json:"workspace"`
 	Sequence    uint64    `json:"sequence"`
 	Group       string    `json:"group"`

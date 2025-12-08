@@ -324,8 +324,8 @@ func (c *ImportContext) GetProject(key string) error {
 	}
 
 	// Workaround for translateUser(gets project id)
-	id := dao.GenID()
-	c.Project.ID = id
+	projectId := dao.GenUUID()
+	c.Project.ID = projectId
 
 	lead, err := c.Users.Get(c.getJiraUserUsername(project.Lead))
 	if err != nil {
@@ -333,7 +333,7 @@ func (c *ImportContext) GetProject(key string) error {
 	}
 
 	c.Project = dao.Project{
-		ID:            id,
+		ID:            projectId,
 		Name:          project.Name,
 		Identifier:    project.Key,
 		ProjectLeadId: lead.ID.String(),

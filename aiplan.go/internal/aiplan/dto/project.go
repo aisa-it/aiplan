@@ -14,7 +14,7 @@ import (
 )
 
 type ProjectLight struct {
-	ID string `json:"id"`
+	ID uuid.UUID `json:"id"`
 
 	Name          string        `json:"name"`
 	Public        bool          `json:"public"`
@@ -62,7 +62,7 @@ type ProjectMemberLight struct {
 	MemberId string     `json:"member_id"`
 	Member   *UserLight `json:"member,omitempty" extensions:"x-nullable"`
 
-	ProjectId string        `json:"project_id"`
+	ProjectId uuid.UUID     `json:"project_id"`
 	Project   *ProjectLight `json:"project,omitempty" extensions:"x-nullable"`
 }
 
@@ -80,7 +80,7 @@ type ProjectMember struct {
 
 type ProjectFavorites struct {
 	ID        string        `json:"id"`
-	ProjectId string        `json:"project_id"`
+	ProjectId uuid.UUID     `json:"project_id"`
 	Project   *ProjectLight `json:"project_detail,omitempty" extensions:"x-nullable"`
 }
 
@@ -89,7 +89,7 @@ type Estimate struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 
-	ProjectId string          `json:"project_id"`
+	ProjectId uuid.UUID       `json:"project_id"`
 	Project   *ProjectLight   `json:"project_detail" extensions:"x-nullable"`
 	Points    []EstimatePoint `json:"points"`
 }
@@ -103,7 +103,7 @@ type EstimatePoint struct {
 	EstimateId string    `json:"estimate"`
 	Estimate   *Estimate `json:"estimate_detail" extensions:"x-nullable"`
 
-	ProjectId string        `json:"project"`
+	ProjectId uuid.UUID     `json:"project"`
 	Project   *ProjectLight `json:"project_detail" extensions:"x-nullable"`
 }
 

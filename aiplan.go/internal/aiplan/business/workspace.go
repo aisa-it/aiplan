@@ -56,11 +56,11 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 	}
 
 	actorMap := utils.SliceToMap(&actorProjectMembers, func(v *dao.ProjectMember) string {
-		return v.ProjectId
+		return v.ProjectId.String()
 	})
 
 	for _, member := range projectMembers {
-		actorPM := actorMap[member.ProjectId]
+		actorPM := actorMap[member.ProjectId.String()]
 
 		b.ProjectCtx(b.workspaceCtx.c, actor.Member, member.Project, &actorPM,
 			b.workspaceCtx.workspace, b.workspaceCtx.workspaceMember)
