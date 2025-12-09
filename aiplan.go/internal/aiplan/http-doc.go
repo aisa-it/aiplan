@@ -371,7 +371,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 	var editorListOk, readerListOk, watcherListOk bool
 
-	if getLastActivityFields[dao.DocActivity](
+	if hasRecentFieldUpdate[dao.DocActivity](
 		s.db.Where("doc_id = ?", doc.ID),
 		user.ID,
 		utils.SliceToSlice(&fields, func(t *string) string { return actField.ReqFieldMapping(*t) })...,
@@ -1287,7 +1287,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	}
 	newMap := StructToJSONMap(comment)
 	newMap["updateScopeId"] = commentId
-	newMap["field_log"] = actField.Comment
+	newMap["field_log"] = actField.Comment.Field
 
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = commentId

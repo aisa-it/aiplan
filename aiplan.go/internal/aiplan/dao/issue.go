@@ -164,7 +164,7 @@ func (i Issue) GetString() string {
 // Возвращает:
 //   - string: строка, представляющая тип сущности (issue). Определяет, к какому типу относится сущность.
 func (i Issue) GetEntityType() string {
-	return actField.Issue.String()
+	return actField.Issue.Field.String()
 }
 
 func (i Issue) GetWorkspaceId() string {
@@ -943,7 +943,7 @@ func (i IssueLink) GetString() string {
 }
 
 func (i IssueLink) GetEntityType() string {
-	return actField.Link.String()
+	return actField.Link.Field.String()
 }
 
 func (i IssueLink) GetWorkspaceId() string {
@@ -1048,7 +1048,7 @@ func (ia IssueAttachment) GetString() string {
 }
 
 func (ia IssueAttachment) GetEntityType() string {
-	return actField.Attachment.String()
+	return actField.Attachment.Field.String()
 }
 
 func (i IssueAttachment) GetWorkspaceId() string {
@@ -1346,7 +1346,7 @@ func (i IssueComment) GetString() string {
 }
 
 func (i IssueComment) GetEntityType() string {
-	return actField.Comment.String()
+	return actField.Comment.Field.String()
 }
 
 func (i IssueComment) GetWorkspaceId() string {

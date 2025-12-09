@@ -98,7 +98,7 @@ func (p Project) GetString() string {
 }
 
 func (p Project) GetEntityType() string {
-	return actField.Project.String()
+	return actField.Project.Field.String()
 }
 
 func (p Project) GetProjectId() string {
@@ -531,7 +531,7 @@ func (pm ProjectMember) GetString() string {
 }
 
 func (pm ProjectMember) GetEntityType() string {
-	return actField.Member.String()
+	return actField.Member.Field.String()
 }
 
 func (pm ProjectMember) GetProjectId() string {
@@ -934,7 +934,7 @@ func (l Label) GetString() string {
 // Возвращает:
 //   - string: тип сущности (issue).
 func (l Label) GetEntityType() string {
-	return actField.Label.String()
+	return actField.Label.Field.String()
 }
 
 func (l Label) GetWorkspaceId() string {
@@ -1083,7 +1083,7 @@ func (s State) GetString() string {
 }
 
 func (s State) GetEntityType() string {
-	return actField.Status.String()
+	return actField.Status.Field.String()
 }
 
 func (s State) GetWorkspaceId() string {
@@ -1378,7 +1378,7 @@ func (it IssueTemplate) GetString() string {
 }
 
 func (it IssueTemplate) GetEntityType() string {
-	return actField.Template.String()
+	return actField.Template.Field.String()
 }
 
 func (it IssueTemplate) GetProjectId() string {
