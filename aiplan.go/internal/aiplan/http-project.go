@@ -1998,6 +1998,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 	label.UpdatedAt = time.Now()
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// TODO rate limit
 		// Обновляем только выбранные поля
 		if err := tx.Model(&label).
 			Select([]string{"name", "description", "parent_id", "color"}).
@@ -2337,7 +2338,7 @@ func (s *Services) updateState(c echo.Context) error {
 	oldStateMap := StructToJSONMap(state)
 	oldStateMap["updateScope"] = "status"
 	oldStateMap["updateScopeId"] = stateId
-
+	//TODO rate limit
 	var currentDefaultState dao.State
 	if err := s.db.
 		Preload(clause.Associations).
@@ -2845,7 +2846,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 	oldTemplateMap := StructToJSONMap(template)
 	oldTemplateMap["updateScope"] = "template"
 	oldTemplateMap["updateScopeId"] = templateId
-
+	// TODO rate limit
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
