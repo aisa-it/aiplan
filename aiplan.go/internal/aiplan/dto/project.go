@@ -79,7 +79,7 @@ type ProjectMember struct {
 }
 
 type ProjectFavorites struct {
-	ID        string        `json:"id"`
+	ID        uuid.UUID     `json:"id"`
 	ProjectId uuid.UUID     `json:"project_id"`
 	Project   *ProjectLight `json:"project_detail,omitempty" extensions:"x-nullable"`
 }

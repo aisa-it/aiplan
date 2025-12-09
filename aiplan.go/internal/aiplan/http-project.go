@@ -274,7 +274,7 @@ func (s *Services) updateProject(c echo.Context) error {
 
 	userIdStr := user.ID.String()
 	project.ID = id
-	project.UpdatedById = &userIdStr
+	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	project.Name = strings.TrimSpace(project.Name)
 
 	err := c.Validate(project)
@@ -415,7 +415,7 @@ func (s *Services) createProject(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if !limiter.Limiter.CanCreateProject(uuid.Must(uuid.FromString(workspace.ID))) {
+	if !limiter.Limiter.CanCreateProject(workspace.ID) {
 		return EErrorDefined(c, apierrors.ErrProjectLimitExceed)
 	}
 
@@ -423,7 +423,7 @@ func (s *Services) createProject(c echo.Context) error {
 	project := dao.Project{
 		ID:          dao.GenUUID(),
 		WorkspaceId: workspace.ID,
-		CreatedById: userIdStr,
+		CreatedById: user.ID,
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -455,7 +455,7 @@ func (s *Services) createProject(c echo.Context) error {
 
 		return tx.Create(&[]dao.State{
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 				Name:     "Новая",
 				Color:    "#26b5ce",
 				Sequence: 15000,
@@ -463,28 +463,28 @@ func (s *Services) createProject(c echo.Context) error {
 				Default:  true,
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 				Name:     "Открыта",
 				Color:    "#f2c94c",
 				Sequence: 25000,
 				Group:    "unstarted",
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 				Name:     "В работе",
 				Color:    "#5e6ad2",
 				Sequence: 35000,
 				Group:    "started",
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 				Name:     "Выполнена",
 				Color:    "#4cb782",
 				Sequence: 45000,
 				Group:    "completed",
 			},
 			{
-				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: &userIdStr,
+				ID: dao.GenUUID(), ProjectId: project.ID, WorkspaceId: workspace.ID, CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 				Name:     "Отменена",
 				Color:    "#eb5757",
 				Sequence: 55000,
@@ -822,7 +822,7 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if requestedProjectMember.MemberId == project.ProjectLeadId {
+	if requestedProjectMember.MemberId.String() == project.ProjectLeadId {
 		return EErrorDefined(c, apierrors.ErrChangeLeadRoleForbidden)
 	}
 
@@ -830,10 +830,10 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotUpdateHigherRole)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	oldMemberMap := StructToJSONMap(requestedProjectMember)
 	requestedProjectMember.Role = data["role"]
-	requestedProjectMember.UpdatedById = &userIdStr
+	requestedProjectMember.UpdatedById = userID
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if requestedProjectMember.Role == types.GuestRole {
@@ -956,7 +956,7 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if projectMember.Role == 0 || projectMember.MemberId == "" {
+	if projectMember.Role == 0 || projectMember.MemberId == uuid.Nil {
 		return EErrorDefined(c, apierrors.ErrRoleAndMemberIDRequired)
 	}
 
@@ -992,10 +992,10 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrUserAlreadyInProject)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	projectMember.ID = dao.GenID()
 	projectMember.ProjectId = project.ID
-	projectMember.CreatedById = &userIdStr
+	projectMember.CreatedById = userID
 	projectMember.WorkspaceId = workspaceMember.WorkspaceId
 	projectMember.ViewProps = types.DefaultViewProps
 	projectMember.NotificationAuthorSettingsEmail = types.DefaultProjectMemberNS
@@ -1119,14 +1119,14 @@ func (s *Services) joinProjects(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrProjectIsPrivate.WithFormattedMessage(projectId))
 		}
 
-		userIdStr := user.ID.String()
+		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		memberships = append(memberships, dao.ProjectMember{
 			ID:                              dao.GenID(),
 			ProjectId:                       uuid.Must(uuid.FromString(projectId)),
-			MemberId:                        userIdStr,
+			MemberId:                        user.ID,
 			Role:                            role,
 			WorkspaceId:                     workspaceMember.WorkspaceId,
-			CreatedById:                     &userIdStr,
+			CreatedById:                     userID,
 			CreatedAt:                       time.Now(),
 			ViewProps:                       types.DefaultViewProps,
 			NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
@@ -1265,18 +1265,19 @@ func (s *Services) addProjectToFavorites(c echo.Context) error {
 	projectID := req.ProjectID
 
 	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	project, err := dao.GetProject(s.db, workspace.Slug, userIdStr, projectID)
 	if err != nil {
 		return EError(c, err)
 	}
 
 	projectFavorite := dao.ProjectFavorites{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &userIdStr,
+		CreatedById: userID,
 		ProjectId:   project.ID,
-		UserId:      userIdStr,
+		UserId:      user.ID,
 		WorkspaceId: project.Workspace.ID,
 	}
 	if err := s.db.Create(&projectFavorite).Error; err != nil {
@@ -1415,12 +1416,12 @@ func (s *Services) createProjectEstimate(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrEstimatePointsRequired)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	data.Estimate.Id = dao.GenID()
 	data.Estimate.CreatedAt = time.Now()
-	data.Estimate.CreatedById = &userIdStr
+	data.Estimate.CreatedById = userID
 	data.Estimate.UpdatedAt = time.Now()
-	data.Estimate.UpdatedById = &userIdStr
+	data.Estimate.UpdatedById = userID
 	data.Estimate.WorkspaceId = project.WorkspaceId
 	data.Estimate.ProjectId = project.ID
 
@@ -1431,9 +1432,9 @@ func (s *Services) createProjectEstimate(c echo.Context) error {
 	for i := 0; i < len(data.EstimatePoints); i++ {
 		data.EstimatePoints[i].Id = dao.GenID()
 		data.EstimatePoints[i].CreatedAt = time.Now()
-		data.EstimatePoints[i].CreatedById = &userIdStr
+		data.EstimatePoints[i].CreatedById = userID
 		data.EstimatePoints[i].UpdatedAt = time.Now()
-		data.EstimatePoints[i].UpdatedById = &userIdStr
+		data.EstimatePoints[i].UpdatedById = userID
 		data.EstimatePoints[i].WorkspaceId = project.WorkspaceId
 		data.EstimatePoints[i].ProjectId = project.ID
 		data.EstimatePoints[i].EstimateId = data.Estimate.Id
@@ -1619,7 +1620,7 @@ func (s *Services) createIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
+		if !limiter.Limiter.CanAddAttachment(workspace.ID) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -1635,7 +1636,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		}
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	issueNew := dao.Issue{
 		ID:                  dao.GenUUID(),
 		Name:                issue.Name,
@@ -1644,11 +1645,11 @@ func (s *Services) createIssue(c echo.Context) error {
 		TargetDate:          issue.TargetDate,
 		CompletedAt:         issue.CompletedAt,
 		SequenceId:          issue.SequenceId,
-		CreatedById:         userIdStr,
+		CreatedById:         user.ID,
 		ParentId:            parentId,
 		ProjectId:           project.ID,
 		StateId:             issue.StateId,
-		UpdatedById:         &userIdStr,
+		UpdatedById:         uuid.NullUUID{UUID: user.ID, Valid: true},
 		WorkspaceId:         workspace.ID,
 		DescriptionHtml:     issue.DescriptionHtml,
 		DescriptionStripped: issue.DescriptionStripped,
@@ -1678,16 +1679,16 @@ func (s *Services) createIssue(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &userIdStr,
+					CreatedById: userID,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
-					WorkspaceId: &issueNew.WorkspaceId,
+					WorkspaceId: uuid.NullUUID{UUID: issueNew.WorkspaceId, Valid: true},
 					IssueId:     uuid.NullUUID{Valid: true, UUID: issueNew.ID},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
-						WorkspaceId: issueNew.WorkspaceId,
+						WorkspaceId: issueNew.WorkspaceId.String(),
 						ProjectId:   issueNew.ProjectId.String(),
 						IssueId:     issueNew.ID.String(),
 					}); err != nil {
@@ -1715,8 +1716,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					BlockId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
@@ -1729,14 +1730,15 @@ func (s *Services) createIssue(c echo.Context) error {
 			issue.AssigneesList = utils.SetToSlice(utils.SliceToSet(issue.AssigneesList))
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range issue.AssigneesList {
+				assigneeUUID := uuid.FromStringOrNil(assignee)
 				newAssignees = append(newAssignees, dao.IssueAssignee{
 					Id:          dao.GenUUID(),
-					AssigneeId:  fmt.Sprint(assignee),
+					AssigneeId:  assigneeUUID,
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1749,14 +1751,15 @@ func (s *Services) createIssue(c echo.Context) error {
 			issue.WatchersList = utils.SetToSlice(utils.SliceToSet(issue.WatchersList))
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range issue.WatchersList {
+				watcherUUID := uuid.FromStringOrNil(watcher)
 				newWatchers = append(newWatchers, dao.IssueWatcher{
 					Id:          dao.GenUUID(),
-					WatcherId:   fmt.Sprint(watcher),
+					WatcherId:   watcherUUID,
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1774,8 +1777,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					IssueId:     issueId,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
@@ -1797,8 +1800,8 @@ func (s *Services) createIssue(c echo.Context) error {
 					BlockedById: issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlocked, 10).Error; err != nil {
@@ -1904,12 +1907,11 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
 	label.ID = dao.GenUUID()
 	label.CreatedAt = time.Now()
 	label.UpdatedAt = time.Now()
-	label.CreatedById = &userIdStr
-	label.UpdatedById = &userIdStr
+	label.CreatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+	label.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	label.ProjectId = project.ID
 	label.WorkspaceId = project.WorkspaceId
 
@@ -2004,8 +2006,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
-	label.UpdatedById = &userIdStr
+	label.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	label.UpdatedAt = time.Now()
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -2222,12 +2223,11 @@ func (s *Services) createState(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
 	state.ID = dao.GenUUID()
 	state.ProjectId = project.ID
 	state.WorkspaceId = project.WorkspaceId
-	state.CreatedById = &userIdStr
-	state.UpdatedById = &userIdStr
+	state.CreatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+	state.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	state.CreatedAt = time.Now()
 	state.UpdatedAt = time.Now()
 
@@ -2286,7 +2286,7 @@ type UpdateStateRequest struct {
 	SeqId       *int    `json:"group_seq_id,omitempty"`
 
 	UpdatedAt   time.Time `json:"-"`
-	UpdatedById string    `json:"-"`
+	UpdatedById uuid.UUID `json:"-"`
 	Sequence    uint64    `json:"sequence,omitempty"`
 }
 
@@ -2300,7 +2300,7 @@ func (s *UpdateStateRequest) Update(fields []string, state *dao.State) {
 		case "color":
 			state.Color = *s.Color
 		case "updated_by":
-			state.UpdatedById = &s.UpdatedById
+			state.UpdatedById = uuid.NullUUID{UUID: s.UpdatedById, Valid: true}
 		case "group":
 			state.Group = *s.Group
 		case "default":
@@ -2370,7 +2370,7 @@ func (s *Services) updateState(c echo.Context) error {
 		}
 	}
 
-	req.UpdatedById = user.ID.String()
+	req.UpdatedById = user.ID
 	fields = append(fields, "updated_by")
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -2781,7 +2781,7 @@ func (s *Services) createIssueTemplate(c echo.Context) error {
 		UpdatedById: user.ID,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		WorkspaceId: uuid.Must(uuid.FromString(project.WorkspaceId)),
+		WorkspaceId: project.WorkspaceId,
 		ProjectId:   project.ID,
 		Name:        req.Name,
 		Template:    req.Template,
@@ -2980,7 +2980,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 
-	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+	if !limiter.Limiter.CanAddAttachment(project.WorkspaceId) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 
@@ -2989,11 +2989,11 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	fileAsset := dao.FileAsset{
 		Id:          dao.GenUUID(),
-		CreatedById: &userIdStr,
-		WorkspaceId: &project.WorkspaceId,
+		CreatedById: userID,
+		WorkspaceId: uuid.NullUUID{UUID: project.WorkspaceId, Valid: true},
 	}
 
 	oldLogoId := project.LogoId
@@ -3009,7 +3009,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 		}
 
 		if err := s.uploadAssetForm(tx, file, &fileAsset, filestorage.Metadata{
-			WorkspaceId: project.WorkspaceId,
+			WorkspaceId: project.WorkspaceId.String(),
 			ProjectId:   project.ID.String(),
 		}); err != nil {
 			return err
@@ -3067,9 +3067,8 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 	project := c.(ProjectContext).Project
 	oldLogoId := project.LogoId.UUID.String()
 
-	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		project.UpdatedById = &userIdStr
+		project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		project.LogoId = uuid.NullUUID{}
 		if err := tx.Select("logo_id").Updates(&project).Error; err != nil {
 			return err

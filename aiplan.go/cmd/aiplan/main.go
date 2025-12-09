@@ -15,6 +15,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/gormlogger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -66,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := gorm.Open(postgres.New(postgres.Config{
+	db, err := gorm.Open(utils.NewPostgresUUIDDialector(postgres.Config{
 		DSN:                  cfg.DatabaseDSN,
 		PreferSimpleProtocol: false, // disables implicit prepared statement usage
 	}), &gorm.Config{
@@ -89,45 +90,181 @@ func main() {
 	sqlDB.SetConnMaxIdleTime(time.Minute * 15)
 
 	if !*noMigration {
-		if err := dao.ReplaceColumnType(db, "issue_comments", "id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "issue_comments", "reply_to_comment_id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "file_assets", "comment_id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "comment_reactions", "id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "comment_reactions", "comment_id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "issue_blockers", "id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "issue_assignees", "id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "issue_watchers", "id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
-		if err := dao.ReplaceColumnType(db, "issue_attachments", "id", "uuid"); err != nil {
-			slog.Error("Replace columnt type", "err", err)
-		}
+		// Migrate all UUID fields from text to uuid type in a single transaction
+		slog.Info("Starting UUID migration in single transaction")
 
-		slog.Info("Migrate models without relations")
-		db.Config.DisableForeignKeyConstraintWhenMigrating = true
-		if err := db.AutoMigrate(models...); err != nil {
-			slog.Error("Migrate model error", "err", err)
-		}
-		db.Config.DisableForeignKeyConstraintWhenMigrating = false
+		// Auto-generate UUID columns from DAO models
+		allColumns := utils.GetUUIDColumnsFromModels(models)
+		slog.Info("Auto-detected UUID columns from models", "count", len(allColumns))
 
-		slog.Info("Migrate models with relations")
-		if err := db.AutoMigrate(models...); err != nil {
-			slog.Error("Migrate model error", "err", err)
+		// Filter columns that need migration (exclude uuid, bytea, non-existent)
+		columnsToMigrate, err := utils.FilterMigratableColumns(db, allColumns)
+		if err != nil {
+			slog.Error("Failed to filter migratable columns", "err", err)
+			os.Exit(1)
 		}
+		slog.Info("Filtered migratable columns", "count", len(columnsToMigrate), "skipped", len(allColumns)-len(columnsToMigrate))
+
+		// Execute all migrations in a single transaction
+		err = db.Transaction(func(tx *gorm.DB) error {
+			// Step 1: Drop all generated columns (they block type changes)
+			slog.Info("Dropping all generated columns")
+			if err := dao.DropAllGeneratedColumns(tx); err != nil {
+				return fmt.Errorf("failed to drop generated columns: %w", err)
+			}
+			slog.Info("All generated columns dropped")
+
+			// Step 2: Drop all FK constraints
+			slog.Info("Dropping all foreign key constraints")
+			if err := dao.DropAllForeignKeys(tx); err != nil {
+				return fmt.Errorf("failed to drop foreign keys: %w", err)
+			}
+			slog.Info("All foreign key constraints dropped")
+
+			// Step 3: Drop all CHECK constraints (including linked_issues check:id1<id2)
+			slog.Info("Dropping all check constraints")
+			if err := dao.DropAllCheckConstraints(tx); err != nil {
+				return fmt.Errorf("failed to drop check constraints: %w", err)
+			}
+			slog.Info("All check constraints dropped")
+
+			// Step 4: Clean invalid UUIDs (set to NULL)
+			slog.Info("Cleaning invalid UUID values", "count", len(columnsToMigrate))
+			for _, col := range columnsToMigrate {
+				if err := dao.CleanInvalidUUIDs(tx, col.Table, col.Column); err != nil {
+					return fmt.Errorf("failed to clean invalid UUIDs in %s.%s: %w", col.Table, col.Column, err)
+				}
+			}
+			slog.Info("All invalid UUIDs cleaned")
+
+			// Step 4.5: Clean orphaned foreign keys (created_by_id and updated_by_id that reference non-existent users)
+			slog.Info("Cleaning orphaned foreign keys")
+			foreignKeyColumns := []struct {
+				table            string
+				column           string
+				referencedTable  string
+				referencedColumn string
+			}{
+				// created_by_id fields referencing users
+				{"doc_attachments", "created_by_id", "users", "id"},
+				{"doc_comment_reactions", "created_by_id", "users", "id"},
+				{"doc_comments", "created_by_id", "users", "id"},
+				{"doc_favorites", "created_by_id", "users", "id"},
+				{"docs", "created_by_id", "users", "id"},
+				{"entity_activities", "created_by_id", "users", "id"},
+				{"estimate_points", "created_by_id", "users", "id"},
+				{"estimates", "created_by_id", "users", "id"},
+				{"form_answers", "created_by_id", "users", "id"},
+				{"form_attachments", "created_by_id", "users", "id"},
+				{"forms", "created_by_id", "users", "id"},
+				{"issue_assignees", "created_by_id", "users", "id"},
+				{"issue_blockers", "created_by_id", "users", "id"},
+				{"issue_labels", "created_by_id", "users", "id"},
+				{"issue_links", "created_by_id", "users", "id"},
+				{"issue_properties", "created_by_id", "users", "id"},
+				{"issue_watchers", "created_by_id", "users", "id"},
+				{"issues", "created_by_id", "users", "id"},
+				{"labels", "created_by_id", "users", "id"},
+				{"project_favorites", "created_by_id", "users", "id"},
+				{"project_members", "created_by_id", "users", "id"},
+				{"projects", "created_by_id", "users", "id"},
+				{"sprint_issues", "created_by_id", "users", "id"},
+				{"sprint_watchers", "created_by_id", "users", "id"},
+				{"sprints", "created_by_id", "users", "id"},
+				{"states", "created_by_id", "users", "id"},
+				{"team_members", "created_by_id", "users", "id"},
+				{"teams", "created_by_id", "users", "id"},
+				{"users", "created_by_id", "users", "id"},
+				{"workspace_favorites", "created_by_id", "users", "id"},
+				{"workspace_members", "created_by_id", "users", "id"},
+				{"workspaces", "created_by_id", "users", "id"},
+				// updated_by_id fields referencing users
+				{"doc_attachments", "updated_by_id", "users", "id"},
+				{"doc_comments", "updated_by_id", "users", "id"},
+				{"docs", "updated_by_id", "users", "id"},
+				{"entity_activities", "updated_by_id", "users", "id"},
+				{"estimate_points", "updated_by_id", "users", "id"},
+				{"estimates", "updated_by_id", "users", "id"},
+				{"form_attachments", "updated_by_id", "users", "id"},
+				{"forms", "updated_by_id", "users", "id"},
+				{"issue_assignees", "updated_by_id", "users", "id"},
+				{"issue_blockers", "updated_by_id", "users", "id"},
+				{"issue_comments", "updated_by_id", "users", "id"},
+				{"issue_labels", "updated_by_id", "users", "id"},
+				{"issue_links", "updated_by_id", "users", "id"},
+				{"issue_properties", "updated_by_id", "users", "id"},
+				{"issue_watchers", "updated_by_id", "users", "id"},
+				{"issues", "updated_by_id", "users", "id"},
+				{"labels", "updated_by_id", "users", "id"},
+				{"project_favorites", "updated_by_id", "users", "id"},
+				{"project_members", "updated_by_id", "users", "id"},
+				{"projects", "updated_by_id", "users", "id"},
+				{"sprints", "updated_by_id", "users", "id"},
+				{"states", "updated_by_id", "users", "id"},
+				{"team_members", "updated_by_id", "users", "id"},
+				{"teams", "updated_by_id", "users", "id"},
+				{"users", "updated_by_id", "users", "id"},
+				{"workspace_favorites", "updated_by_id", "users", "id"},
+				{"workspace_members", "updated_by_id", "users", "id"},
+				{"workspaces", "updated_by_id", "users", "id"},
+				// Activity tables - actor_id references users
+				{"issue_activities", "actor_id", "users", "id"},
+				{"sprint_activities", "actor_id", "users", "id"},
+				{"project_activities", "actor_id", "users", "id"},
+				{"doc_activities", "actor_id", "users", "id"},
+				{"form_activities", "actor_id", "users", "id"},
+				{"workspace_activities", "actor_id", "users", "id"},
+				// Activity tables - entity references
+				{"issue_activities", "issue_id", "issues", "id"},
+				{"issue_activities", "workspace_id", "workspaces", "id"},
+				{"sprint_activities", "sprint_id", "sprints", "id"},
+				{"sprint_activities", "workspace_id", "workspaces", "id"},
+				{"project_activities", "workspace_id", "workspaces", "id"},
+				{"doc_activities", "doc_id", "docs", "id"},
+				{"doc_activities", "workspace_id", "workspaces", "id"},
+				{"form_activities", "form_id", "forms", "id"},
+				{"form_activities", "workspace_id", "workspaces", "id"},
+				{"workspace_activities", "workspace_id", "workspaces", "id"},
+			}
+			for _, fk := range foreignKeyColumns {
+				if err := dao.CleanOrphanedForeignKeys(tx, fk.table, fk.column, fk.referencedTable, fk.referencedColumn); err != nil {
+					return fmt.Errorf("failed to clean orphaned foreign keys in %s.%s: %w", fk.table, fk.column, err)
+				}
+			}
+			slog.Info("All orphaned foreign keys cleaned")
+
+			// Step 5: Replace column types
+			slog.Info("Replacing column types", "count", len(columnsToMigrate))
+			for _, col := range columnsToMigrate {
+				slog.Info("Migrating column", "table", col.Table, "column", col.Column, "currentType", col.CurrentType)
+				if err := utils.ReplaceColumnTypeWithCast(tx, col, "uuid"); err != nil {
+					return fmt.Errorf("failed to replace column %s.%s (type %s): %w", col.Table, col.Column, col.CurrentType, err)
+				}
+			}
+			slog.Info("All column types replaced successfully")
+
+			// Step 6: AutoMigrate models (first without FK, then with FK)
+			slog.Info("Migrate models without relations")
+			tx.Config.DisableForeignKeyConstraintWhenMigrating = true
+			if err := tx.AutoMigrate(models...); err != nil {
+				return fmt.Errorf("failed to auto-migrate models without relations: %w", err)
+			}
+			tx.Config.DisableForeignKeyConstraintWhenMigrating = false
+
+			slog.Info("Migrate models with relations")
+			if err := tx.AutoMigrate(models...); err != nil {
+				return fmt.Errorf("failed to auto-migrate models with relations: %w", err)
+			}
+			slog.Info("All models migrated successfully")
+
+			return nil
+		})
+
+		if err != nil {
+			slog.Error("UUID migration failed", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("UUID migration completed successfully")
 	}
 
 	if err := CreateTriggers(db); err != nil {

@@ -88,7 +88,7 @@ type UserNotificationsFull struct {
 }
 
 type UserFeedback struct {
-	UserID string `json:"user_id"`
+	UserID uuid.UUID `json:"user_id"`
 
 	Stars    int    `json:"stars"`
 	Feedback string `json:"feedback"`

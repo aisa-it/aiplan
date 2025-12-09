@@ -36,7 +36,7 @@ import (
 
 // Задачи
 type Issue struct {
-	ID        uuid.UUID      `gorm:"column:id;primaryKey;type:text" json:"id"`
+	ID        uuid.UUID      `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -51,17 +51,20 @@ type Issue struct {
 
 	SequenceId int `json:"sequence_id" gorm:"default:1;index:,where:deleted_at is not null"`
 	// created_by_id uuid,
-	CreatedById string `json:"created_by"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.UUID `json:"created_by" gorm:"type:uuid"`
 	// parent_id uuid,
-	ParentId uuid.NullUUID `json:"parent" gorm:"type:text;index;index:issue_sort_order_index,priority:1"`
+	ParentId uuid.NullUUID `json:"parent" gorm:"type:uuid;index;index:issue_sort_order_index,priority:1"`
 	// project_id uuid NOT NULL,
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"index:,type:hash,where:deleted_at is not null;type:uuid"`
 	// state_id uuid NOT NULL,
 	StateId uuid.UUID `json:"state"`
 	// updated_by_id uuid,
-	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
-	WorkspaceId string `json:"workspace" gorm:"index:,type:hash,where:deleted_at is not null"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid;index:,type:hash,where:deleted_at is not null"`
 
 	DescriptionHtml     string  `json:"description_html" gorm:"default:<p></p>"`
 	DescriptionStripped *string `json:"description_stripped" extensions:"x-nullable"`
@@ -88,7 +91,8 @@ type Issue struct {
 	Labels    *[]Label     `json:"label_details" gorm:"many2many:issue_labels;foreignKey:id;joinForeignKey:issue_id;References:id;joinReferences:label_id;- :migration" extensions:"x-nullable"`
 	Sprints   *[]Sprint    `json:"sprints,omitempty" gorm:"many2many:sprint_issues;joinForeignKey:IssueId;joinReferences:SprintId"`
 	Links     *[]IssueLink `json:"issue_link" gorm:"foreignKey:issue_id" extensions:"x-nullable"`
-	Author    *User        `json:"author_detail" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	Author    *User        `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User        `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 
 	InlineAttachments []FileAsset `json:"issue_inline_attachments" gorm:"foreignKey:IssueId"`
 
@@ -167,7 +171,7 @@ func (i Issue) GetEntityType() string {
 	return actField.Issue.String()
 }
 
-func (i Issue) GetWorkspaceId() string {
+func (i Issue) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
@@ -189,7 +193,7 @@ func (i Issue) GetIssueId() string {
 func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightResponse {
 	ii := dto.SearchLightweightResponse{
 		ID:          i.ID,
-		WorkspaceId: i.WorkspaceId,
+		WorkspaceId: i.WorkspaceId.String(),
 		Workspace:   i.Workspace.ToLightDTO(),
 		ProjectId:   i.ProjectId,
 		Project:     i.Project.ToLightDTO(),
@@ -272,6 +276,11 @@ func (i *Issue) ToDTO() *dto.Issue {
 		parent = &parentId
 	}
 
+	var updatedById *uuid.UUID
+	if i.UpdatedById.Valid {
+		updatedById = &i.UpdatedById.UUID
+	}
+
 	return &dto.Issue{
 		IssueLight:          *i.ToLightDTO(),
 		SequenceId:          i.SequenceId,
@@ -282,8 +291,8 @@ func (i *Issue) ToDTO() *dto.Issue {
 		TargetDate:          i.TargetDate,
 		CompletedAt:         i.CompletedAt,
 		ProjectId:           i.ProjectId,
-		WorkspaceId:         i.WorkspaceId,
-		UpdatedById:         i.UpdatedById,
+		WorkspaceId:         i.WorkspaceId.String(),
+		UpdatedById:         updatedById,
 		DescriptionHtml:     i.DescriptionHtml,
 		DescriptionStripped: i.DescriptionStripped,
 		DescriptionType:     i.DescriptionType,
@@ -559,7 +568,7 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	activityIds := utils.SliceToSlice(&activities, func(t *IssueActivity) string {
-		return t.Id
+		return t.Id.String()
 	})
 
 	if err := tx.Where("issue_activity_id in (?)", activityIds).Unscoped().Delete(&UserNotifications{}).Error; err != nil {
@@ -906,21 +915,25 @@ type IssueLink struct {
 	// url character varying IS_NULL:NO
 	Url string `json:"url"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
 	IssueId uuid.UUID `json:"issue_id" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 	// metadata jsonb IS_NULL:NO
 	Metadata map[string]interface{} `json:"metadata" gorm:"serializer:json"`
 
 	Workspace *Workspace `json:"workspace_detail,omitempty" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail,omitempty" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail,omitempty" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail,omitempty" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 	Issue     *Issue     `json:"-" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 }
 
@@ -946,7 +959,7 @@ func (i IssueLink) GetEntityType() string {
 	return actField.Link.String()
 }
 
-func (i IssueLink) GetWorkspaceId() string {
+func (i IssueLink) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
@@ -1005,16 +1018,21 @@ type IssueAttachment struct {
 	AssetId  uuid.UUID `json:"asset" gorm:"type:uuid"`
 	AssetOld string    `json:"-" gorm:"column:asset"` // Legacy
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
 	IssueId uuid.UUID `json:"issue" gorm:"index;type:uuid"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Asset     *FileAsset `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
@@ -1051,7 +1069,7 @@ func (ia IssueAttachment) GetEntityType() string {
 	return actField.Attachment.String()
 }
 
-func (i IssueAttachment) GetWorkspaceId() string {
+func (i IssueAttachment) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
@@ -1130,17 +1148,22 @@ type IssueAssignee struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	AssigneeId  string    `json:"assignee_id" gorm:"uniqueIndex:assignees_idx,priority:2"`
-	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:assignees_idx,priority:1;type:uuid"`
-	ProjectId   uuid.UUID `json:"project_id" gorm:"type:uuid"`
-	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string    `json:"workspace_id"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	AssigneeId uuid.UUID `json:"assignee_id" gorm:"type:uuid;uniqueIndex:assignees_idx,priority:2"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
+	IssueId     uuid.UUID     `json:"issue_id" gorm:"index;uniqueIndex:assignees_idx,priority:1;type:uuid"`
+	ProjectId   uuid.UUID     `json:"project_id" gorm:"type:uuid"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId uuid.UUID     `json:"workspace_id" gorm:"type:uuid"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Assignee  *User      `gorm:"foreignKey:AssigneeId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1166,17 +1189,22 @@ type IssueWatcher struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	WatcherId   string    `json:"watcher_id" gorm:"uniqueIndex:watchers_idx,priority:2"`
-	CreatedById *string   `json:"created_by_id,omitempty" extensions:"x-nullable"`
-	IssueId     uuid.UUID `json:"issue_id" gorm:"index;uniqueIndex:watchers_idx,priority:1;type:uuid"`
-	ProjectId   uuid.UUID `json:"project_id" gorm:"type:uuid"`
-	UpdatedById *string   `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId string    `json:"workspace_id"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	WatcherId uuid.UUID `json:"watcher_id" gorm:"type:uuid;uniqueIndex:watchers_idx,priority:2"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
+	IssueId     uuid.UUID     `json:"issue_id" gorm:"index;uniqueIndex:watchers_idx,priority:1;type:uuid"`
+	ProjectId   uuid.UUID     `json:"project_id" gorm:"type:uuid"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId uuid.UUID     `json:"workspace_id" gorm:"type:uuid"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Watcher   *User      `gorm:"foreignKey:WatcherId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1206,17 +1234,22 @@ type IssueBlocker struct {
 	// blocked_by_id uuid IS_NULL:NO
 	BlockedById uuid.UUID `json:"blocked_by" gorm:"index"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Block     *Issue     `json:"blocked_issue_detail" gorm:"foreignKey:BlockId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 	BlockedBy *Issue     `json:"blocker_issue_detail" gorm:"foreignKey:BlockedById" extensions:"x-nullable"`
 }
 
@@ -1257,22 +1290,27 @@ type IssueLabel struct {
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
 	IssueId string `json:"issue_id" gorm:"index"`
 	// label_id uuid IS_NULL:NO
 	LabelId uuid.UUID `json:"label_id" gorm:"foreignKey:ID;references:Label"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Label     *Label     `json:"label_detail,omitempty" gorm:"foreignKey:LabelId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1295,10 +1333,11 @@ type IssueComment struct {
 
 	IssueId     string    `json:"issue_id" gorm:"index;uniqueIndex:issue_comment_original_id_idx,priority:1"`
 	ProjectId   uuid.UUID `json:"project_id" gorm:"type:uuid"`
-	WorkspaceId string    `json:"workspace_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 
-	ActorId     *string `json:"actor_id,omitempty" gorm:"index;index:integration,priority:1" extensions:"x-nullable"`
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	ActorId *string `json:"actor_id,omitempty" gorm:"index;index:integration,priority:1" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 
 	CommentHtml     types.RedactorHTML `json:"comment_html"`
 	CommentStripped string             `json:"comment_stripped"`
@@ -1314,6 +1353,7 @@ type IssueComment struct {
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 
 	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:CommentId;references:Id"`
 
@@ -1349,7 +1389,7 @@ func (i IssueComment) GetEntityType() string {
 	return actField.Comment.String()
 }
 
-func (i IssueComment) GetWorkspaceId() string {
+func (i IssueComment) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
@@ -1398,14 +1438,19 @@ func (i *IssueComment) ToDTO() *dto.IssueComment {
 		a = i.Actor.ToLightDTO()
 	}
 
+	var updatedById *uuid.UUID
+	if i.UpdatedById.Valid {
+		updatedById = &i.UpdatedById.UUID
+	}
+
 	return &dto.IssueComment{
 		IssueCommentLight: *i.ToLightDTO(),
 		CreatedAt:         i.CreatedAt,
 		UpdatedAt:         i.UpdatedAt,
-		UpdatedById:       i.UpdatedById,
+		UpdatedById:       updatedById,
 		ActorId:           i.ActorId,
 		ProjectId:         i.ProjectId,
-		WorkspaceId:       i.WorkspaceId,
+		WorkspaceId:       i.WorkspaceId.String(),
 		IssueId:           i.IssueId,
 		ReplyToCommentId:  i.ReplyToCommentId,
 		OriginalComment:   i.OriginalComment.ToDTO(),
@@ -1420,7 +1465,8 @@ type CommentReaction struct {
 	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	UserId    string    `json:"user_id"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserId    uuid.UUID `json:"user_id" gorm:"type:uuid"`
 	CommentId uuid.UUID `json:"comment_id" gorm:"index;type:uuid"`
 	Reaction  string    `json:"reaction"`
 
@@ -1451,7 +1497,7 @@ func (cr CommentReaction) ToDTO() *dto.CommentReaction {
 		CreatedAt: cr.CreatedAt,
 		UpdatedAt: cr.UpdatedAt,
 		CommentId: cr.CommentId,
-		UserId:    cr.UserId,
+		UserId:    cr.UserId.String(),
 		Reaction:  cr.Reaction,
 	}
 }
@@ -1548,19 +1594,28 @@ type IssueProperty struct {
 	// properties jsonb IS_NULL:NO
 	Properties map[string]interface{} `json:"properties" gorm:"serializer:json"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"index;type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	// user_id uuid IS_NULL:NO
-	UserId string `json:"user"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserId uuid.UUID `json:"user" gorm:"type:uuid"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	User      *User      `json:"-" gorm:"foreignKey:UserId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1650,14 +1705,15 @@ func CreateIssue(db *gorm.DB, issue *Issue) error {
 }
 
 type RulesLog struct {
-	Id        uuid.UUID      `json:"id" gorm:"column:id;primaryKey;type:text"`
+	Id        uuid.UUID      `json:"id" gorm:"column:id;primaryKey;type:uuid"`
 	CreatedAt time.Time      `json:"created_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 	// project_id uuid NOT NULL,
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"index;type:uuid"`
 	Project   *Project  `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
-	WorkspaceId string     `json:"workspace"`
+	WorkspaceId uuid.UUID  `json:"workspace" gorm:"type:uuid"`
 	Workspace   *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
 	IssueId string `json:"issue_id" gorm:"index"`
@@ -1686,7 +1742,7 @@ func (RulesLog) TableName() string { return "rules_log" }
 type IssueActivity struct {
 	IssueActivityExtendFields
 	ActivitySender
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"index:issue_activities_issue_index,sort:desc,type:btree,priority:2;index:issue_activities_actor_index,sort:desc,type:btree,priority:2;index:issue_activities_mail_index,type:btree,where:notified = false"`
 	// verb character varying IS_NULL:NO
@@ -1700,13 +1756,13 @@ type IssueActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// issue_id uuid IS_NULL:YES
-	IssueId string `json:"issue_id" gorm:"index:issue_activities_issue_index,priority:1" extensions:"x-nullable"`
+	IssueId uuid.UUID `json:"issue_id" gorm:"type:uuid;index:issue_activities_issue_index,priority:1" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:YES
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:issue_activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:issue_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
@@ -1802,7 +1858,7 @@ func (ia IssueActivity) GetOldIdentifier() string {
 }
 
 func (ia IssueActivity) GetId() string {
-	return ia.Id
+	return ia.Id.String()
 }
 
 func (ia IssueActivity) GetUrl() *string {

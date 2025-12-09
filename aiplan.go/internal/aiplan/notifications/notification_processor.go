@@ -72,7 +72,7 @@ func (np *NotificationProcessor) ProcessNotifications() {
 		return
 	}
 
-	var notifyDel []string
+	var notifyDel []uuid.UUID
 	for _, notification := range notifications {
 		if !notification.User.CanReceiveNotifications() {
 			notifyDel = append(notifyDel, notification.ID)
@@ -178,7 +178,7 @@ func (np *NotificationProcessor) sendToApp(notification *dao.DeferredNotificatio
 
 	if sender.isNotifyApp(np.db, notification) {
 		if un, countNotify, _ := np.createUserNotify(notification, sender); un != nil {
-			np.websocketService.Send(uuid.FromStringOrNil(notification.UserID), un.ID, *un, countNotify)
+			np.websocketService.Send(notification.UserID, un.ID, *un, countNotify)
 		}
 	}
 	return true
@@ -200,9 +200,14 @@ func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNoti
 
 	if !exist {
 		un.UserId = notification.UserID
-		un.WorkspaceId = notification.WorkspaceID
+		if notification.WorkspaceID.Valid {
+			un.WorkspaceId = notification.WorkspaceID
+		}
 		un.Workspace = notification.Workspace
-		un.IssueId = notification.IssueID
+		if notification.IssueID.Valid {
+			issueIDStr := notification.IssueID.UUID.String()
+			un.IssueId = &issueIDStr
+		}
 		un.Issue = notification.Issue
 
 		if un.AuthorId != nil {

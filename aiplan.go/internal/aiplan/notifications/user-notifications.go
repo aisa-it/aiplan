@@ -37,7 +37,6 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 	if userId == uuid.Nil {
 		return nil, 0, nil
 	}
-	userIdStr := userId.String()
 
 	var notifyId string
 
@@ -67,10 +66,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		if member.NotificationSettingsApp.IsNotify(a.Field, "workspace", a.Verb, member.Role) {
 			notification := dao.UserNotifications{
 				ID:                  dao.GenID(),
-				UserId:              userIdStr,
+				UserId:              userId,
 				Type:                "activity",
-				WorkspaceId:         &a.WorkspaceId,
-				WorkspaceActivityId: &a.Id,
+				WorkspaceId:         uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
+				WorkspaceActivityId: func() *string { s := a.Id.String(); return &s }(),
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
@@ -98,7 +97,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		isMemberNotify = member.NotificationSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
 
 		if a.NewIssue != nil {
-			isAuthorNotify = a.NewIssue.CreatedById == userIdStr && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
+			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
 			notifyOk = isAuthorNotify || (!isAuthorNotify && isMemberNotify)
 		} else {
 			notifyOk = isMemberNotify && isProjectAdm
@@ -107,10 +106,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		if (isProjectAdm && isMemberNotify) || (!isProjectAdm && notifyOk) {
 			notification := dao.UserNotifications{
 				ID:                dao.GenID(),
-				UserId:            userIdStr,
+				UserId:            userId,
 				Type:              "activity",
-				WorkspaceId:       &a.WorkspaceId,
-				ProjectActivityId: &a.Id,
+				WorkspaceId:       uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
+				ProjectActivityId: func() *string { s := a.Id.String(); return &s }(),
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
@@ -136,7 +135,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 
 		var authorOK, authorNotifyOk, memberNotifyOK bool
 
-		if a.Doc.CreatedById == userIdStr {
+		if a.Doc.CreatedById == userId {
 			authorOK = true
 		}
 
@@ -151,10 +150,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 
 			notification := dao.UserNotifications{
 				ID:            dao.GenID(),
-				UserId:        userIdStr,
+				UserId:        userId,
 				Type:          "activity",
-				WorkspaceId:   &a.WorkspaceId,
-				DocActivityId: &a.Id,
+				WorkspaceId:   uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
+				DocActivityId: func() *string { s := a.Id.String(); return &s }(),
 			}
 
 			//if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
@@ -190,7 +189,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		var authorOK, authorNotifyOk, memberNotifyOK bool
 
 		if a.Issue != nil {
-			if a.Issue.CreatedById == userIdStr {
+			if a.Issue.CreatedById == userId {
 				authorOK = true
 			}
 
@@ -202,13 +201,14 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			}
 		}
 		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
+			issueIdStr := a.IssueId.String()
 			notification := dao.UserNotifications{
 				ID:              dao.GenID(),
-				UserId:          userIdStr,
+				UserId:          userId,
 				Type:            "activity",
-				WorkspaceId:     &a.WorkspaceId,
-				IssueId:         &a.IssueId,
-				IssueActivityId: &a.Id,
+				WorkspaceId:     uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
+				IssueId:         &issueIdStr,
+				IssueActivityId: func() *string { s := a.Id.String(); return &s }(),
 			}
 
 			if a.Field != nil && *a.Field == actField.Comment.String() && a.Verb != "deleted" {
@@ -231,7 +231,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 	var count int
 	if err := tx.Select("count(*)").
 		Where("viewed = false").
-		Where("user_id = ?", userIdStr).
+		Where("user_id = ?", userId).
 		Where("deleted_at IS NULL").
 		Model(&dao.UserNotifications{}).
 		Find(&count).Error; err != nil {
@@ -246,7 +246,6 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 
 func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao.IssueComment) (*dao.UserNotifications, int, error) {
 	var user dao.User
-	userIdStr := userId.String()
 
 	if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
 		return nil, 0, err
@@ -262,11 +261,11 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 
 	notification := dao.UserNotifications{
 		ID:          dao.GenID(),
-		UserId:      userIdStr,
+		UserId:      userId,
 		Type:        "comment",
 		CommentId:   &comment.Id,
 		Comment:     &comment,
-		WorkspaceId: &comment.WorkspaceId,
+		WorkspaceId: uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true},
 		IssueId:     &comment.IssueId,
 	}
 
@@ -277,7 +276,7 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 	var count int
 	if err := tx.Select("count(*)").
 		Where("viewed = false").
-		Where("user_id = ?", userIdStr).
+		Where("user_id = ?", userId).
 		Where("deleted_at IS NULL").
 		Model(&dao.UserNotifications{}).
 		Find(&count).Error; err != nil {
@@ -351,12 +350,12 @@ func CreateDeadlineNotification(tx *gorm.DB, issue *dao.Issue, deadlineTime *str
 			return err
 		}
 		deadlineNotification.DeliveryMethod = "telegram"
-		deadlineNotification.ID = dao.GenID()
+		deadlineNotification.ID = dao.GenUUID()
 		notifications = append(notifications, *deadlineNotification)
-		deadlineNotification.ID = dao.GenID()
+		deadlineNotification.ID = dao.GenUUID()
 		deadlineNotification.DeliveryMethod = "email"
 		notifications = append(notifications, *deadlineNotification)
-		deadlineNotification.ID = dao.GenID()
+		deadlineNotification.ID = dao.GenUUID()
 		deadlineNotification.DeliveryMethod = "app"
 		notifications = append(notifications, *deadlineNotification)
 	}
@@ -371,7 +370,6 @@ func CreateDeadlineNotification(tx *gorm.DB, issue *dao.Issue, deadlineTime *str
 }
 
 func createDeadlineDeferredNotification(targetDate time.Time, user dao.User, issue *dao.Issue, payload map[string]interface{}) (*dao.DeferredNotifications, error) {
-	issueId := issue.ID.String()
 	tz := time.Location(user.UserTimezone)
 	userTime := truncateToDay(targetDate.In(&tz))
 	userTime = userTime.Add(-1 * user.Settings.DeadlineNotification)
@@ -382,13 +380,12 @@ func createDeadlineDeferredNotification(targetDate time.Time, user dao.User, iss
 		return nil, err
 	}
 
-	projectIdStr := issue.ProjectId.String()
 	notify := dao.DeferredNotifications{
-		ID:                  dao.GenID(),
-		UserID:              user.ID.String(),
-		IssueID:             &issueId,
-		ProjectID:           &projectIdStr,
-		WorkspaceID:         &issue.WorkspaceId,
+		ID:                  dao.GenUUID(),
+		UserID:              user.ID,
+		IssueID:             uuid.NullUUID{UUID: issue.ID, Valid: true},
+		ProjectID:           uuid.NullUUID{UUID: issue.ProjectId, Valid: true},
+		WorkspaceID:         uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 		NotificationType:    "deadline_notification",
 		DeliveryMethod:      "telegram",
 		TimeSend:            &timeUTC,

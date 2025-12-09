@@ -177,10 +177,10 @@ func NewImportContext(
 		}),
 
 		IssueAssignees: atomic.NewConvertMap(func(ia dao.IssueAssignee) string {
-			return ia.IssueId.String() + ia.AssigneeId
+			return ia.IssueId.String() + ia.AssigneeId.String()
 		}),
 		IssueWatchers: atomic.NewConvertMap(func(iw dao.IssueWatcher) string {
-			return iw.IssueId.String() + iw.WatcherId
+			return iw.IssueId.String() + iw.WatcherId.String()
 		}),
 
 		Blockers: atomic.NewConvertMap(func(block *dao.IssueBlocker) string {
@@ -337,7 +337,7 @@ func (c *ImportContext) GetProject(key string) error {
 		Name:          project.Name,
 		Identifier:    project.Key,
 		ProjectLeadId: lead.ID.String(),
-		WorkspaceId:   c.TargetWorkspaceID,
+		WorkspaceId:   uuid.FromStringOrNil(c.TargetWorkspaceID),
 	}
 	return nil
 }

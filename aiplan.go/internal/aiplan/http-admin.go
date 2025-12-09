@@ -470,14 +470,14 @@ func (s *Services) createUser(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrWorkspaceRoleRequired)
 	}
 
-	createdById := user.ID.String()
+	createdByID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	u := dao.User{
 		ID:          dao.GenUUID(),
 		Email:       req.Email,
 		FirstName:   req.FirstName,
 		LastName:    req.LastName,
 		Password:    dao.GenPasswordHash(req.Password),
-		CreatedByID: &createdById,
+		CreatedByID: createdByID,
 		Theme:       types.DefaultTheme,
 		IsActive:    true,
 	}
@@ -489,7 +489,7 @@ func (s *Services) createUser(c echo.Context) error {
 				return err
 			}
 
-			u.LastWorkspaceId = &workspace.ID
+			u.LastWorkspaceId = uuid.NullUUID{UUID: workspace.ID, Valid: true}
 		}
 		if err := s.db.Create(&u).Error; err != nil {
 			return err
@@ -499,9 +499,9 @@ func (s *Services) createUser(c echo.Context) error {
 			return s.db.Create(&dao.WorkspaceMember{
 				ID:          dao.GenID(),
 				WorkspaceId: workspace.ID,
-				MemberId:    u.ID.String(),
+				MemberId:    u.ID,
 				Role:        req.Role,
-				CreatedById: &createdById,
+				CreatedById: createdByID,
 			}).Error
 		}
 		return nil
@@ -879,9 +879,9 @@ func (s *Services) createMessageForMember(c echo.Context) error {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			}
 			tmpNotify := dao.DeferredNotifications{
-				ID: dao.GenID(),
+				ID: dao.GenUUID(),
 
-				UserID: member.ID.String(),
+				UserID: member.ID,
 				User:   &member,
 
 				NotificationType:    "service_message",
@@ -893,10 +893,10 @@ func (s *Services) createMessageForMember(c echo.Context) error {
 			}
 
 			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenID()
+			tmpNotify.ID = dao.GenUUID()
 			tmpNotify.DeliveryMethod = "email"
 			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenID()
+			tmpNotify.ID = dao.GenUUID()
 			tmpNotify.DeliveryMethod = "app"
 			notificationSentAt = append(notificationSentAt, tmpNotify)
 		}
@@ -958,16 +958,17 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 			return apierrors.ErrGeneric
 		}
 
+		superUserID := uuid.NullUUID{UUID: superUser.ID, Valid: true}
+
 		if err := tx.Where("member_id = ?", userId).
 			Where("workspace_id = ?", workspaceId).
 			First(&member).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				superUserIdStr := superUser.ID.String()
 				member = dao.WorkspaceMember{
 					ID:          dao.GenID(),
 					WorkspaceId: workspace.ID,
-					MemberId:    user.ID.String(),
-					CreatedById: &superUserIdStr,
+					MemberId:    user.ID,
+					CreatedById: superUserID,
 					Role:        role.Role,
 				}
 				if err := tx.Model(&dao.WorkspaceMember{}).Create(&member).Error; err != nil {
@@ -981,9 +982,8 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 
 		oldMemberRole := member.Role
 
-		superUserIdStr := superUser.ID.String()
 		member.Role = role.Role
-		member.UpdatedById = &superUserIdStr
+		member.UpdatedById = superUserID
 
 		if err := tx.Model(&dao.WorkspaceMember{}).
 			Where("id = ?", member.ID).
@@ -1000,15 +1000,15 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 			for _, project := range projects {
 				if err := tx.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
-					DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": superUserIdStr}),
+					DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": superUserID}),
 				}).Create(&dao.ProjectMember{
 					ID:                              dao.GenID(),
 					CreatedAt:                       time.Now(),
-					CreatedById:                     &superUserIdStr,
+					CreatedById:                     superUserID,
 					WorkspaceId:                     workspace.ID,
 					ProjectId:                       project.ID,
 					Role:                            types.AdminRole,
-					MemberId:                        user.ID.String(),
+					MemberId:                        user.ID,
 					ViewProps:                       types.DefaultViewProps,
 					NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
 					NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
@@ -1081,7 +1081,7 @@ func (s *Services) deleteWorkspaceMemberAdmin(c echo.Context) error {
 			First(&requestedMember).Error; err != nil {
 			return err
 		}
-		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != c.(AuthContext).User.ID.String() {
+		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != c.(AuthContext).User.ID {
 			return apierrors.ErrDeleteSuperUser
 		}
 
@@ -1166,17 +1166,18 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 			return apierrors.ErrGeneric
 		}
 
+		superUserID := uuid.NullUUID{UUID: superUser.ID, Valid: true}
+
 		if err := tx.Where("member_id = ?", userId).
 			Where("project_id = ?", projectId).
 			First(&member).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				superUserIdStr := superUser.ID.String()
 				member = dao.ProjectMember{
 					ID:          dao.GenID(),
 					ProjectId:   uuid.Must(uuid.FromString(projectId)),
-					MemberId:    user.ID.String(),
-					WorkspaceId: workspaceId,
-					CreatedById: &superUserIdStr,
+					MemberId:    user.ID,
+					WorkspaceId: uuid.Must(uuid.FromString(workspaceId)),
+					CreatedById: superUserID,
 					CreatedAt:   time.Now(),
 					ViewProps:   types.DefaultViewProps,
 					Role:        role.Role,
@@ -1190,9 +1191,8 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 			}
 		}
 
-		superUserIdStr := superUser.ID.String()
 		member.Role = role.Role
-		member.UpdatedById = &superUserIdStr
+		member.UpdatedById = superUserID
 		if err := tx.Model(&dao.ProjectMember{}).
 			Where("id = ?", member.ID).
 			Save(&member).Error; err != nil {

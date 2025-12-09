@@ -313,8 +313,6 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		userIdStr := user.ID.String()
-
 		if len(labelIds) > 0 {
 			var labels []dao.Label
 			if err := tx.
@@ -331,8 +329,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					Name:        label.Name,
 					Description: label.Description,
 					Color:       label.Color,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -364,8 +362,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					Slug:        state.Slug,
 					Group:       state.Group,
 
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -751,8 +749,6 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		userIdStr := user.ID.String()
-
 		if len(labelIds) > 0 {
 			var labels []dao.Label
 			if err := tx.
@@ -769,8 +765,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					Name:        label.Name,
 					Description: label.Description,
 					Color:       label.Color,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -802,8 +798,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					Slug:        state.Slug,
 					Group:       state.Group,
 
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 
 					WorkspaceId: targetProject.WorkspaceId,
 					ProjectId:   targetProject.ID,
@@ -1045,14 +1041,13 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 	// Check memberships
 	{
-		createdByUUID, _ := uuid.FromString(srcIssue.CreatedById)
-		if _, exist := dao.IsProjectMember(s.db, createdByUUID, targetProject.ID); !exist {
+		if _, exist := dao.IsProjectMember(s.db, srcIssue.CreatedById, targetProject.ID); !exist {
 			res.Errors = append(res.Errors, ErrClause{
 				Error:           ErrAuthorNotAProjectMember,
 				SrcIssueId:      &srcIssue.ID,
 				IssueSequenceId: srcIssue.SequenceId,
 				Type:            "user",
-				Entities:        []string{srcIssue.CreatedById},
+				Entities:        []string{srcIssue.CreatedById.String()},
 			})
 		}
 
@@ -1193,17 +1188,18 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		}
 	}
 	if len(srcIssue.AssigneeIDs) == 0 && len(issue.TargetProject.DefaultAssignees) > 0 {
-		userIdStr := user.ID.String()
+		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range issue.TargetProject.DefaultAssignees {
+			assigneeUUID := uuid.FromStringOrNil(assignee)
 			newAssignees = append(newAssignees, dao.IssueAssignee{
 				Id:          dao.GenUUID(),
-				AssigneeId:  fmt.Sprint(assignee),
+				AssigneeId:  assigneeUUID,
 				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &userIdStr,
-				UpdatedById: &userIdStr,
+				CreatedById: userID,
+				UpdatedById: userID,
 			})
 		}
 		if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1221,17 +1217,18 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	}
 
 	if len(srcIssue.WatcherIDs) == 0 && len(issue.TargetProject.DefaultWatchers) > 0 {
-		userIdStr := user.ID.String()
+		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range issue.TargetProject.DefaultWatchers {
+			watcherUUID := uuid.FromStringOrNil(watcher)
 			newWatchers = append(newWatchers, dao.IssueWatcher{
 				Id:          dao.GenUUID(),
-				WatcherId:   fmt.Sprint(watcher),
+				WatcherId:   watcherUUID,
 				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &userIdStr,
-				UpdatedById: &userIdStr,
+				CreatedById: userID,
+				UpdatedById: userID,
 			})
 		}
 		if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1356,18 +1353,19 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	} else if len(issue.TargetProject.DefaultAssignees) > 0 {
 		assigneesList = issue.TargetProject.DefaultAssignees
 	}
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	if len(assigneesList) > 0 {
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range assigneesList {
+			assigneeUUID := uuid.FromStringOrNil(assignee)
 			newAssignees = append(newAssignees, dao.IssueAssignee{
 				Id:          dao.GenUUID(),
-				AssigneeId:  fmt.Sprint(assignee),
+				AssigneeId:  assigneeUUID,
 				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &userIdStr,
-				UpdatedById: &userIdStr,
+				CreatedById: userID,
+				UpdatedById: userID,
 			})
 		}
 		if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1385,14 +1383,15 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	if len(watchersList) > 0 {
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range watchersList {
+			watcherUUID := uuid.FromStringOrNil(watcher)
 			newWatchers = append(newWatchers, dao.IssueWatcher{
 				Id:          dao.GenUUID(),
-				WatcherId:   fmt.Sprint(watcher),
+				WatcherId:   watcherUUID,
 				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: &userIdStr,
-				UpdatedById: &userIdStr,
+				CreatedById: userID,
+				UpdatedById: userID,
 			})
 		}
 		if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1410,8 +1409,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				IssueId:     targetIssue.ID.String(),
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: targetIssue.WorkspaceId,
-				CreatedById: &userIdStr,
-				UpdatedById: &userIdStr,
+				CreatedById: userID,
+				UpdatedById: userID,
 			})
 		}
 
@@ -1427,8 +1426,8 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 					IssueId:     targetIssue.ID.String(),
 					ProjectId:   issue.TargetProject.ID,
 					WorkspaceId: targetIssue.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 		}
@@ -1630,8 +1629,8 @@ func linkedIdToStringKey(s1, s2 string) string {
 
 // NewIssueParam изменяемы поля при копировании одиночной задачи
 type NewIssueParam struct {
-	Priority     types.JSONField[string]   `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
-	TargetDate   types.JSONField[string]   `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
-	AssignersIds types.JSONField[[]string] `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
-	StateId      types.JSONField[uuid.UUID]   `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	Priority     types.JSONField[string]    `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
+	TargetDate   types.JSONField[string]    `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	AssignersIds types.JSONField[[]string]  `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
+	StateId      types.JSONField[uuid.UUID] `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
 }

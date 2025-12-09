@@ -54,16 +54,14 @@ func TestGetIssueRoot(t *testing.T) {
 		db.First(&project)
 
 		ids := []uuid.UUID{GenUUID(), GenUUID(), GenUUID()}
-		userIdStr := user.ID.String()
-
 		issues = []Issue{
 			{
 				ID:              ids[0],
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     userIdStr,
-				UpdatedById:     &userIdStr,
+				CreatedById:     user.ID,
+				UpdatedById:     uuid.NullUUID{UUID: user.ID, Valid: true},
 				Name:            "#1",
 				DescriptionHtml: "",
 			},
@@ -72,8 +70,8 @@ func TestGetIssueRoot(t *testing.T) {
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     userIdStr,
-				UpdatedById:     &userIdStr,
+				CreatedById:     user.ID,
+				UpdatedById:     uuid.NullUUID{UUID: user.ID, Valid: true},
 				ParentId:        uuid.NullUUID{UUID: ids[0], Valid: true},
 				Name:            "#2",
 				DescriptionHtml: "",
@@ -83,8 +81,8 @@ func TestGetIssueRoot(t *testing.T) {
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     userIdStr,
-				UpdatedById:     &userIdStr,
+				CreatedById:     user.ID,
+				UpdatedById:     uuid.NullUUID{UUID: user.ID, Valid: true},
 				ParentId:        uuid.NullUUID{UUID: ids[1], Valid: true},
 				Name:            "#3",
 				DescriptionHtml: "",
@@ -148,15 +146,14 @@ func TestGetIssueFamily(t *testing.T) {
 		var project Project
 		db.First(&project)
 
-		userIdStr := user.ID.String()
 		for i := 0; i < 7; i++ {
 			issues = append(issues, Issue{
 				ID:              GenUUID(),
 				WorkspaceId:     project.WorkspaceId,
 				ProjectId:       project.ID,
 				CreatedAt:       time.Now(),
-				CreatedById:     userIdStr,
-				UpdatedById:     &userIdStr,
+				CreatedById:     user.ID,
+				UpdatedById:     uuid.NullUUID{UUID: user.ID, Valid: true},
 				Name:            fmt.Sprintf("#%d", i),
 				DescriptionHtml: "",
 			})

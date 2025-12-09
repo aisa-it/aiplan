@@ -42,7 +42,7 @@ func (s *Services) LastVisitedWorkspaceMiddleware(next echo.HandlerFunc) echo.Ha
 		workspace := workspaceContext.Workspace
 		user := workspaceContext.User
 
-		if user.LastWorkspaceId != &workspace.ID {
+		if !user.LastWorkspaceId.Valid || user.LastWorkspaceId.UUID != workspace.ID {
 			user.LastWorkspace = &workspace
 			if err := s.db.Model(&user).Update("last_workspace_id", workspace.ID).Error; err != nil {
 				return EError(c, err)
@@ -223,7 +223,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	}
 	userIdStr := user.ID.String()
 	workspace.ID = id
-	workspace.UpdatedById = &userIdStr
+	workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspace.Name = strings.TrimSpace(workspace.Name)
 	var newMemberOwnerId, newMemberOwnerEmail string
 	err := c.Validate(workspace)
@@ -245,7 +245,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			}
 			return EError(c, err)
 		}
-		newMemberOwnerId = member.MemberId
+		newMemberOwnerId = member.MemberId.String()
 		newMemberOwnerEmail = member.Member.Email
 	}
 
@@ -301,7 +301,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
+	if !limiter.Limiter.CanAddAttachment(workspace.ID) {
 		return EError(c, apierrors.ErrAssetsLimitExceed)
 	}
 
@@ -310,11 +310,11 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	fileAsset := dao.FileAsset{
 		Id:          dao.GenUUID(),
-		CreatedById: &userIdStr,
-		WorkspaceId: &workspace.ID,
+		CreatedById: userID,
+		WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 	}
 
 	oldLogoId := workspace.LogoId
@@ -330,7 +330,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 		}
 
 		if err := s.uploadAssetForm(tx, file, &fileAsset, filestorage.Metadata{
-			WorkspaceId: workspace.ID,
+			WorkspaceId: workspace.ID.String(),
 		}); err != nil {
 			return err
 		}
@@ -387,9 +387,8 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	oldLogoId := workspace.LogoId.UUID.String()
 
-	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		workspace.UpdatedById = &userIdStr
+		workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		workspace.LogoId = uuid.NullUUID{}
 		if err := tx.Select("logo_id").Updates(&workspace).Error; err != nil {
 			return err
@@ -449,7 +448,7 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 		return err
 	}
 	// Cancel jira imports
-	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
+	if err := s.importService.CancelWorkspaceImports(workspace.ID.String()); err != nil {
 		return EError(c, err)
 	}
 
@@ -727,11 +726,11 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if requestedMember.MemberId == workspace.OwnerId {
+	if requestedMember.MemberId.String() == workspace.OwnerId {
 		return EErrorDefined(c, apierrors.ErrUpdateOwnerForbidden)
 	}
 
-	if user.ID.String() == requestedMember.MemberId {
+	if user.ID == requestedMember.MemberId {
 		return EErrorDefined(c, apierrors.ErrUpdateOwnUserForbidden)
 	}
 
@@ -745,9 +744,9 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 	if req.Role != nil {
 		oldMemberRole = *req.Role
 
-		userIdStr := user.ID.String()
+		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		if err := s.db.Transaction(func(tx *gorm.DB) error {
-			requestedMember.UpdatedById = &userIdStr
+			requestedMember.UpdatedById = userID
 			requestedMember.UpdatedAt = time.Now()
 			requestedMember.Role = *req.Role
 			if err := tx.Save(&requestedMember).Error; err != nil {
@@ -764,11 +763,11 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 				for _, project := range projects {
 					if err := tx.Clauses(clause.OnConflict{
 						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
-						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userIdStr}),
+						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userID}),
 					}).Create(&dao.ProjectMember{
 						ID:                              dao.GenID(),
 						CreatedAt:                       time.Now(),
-						CreatedById:                     &userIdStr,
+						CreatedById:                     userID,
 						WorkspaceId:                     workspace.ID,
 						ProjectId:                       project.ID,
 						Role:                            types.AdminRole,
@@ -914,7 +913,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID != requestedMemberId {
 		return EErrorDefined(c, apierrors.ErrDeleteSuperUser)
 	}
-	if workspace.OwnerId == requestedMember.MemberId {
+	if workspace.OwnerId == requestedMember.MemberId.String() {
 		if !user.IsSuperuser {
 			return EErrorDefined(c, apierrors.ErrCannotDeleteWorkspaceAdmin)
 		}
@@ -1062,12 +1061,12 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 				return EErrorDefined(c, apierrors.ErrGeneric)
 			}
 			tmpNotify := dao.DeferredNotifications{
-				ID: dao.GenID(),
+				ID: dao.GenUUID(),
 
 				UserID: member.MemberId,
 				User:   member.Member,
 
-				WorkspaceID:         &workspace.ID,
+				WorkspaceID:         uuid.NullUUID{UUID: workspace.ID, Valid: true},
 				Workspace:           &workspace,
 				NotificationType:    "message",
 				DeliveryMethod:      "telegram",
@@ -1078,10 +1077,10 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 			}
 
 			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenID()
+			tmpNotify.ID = dao.GenUUID()
 			tmpNotify.DeliveryMethod = "email"
 			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenID()
+			tmpNotify.ID = dao.GenUUID()
 			tmpNotify.DeliveryMethod = "app"
 			notificationSentAt = append(notificationSentAt, tmpNotify)
 		}
@@ -1129,7 +1128,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 	var createMemberLog []memberTracker
 
-	remainInvites := limiter.Limiter.GetRemainingInvites(uuid.Must(uuid.FromString(workspace.ID)))
+	remainInvites := limiter.Limiter.GetRemainingInvites(workspace.ID)
 
 	if remainInvites == 0 {
 		return EErrorDefined(c, apierrors.ErrInvitesExceed)
@@ -1156,15 +1155,14 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 				if err == gorm.ErrRecordNotFound {
 					// Create new user
 					pass := dao.GenPassword()
-					issuerIdStr := issuer.ID.String()
 					user = dao.User{
 						ID:              dao.GenUUID(),
 						Email:           invite.Email,
 						Password:        dao.GenPasswordHash(pass),
-						CreatedByID:     &issuerIdStr,
+						CreatedByID:     uuid.NullUUID{UUID: issuer.ID, Valid: true},
 						Theme:           types.DefaultTheme,
 						IsActive:        true,
-						LastWorkspaceId: &workspace.ID,
+						LastWorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 					}
 
 					if err := tx.Create(&user).Error; err != nil {
@@ -1180,6 +1178,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			}
 			var existingMember dao.WorkspaceMember
 			userIdStr := user.ID.String()
+			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 			if err := tx.Where("member_id = ? AND workspace_id = ?", userIdStr, workspace.ID).First(&existingMember).Error; err == nil {
 				return apierrors.ErrInviteMemberExist
 			}
@@ -1187,9 +1186,9 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			workspaceMember = dao.WorkspaceMember{
 				ID:                              dao.GenID(),
 				WorkspaceId:                     workspace.ID,
-				MemberId:                        userIdStr,
+				MemberId:                        user.ID,
 				Role:                            invite.Role,
-				CreatedById:                     &userIdStr,
+				CreatedById:                     userID,
 				Member:                          &user,
 				Workspace:                       &workspace,
 				CreatedBy:                       &issuer,
@@ -1217,7 +1216,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 					projectMember := dao.ProjectMember{
 						ID:                              dao.GenID(),
 						CreatedAt:                       time.Now(),
-						CreatedById:                     &userIdStr,
+						CreatedById:                     userID,
 						WorkspaceId:                     workspace.ID,
 						ProjectId:                       project.ID,
 						Role:                            types.AdminRole,
@@ -1387,9 +1386,9 @@ func (s *Services) createWorkspace(c echo.Context) error {
 
 	userIdStr := user.ID.String()
 	req.Bind(&workspace)
-	workspace.ID = dao.GenID()
+	workspace.ID = dao.GenUUID()
 	workspace.OwnerId = userIdStr
-	workspace.CreatedById = userIdStr
+	workspace.CreatedById = user.ID
 	workspace.IntegrationToken = password.MustGenerate(64, 30, 0, false, true)
 
 	if err := s.db.Create(&workspace).Error; err != nil {
@@ -1399,11 +1398,12 @@ func (s *Services) createWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspaceMember := dao.WorkspaceMember{
 		ID:                              dao.GenID(),
 		WorkspaceId:                     workspace.ID,
-		MemberId:                        userIdStr,
-		CreatedById:                     &userIdStr,
+		MemberId:                        user.ID,
+		CreatedById:                     userID,
 		Role:                            15,
 		NotificationAuthorSettingsEmail: types.DefaultWorkspaceMemberNS,
 		NotificationAuthorSettingsApp:   types.DefaultWorkspaceMemberNS,
@@ -1439,7 +1439,7 @@ func (s *Services) createWorkspace(c echo.Context) error {
 func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 	user := *c.(AuthContext).User
 
-	if user.LastWorkspaceId == nil {
+	if !user.LastWorkspaceId.Valid {
 		return c.JSON(http.StatusOK, responseLastWorkspace{
 			WorkspaceDetails: make([]interface{}, 0),
 			ProjectDetails:   struct{}{},
@@ -1447,7 +1447,7 @@ func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 	}
 
 	var workspace dao.Workspace
-	if err := s.db.Where("id = ?", user.LastWorkspaceId).Find(&workspace).Error; err != nil {
+	if err := s.db.Where("id = ?", user.LastWorkspaceId.UUID).Find(&workspace).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1513,7 +1513,7 @@ func (s *Services) getWorkspaceToken(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	workspaceMember := c.(WorkspaceContext).WorkspaceMember
 
-	if !user.IsSuperuser && workspaceMember.Role != types.AdminRole && workspace.OwnerId != workspaceMember.MemberId {
+	if !user.IsSuperuser && workspaceMember.Role != types.AdminRole && workspace.OwnerId != workspaceMember.MemberId.String() {
 		return c.NoContent(http.StatusForbidden)
 	}
 	return c.String(http.StatusOK, workspace.IntegrationToken)
@@ -1697,20 +1697,20 @@ func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspace, err := dao.GetWorkspaceByID(s.db, req.Workspace, user.ID)
 	if err != nil {
 		return EError(c, err)
 	}
 
 	workspaceFavorite := dao.WorkspaceFavorites{
-		ID:          dao.GenID(),
+		ID:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &userIdStr,
+		CreatedById: userID,
 		WorkspaceId: workspace.ID,
 		Workspace:   &workspace,
-		UserId:      userIdStr,
+		UserId:      user.ID,
 	}
 	if err := s.db.Create(&workspaceFavorite).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
@@ -1771,7 +1771,7 @@ func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 func (s *Services) getIntegrationList(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 
-	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID))
+	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID.String()))
 }
 
 // addIntegrationToWorkspace godoc
@@ -1804,13 +1804,13 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIntegrationNotFound)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspaceMember := dao.WorkspaceMember{
 		ID:          dao.GenID(),
 		WorkspaceId: workspace.ID,
-		MemberId:    integration.ID.String(),
+		MemberId:    integration.ID,
 		Role:        types.MemberRole,
-		CreatedById: &userIdStr,
+		CreatedById: userID,
 		Member:      integration,
 	}
 	if err := s.db.Save(&workspaceMember).Error; err != nil {
@@ -1938,7 +1938,7 @@ func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/tariff/ [get]
 func (s *Services) getWorkspaceTariff(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
-	return c.JSON(http.StatusOK, limiter.Limiter.GetWorkspaceLimitInfo(uuid.Must(uuid.FromString(workspace.ID))))
+	return c.JSON(http.StatusOK, limiter.Limiter.GetWorkspaceLimitInfo(workspace.ID))
 }
 
 // ******* RESPONSE *******

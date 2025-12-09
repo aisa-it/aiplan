@@ -314,8 +314,7 @@ func (s *Services) updateForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormEndDate)
 	}
 
-	userIdStr := user.ID.String()
-	newForm.UpdatedById = &userIdStr
+	newForm.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	newForm.Workspace = &workspace
 
 	if err := checkFormFields(&form.Fields); err != nil {
@@ -694,7 +693,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		return err
 	}
 
-	var defaultAssignees []string
+	var defaultAssignees []uuid.UUID
 	if err := s.db.Select("member_id").
 		Model(&dao.ProjectMember{}).
 		Where("project_id = ? and is_default_assignee = true", form.TargetProjectId.String).
@@ -707,7 +706,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 	issue := &dao.Issue{
 		ID:              dao.GenUUID(),
 		Name:            fmt.Sprintf("Ответ №%d формы \"%s\"", answer.SeqId, form.Title),
-		CreatedById:     systemUser.ID.String(),
+		CreatedById:     systemUser.ID,
 		ProjectId:       uuid.Must(uuid.FromString(form.TargetProjectId.String)),
 		WorkspaceId:     form.WorkspaceId,
 		DescriptionHtml: buf.String(),
@@ -718,17 +717,17 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
-		systemUserIdStr := systemUser.ID.String()
+		systemUserID := uuid.NullUUID{UUID: systemUser.ID, Valid: true}
 		var newAssignees []dao.IssueAssignee
 		for _, watcher := range defaultAssignees {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
 				Id:          dao.GenUUID(),
-				AssigneeId:  fmt.Sprint(watcher),
+				AssigneeId:  watcher,
 				IssueId:     issue.ID,
 				ProjectId:   issue.ProjectId,
 				WorkspaceId: issue.WorkspaceId,
-				CreatedById: &systemUserIdStr,
-				UpdatedById: &systemUserIdStr,
+				CreatedById: systemUserID,
+				UpdatedById: systemUserID,
 			})
 		}
 		return tx.CreateInBatches(&newAssignees, 10).Error
@@ -756,7 +755,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 	user := *c.(AnswerFormContext).User
 	form := c.(AnswerFormContext).Form
 
-	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(form.WorkspaceId))) {
+	if !limiter.Limiter.CanAddAttachment(form.WorkspaceId) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 	const maxFileSize = 50 * 1024 * 1024 // 50 МБ
@@ -789,29 +788,29 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 		assetId,
 		asset.Header.Get("Content-Type"),
 		&filestorage.Metadata{
-			WorkspaceId: form.WorkspaceId,
+			WorkspaceId: form.WorkspaceId.String(),
 			FormId:      form.ID.String(),
 		},
 	); err != nil {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	formAttachment := dao.FormAttachment{
 		Id:          dao.GenID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &userIdStr,
-		UpdatedById: &userIdStr,
+		CreatedById: userID,
+		UpdatedById: userID,
 		AssetId:     assetId,
 		FormId:      form.ID.String(),
-		WorkspaceId: form.WorkspaceId,
+		WorkspaceId: form.WorkspaceId.String(),
 	}
 
 	fa := dao.FileAsset{
 		Id:          assetId,
-		CreatedById: &userIdStr,
-		WorkspaceId: &form.WorkspaceId,
+		CreatedById: userID,
+		WorkspaceId: uuid.NullUUID{UUID: form.WorkspaceId, Valid: true},
 		Name:        fileName,
 		ContentType: asset.Header.Get("Content-Type"),
 		FileSize:    int(asset.Size),
@@ -872,7 +871,7 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if !isAdmin || (attachment.CreatedById != nil && userId.String() != *attachment.CreatedById) {
+	if !isAdmin || (attachment.CreatedById.Valid && userId != attachment.CreatedById.UUID) {
 		return EErrorDefined(c, apierrors.ErrFormForbidden)
 	}
 

@@ -225,12 +225,13 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			return
 		}
 
+		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		issueAttachment := dao.IssueAttachment{
 			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
-			CreatedById: &userId,
-			UpdatedById: &userId,
+			CreatedById: userID,
+			UpdatedById: userID,
 			AssetId:     assetName,
 			IssueId:     issue.ID,
 			ProjectId:   issue.ProjectId,
@@ -239,8 +240,8 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 
 		fa := dao.FileAsset{
 			Id:          assetName,
-			CreatedById: &userId,
-			WorkspaceId: &issue.WorkspaceId,
+			CreatedById: userID,
+			WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 			Name:        fileName,
 			FileSize:    int(event.Upload.Size),
 		}
@@ -278,12 +279,13 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			return
 		}
 
+		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		docAttachment := dao.DocAttachment{
 			Id:          dao.GenID(),
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
-			CreatedById: &userId,
-			UpdatedById: &userId,
+			CreatedById: userID,
+			UpdatedById: userID,
 			AssetId:     assetName,
 			DocId:       doc.ID.String(),
 			WorkspaceId: doc.WorkspaceId,
@@ -291,8 +293,8 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 
 		fa := dao.FileAsset{
 			Id:          assetName,
-			CreatedById: &userId,
-			WorkspaceId: &doc.WorkspaceId,
+			CreatedById: userID,
+			WorkspaceId: uuid.NullUUID{UUID: doc.WorkspaceId, Valid: true},
 			Name:        fileName,
 			FileSize:    int(event.Upload.Size),
 		}
@@ -894,7 +896,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+		if !limiter.Limiter.CanAddAttachment(project.WorkspaceId) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -988,7 +990,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 		} else {
 			if issue.Parent != nil {
-				unpinTask = issue.Parent.CreatedById == user.ID.String() && len(data) == 4
+				unpinTask = issue.Parent.CreatedById == user.ID && len(data) == 4
 			}
 		}
 		data["parent_id"] = parentId
@@ -1138,9 +1140,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 	}
 
-	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID.String() || unpinTask
+	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID || unpinTask
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Upload new files
 		if form != nil {
@@ -1149,16 +1151,16 @@ func (s *Services) updateIssue(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &userIdStr,
+					CreatedById: userID,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
-					WorkspaceId: &issue.WorkspaceId,
+					WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 					IssueId:     uuid.NullUUID{Valid: true, UUID: issue.ID},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
-						WorkspaceId: issue.WorkspaceId,
+						WorkspaceId: issue.WorkspaceId.String(),
 						ProjectId:   issue.ProjectId.String(),
 						IssueId:     issue.ID.String(),
 					}); err != nil {
@@ -1188,8 +1190,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					BlockId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
@@ -1207,14 +1209,15 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range assignees {
+				assigneeUUID := uuid.FromStringOrNil(fmt.Sprint(assignee))
 				newAssignees = append(newAssignees, dao.IssueAssignee{
 					Id:          dao.GenUUID(),
-					AssigneeId:  fmt.Sprint(assignee),
+					AssigneeId:  assigneeUUID,
 					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&newAssignees, 10).Error; err != nil {
@@ -1231,14 +1234,15 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range watchers {
+				watcherUUID := uuid.FromStringOrNil(fmt.Sprint(watcher))
 				newWatchers = append(newWatchers, dao.IssueWatcher{
 					Id:          dao.GenUUID(),
-					WatcherId:   fmt.Sprint(watcher),
+					WatcherId:   watcherUUID,
 					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&newWatchers, 10).Error; err != nil {
@@ -1261,8 +1265,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					IssueId:     issue.ID.String(),
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
@@ -1289,8 +1293,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					BlockedById: issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
-					CreatedById: &userIdStr,
-					UpdatedById: &userIdStr,
+					CreatedById: userID,
+					UpdatedById: userID,
 				})
 			}
 			if err := tx.CreateInBatches(&newBlocked, 10).Error; err != nil {
@@ -1348,10 +1352,10 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		issue.UpdatedAt = time.Now()
-		issue.UpdatedById = &userIdStr
+		issue.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 
 		data["updated_at"] = time.Now()
-		data["updated_by_id"] = userIdStr
+		data["updated_by_id"] = userID
 
 		var err error
 		if updateAll {
@@ -1416,7 +1420,7 @@ func (s *Services) deleteIssue(c echo.Context) error {
 	//project := c.(IssueContext).Project
 	issue := c.(IssueContext).Issue
 	//currentInst := StructToJSONMap(issue)
-	if c.(IssueContext).ProjectMember.Role != types.AdminRole && issue.CreatedById != user.ID.String() {
+	if c.(IssueContext).ProjectMember.Role != types.AdminRole && issue.CreatedById != user.ID {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
 
@@ -1585,13 +1589,12 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	}
 	parentId := uuid.NullUUID{UUID: id, Valid: true}
 
-	userIdStr := user.ID.String()
 	for i := range subIssues {
-		if project.CurrentUserMembership.Role != types.AdminRole && subIssues[i].CreatedById != userIdStr {
+		if project.CurrentUserMembership.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
 			return EErrorDefined(c, apierrors.ErrPermissionParentIssue)
 		}
 		subIssues[i].ParentId = parentId
-		subIssues[i].UpdatedById = &userIdStr
+		subIssues[i].UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		subIssues[i].SortOrder = i + maxSortOrder + 1
 	}
 
@@ -2148,13 +2151,13 @@ func (s *Services) createIssueLink(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrURLAndTitleRequired)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	link := dao.IssueLink{
 		Id:          dao.GenUUID(),
 		Title:       req.Title,
 		Url:         req.Url,
-		CreatedById: &userIdStr,
-		UpdatedById: &userIdStr,
+		CreatedById: userID,
+		UpdatedById: userID,
 		IssueId:     issue.ID,
 		ProjectId:   project.ID,
 		WorkspaceId: project.WorkspaceId,
@@ -2220,9 +2223,9 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 		return c.JSON(http.StatusOK, oldLink)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	oldLink.UpdatedAt = time.Now()
-	oldLink.UpdatedById = &userIdStr
+	oldLink.UpdatedById = userID
 	oldLink.Title = newLink.Title
 	oldLink.Url = newLink.Url
 
@@ -2488,7 +2491,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+		if !limiter.Limiter.CanAddAttachment(project.WorkspaceId) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -2497,6 +2500,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		comment.Id = dao.GenUUID()
@@ -2524,16 +2528,16 @@ func (s *Services) createIssueComment(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &userIdStr,
+					CreatedById: userID,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
-					WorkspaceId: &issue.WorkspaceId,
+					WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 					CommentId:   uuid.NullUUID{UUID: comment.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
-						WorkspaceId: issue.WorkspaceId,
+						WorkspaceId: issue.WorkspaceId.String(),
 						ProjectId:   issue.ProjectId.String(),
 						IssueId:     issue.ID.String(),
 					}); err != nil {
@@ -2556,7 +2560,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 				return err
 			}
 			authorIdStr := authorOriginalComment.ID.String()
-			if authorIdStr != issue.CreatedById {
+			if authorOriginalComment.ID != issue.CreatedById {
 				for _, id := range issue.AssigneeIDs {
 					if id == authorIdStr {
 						replyNotMember = true
@@ -2712,7 +2716,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(issue.WorkspaceId))) {
+		if !limiter.Limiter.CanAddAttachment(issue.WorkspaceId) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
 	}
@@ -2725,13 +2729,13 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		commentOld.Attachments = comment.Attachments
 		commentOld.CommentHtml = comment.CommentHtml
 		commentOld.CommentStripped = comment.CommentStripped
 		commentOld.ReplyToCommentId = comment.ReplyToCommentId
-		commentOld.UpdatedById = &userIdStr
+		commentOld.UpdatedById = userID
 
 		if err := tx.Omit(clause.Associations).Save(&commentOld).Error; err != nil {
 			return err
@@ -2743,16 +2747,16 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				fileAsset := dao.FileAsset{
 					Id:          dao.GenUUID(),
 					CreatedAt:   time.Now(),
-					CreatedById: &userIdStr,
+					CreatedById: userID,
 					Name:        f.Filename,
 					FileSize:    int(f.Size),
-					WorkspaceId: &issue.WorkspaceId,
+					WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 					CommentId:   uuid.NullUUID{UUID: commentOld.Id, Valid: true},
 				}
 
 				if err := s.uploadAssetForm(tx, f, &fileAsset,
 					filestorage.Metadata{
-						WorkspaceId: issue.WorkspaceId,
+						WorkspaceId: issue.WorkspaceId.String(),
 						ProjectId:   issue.ProjectId.String(),
 						IssueId:     issue.ID.String(),
 					}); err != nil {
@@ -2775,7 +2779,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				return err
 			}
 			authorIdStr := authorOriginalComment.ID.String()
-			if authorIdStr != issue.CreatedById {
+			if authorOriginalComment.ID != issue.CreatedById {
 				for _, id := range issue.AssigneeIDs {
 					if id == authorIdStr {
 						replyNotMember = true
@@ -2948,7 +2952,7 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 	reaction := dao.CommentReaction{
 		Id:        dao.GenUUID(),
 		CreatedAt: time.Now(),
-		UserId:    user.ID.String(),
+		UserId:    user.ID,
 		CommentId: commentUUID,
 		Reaction:  reactionRequest.Reaction,
 	}
@@ -3158,7 +3162,7 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 	project := c.(IssueContext).Project
 	issue := c.(IssueContext).Issue
 
-	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(project.WorkspaceId))) {
+	if !limiter.Limiter.CanAddAttachment(project.WorkspaceId) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 
@@ -3190,7 +3194,7 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		assetName,
 		asset.Header.Get("Content-Type"),
 		&filestorage.Metadata{
-			WorkspaceId: issue.WorkspaceId,
+			WorkspaceId: issue.WorkspaceId.String(),
 			ProjectId:   issue.ProjectId.String(),
 			IssueId:     issue.ID.String(),
 		},
@@ -3198,13 +3202,12 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
 	issueAttachment := dao.IssueAttachment{
 		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &userIdStr,
-		UpdatedById: &userIdStr,
+		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 		Attributes:  attributes,
 		AssetId:     assetName,
 		IssueId:     issue.ID,
@@ -3214,8 +3217,8 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 
 	issueAttachment.Asset = &dao.FileAsset{
 		Id:          assetName,
-		CreatedById: &userIdStr,
-		WorkspaceId: &issue.WorkspaceId,
+		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 		Name:        asset.Filename,
 		FileSize:    int(asset.Size),
 	}

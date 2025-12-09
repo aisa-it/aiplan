@@ -51,7 +51,8 @@ type SessionsReset struct {
 	// id uuid IS_NULL:NO
 	Id string `json:"id"`
 	// user_id uuid IS_NULL:NO
-	UserId string `json:"user_id" gorm:"index"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
 	// reseted_at timestamp without time zone IS_NULL:NO
 	ResetedAt time.Time `json:"reseted_at"`
 
@@ -72,17 +73,18 @@ func (SessionsReset) TableName() string { return "sessions_resets" }
 func ResetUserSessions(db *gorm.DB, user *User) error {
 	return db.Create(&SessionsReset{
 		Id:        GenID(),
-		UserId:    user.ID.String(),
+		UserId:    user.ID,
 		ResetedAt: time.Now(),
 	}).Error
 }
 
 type FileAsset struct {
-	Id          uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt   time.Time `json:"created_at"`
-	CreatedById *string   `json:"created_by,omitempty" extensions:"x-nullable"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
+	CreatedAt time.Time `json:"created_at"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 
-	WorkspaceId *string       `json:"workspace,omitempty"`
+	WorkspaceId uuid.NullUUID `json:"workspace,omitempty" gorm:"type:uuid"`
 	IssueId     uuid.NullUUID `json:"issue" gorm:"foreignKey:ID"`
 	CommentId   uuid.NullUUID `json:"comment" gorm:"foreignKey:Id;type:uuid" extensions:"x-nullable"`
 
@@ -96,7 +98,7 @@ type FileAsset struct {
 	ContentType string `json:"content_type"`
 
 	Workspace *Workspace    `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Author    *User         `json:"-" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	Author    *User         `json:"-" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
 	Comment   *IssueComment `json:"-" gorm:"foreignKey:CommentId;references:Id" extensions:"x-nullable"`
 }
 
@@ -119,6 +121,13 @@ func (asset *FileAsset) BeforeDelete(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func (asset *FileAsset) GetWorkspaceId() uuid.UUID {
+	if asset.WorkspaceId.Valid {
+		return asset.WorkspaceId.UUID
+	}
+	return uuid.Nil
 }
 
 // CanBeDeleted проверяет, можно ли удалить запись, основываясь на количестве связанных сущностей (issue, project, workspace, form). Если связанных сущностей нет, то запись может быть удалена.
@@ -200,7 +209,7 @@ func (r *ReleaseNote) BeforeCreate(tx *gorm.DB) (err error) {
 }
 
 type EntityActivity struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"index:entity_activities_issue_index,sort:desc,type:btree,priority:2;index:entity_activities_actor_index,sort:desc,type:btree,priority:2;index:entity_activities_mail_index,type:btree,where:notified = false and issue_id is not null"`
 	//DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 	// verb character varying IS_NULL:NO
@@ -216,13 +225,15 @@ type EntityActivity struct {
 	// attachments ARRAY IS_NULL:NO
 	Attachments string `json:"attachments"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:YES
 	IssueId *string `json:"issue_id,omitempty" gorm:"index:entity_activities_issue_index,priority:1" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:YES
 	ProjectId *string `json:"project_id"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId string `json:"workspace"`
 	// form_id uuid IS_NULL:YES
@@ -244,6 +255,8 @@ type EntityActivity struct {
 	Issue     *Issue     `json:"issue_detail" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Form      *Form      `json:"form_detail" gorm:"foreignKey:FormId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID" extensions:"x-nullable"`
 
 	NewAttachment *IssueAttachment `json:"-" gorm:"-" field:"attachment" extensions:"x-nullable"`
 	NewLink       *IssueLink       `json:"-" gorm:"-" field:"link" extensions:"x-nullable"`
@@ -387,7 +400,6 @@ func (EntityActivity) GetFields() []string {
 		"form_id",
 		"actor_id",
 		"doc_id",
-		"affected_user_id",
 		"new_identifier",
 		"old_identifier",
 		"notified",
@@ -607,16 +619,16 @@ func (EntityActivity) TableName() string { return "entity_activities" }
 
 // DeferredNotifications corresponds to the notifications_log table
 type DeferredNotifications struct {
-	ID string `gorm:"type:text;primaryKey"`
+	ID uuid.UUID `gorm:"type:uuid;primaryKey"`
 
-	UserID      string     `gorm:"type:text;not null;index"`
-	User        *User      `gorm:"foreignKey:UserID" extensions:"x-nullable"`
-	IssueID     *string    `gorm:"type:text;index" extensions:"x-nullable"`
-	Issue       *Issue     `gorm:"foreignKey:IssueID" extensions:"x-nullable"`
-	ProjectID   *string    `gorm:"type:text;index" extensions:"x-nullable"`
-	Project     *Project   `gorm:"foreignKey:ProjectID" extensions:"x-nullable"`
-	WorkspaceID *string    `gorm:"type:text;index" extensions:"x-nullable"`
-	Workspace   *Workspace `gorm:"foreignKey:WorkspaceID" extensions:"x-nullable"`
+	UserID      uuid.UUID     `gorm:"type:uuid;not null;index"`
+	User        *User         `gorm:"foreignKey:UserID" extensions:"x-nullable"`
+	IssueID     uuid.NullUUID `gorm:"type:uuid;index" extensions:"x-nullable"`
+	Issue       *Issue        `gorm:"foreignKey:IssueID" extensions:"x-nullable"`
+	ProjectID   uuid.NullUUID `gorm:"type:uuid;index" extensions:"x-nullable"`
+	Project     *Project      `gorm:"foreignKey:ProjectID" extensions:"x-nullable"`
+	WorkspaceID uuid.NullUUID `gorm:"type:uuid;index" extensions:"x-nullable"`
+	Workspace   *Workspace    `gorm:"foreignKey:WorkspaceID" extensions:"x-nullable"`
 
 	NotificationType    string     `gorm:"type:varchar(50);not null"`
 	DeliveryMethod      string     `gorm:"type:varchar(50);not null"`
@@ -633,7 +645,7 @@ func (DeferredNotifications) TableName() string {
 }
 
 type RootActivity struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"index:activities_actor_index,sort:desc,type:btree,priority:2;index:activities_mail_index,type:btree,where:notified = false"`
 	// verb character varying IS_NULL:NO
 	Verb string `json:"verb"`
@@ -716,5 +728,5 @@ func (ra RootActivity) GetOldIdentifier() string {
 }
 
 func (ra RootActivity) GetId() string {
-	return ra.Id
+	return ra.Id.String()
 }
