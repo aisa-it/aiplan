@@ -35,7 +35,7 @@ func NewBL(db *gorm.DB, tracker *tracker.ActivitiesTracker) (*Business, error) {
 		}
 		username := "deleted_user"
 		deletedServiceUser = &dao.User{
-			ID:            dao.GenID(),
+			ID:            dao.GenUUID(),
 			Username:      &username,
 			FirstName:     "Пользователь",
 			LastName:      "Удаленный",

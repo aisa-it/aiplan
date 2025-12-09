@@ -127,7 +127,7 @@ func DownloadAttachmentsStep(c *context.ImportContext) error {
 					// Issue attachment
 					if v.IssueAttachment != nil {
 						metadata.WorkspaceId = v.IssueAttachment.WorkspaceId
-						metadata.ProjectId = v.IssueAttachment.ProjectId
+						metadata.ProjectId = v.IssueAttachment.ProjectId.String()
 						metadata.IssueId = v.IssueAttachment.IssueId.String()
 					} else if v.InlineAsset != nil {
 						// Inline asset
@@ -229,7 +229,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 	context.Stage = "users"
 	context.Counters.TotalUsers = context.Users.Len()
 	context.Users.Range(func(k string, v dao.User) {
-		if v.ID == "" {
+		if v.ID == uuid.Nil {
 			context.Log.Warn("Empty user", "key", k)
 			return
 		}
@@ -250,7 +250,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 				dao.WorkspaceMember{
 					ID:          dao.GenID(),
 					Role:        10,
-					MemberId:    user.ID,
+					MemberId:    user.ID.String(),
 					WorkspaceId: context.TargetWorkspaceID,
 				})
 		}
@@ -259,7 +259,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 			dao.ProjectMember{
 				ID:          dao.GenID(),
 				Role:        10,
-				MemberId:    user.ID,
+				MemberId:    user.ID.String(),
 				ProjectId:   context.Project.ID,
 				WorkspaceId: context.TargetWorkspaceID,
 			})

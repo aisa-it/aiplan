@@ -41,6 +41,7 @@ import (
 	"syscall"
 	"time"
 
+	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
@@ -186,6 +187,22 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
+
+	var ldapProvider *authprovider.LdapProvider
+	if cfg.LDAPServerURL != nil {
+		ldapProvider, err = authprovider.InitLDAP(
+			cfg.LDAPServerURL,
+			cfg.LDAPBindUser,
+			cfg.LDAPBindPassword,
+			cfg.LDAPBaseDN,
+			cfg.LDAPFilter,
+		)
+		if err != nil {
+			slog.Error("Connect to LDAP server", "err", err)
+			os.Exit(1)
+		}
+	}
+
 	migration.New(db).Run()
 
 	jobRegistry := cronmanager.JobRegistry{
@@ -356,7 +373,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	e.Validator = NewRequestValidator()
 
-	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es)
+	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es, ldapProvider)
 
 	//services with auth
 	apiGroup := e.Group("/api/")
@@ -433,7 +450,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.GET("i/:slug/:projectIdent/:issueNum/", s.shortIssueURLRedirect)
 	e.GET("i/:issue/", s.shortIssueURLRedirect)
 	e.GET("d/:slug/:docNum/", s.shortDocURLRedirect)
-	e.GET("sf/:base/", s.shortSearchFilterURLRedirect)
+	e.GET("sf/:id/", s.shortSearchFilterURLRedirect)
 
 	// Get minio file
 	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy, remove after front migration to new endpoint
@@ -516,7 +533,7 @@ func checkPassword(password string, pass string) bool {
 }
 
 // Генерация ключа доступа
-func createAccessToken(userId string) (*Token, *Token, error) {
+func createAccessToken(userId uuid.UUID) (*Token, *Token, error) {
 	ta, err := GenJwtToken([]byte(cfg.SecretKey), "access", userId)
 	if err != nil {
 		return nil, nil, err
@@ -592,14 +609,14 @@ type Token struct {
 }
 
 // Генерация JWT ключа
-func GenJwtToken(secret []byte, tokenType string, userid string) (*Token, error) {
+func GenJwtToken(secret []byte, tokenType string, userid uuid.UUID) (*Token, error) {
 	u, _ := uuid.NewV4()
 	claims := jwt.MapClaims{
 		"exp":        jwt.NewNumericDate(time.Now().Add(types.TokenExpiresPeriod)),
 		"iat":        jwt.NewNumericDate(time.Now()),
 		"jti":        fmt.Sprintf("%x", u),
 		"token_type": tokenType,
-		"user_id":    userid,
+		"user_id":    userid.String(),
 	}
 	if tokenType == "refresh" {
 		claims["exp"] = jwt.NewNumericDate(time.Now().Add(types.RefreshTokenExpiresPeriod))

@@ -68,15 +68,15 @@ type FileAsset struct {
 }
 
 type StateLight struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Color       string `json:"color"`
-	ProjectId   string `json:"project"`
-	WorkspaceId string `json:"workspace"`
-	Sequence    uint64 `json:"sequence"`
-	Group       string `json:"group"`
-	Default     bool   `json:"default"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Color       string    `json:"color"`
+	ProjectId   uuid.UUID `json:"project"`
+	WorkspaceId string    `json:"workspace"`
+	Sequence    uint64    `json:"sequence"`
+	Group       string    `json:"group"`
+	Default     bool      `json:"default"`
 }
 
 type HistoryBodyLight struct {

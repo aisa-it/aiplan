@@ -49,8 +49,8 @@ func callEventFunction(fnName string, state *lua.LState, issuer dao.User, curren
 
 	info := &debugInfo{
 		Function:    &fnName,
-		ProjectId:   currentIssue.ProjectId,
-		IssuerId:    issuer.ID,
+		ProjectId:   currentIssue.ProjectId.String(),
+		IssuerId:    issuer.ID.String(),
 		IssuerEmail: issuer.Email,
 	}
 

@@ -52,7 +52,7 @@ func (i Integration) GetInfo() Integration {
 func (i *Integration) FetchUser() error {
 	if err := i.db.Where("username = ?", i.User.Username).First(i.User).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			i.User.ID = dao.GenID()
+			i.User.ID = dao.GenUUID()
 
 			if err := i.db.Create(i.User).Error; err != nil {
 				return err
@@ -67,12 +67,13 @@ func (i *Integration) UploadIntegrationLogo() error {
 	assetName := fmt.Sprintf("%s_logo.svg", *i.User.Username)
 
 	var asset dao.FileAsset
+	userIdStr := i.User.ID.String()
 	if err := i.db.Where("name = ?", assetName).First(&asset).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			asset = dao.FileAsset{
 				Id:          dao.GenUUID(),
 				Name:        assetName,
-				CreatedById: &i.User.ID,
+				CreatedById: &userIdStr,
 				FileSize:    len(i.AvatarSVG),
 				ContentType: "image/svg+xml",
 			}

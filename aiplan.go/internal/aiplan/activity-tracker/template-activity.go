@@ -109,7 +109,7 @@ func entityFieldUpdate[E dao.Entity, A dao.Activity](
 	}
 
 	if fieldLog, ok := requestedData[fmt.Sprintf("%s_field_log", field)]; ok {
-		field = actField.ActivityField(fieldLog.(string))
+		field = fieldLog.(actField.ActivityField)
 	}
 
 	if old != nil && *old == newV {
@@ -173,7 +173,7 @@ func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 	entityMap := mapEntity(involvedEntities)
 
 	if fieldLog, ok := requestedData["field_log"]; ok {
-		act.Field = actField.ActivityField(fieldLog.(string))
+		act.Field = fieldLog.(actField.ActivityField)
 	}
 
 	for _, id := range changes.DelIds {

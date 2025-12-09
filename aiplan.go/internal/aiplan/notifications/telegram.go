@@ -450,7 +450,7 @@ func NewTgActivity(entity string) *tgMsg {
 func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
 
 	userTgId := make(map[string]userTg)
-	authorId := issue.Author.ID
+	authorId := issue.Author.ID.String()
 	if issue.Author.TelegramId != nil && issue.Author.CanReceiveNotifications() && !issue.Author.Settings.TgNotificationMute {
 		userTgId[authorId] = userTg{
 			id:  *issue.Author.TelegramId,
@@ -460,11 +460,12 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
 
 	if issue.Assignees != nil {
 		for _, assignee := range *issue.Assignees {
-			if _, ok := userTgId[assignee.ID]; ok {
+			assigneeId := assignee.ID.String()
+			if _, ok := userTgId[assigneeId]; ok {
 				continue
 			}
 			if assignee.TelegramId != nil && assignee.CanReceiveNotifications() && !assignee.Settings.TgNotificationMute {
-				userTgId[assignee.ID] = userTg{
+				userTgId[assigneeId] = userTg{
 					id:  *assignee.TelegramId,
 					loc: assignee.UserTimezone,
 				}
@@ -474,11 +475,12 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
 
 	if issue.Watchers != nil {
 		for _, watcher := range *issue.Watchers {
-			if _, ok := userTgId[watcher.ID]; ok {
+			watcherId := watcher.ID.String()
+			if _, ok := userTgId[watcherId]; ok {
 				continue
 			}
 			if watcher.TelegramId != nil && watcher.CanReceiveNotifications() && !watcher.Settings.TgNotificationMute {
-				userTgId[watcher.ID] = userTg{
+				userTgId[watcherId] = userTg{
 					id:  *watcher.TelegramId,
 					loc: watcher.UserTimezone,
 				}

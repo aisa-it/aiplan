@@ -314,7 +314,8 @@ func (s *Services) updateForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormEndDate)
 	}
 
-	newForm.UpdatedById = &user.ID
+	userIdStr := user.ID.String()
+	newForm.UpdatedById = &userIdStr
 	newForm.Workspace = &workspace
 
 	if err := checkFormFields(&form.Fields); err != nil {
@@ -706,8 +707,8 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 	issue := &dao.Issue{
 		ID:              dao.GenUUID(),
 		Name:            fmt.Sprintf("Ответ №%d формы \"%s\"", answer.SeqId, form.Title),
-		CreatedById:     systemUser.ID,
-		ProjectId:       form.TargetProjectId.String,
+		CreatedById:     systemUser.ID.String(),
+		ProjectId:       uuid.Must(uuid.FromString(form.TargetProjectId.String)),
 		WorkspaceId:     form.WorkspaceId,
 		DescriptionHtml: buf.String(),
 		//DescriptionStripped: issue.DescriptionStripped,
@@ -717,6 +718,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
+		systemUserIdStr := systemUser.ID.String()
 		var newAssignees []dao.IssueAssignee
 		for _, watcher := range defaultAssignees {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
@@ -725,8 +727,8 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 				IssueId:     issue.ID,
 				ProjectId:   issue.ProjectId,
 				WorkspaceId: issue.WorkspaceId,
-				CreatedById: &systemUser.ID,
-				UpdatedById: &systemUser.ID,
+				CreatedById: &systemUserIdStr,
+				UpdatedById: &systemUserIdStr,
 			})
 		}
 		return tx.CreateInBatches(&newAssignees, 10).Error
@@ -794,12 +796,13 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userIdStr := user.ID.String()
 	formAttachment := dao.FormAttachment{
 		Id:          dao.GenID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &user.ID,
-		UpdatedById: &user.ID,
+		CreatedById: &userIdStr,
+		UpdatedById: &userIdStr,
 		AssetId:     assetId,
 		FormId:      form.ID.String(),
 		WorkspaceId: form.WorkspaceId,
@@ -807,7 +810,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 
 	fa := dao.FileAsset{
 		Id:          assetId,
-		CreatedById: &user.ID,
+		CreatedById: &userIdStr,
 		WorkspaceId: &form.WorkspaceId,
 		Name:        fileName,
 		ContentType: asset.Header.Get("Content-Type"),
@@ -869,7 +872,7 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if !isAdmin || (attachment.CreatedById != nil && userId != *attachment.CreatedById) {
+	if !isAdmin || (attachment.CreatedById != nil && userId.String() != *attachment.CreatedById) {
 		return EErrorDefined(c, apierrors.ErrFormForbidden)
 	}
 

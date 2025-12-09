@@ -12,6 +12,7 @@ package dao
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -32,7 +33,7 @@ type Doc struct {
 
 	UpdatedAt   time.Time `json:"updated_at"`
 	UpdatedById *string   `json:"updated_by" extensions:"x-nullable"`
-	Updater     *User     `json:"update_author,omitempty"  gorm:"-" extensions:"x-nullable"`
+	Updater     *User     `json:"update_author,omitempty"  gorm:"-" extensions:"x-nullable"` // TODO после переезда на uuid сделать fk и убрать из []userFKs
 
 	Tokens types.TsVector `json:"-" gorm:"index:doc_tokens_gin,type:gin;->:false"`
 
@@ -1089,19 +1090,19 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 
 	doc.ReaderIDs = getUniqueDocMemberIDs(doc.WatcherIDs, doc.ReaderIDs, doc.EditorsIDs)
 
-	userMap := utils.SliceToMap(&users, func(u *User) string { return u.ID })
+	userMap := utils.SliceToMap(&users, func(u *User) string { return u.ID.String() })
 	var newAccessRules []DocAccessRules
 	for id, u := range userMap {
 		newAccessRules = append(newAccessRules, DocAccessRules{
 			Id: GenUUID(),
 
-			MemberId:    uuid.Must(uuid.FromString(u.ID)),
-			CreatedById: uuid.Must(uuid.FromString(user.ID)),
+			MemberId:    u.ID,
+			CreatedById: user.ID,
 			DocId:       doc.ID,
 			UpdatedById: uuid.NullUUID{},
 			WorkspaceId: uuid.Must(uuid.FromString(doc.WorkspaceId)),
-			Edit:        utils.CheckInSlice(doc.EditorsIDs, id),
-			Watch:       utils.CheckInSlice(doc.WatcherIDs, id),
+			Edit:        slices.Contains(doc.EditorsIDs, id),
+			Watch:       slices.Contains(doc.WatcherIDs, id),
 		})
 	}
 

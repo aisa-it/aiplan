@@ -139,7 +139,7 @@ func (sh *SessionHandler) StartIssueCreationFlow(user dao.User, createFunc func(
 		keys = append(keys, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
 				fmt.Sprintf("%s/%s", project.Workspace.Slug, project.Identifier),
-				project.ID,
+				project.ID.String(),
 			),
 		))
 	}
@@ -223,13 +223,14 @@ func (ts *TelegramService) createIssue(user dao.User, args []interface{}) {
 		return
 	}
 
+	userIdStr := user.ID.String()
 	issue := dao.Issue{
 		ID:              dao.GenUUID(),
 		WorkspaceId:     project.WorkspaceId,
 		ProjectId:       project.ID,
 		CreatedAt:       time.Now(),
-		CreatedById:     user.ID,
-		UpdatedById:     &user.ID,
+		CreatedById:     userIdStr,
+		UpdatedById:     &userIdStr,
 		Name:            title,
 		DescriptionHtml: description,
 	}

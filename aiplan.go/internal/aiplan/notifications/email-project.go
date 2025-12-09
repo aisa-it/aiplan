@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -11,6 +12,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -131,21 +133,22 @@ type projectActivity struct {
 }
 
 func (as *projectActivitySorter) sortEntity(tx *gorm.DB, activity dao.ProjectActivity) {
-	if activity.ProjectId != "" { // TODO check it
+	if activity.ProjectId != uuid.Nil { // TODO check it
 		activity.Project.Workspace = activity.Workspace
-		if v, ok := as.Project[activity.ProjectId]; !ok {
+		projectIdStr := activity.ProjectId.String()
+		if v, ok := as.Project[projectIdStr]; !ok {
 			pa := newProjectActivity(tx, activity.Project)
 			if pa != nil {
 				if !pa.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Project[activity.ProjectId] = *pa
+				as.Project[projectIdStr] = *pa
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Project[activity.ProjectId] = v
+			as.Project[projectIdStr] = v
 		}
 	}
 	return
@@ -261,11 +264,11 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 					Where("issues.id = ?", activity.NewIssue.ID).First(&issue).Error; err != nil {
 					continue
 				}
-				isWatcher := utils.CheckInSlice([]string{member.User.ID}, issue.WatcherIDs...) || member.DefaultWatcher
-				isAssignee := utils.CheckInSlice([]string{member.User.ID}, issue.AssigneeIDs...) || member.DefaultAssigner
+				isWatcher := slices.Contains(issue.WatcherIDs, member.User.ID.String()) || member.DefaultWatcher
+				isAssignee := slices.Contains(issue.AssigneeIDs, member.User.ID.String()) || member.DefaultAssigner
 
-				if isWatcher || isAssignee || issue.CreatedById == member.User.ID {
-					if issue.CreatedById == member.User.ID {
+				if isWatcher || isAssignee || issue.CreatedById == member.User.ID.String() {
+					if issue.CreatedById == member.User.ID.String() {
 						if member.ProjectAuthorSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
 							sendActivities = append(sendActivities, activity)
 							continue

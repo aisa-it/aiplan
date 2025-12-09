@@ -44,7 +44,7 @@ func ResultToLog(issue dao.Issue, user dao.User, result LuaResp, err IRulesError
 		Workspace:    issue.Workspace,
 		IssueId:      issue.ID.String(),
 		Issue:        &issue,
-		UserId:       &user.ID,
+		UserId:       ptrString(user.ID.String()),
 		User:         &user,
 		Time:         result.GetTime(),
 		FunctionName: result.GetFnName(),
@@ -54,6 +54,7 @@ func ResultToLog(issue dao.Issue, user dao.User, result LuaResp, err IRulesError
 }
 
 func AppendMsg(issue dao.Issue, user dao.User, msg []LuaOut, logs *[]dao.RulesLog) {
+	userId := user.ID.String()
 	for _, out := range msg {
 		*logs = append(*logs, dao.RulesLog{
 			Id:           dao.GenUUID(),
@@ -64,7 +65,7 @@ func AppendMsg(issue dao.Issue, user dao.User, msg []LuaOut, logs *[]dao.RulesLo
 			Workspace:    issue.Workspace,
 			IssueId:      issue.ID.String(),
 			Issue:        &issue,
-			UserId:       &user.ID,
+			UserId:       &userId,
 			User:         &user,
 			Time:         out.Time,
 			FunctionName: &out.FnName,
@@ -91,7 +92,7 @@ func AppendError(issue dao.Issue, user dao.User, err IRulesError, logs *[]dao.Ru
 			Workspace:    issue.Workspace,
 			IssueId:      issue.ID.String(),
 			Issue:        &issue,
-			UserId:       &user.ID,
+			UserId:       ptrString(user.ID.String()),
 			User:         &user,
 			Time:         err.GetTime(),
 			FunctionName: err.GetFnName(),
@@ -100,4 +101,8 @@ func AppendError(issue dao.Issue, user dao.User, err IRulesError, logs *[]dao.Ru
 			LuaErr:       luaErr,
 		})
 	}
+}
+
+func ptrString(s string) *string {
+	return &s
 }
