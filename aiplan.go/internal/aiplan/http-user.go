@@ -288,10 +288,10 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	fileAsset := dao.FileAsset{
 		Id:          dao.GenUUID(),
-		CreatedById: &userIdStr,
+		CreatedById: userID,
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -564,11 +564,11 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 
 	var activities []dao.FullActivity
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id IN (?)", workspaceIds)
+		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id IN (?)", projectIds)
+		query = query.Where("fa.project_id::text IN (?)", projectIds)
 	}
 
 	resp, err := dao.PaginationRequest(
@@ -640,11 +640,11 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper
 
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id IN (?)", workspaceIds)
+		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id IN (?)", projectIds)
+		query = query.Where("fa.project_id::text IN (?)", projectIds)
 	}
 
 	tables, err := GetActivitiesTable(query, from, to)
@@ -1444,7 +1444,7 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 	}
 
 	if err := s.db.Save(&dao.UserFeedback{
-		UserID:    user.ID.String(),
+		UserID:    user.ID,
 		UpdatedAt: time.Now(),
 		Stars:     feedback.Stars,
 		Feedback:  feedback.Feedback,
@@ -1614,7 +1614,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		Joins("Actor").
 		Joins("Issue").
 		Joins("Doc").
-		Where("ua.id IN (?)", qqq).
+		Where("ua.id::text IN (?)", qqq).
 		Find(&fa).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrGeneric)
@@ -1622,7 +1622,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 	}
 
 	idMap := utils.SliceToMap(&fa, func(t *dao.FullActivity) string {
-		return t.Id
+		return t.Id.String()
 	})
 
 	for i := 0; i < len(*resp.Result.(*[]dao.UserNotifications)); i++ {

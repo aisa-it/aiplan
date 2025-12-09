@@ -148,7 +148,7 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 		}
 	}
 
-	if requestedMember.Project.ProjectLeadId == requestedMember.MemberId {
+	if requestedMember.Project.ProjectLeadId == requestedMember.MemberId.String() {
 		if !actor.Member.IsSuperuser {
 			return apierrors.ErrCannotRemoveProjectLead
 		}

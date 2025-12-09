@@ -151,7 +151,7 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 	}
 
 	if strings.HasSuffix(c.Path(), "/issue-labels/") && c.Request().Method == http.MethodPost {
-		if issueContext.Issue.CreatedById == issueContext.User.ID.String() {
+		if issueContext.Issue.CreatedById == issueContext.User.ID {
 			return true, nil
 		}
 		for _, user := range *issueContext.Issue.Assignees {
@@ -185,7 +185,7 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 			return true, nil
 		}
 
-		if issueContext.Issue.CreatedById == issueContext.User.ID.String() {
+		if issueContext.Issue.CreatedById == issueContext.User.ID {
 			// If issue author
 			return true, nil
 		} else {

@@ -29,7 +29,7 @@ func (b *Business) WorkspaceCtxClean() {
 	b.workspaceCtx = nil
 }
 func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMember *dao.WorkspaceMember) error {
-	if requestedMember.Workspace.OwnerId == requestedMember.MemberId {
+	if requestedMember.Workspace.OwnerId == requestedMember.MemberId.String() {
 		if err := requestedMember.Workspace.ChangeOwner(b.db, actor); err != nil {
 			return err
 		}

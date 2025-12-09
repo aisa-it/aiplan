@@ -447,12 +447,11 @@ func NewTgActivity(entity string) *tgMsg {
 	return &res
 }
 
-func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
+func GetUserTgIdFromIssue(issue *dao.Issue) map[uuid.UUID]userTg {
 
-	userTgId := make(map[string]userTg)
-	authorId := issue.Author.ID.String()
+	userTgId := make(map[uuid.UUID]userTg)
 	if issue.Author.TelegramId != nil && issue.Author.CanReceiveNotifications() && !issue.Author.Settings.TgNotificationMute {
-		userTgId[authorId] = userTg{
+		userTgId[issue.Author.ID] = userTg{
 			id:  *issue.Author.TelegramId,
 			loc: issue.Author.UserTimezone,
 		}
@@ -460,12 +459,11 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
 
 	if issue.Assignees != nil {
 		for _, assignee := range *issue.Assignees {
-			assigneeId := assignee.ID.String()
-			if _, ok := userTgId[assigneeId]; ok {
+			if _, ok := userTgId[assignee.ID]; ok {
 				continue
 			}
 			if assignee.TelegramId != nil && assignee.CanReceiveNotifications() && !assignee.Settings.TgNotificationMute {
-				userTgId[assigneeId] = userTg{
+				userTgId[assignee.ID] = userTg{
 					id:  *assignee.TelegramId,
 					loc: assignee.UserTimezone,
 				}
@@ -475,12 +473,11 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
 
 	if issue.Watchers != nil {
 		for _, watcher := range *issue.Watchers {
-			watcherId := watcher.ID.String()
-			if _, ok := userTgId[watcherId]; ok {
+			if _, ok := userTgId[watcher.ID]; ok {
 				continue
 			}
 			if watcher.TelegramId != nil && watcher.CanReceiveNotifications() && !watcher.Settings.TgNotificationMute {
-				userTgId[watcherId] = userTg{
+				userTgId[watcher.ID] = userTg{
 					id:  *watcher.TelegramId,
 					loc: watcher.UserTimezone,
 				}
@@ -490,8 +487,8 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[string]userTg {
 	return userTgId
 }
 
-func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[string]userTg {
-	userTgId := make(map[string]userTg)
+func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[uuid.UUID]userTg {
+	userTgId := make(map[uuid.UUID]userTg)
 	rows, err := tx.Select("users.id, users.telegram_id").
 		Model(dao.ProjectMember{}).
 		Joins("JOIN users on users.id = project_members.member_id").
@@ -513,7 +510,8 @@ func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[string]userTg
 				break
 			}
 			if res.TelegramId != 0 && !res.Settings.TgNotificationMute {
-				userTgId[res.Id] = userTg{
+				userId := uuid.FromStringOrNil(res.Id)
+				userTgId[userId] = userTg{
 					id:  res.TelegramId,
 					loc: res.UserTimezone,
 				}

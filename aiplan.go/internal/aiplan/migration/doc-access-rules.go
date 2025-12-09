@@ -193,7 +193,7 @@ func processDocument(tx *gorm.DB, docID string) error {
 		return err
 	}
 
-	workspaceUUID := uuid.Must(uuid.FromString(doc.WorkspaceId))
+	workspaceUUID := doc.WorkspaceId
 	accessRulesMap := make(map[string]dao.DocAccessRules)
 
 	for _, reader := range readers {

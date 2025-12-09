@@ -27,13 +27,15 @@ import (
 type Doc struct {
 	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 
-	CreatedAt   time.Time `json:"created_at"`
-	CreatedById string    `json:"created_by" gorm:"index"`
-	Author      *User     `json:"author_detail" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	CreatedAt time.Time `json:"created_at"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.UUID `json:"created_by" gorm:"type:uuid;index"`
+	Author      *User     `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
 
-	UpdatedAt   time.Time `json:"updated_at"`
-	UpdatedById *string   `json:"updated_by" extensions:"x-nullable"`
-	Updater     *User     `json:"update_author,omitempty"  gorm:"-" extensions:"x-nullable"` // TODO после переезда на uuid сделать fk и убрать из []userFKs
+	UpdatedAt time.Time `json:"updated_at"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
+	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 
 	Tokens types.TsVector `json:"-" gorm:"index:doc_tokens_gin,type:gin;->:false"`
 
@@ -41,7 +43,7 @@ type Doc struct {
 	Content     types.RedactorHTML `json:"description"`
 	EditorRole  int                `json:"editor_role" gorm:"default:10"`
 	ReaderRole  int                `json:"reader_role" gorm:"default:5"`
-	WorkspaceId string             `json:"workspace" gorm:"index"`
+	WorkspaceId uuid.UUID          `json:"workspace" gorm:"type:uuid;index"`
 	Workspace   *Workspace         `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	ParentDocID uuid.NullUUID      `json:"parent_doc_id"`
 	SeqId       int                `json:"seq_id"`
@@ -151,7 +153,7 @@ func (d Doc) GetEntityType() string {
 	return actField.Doc.String()
 }
 
-func (d Doc) GetWorkspaceId() string {
+func (d Doc) GetWorkspaceId() uuid.UUID {
 	return d.WorkspaceId
 }
 
@@ -178,8 +180,8 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 
 	d.PopulateAccessFields()
 
-	if d.UpdatedById != nil {
-		if err := tx.Where("id = ?", d.UpdatedById).First(&d.Updater).Error; err != nil {
+	if d.UpdatedById.Valid {
+		if err := tx.Where("id = ?", d.UpdatedById.UUID).First(&d.UpdatedBy).Error; err != nil {
 			return err
 		}
 	}
@@ -242,7 +244,7 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 }
 
 func (d *Doc) SetUrl() {
-	raw := fmt.Sprintf("/%s/aidoc/%s", d.WorkspaceId, d.ID)
+	raw := fmt.Sprintf("/%s/aidoc/%s", d.WorkspaceId.String(), d.ID)
 	u, _ := url.Parse(raw)
 	d.URL = Config.WebURL.ResolveReference(u)
 
@@ -374,7 +376,7 @@ func (d *Doc) ToDTO() *dto.Doc {
 		InlineAttachments: utils.SliceToSlice(&d.InlineAttachments, func(f *FileAsset) dto.FileAsset { return *f.ToDTO() }),
 		Breadcrumbs:       d.Breadcrumbs,
 		Author:            d.Author.ToLightDTO(),
-		UpdateBy:          d.Updater.ToLightDTO(),
+		UpdateBy:          d.UpdatedBy.ToLightDTO(),
 		ReaderIds:         d.ReaderIDs,
 		ReaderRole:        d.ReaderRole,
 		EditorRole:        d.EditorRole,
@@ -415,11 +417,13 @@ type DocComment struct {
 	// comment_stripped text IS_NULL:NO
 	CommentStripped string `json:"comment_stripped"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 	// doc_id uuid IS_NULL:NO
 	DocId string `json:"doc_id"`
 	// actor_id uuid IS_NULL:YES
@@ -435,6 +439,8 @@ type DocComment struct {
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Doc       *Doc       `json:"-" gorm:"foreignKey:DocId" extensions:"x-nullable"`
 	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 
 	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:DocCommentId"`
 
@@ -467,7 +473,7 @@ func (dс DocComment) GetEntityType() string {
 	return actField.Comment.String()
 }
 
-func (dc DocComment) GetWorkspaceId() string {
+func (dc DocComment) GetWorkspaceId() uuid.UUID {
 	return dc.WorkspaceId
 }
 
@@ -477,7 +483,7 @@ func (dc DocComment) GetDocId() string {
 
 // Выполняет дополнительные операции после успешного поиска записи в базе данных. В частности, обновляет информацию об URL, получает итоги реакции на комментарии и другие необходимые действия после извлечения данных из базы.
 func (dc *DocComment) AfterFind(tx *gorm.DB) error {
-	raw := fmt.Sprintf("/api/auth/workspaces/%s/doc/%s/comments/%s/", dc.WorkspaceId, dc.DocId, dc.Id)
+	raw := fmt.Sprintf("/api/auth/workspaces/%s/doc/%s/comments/%s/", dc.WorkspaceId.String(), dc.DocId, dc.Id)
 	u, _ := url.Parse(raw)
 	dc.URL = Config.WebURL.ResolveReference(u)
 
@@ -548,12 +554,17 @@ func (dc *DocComment) ToDTO() *dto.DocComment {
 		return nil
 	}
 
+	var updatedById *uuid.UUID
+	if dc.UpdatedById.Valid {
+		updatedById = &dc.UpdatedById.UUID
+	}
+
 	comment := dto.DocComment{
 		DocCommentLight: *dc.ToLightDTO(),
 		CreatedAt:       dc.CreatedAt,
 		UpdatedAt:       dc.UpdatedAt,
 
-		UpdatedById: dc.UpdatedById,
+		UpdatedById: updatedById,
 		Actor:       dc.Actor.ToLightDTO(),
 
 		CommentType:     dc.CommentType,
@@ -580,7 +591,8 @@ type DocCommentReaction struct {
 	Id        uuid.UUID `json:"id" gorm:"column:id;primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	UserId    string    `json:"user_id"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserId    uuid.UUID `json:"user_id" gorm:"type:uuid"`
 	CommentId uuid.UUID `json:"comment_id" gorm:"type:uuid"`
 	Reaction  string    `json:"reaction"`
 
@@ -604,7 +616,7 @@ func (dcr *DocCommentReaction) ToDTO() *dto.CommentReaction {
 		CreatedAt: dcr.CreatedAt,
 		UpdatedAt: dcr.UpdatedAt,
 		CommentId: dcr.CommentId,
-		UserId:    dcr.UserId,
+		UserId:    dcr.UserId.String(),
 		Reaction:  dcr.Reaction,
 	}
 }
@@ -618,7 +630,7 @@ type DocEntityI interface {
 }
 
 type DocActivity struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"index:doc_activities_doc_index,sort:desc,type:btree,priority:2;index:doc_activities_actor_index,sort:desc,type:btree,priority:2;index:doc_activities_mail_index,type:btree,where:notified = false"`
 	// verb character varying IS_NULL:NO
 	Verb string `json:"verb"`
@@ -631,11 +643,11 @@ type DocActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// doc_id uuid IS_NULL:YES
-	DocId string `json:"doc" gorm:"index:doc_activities_doc_index,priority:1" `
+	DocId uuid.UUID `json:"doc" gorm:"type:uuid;index:doc_activities_doc_index,priority:1" `
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:doc_activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:doc_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
@@ -663,7 +675,7 @@ func (da DocActivity) GetCustomFields() string {
 }
 
 func (da DocActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "doc_id", "new_value", "workspace_id", "actor_id", "new_identifier", "old_identifier", "telegram_msg_ids"}
+	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "workspace_id", "actor_id", "doc_id", "new_identifier", "old_identifier", "telegram_msg_ids"}
 
 }
 
@@ -721,7 +733,7 @@ func (da DocActivity) GetOldIdentifier() string {
 }
 
 func (da DocActivity) GetId() string {
-	return da.Id
+	return da.Id.String()
 }
 
 // Преобразует Doc в структуру dto.EntityActivityLight для упрощения передачи данных в API.
@@ -828,7 +840,7 @@ func (da *DocActivity) ToHistoryLightDTO() *dto.HistoryBodyLight {
 	}
 
 	return &dto.HistoryBodyLight{
-		Id:       da.Id,
+		Id:       da.Id.String(),
 		CratedAt: da.CreatedAt,
 		Author:   da.Actor.ToLightDTO(),
 	}
@@ -844,16 +856,20 @@ type DocAttachment struct {
 	// asset character varying IS_NULL:NO
 	AssetId uuid.UUID `json:"asset" gorm:"type:uuid"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// doc_id uuid IS_NULL:NO
 	DocId string `json:"doc" gorm:"index"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Asset     *FileAsset `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
@@ -890,7 +906,7 @@ func (da DocAttachment) GetEntityType() string {
 	return actField.Attachment.String()
 }
 
-func (da DocAttachment) GetWorkspaceId() string {
+func (da DocAttachment) GetWorkspaceId() uuid.UUID {
 	return da.WorkspaceId
 }
 
@@ -977,7 +993,7 @@ type DocAccessRules struct {
 	CreatedById uuid.UUID     `json:"created_by_id,omitempty" extensions:"x-nullable"`
 	DocId       uuid.UUID     `json:"doc_id" gorm:"index;uniqueIndex:doc_member_idx,priority:1"`
 	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" extensions:"x-nullable"`
-	WorkspaceId uuid.UUID     `json:"workspace_id"`
+	WorkspaceId uuid.UUID     `json:"workspace_id" gorm:"type:uuid"`
 
 	Edit  bool `json:"edit"`
 	Watch bool `json:"watch"`
@@ -989,6 +1005,10 @@ type DocAccessRules struct {
 
 // Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
 func (DocAccessRules) TableName() string { return "doc_access_rules" }
+
+func (dar DocAccessRules) GetWorkspaceId() uuid.UUID {
+	return dar.WorkspaceId
+}
 
 // DocMemberExtendFields
 // -migration
@@ -1005,20 +1025,21 @@ type DocMemberExtendFields struct {
 
 type DocFavorites struct {
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// created_at timestamp with time zone IS_NULL:NO
 	CreatedAt time.Time `json:"created_at"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
-	DocId string `json:"doc_id" gorm:"index;uniqueIndex:doc_favorites_idx,priority:1"`
+	DocId uuid.UUID `json:"doc_id" gorm:"type:uuid;index;uniqueIndex:doc_favorites_idx,priority:1"`
 	// user_id uuid IS_NULL:NO
-	UserId string `json:"user_id" gorm:"uniqueIndex:doc_favorites_idx,priority:2"`
+	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;uniqueIndex:doc_favorites_idx,priority:2"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Doc       *Doc       `json:"Doc" gorm:"foreignKey:DocId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
 }
 
 // Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
@@ -1100,7 +1121,7 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 			CreatedById: user.ID,
 			DocId:       doc.ID,
 			UpdatedById: uuid.NullUUID{},
-			WorkspaceId: uuid.Must(uuid.FromString(doc.WorkspaceId)),
+			WorkspaceId: doc.WorkspaceId,
 			Edit:        slices.Contains(doc.EditorsIDs, id),
 			Watch:       slices.Contains(doc.WatcherIDs, id),
 		})

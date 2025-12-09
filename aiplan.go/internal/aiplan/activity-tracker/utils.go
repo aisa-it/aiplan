@@ -53,7 +53,7 @@ func createAddBlockingActivity(activities *[]dao.EntityActivity, id, targetId st
 		NewValue:      newV,
 		Field:         &fieldBlocks,
 		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId,
+		WorkspaceId:   project.WorkspaceId.String(),
 		Comment:       fmt.Sprintf("%s added blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
 		NewIdentifier: &id,
 	})
@@ -68,7 +68,7 @@ func createAddBlockingActivity(activities *[]dao.EntityActivity, id, targetId st
 		NewValue:      newV,
 		Field:         &fieldBlocking,
 		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId,
+		WorkspaceId:   project.WorkspaceId.String(),
 		Comment:       fmt.Sprintf("%s added blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
 		NewIdentifier: &targetId,
 	})
@@ -104,7 +104,7 @@ func createRemoveBlockingActivity(activities *[]dao.EntityActivity, id, targetId
 		NewValue:      newV,
 		Field:         &fieldBlocks,
 		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId,
+		WorkspaceId:   project.WorkspaceId.String(),
 		Comment:       fmt.Sprintf("%s removed blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
 		OldIdentifier: &id,
 	})
@@ -119,7 +119,7 @@ func createRemoveBlockingActivity(activities *[]dao.EntityActivity, id, targetId
 		NewValue:      newV,
 		Field:         &fieldBlocking,
 		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId,
+		WorkspaceId:   project.WorkspaceId.String(),
 		Comment:       fmt.Sprintf("%s removed blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
 		OldIdentifier: &targetId,
 	})

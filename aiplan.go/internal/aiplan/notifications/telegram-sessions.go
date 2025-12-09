@@ -20,6 +20,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -223,14 +224,13 @@ func (ts *TelegramService) createIssue(user dao.User, args []interface{}) {
 		return
 	}
 
-	userIdStr := user.ID.String()
 	issue := dao.Issue{
 		ID:              dao.GenUUID(),
 		WorkspaceId:     project.WorkspaceId,
 		ProjectId:       project.ID,
 		CreatedAt:       time.Now(),
-		CreatedById:     userIdStr,
-		UpdatedById:     &userIdStr,
+		CreatedById:     user.ID,
+		UpdatedById:     uuid.NullUUID{UUID: user.ID, Valid: true},
 		Name:            title,
 		DescriptionHtml: description,
 	}

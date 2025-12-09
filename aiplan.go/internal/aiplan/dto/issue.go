@@ -29,8 +29,8 @@ type IssueLight struct {
 	Url        types.JsonURL `json:"url,omitempty"`
 	ShortUrl   types.JsonURL `json:"short_url,omitempty"`
 
-	StateId  uuid.UUID `json:"state"`
-	State    *StateLight   `json:"state_detail" extensions:"x-nullable"`
+	StateId  uuid.UUID   `json:"state"`
+	State    *StateLight `json:"state_detail" extensions:"x-nullable"`
 	Priority *string     `json:"priority" extensions:"x-nullable"`
 }
 
@@ -60,8 +60,8 @@ type Issue struct {
 	ProjectId   uuid.UUID `json:"project"`
 	WorkspaceId string    `json:"workspace"`
 
-	ParentId    *string `json:"parent,omitempty"`
-	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
+	ParentId    *string    `json:"parent,omitempty"`
+	UpdatedById *uuid.UUID `json:"updated_by" extensions:"x-nullable"`
 
 	DescriptionHtml     string  `json:"description_html"`
 	DescriptionStripped *string `json:"description_stripped" extensions:"x-nullable"`
@@ -98,7 +98,7 @@ type IssueComment struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	UpdatedById *string `json:"updated_by_id,omitempty"`
+	UpdatedById *uuid.UUID `json:"updated_by_id,omitempty"`
 
 	ActorId *string `json:"actor_id,omitempty" extensions:"x-nullable"`
 
