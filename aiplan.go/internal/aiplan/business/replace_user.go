@@ -2,7 +2,9 @@ package business
 
 import (
 	"fmt"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +29,10 @@ var (
 		{Table: dao.RootActivity{}.TableName(), Field: "new_identifier"},
 		{Table: dao.RootActivity{}.TableName(), Field: "old_identifier"},
 	}
+
+	updateByIdFK = []userFK{
+		{Table: dao.Doc{}.TableName(), Field: "updated_by_id"}, //TODO после переезда на uuid сделать fk и убрать
+	}
 )
 
 type userFK struct {
@@ -34,7 +40,7 @@ type userFK struct {
 	Field string
 }
 
-func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId string, newUserId string) error {
+func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId uuid.UUID, newUserId uuid.UUID) error {
 	return mainTx.Transaction(func(tx *gorm.DB) error {
 		for _, fk := range userFKs {
 			tx.SavePoint("preUpdate")
@@ -56,7 +62,7 @@ func (b *Business) ReplaceUser(mainTx *gorm.DB, origUserId string, newUserId str
 	})
 }
 
-func (b *Business) DeleteUser(userId string) error {
+func (b *Business) DeleteUser(userId uuid.UUID) error {
 	return b.db.Transaction(func(tx *gorm.DB) error {
 		// Replace all users records to deleted user
 		if err := b.ReplaceUser(tx, userId, deletedServiceUser.ID); err != nil {
@@ -86,5 +92,7 @@ WHERE
 	}
 
 	userFKs = append(userFKs, activitiesFk...)
+	userFKs = append(userFKs, updateByIdFK...)
+
 	return nil
 }

@@ -19,7 +19,7 @@ type LabelLight struct {
 	ID          uuid.UUID `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
-	ProjectId   string    `json:"project"`
+	ProjectId   uuid.UUID `json:"project"`
 	Color       string    `json:"color" `
 }
 type IssueLight struct {
@@ -29,7 +29,7 @@ type IssueLight struct {
 	Url        types.JsonURL `json:"url,omitempty"`
 	ShortUrl   types.JsonURL `json:"short_url,omitempty"`
 
-	StateId  *string     `json:"state" extensions:"x-nullable"`
+	StateId  uuid.UUID   `json:"state"`
 	State    *StateLight `json:"state_detail" extensions:"x-nullable"`
 	Priority *string     `json:"priority" extensions:"x-nullable"`
 }
@@ -57,8 +57,8 @@ type Issue struct {
 	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable"`
 	CompletedAt *types.TargetDateTimeZ `json:"completed_at" extensions:"x-nullable"`
 
-	ProjectId   string `json:"project"`
-	WorkspaceId string `json:"workspace"`
+	ProjectId   uuid.UUID `json:"project"`
+	WorkspaceId string    `json:"workspace"`
 
 	ParentId    *string `json:"parent,omitempty"`
 	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
@@ -102,9 +102,9 @@ type IssueComment struct {
 
 	ActorId *string `json:"actor_id,omitempty" extensions:"x-nullable"`
 
-	ProjectId   string `json:"project_id"`
-	WorkspaceId string `json:"workspace_id"`
-	IssueId     string `json:"issue_id"`
+	ProjectId   uuid.UUID `json:"project_id"`
+	WorkspaceId string    `json:"workspace_id"`
+	IssueId     string    `json:"issue_id"`
 
 	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" extensions:"x-nullable"`
 	OriginalComment  *IssueComment `json:"original_comment,omitempty" extensions:"x-nullable"`

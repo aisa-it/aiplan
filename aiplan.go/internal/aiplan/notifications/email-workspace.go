@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -248,12 +249,12 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 					Where("docs.id = ?", docId).First(&doc).Error; err != nil {
 					continue
 				}
-				isWatcher := utils.CheckInSlice([]string{member.User.ID}, doc.WatcherIDs...)
-				isReader := utils.CheckInSlice([]string{member.User.ID}, doc.ReaderIDs...)
-				isEditor := utils.CheckInSlice([]string{member.User.ID}, doc.EditorsIDs...)
+				isWatcher := slices.Contains(doc.WatcherIDs, member.User.ID.String())
+				isReader := slices.Contains(doc.ReaderIDs, member.User.ID.String())
+				isEditor := slices.Contains(doc.EditorsIDs, member.User.ID.String())
 
-				if isWatcher || isReader || isEditor || doc.CreatedById == member.User.ID {
-					if doc.CreatedById == member.User.ID {
+				if isWatcher || isReader || isEditor || doc.CreatedById == member.User.ID.String() {
+					if doc.CreatedById == member.User.ID.String() {
 						if member.WorkspaceAuthorSettings.IsNotify(activity.Field, "workspace", activity.Verb, member.WorkspaceRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
@@ -268,7 +269,7 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 				continue
 			}
 			if activity.Field != nil && *activity.Field == actField.Doc.Field.String() && activity.Verb == actField.VerbDeleted {
-				if *activity.ActorId == member.User.ID {
+				if *activity.ActorId == member.User.ID.String() {
 					sendActivities = append(sendActivities, activity)
 					continue
 				}

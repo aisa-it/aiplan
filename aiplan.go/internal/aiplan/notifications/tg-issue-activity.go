@@ -3,6 +3,7 @@ package notifications
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -443,7 +444,7 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 	}
 
 	issueUserTgId := GetUserTgIdFromIssue(act.Issue)
-	authorId := act.Issue.Author.ID
+	authorId := act.Issue.Author.ID.String()
 
 	if act.NewIssueComment != nil && act.NewIssueComment.ReplyToCommentId.Valid {
 		if err := tx.Preload("Actor").
@@ -455,7 +456,7 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 			if act.NewIssueComment.OriginalComment.Actor.TelegramId != nil &&
 				act.NewIssueComment.OriginalComment.Actor.CanReceiveNotifications() &&
 				!act.NewIssueComment.OriginalComment.Actor.Settings.TgNotificationMute {
-				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID] = userTg{
+				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID.String()] = userTg{
 					id:  *act.NewIssueComment.OriginalComment.Actor.TelegramId,
 					loc: act.NewIssueComment.OriginalComment.Actor.UserTimezone,
 				}
@@ -463,8 +464,10 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 		}
 	}
 
-	defaultWatcherUserTgId := GetUserTgIgDefaultWatchers(tx, act.ProjectId)
-	resMap := utils.MergeMaps(defaultWatcherUserTgId, issueUserTgId)
+	resMap := make(map[string]userTg)
+
+	maps.Copy(resMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId.String()))
+	maps.Copy(resMap, issueUserTgId)
 
 	userIds := make([]string, 0, len(resMap))
 	for k := range resMap {

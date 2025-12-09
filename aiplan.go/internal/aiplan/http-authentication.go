@@ -22,12 +22,15 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/altcha-org/altcha-lib-go"
+	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -40,6 +43,7 @@ type Authentication struct {
 	memDB           *mem.AIPlanMemAPI
 	telegramService *notifications.TelegramService
 	emailService    *notifications.EmailService
+	ldapProvider    *authprovider.LdapProvider
 }
 
 type AuthContext struct {
@@ -170,7 +174,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 					return EErrorDefined(c, apierrors.ErrTokenInvalid)
 				}
 				user = new(dao.User)
-				user.ID = claims["user_id"].(string)
+				user.ID = uuid.Must(uuid.FromString(claims["user_id"].(string)))
 
 				// Fetch user
 				if err := config.DB.
@@ -230,8 +234,8 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 	}
 }
 
-func AddAuthenticationServices(db *gorm.DB, g *echo.Echo, secret []byte, memDB *mem.AIPlanMemAPI, telegramService *notifications.TelegramService, emailService *notifications.EmailService) *Authentication {
-	ret := &Authentication{db, secret, memDB, telegramService, emailService}
+func AddAuthenticationServices(db *gorm.DB, g *echo.Echo, secret []byte, memDB *mem.AIPlanMemAPI, telegramService *notifications.TelegramService, emailService *notifications.EmailService, ldapProvider *authprovider.LdapProvider) *Authentication {
+	ret := &Authentication{db, secret, memDB, telegramService, emailService, ldapProvider}
 
 	g.POST("api/sign-in/", ret.emailLogin)
 
@@ -281,9 +285,32 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	var user dao.User
 	if err := a.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return EErrorDefined(c, apierrors.ErrFailedLogin)
+			if a.ldapProvider != nil {
+				if a.ldapProvider.AuthUser(req.Email, req.Password) {
+					slog.Info("Create new user from LDAP", "email", req.Email)
+
+					user = dao.User{
+						ID:           dao.GenUUID(),
+						Email:        req.Email,
+						Password:     dao.GenPasswordHash(req.Password),
+						Theme:        types.DefaultTheme,
+						IsActive:     true,
+						IsOnboarded:  false,
+						AuthProvider: "ldap",
+					}
+
+					if err := a.db.Create(&user).Error; err != nil {
+						return EError(c, err)
+					}
+				} else {
+					return EErrorDefined(c, apierrors.ErrFailedLogin)
+				}
+			} else {
+				return EErrorDefined(c, apierrors.ErrFailedLogin)
+			}
+		} else {
+			return EError(c, err)
 		}
-		return EError(c, err)
 	}
 
 	if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
@@ -299,27 +326,37 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	}
 
 	if !checkPassword(req.Password, user.Password) {
-		user.LoginAttempts++
-		time.Sleep(time.Second * time.Duration(user.LoginAttempts))
+		if a.ldapProvider != nil && a.ldapProvider.AuthUser(req.Email, req.Password) {
+			// If LDAP auth success - update user password to LDAP password
+			if err := a.db.Model(&user).Updates(map[string]any{
+				"password":      dao.GenPasswordHash(req.Password),
+				"auth_provider": "ldap",
+			}).Error; err != nil {
+				return EError(c, err)
+			}
+		} else {
+			user.LoginAttempts++
+			time.Sleep(time.Second * time.Duration(user.LoginAttempts))
 
-		// block after 5 fails
-		if user.LoginAttempts >= 5 {
-			slog.Info("Block user for more than 5 failed attempts", "user", user.String())
-			user.BlockedUntil = sql.NullTime{Valid: true, Time: time.Now().Add(time.Minute * 20)}
-			user.LoginAttempts = 0
+			// block after 5 fails
+			if user.LoginAttempts >= 5 {
+				slog.Info("Block user for more than 5 failed attempts", "user", user.String())
+				user.BlockedUntil = sql.NullTime{Valid: true, Time: time.Now().Add(time.Minute * 20)}
+				user.LoginAttempts = 0
+			}
+
+			if err := a.db.Model(&user).Select("LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
+				return EError(c, err)
+			}
+
+			if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
+				a.telegramService.UserBlockedUntil(user, user.BlockedUntil.Time)
+				a.emailService.UserBlockedUntil(user, user.BlockedUntil.Time)
+				return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
+			}
+
+			return EErrorDefined(c, apierrors.ErrFailedLogin)
 		}
-
-		if err := a.db.Model(&user).Select("LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
-			return EError(c, err)
-		}
-
-		if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
-			a.telegramService.UserBlockedUntil(user, user.BlockedUntil.Time)
-			a.emailService.UserBlockedUntil(user, user.BlockedUntil.Time)
-			return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
-		}
-
-		return EErrorDefined(c, apierrors.ErrFailedLogin)
 	}
 
 	tm := time.Now()
@@ -447,14 +484,14 @@ func (a *Authentication) requestCaptcha(c echo.Context) error {
 	return c.JSON(http.StatusOK, challenge)
 }
 
-func getUserIdFromJWT(token string) (string, error) {
+func getUserIdFromJWT(token string) (uuid.UUID, error) {
 	d, err := base64.StdEncoding.DecodeString(strings.Split(token, ".")[1])
 	if err != nil {
-		return "", err
+		return uuid.Nil, err
 	}
 	var payload map[string]interface{}
 	if err := json.Unmarshal(d, &payload); err != nil {
-		return "", err
+		return uuid.Nil, err
 	}
-	return payload["user_id"].(string), nil
+	return uuid.FromString(payload["user_id"].(string))
 }

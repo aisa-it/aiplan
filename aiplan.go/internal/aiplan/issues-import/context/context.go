@@ -304,7 +304,7 @@ func (c *ImportContext) getState(id string) (dao.State, error) {
 	for _, status := range c.rawStatuses {
 		if status.ID == id {
 			return dao.State{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				Name:        status.Name,
 				Description: status.Description,
 				Group:       mapJiraStatusCat(status.StatusCategory),
@@ -324,8 +324,8 @@ func (c *ImportContext) GetProject(key string) error {
 	}
 
 	// Workaround for translateUser(gets project id)
-	id := dao.GenID()
-	c.Project.ID = id
+	projectId := dao.GenUUID()
+	c.Project.ID = projectId
 
 	lead, err := c.Users.Get(c.getJiraUserUsername(project.Lead))
 	if err != nil {
@@ -333,10 +333,10 @@ func (c *ImportContext) GetProject(key string) error {
 	}
 
 	c.Project = dao.Project{
-		ID:            id,
+		ID:            projectId,
 		Name:          project.Name,
 		Identifier:    project.Key,
-		ProjectLeadId: lead.ID,
+		ProjectLeadId: lead.ID.String(),
 		WorkspaceId:   c.TargetWorkspaceID,
 	}
 	return nil
@@ -393,7 +393,7 @@ func (c *ImportContext) translateUser(user jira.User) dao.User {
 	}
 
 	u := dao.User{
-		ID:           dao.GenID(),
+		ID:           dao.GenUUID(),
 		Username:     &user.Name,
 		Email:        user.EmailAddress,
 		IsActive:     user.Active,
@@ -426,10 +426,11 @@ func (c *ImportContext) mapJiraComment(comment *jira.Comment, issueID string) (*
 		return nil, err
 	}
 
+	actorId := author.ID.String()
 	return &dao.IssueComment{
 		Id:          dao.GenUUID(),
 		CommentHtml: types.RedactorHTML{Body: comment.Body},
-		ActorId:     &author.ID,
+		ActorId:     &actorId,
 		CreatedAt:   created,
 		IssueId:     issueID,
 		ProjectId:   c.Project.ID,

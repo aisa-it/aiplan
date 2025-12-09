@@ -21,7 +21,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
@@ -234,13 +233,8 @@ func (s *Services) createGitRepository(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage(string(output)))
 	}
 
-	// Парсим UUID пользователя
-	userUUID, err := uuid.FromString(user.ID)
-	if err != nil {
-		slog.Error("Failed to parse user UUID", "user_id", user.ID, "err", err)
-		os.RemoveAll(repoPath) // Cleanup
-		return EErrorDefined(c, apierrors.ErrGeneric)
-	}
+	// UUID пользователя
+	userUUID := user.ID
 
 	// Создаем структуру Git репозитория
 	gitRepo := &GitRepository{
@@ -590,7 +584,7 @@ func (s *Services) addGitSSHKey(c echo.Context) error {
 	}
 
 	// Добавляем SSH ключ через файловую систему
-	keyMetadata, err := AddSSHKey(user.ID, user.Email, req.Name, req.PublicKey, cfg.GitRepositoriesPath)
+	keyMetadata, err := AddSSHKey(user.ID.String(), user.Email, req.Name, req.PublicKey, cfg.GitRepositoriesPath)
 	if err != nil {
 		// Проверяем тип ошибки
 		errMsg := err.Error()
@@ -651,7 +645,7 @@ func (s *Services) listGitSSHKeys(c echo.Context) error {
 	}
 
 	// Загружаем SSH ключи пользователя
-	userKeys, err := LoadUserSSHKeys(user.ID, cfg.GitRepositoriesPath)
+	userKeys, err := LoadUserSSHKeys(user.ID.String(), cfg.GitRepositoriesPath)
 	if err != nil {
 		// Если файл не найден, возвращаем пустой список
 		if os.IsNotExist(err) {
@@ -720,7 +714,7 @@ func (s *Services) deleteGitSSHKey(c echo.Context) error {
 	}
 
 	// Удаляем SSH ключ
-	err := DeleteSSHKey(user.ID, keyId, cfg.GitRepositoriesPath)
+	err := DeleteSSHKey(user.ID.String(), keyId, cfg.GitRepositoriesPath)
 	if err != nil {
 		// Проверяем тип ошибки
 		errMsg := err.Error()

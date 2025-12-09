@@ -17,7 +17,7 @@ import (
 )
 
 type UserLight struct {
-	ID            string         `json:"id"`
+	ID            uuid.UUID      `json:"id"`
 	Username      *string        `json:"username,omitempty" extensions:"x-nullable"`
 	Email         string         `json:"email"`
 	FirstName     string         `json:"first_name"`

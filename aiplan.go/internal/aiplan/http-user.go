@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -287,9 +288,10 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	userIdStr := user.ID.String()
 	fileAsset := dao.FileAsset{
 		Id:          dao.GenUUID(),
-		CreatedById: &user.ID,
+		CreatedById: &userIdStr,
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -650,7 +652,7 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp := tables[user.ID]
+	resp := tables[user.ID.String()]
 	if resp == nil {
 		return c.JSON(http.StatusOK, struct{}{})
 	}
@@ -951,7 +953,7 @@ func (s *Services) confirmEmail(c echo.Context) error {
 			clearAuthCookies(c)
 		}
 
-		if existUser.ID != "" {
+		if existUser.ID != uuid.Nil {
 			if err := s.business.ReplaceUser(tx, user.ID, existUser.ID); err != nil {
 				return err
 			}
@@ -1362,7 +1364,7 @@ func (s *Services) signUp(c echo.Context) error {
 
 	pass := dao.GenPassword()
 	user := dao.User{
-		ID:       dao.GenID(),
+		ID:       dao.GenUUID(),
 		Email:    req.Email,
 		Password: dao.GenPasswordHash(pass),
 		Theme:    types.DefaultTheme,
@@ -1442,7 +1444,7 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 	}
 
 	if err := s.db.Save(&dao.UserFeedback{
-		UserID:    user.ID,
+		UserID:    user.ID.String(),
 		UpdatedAt: time.Now(),
 		Stars:     feedback.Stars,
 		Feedback:  feedback.Feedback,
@@ -1587,9 +1589,8 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	elements := utils.All(*resp.Result.(*[]dao.UserNotifications))
-	elements = utils.Filter(
-		elements,
+	elementsRes := utils.Filter(
+		slices.All(*resp.Result.(*[]dao.UserNotifications)),
 		func(t dao.UserNotifications) bool {
 			if id := getActivityId(&t); id != nil {
 				return true
@@ -1597,7 +1598,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 			return false
 		})
 
-	res := utils.Collect(elements)
+	res := slices.Collect(elementsRes)
 
 	qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) string {
 		if id := getActivityId(t); id != nil {
@@ -1976,7 +1977,7 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
 	user := c.(SearchFilterContext).User
 
-	if filter.AuthorID != user.ID {
+	if filter.AuthorID != user.ID.String() {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
@@ -2007,7 +2008,7 @@ func (s *Services) deleteSearchFilter(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
 	user := c.(SearchFilterContext).User
 
-	if filter.AuthorID != user.ID && !user.IsSuperuser {
+	if filter.AuthorID != user.ID.String() && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
@@ -2087,7 +2088,7 @@ func (s *Services) deleteSearchFilterFromMe(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
 	user := c.(SearchFilterContext).User
 
-	if filter.AuthorID == user.ID {
+	if filter.AuthorID == user.ID.String() {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveOwnFilter)
 	}
 
@@ -2357,7 +2358,7 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 			ID: dao.GenUUID(),
 			//CreatedAt:   time.Now(),
 			//UpdatedAt:   time.Now(),
-			AuthorID:    user.ID,
+			AuthorID:    user.ID.String(),
 			Name:        req.Name,
 			Description: req.Description,
 			Public:      req.Public,

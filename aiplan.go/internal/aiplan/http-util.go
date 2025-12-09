@@ -12,6 +12,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
@@ -128,7 +129,7 @@ func activityMigrate(db *gorm.DB) {
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
 						IssueId:       *activity.IssueId,
-						ProjectId:     *activity.ProjectId,
+						ProjectId:     uuid.Must(uuid.FromString(*activity.ProjectId)),
 						WorkspaceId:   activity.WorkspaceId,
 						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
@@ -222,7 +223,7 @@ func activityMigrate(db *gorm.DB) {
 							OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 							NewValue:      issue.String(),
 							Comment:       activity.Comment,
-							ProjectId:     *activity.ProjectId,
+							ProjectId:     uuid.Must(uuid.FromString(*activity.ProjectId)),
 							WorkspaceId:   activity.WorkspaceId,
 							ActorId:       activity.ActorId,
 							NewIdentifier: activity.IssueId, // в зависимости от нового поведения
@@ -245,7 +246,7 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						ProjectId:     *activity.ProjectId,
+						ProjectId:     uuid.Must(uuid.FromString(*activity.ProjectId)),
 						WorkspaceId:   activity.WorkspaceId,
 						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения

@@ -160,7 +160,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 		for _, activity := range da.activities {
 			var authorNotify, memberNotify bool
 			memberNotify = member.DocMemberSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
-			if activity.Doc.CreatedById == member.User.ID {
+			if activity.Doc.CreatedById == member.User.ID.String() {
 				authorNotify = member.DocAuthorSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
 			}
 			if (member.DocAuthor && authorNotify) || (!member.DocAuthor && memberNotify) {
@@ -259,7 +259,7 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 
 	var ids []string
 	for _, author := range ia.commentActivityUser {
-		ids = append(ids, author.User.ID)
+		ids = append(ids, author.User.ID.String())
 	}
 
 	var members []dao.WorkspaceMember
@@ -304,7 +304,7 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 			return false
 		}
 		for _, user := range *users {
-			if user.ID == id {
+			if user.ID.String() == id {
 				return true
 			}
 		}
@@ -320,14 +320,14 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 		if member.Member == nil {
 			continue
 		}
-		isAuthor := member.MemberId == doc.Author.ID
+		isAuthor := member.MemberId == doc.Author.ID.String()
 		isWatcher := checkId(doc.Watchers, member.MemberId)
 		isEditor := checkId(doc.Editors, member.MemberId)
 		isReader := checkId(doc.Readers, member.MemberId)
 		var isAuthorNewDoc, isWatcherNewDoc, isEditorNewDoc, isReaderNewDoc bool
 		if newDoc != nil {
 			newDoc.SetUrl()
-			isAuthorNewDoc = member.MemberId == doc.Author.ID
+			isAuthorNewDoc = member.MemberId == doc.Author.ID.String()
 			isWatcherNewDoc = checkId(newDoc.Watchers, member.MemberId)
 			isEditorNewDoc = checkId(newDoc.Editors, member.MemberId)
 			isReaderNewDoc = checkId(newDoc.Readers, member.MemberId)

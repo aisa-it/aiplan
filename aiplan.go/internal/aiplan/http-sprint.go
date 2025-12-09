@@ -2,7 +2,9 @@ package aiplan
 
 import (
 	"errors"
+	"maps"
 	"net/http"
+	"slices"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -107,6 +109,8 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 	sprintGroup.POST("/sprint-view/", s.updateSprintView)
 
 	sprintGroup.POST("/issues/search/", s.getIssueList)
+
+	sprintGroup.GET("/states/", s.getSprintStates)
 }
 
 // getSprintList godoc
@@ -278,13 +282,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 	}
 
 	if len(fields) > 0 {
-		var userUUID uuid.UUID
-		if val, err := uuid.FromString(user.ID); err != nil {
-			return EError(c, err)
-		} else {
-			userUUID = val
-		}
-		sprint.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
+		sprint.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		sprint.UpdatedBy = user
 		fields = append(fields, "updated_by_id")
 		if sprint.EndDate.Valid && sprint.StartDate.Valid {
@@ -332,7 +330,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID.String() })
 
 	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
-	userUUID := uuid.Must(uuid.FromString(user.ID))
+	userUUID := user.ID
 
 	var req requestIssueIdList
 
@@ -377,7 +375,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		var sprintIssues []dao.SprintIssue
 		for i, issue := range issues {
 
-			projectUUID := uuid.Must(uuid.FromString(issue.ProjectId))
+			projectUUID := issue.ProjectId
 
 			sprintIssues = append(sprintIssues, dao.SprintIssue{
 				Id: dao.GenUUID(),
@@ -513,7 +511,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 	oldMemberIds := utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID })
 
 	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
-	userUUID := uuid.Must(uuid.FromString(user.ID))
+	userUUID := user.ID
 
 	var req requestUserIdList
 
@@ -685,7 +683,7 @@ func (s *Services) updateSprintView(c echo.Context) error {
 	view := dao.SprintViews{
 		Id:        dao.GenUUID(),
 		SprintId:  sprint.Id,
-		MemberId:  uuid.Must(uuid.FromString(user.ID)),
+		MemberId:  user.ID,
 		ViewProps: viewProps,
 	}
 
@@ -697,6 +695,42 @@ func (s *Services) updateSprintView(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+// getSprintStates godoc
+// @id getSprintStates
+// @Summary Спринты: получение состояний задач в спринте
+// @Description Возвращает список всех состояний задач, которые используются в задачах текущего спринта.
+// @Tags Sprint
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
+// @Success 200 {array} dto.StateLight "Список состояний задач"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Спринт не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/states/ [get]
+func (s *Services) getSprintStates(c echo.Context) error {
+	sprint := c.(SprintContext).Sprint
+
+	projectMap := make(map[uuid.UUID]struct{})
+
+	for _, i := range sprint.Issues {
+		projectId := i.ProjectId
+		projectMap[projectId] = struct{}{}
+	}
+
+	var states []dao.State
+	if err := s.db.
+		Where("project_id in (?)", slices.Collect(maps.Keys(projectMap))).
+		Order("sequence").
+		Find(&states).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(t *dao.State) *dto.StateLight { return t.ToLightDTO() }))
 }
 
 //

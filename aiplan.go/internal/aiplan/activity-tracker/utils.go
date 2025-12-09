@@ -39,18 +39,20 @@ func createAddBlockingActivity(activities *[]dao.EntityActivity, id, targetId st
 	fieldBlocks := "blocks"
 	fieldBlocking := "blocking"
 	idTarget := issueSrc.ID.String()
+	actorId := actor.ID.String()
 
 	oldV := ""
 	newV := fmt.Sprintf("%s-%d", project.Identifier, issueSrc.SequenceId)
+	projectIdStr := project.ID.String()
 	*activities = append(*activities, dao.EntityActivity{
 		IssueId:       &targetId,
-		ActorId:       &actor.ID,
+		ActorId:       &actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldV,
 		NewValue:      newV,
 		Field:         &fieldBlocks,
-		ProjectId:     &project.ID,
+		ProjectId:     &projectIdStr,
 		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s added blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
 		NewIdentifier: &id,
@@ -59,13 +61,13 @@ func createAddBlockingActivity(activities *[]dao.EntityActivity, id, targetId st
 	newV = fmt.Sprintf("%s-%d", project.Identifier, issueTarget.SequenceId)
 	*activities = append(*activities, dao.EntityActivity{
 		IssueId:       &idTarget,
-		ActorId:       &actor.ID,
+		ActorId:       &actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldV,
 		NewValue:      newV,
 		Field:         &fieldBlocking,
-		ProjectId:     &project.ID,
+		ProjectId:     &projectIdStr,
 		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s added blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
 		NewIdentifier: &targetId,
@@ -89,17 +91,19 @@ func createRemoveBlockingActivity(activities *[]dao.EntityActivity, id, targetId
 	fieldBlocks := "blocks"
 	fieldBlocking := "blocking"
 	idTarget := issueSrc.ID.String()
+	actorId := actor.ID.String()
 	newV := ""
 	oldVBlocking := fmt.Sprintf("%s-%d", project.Identifier, issueSrc.SequenceId)
+	projectIdStr := project.ID.String()
 	*activities = append(*activities, dao.EntityActivity{
 		IssueId:       &targetId,
-		ActorId:       &actor.ID,
+		ActorId:       &actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldVBlocking,
 		NewValue:      newV,
 		Field:         &fieldBlocks,
-		ProjectId:     &project.ID,
+		ProjectId:     &projectIdStr,
 		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s removed blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
 		OldIdentifier: &id,
@@ -108,13 +112,13 @@ func createRemoveBlockingActivity(activities *[]dao.EntityActivity, id, targetId
 	oldVBlocked := fmt.Sprintf("%s-%d", project.Identifier, issueTarget.SequenceId)
 	*activities = append(*activities, dao.EntityActivity{
 		IssueId:       &idTarget,
-		ActorId:       &actor.ID,
+		ActorId:       &actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldVBlocked,
 		NewValue:      newV,
 		Field:         &fieldBlocking,
-		ProjectId:     &project.ID,
+		ProjectId:     &projectIdStr,
 		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s removed blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
 		OldIdentifier: &targetId,

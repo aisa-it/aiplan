@@ -32,11 +32,12 @@ func (b *Business) CreateDocComment(doc dao.Doc, user dao.User, text string, rep
 		return errors.New("create comment forbidden")
 	}
 
+	actorId := user.ID.String()
 	comment := dao.DocComment{
 		Id:          dao.GenUUID(),
 		WorkspaceId: doc.WorkspaceId,
 		DocId:       doc.ID.String(),
-		ActorId:     &user.ID,
+		ActorId:     &actorId,
 		CommentHtml: types.RedactorHTML{Body: text},
 	}
 	if len(meta) > 0 {

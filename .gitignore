@@ -29,7 +29,7 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Local env files
-.env.local
+.env.local*
 .env.development.local
 .env.test.local
 .env.production.local
@@ -104,3 +104,7 @@ kuber/aiplan/values/*.dec
 api_tests/
 release/
 git-data
+
+.claude/
+CLAUDE.md
+PLAN.md

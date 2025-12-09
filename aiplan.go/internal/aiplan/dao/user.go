@@ -23,7 +23,7 @@ import (
 
 // Пользователи
 type User struct {
-	ID string `gorm:"column:id;primaryKey" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
 
 	Password   string  `json:"-"`
 	Username   *string `json:"username" gorm:"uniqueIndex:,where:deleted_at is NULL" validate:"omitempty,username"`
@@ -68,6 +68,8 @@ type User struct {
 	BlockedUntil    sql.NullTime
 	TokenUpdatedAt  *time.Time `json:"-" extensions:"x-nullable"`
 
+	AuthProvider string `json:"-" gorm:"default:'local'"`
+
 	LastWorkspaceId *string `json:"-" gorm:"index" extensions:"x-nullable"`
 
 	Role *string `json:"role" extensions:"x-nullable"`
@@ -91,7 +93,7 @@ type User struct {
 }
 
 func (u User) GetId() string {
-	return u.ID
+	return u.ID.String()
 }
 
 func (u User) GetString() string {
@@ -173,8 +175,8 @@ func (u *User) ToDTO() *dto.User {
 }
 
 func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
-	if u.ID == "" {
-		u.ID = GenID()
+	if u.ID == uuid.Nil {
+		u.ID = GenUUID()
 	}
 	u.Settings = types.DefaultSettings
 	u.ViewProps = types.DefaultViewProps
@@ -327,7 +329,7 @@ func (sf *SearchFilter) SetUrl() {
 		return
 	}
 	urlFilter := fmt.Sprintf("/filters/%s/", sf.ID.String())
-	shortUrl := fmt.Sprintf("/sf/%s/", utils.UUIDToBase64(sf.ID))
+	shortUrl := fmt.Sprintf("/sf/%s/", sf.ID)
 
 	u, _ := url.Parse(urlFilter)
 	shortU, _ := url.Parse(shortUrl)
