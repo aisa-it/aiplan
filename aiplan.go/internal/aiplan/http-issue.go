@@ -1170,7 +1170,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return actField.ReqFieldMapping(k) })
-		if hasRecentFieldUpdate[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
+		if hasRecentFieldUpdate[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID.String(), dataField...) {
 			return apierrors.ErrUpdateTooFrequent
 		}
 
@@ -2233,7 +2233,7 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 
 	{ //rateLimit
 		dataField := utils.MapToSlice(oldMap, func(k string, v interface{}) string { return fmt.Sprintf("link_%s", actField.ReqFieldMapping(k)) })
-		if hasRecentFieldUpdate[dao.IssueActivity](s.db.Where("issue_id = ?", oldLink.IssueId), user.ID, dataField...) {
+		if hasRecentFieldUpdate[dao.IssueActivity](s.db.Where("issue_id = ?", oldLink.IssueId), user.ID.String(), dataField...) {
 			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 		}
 	}
