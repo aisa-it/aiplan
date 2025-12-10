@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -37,7 +38,8 @@ func (req *CreateProjectRequest) Bind(project *dao.Project) {
 	project.Identifier = req.Identifier
 	project.DefaultAssignees = req.DefaultAssigneeIds
 	project.DefaultWatchers = req.DefaultWatcherIds
-	project.ProjectLeadId = req.ProjectLeadId
+	projectLeadUUID, _ := uuid.FromString(req.ProjectLeadId)
+	project.ProjectLeadId = projectLeadUUID
 	project.Emoji = req.Emoji
 	project.CoverImage = req.CoverImage
 	project.EstimateId = req.EstimateId
@@ -55,7 +57,8 @@ func (req *CreateWorkspaceRequest) Bind(workspace *dao.Workspace) {
 	workspace.Name = req.Name
 	workspace.Logo = req.Logo
 	workspace.Slug = req.Slug
-	workspace.OwnerId = req.OwnerId
+	ownerUUID, _ := uuid.FromString(req.OwnerId)
+	workspace.OwnerId = ownerUUID
 }
 
 type ReactionRequest struct {

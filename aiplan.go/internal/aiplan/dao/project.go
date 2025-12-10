@@ -45,26 +45,29 @@ var deletingProjects *DeletionWatcher = NewDeletionWatcher()
 
 // Проекты
 type Project struct {
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ID        uuid.UUID      `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	Name             string         `json:"name" validate:"projectName"`
-	NameTokens       types.TsVector `json:"-" gorm:"index:project_name_tokens,type:gin"`
-	Public           bool           `json:"public"`
-	Identifier       string         `json:"identifier" gorm:"uniqueIndex:project_identifier_idx,priority:2,where:deleted_at is NULL" validate:"identifier"`
-	CreatedById      string         `json:"created_by"`
-	DefaultAssignees []string       `json:"default_assignees" gorm:"-"`
-	DefaultWatchers  []string       `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
-	ProjectLeadId    string         `json:"project_lead"`
-	UpdatedById      *string        `json:"updated_by" extensions:"x-nullable"`
-	WorkspaceId      string         `json:"workspace" gorm:"uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
-	Emoji            int32          `json:"emoji,string" gorm:"default:127773"`
-	LogoId           uuid.NullUUID  `json:"logo"`
-	CoverImage       *string        `json:"cover_image" extensions:"x-nullable"`
-	EstimateId       *string        `json:"estimate" extensions:"x-nullable"`
-	RulesScript      *string        `json:"rules_script" extensions:"x-nullable"`
+	Name       string         `json:"name" validate:"projectName"`
+	NameTokens types.TsVector `json:"-" gorm:"index:project_name_tokens,type:gin"`
+	Public     bool           `json:"public"`
+	Identifier string         `json:"identifier" gorm:"uniqueIndex:project_identifier_idx,priority:2,where:deleted_at is NULL" validate:"identifier"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById      uuid.UUID `json:"created_by" gorm:"type:uuid"`
+	DefaultAssignees []string  `json:"default_assignees" gorm:"-"`
+	DefaultWatchers  []string  `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
+	ProjectLeadId    uuid.UUID `json:"project_lead" gorm:"type:uuid"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId uuid.UUID     `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
+	Emoji       int32         `json:"emoji,string" gorm:"default:127773"`
+	LogoId      uuid.NullUUID `json:"logo"`
+	CoverImage  *string       `json:"cover_image" extensions:"x-nullable"`
+	EstimateId  *string       `json:"estimate" extensions:"x-nullable"`
+	RulesScript *string       `json:"rules_script" extensions:"x-nullable"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
@@ -72,6 +75,8 @@ type Project struct {
 
 	Workspace               *Workspace      `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	ProjectLead             *User           `json:"project_lead_detail" gorm:"foreignKey:ProjectLeadId" extensions:"x-nullable"`
+	CreatedBy               *User           `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy               *User           `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 	DefaultAssigneesDetails []ProjectMember `json:"default_assignees_details" gorm:"foreignKey:ProjectId;associationForeignKey:ProjectId;where:IsDefaultAssignee=true"`
 	DefaultWatchersDetails  []ProjectMember `json:"default_watchers_details" gorm:"foreignKey:ProjectId;associationForeignKey:ProjectId;where:IsDefaultWatcher=true"`
 
@@ -105,7 +110,7 @@ func (p Project) GetProjectId() string {
 	return p.GetId()
 }
 
-func (p Project) GetWorkspaceId() string {
+func (p Project) GetWorkspaceId() uuid.UUID {
 	return p.WorkspaceId
 }
 
@@ -129,7 +134,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		Public:                  project.Public,
 		Identifier:              project.Identifier,
 		ProjectLeadId:           project.ProjectLeadId,
-		WorkspaceId:             project.WorkspaceId,
+		WorkspaceId:             project.WorkspaceId.String(),
 		Emoji:                   project.Emoji,
 		LogoId:                  project.LogoId,
 		CoverImage:              project.CoverImage,
@@ -227,7 +232,7 @@ func (p *Project) ChangeLead(tx *gorm.DB, pm *ProjectMember) error {
 	}
 
 	if err := tx.Model(p).Updates(Project{
-		ProjectLeadId: pm.Member.ID.String(),
+		ProjectLeadId: pm.Member.ID,
 		ProjectLead:   pm.Member,
 	}).Error; err != nil {
 		return fmt.Errorf("project lead update")
@@ -255,7 +260,7 @@ func (ProjectWithCount) TableName() string {
 // Возвращает:
 //   - error: ошибка, если произошла ошибка при обновлении роли.
 func (project *Project) BeforeCreate(tx *gorm.DB) error {
-	if project.ProjectLeadId == "" {
+	if project.ProjectLeadId == uuid.Nil {
 		project.ProjectLeadId = project.CreatedById
 	}
 	return nil
@@ -475,15 +480,19 @@ type ProjectMember struct {
 	IsDefaultAssignee bool `json:"is_default_assignee"`
 	IsDefaultWatcher  bool `json:"is_default_watcher"`
 	// created_by_id uuid,
-	CreatedById *string `json:"created_by_id" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id" gorm:"type:uuid" extensions:"x-nullable"`
 	// member_id uuid,
-	MemberId string `json:"member_id" gorm:"index;uniqueIndex:project_members_idx,priority:2"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	MemberId uuid.UUID `json:"member_id" gorm:"type:uuid;index;uniqueIndex:project_members_idx,priority:2"`
 	// project_id uuid NOT NULL,
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;uniqueIndex:project_members_idx,priority:1"`
 	// updated_by_id uuid,
-	UpdatedById *string `json:"updated_by_id" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
-	WorkspaceId                     string                `json:"workspace_id"`
+	WorkspaceId                     uuid.UUID             `json:"workspace_id" gorm:"type:uuid"`
 	ViewProps                       types.ViewProps       `json:"view_props" gorm:"type:jsonb"`
 	NotificationSettingsApp         types.ProjectMemberNS `json:"notification_settings_app" gorm:"type:jsonb"`
 	NotificationAuthorSettingsApp   types.ProjectMemberNS `json:"notification_author_settings_app" gorm:"type:jsonb"`
@@ -494,7 +503,7 @@ type ProjectMember struct {
 	Workspace                       *Workspace            `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Member                          *User                 `json:"member" gorm:"foreignKey:MemberId" extensions:"x-nullable"`
 	Project                         *Project              `json:"project" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	CreatedBy                       *User                 `json:"created_by_detail" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	CreatedBy                       *User                 `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
 }
 
 // ProjectMemberExtendFields
@@ -538,7 +547,7 @@ func (pm ProjectMember) GetProjectId() string {
 	return pm.ProjectId.String()
 }
 
-func (pm ProjectMember) GetWorkspaceId() string {
+func (pm ProjectMember) GetWorkspaceId() uuid.UUID {
 	return pm.WorkspaceId
 }
 
@@ -559,7 +568,7 @@ func (pm *ProjectMember) ToLightDTO() *dto.ProjectMemberLight {
 		WorkspaceAdmin:    pm.WorkspaceAdmin,
 		IsDefaultAssignee: pm.IsDefaultAssignee,
 		IsDefaultWatcher:  pm.IsDefaultWatcher,
-		MemberId:          pm.MemberId,
+		MemberId:          pm.MemberId.String(),
 		Member:            pm.Member.ToLightDTO(),
 		ProjectId:         pm.ProjectId,
 		Project:           pm.Project.ToLightDTO(),
@@ -628,20 +637,26 @@ type ProjectFavorites struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;index;uniqueIndex:project_favorites_idx,priority:1"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// user_id uuid IS_NULL:NO
-	UserId string `json:"user_id" gorm:"uniqueIndex:project_favorites_idx,priority:2"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;uniqueIndex:project_favorites_idx,priority:2"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM.
@@ -753,23 +768,28 @@ type Estimate struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// name character varying IS_NULL:NO
 	Name string `json:"name"`
 	// description text IS_NULL:NO
 	Description string `json:"description"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 
 	Workspace *Workspace      `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project        `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Points    []EstimatePoint `json:"points" gorm:"foreignKey:estimate_id"`
+	CreatedBy *User           `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User           `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM (GORM). Применяется для определения имени таблицы, в которой хранятся данные модели.
@@ -802,7 +822,7 @@ type EstimatePoint struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// key integer IS_NULL:NO
 	Key int `json:"key"`
 	// description text IS_NULL:NO
@@ -810,19 +830,24 @@ type EstimatePoint struct {
 	// value character varying IS_NULL:NO
 	Value string `json:"value"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// estimate_id uuid IS_NULL:NO
-	EstimateId string `json:"estimate"`
+	EstimateId uuid.UUID `json:"estimate" gorm:"type:uuid"`
 	// project_id uuid IS_NULL:NO
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Estimate  *Estimate  `json:"estimate_detail" gorm:"foreignKey:EstimateId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // ToDTO преобразует объект EstimatePoint в его упрощенную версию (EstimateLight). Используется для возврата только необходимых данных, без необходимости загрузки всех полей.
@@ -860,9 +885,10 @@ type ImportedProject struct {
 	TotalIssues       int
 	TotalAttachments  int
 	NewUsers          int
-	TargetWorkspaceId string
-	TargetProjectId   uuid.UUID `gorm:"type:uuid;index"`
-	Successfully      bool
+	TargetWorkspaceId uuid.UUID `gorm:"type:uuid"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	TargetProjectId uuid.UUID `gorm:"type:uuid;index"`
+	Successfully    bool
 
 	TargetWorkspace Workspace `gorm:"foreignKey:TargetWorkspaceId;constraint:OnDelete:CASCADE"`
 	TargetProject   Project   `gorm:"foreignKey:TargetProjectId;constraint:OnDelete:CASCADE"`
@@ -883,18 +909,23 @@ type Label struct {
 	// description text COLLATE pg_catalog."default" NOT NULL,
 	Description string `json:"description"`
 	// created_by_id uuid,
-	CreatedById *string `json:"created_by" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by" gorm:"type:uuid" extensions:"x-nullable"`
 	// project_id uuid NOT NULL,
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"type:uuid;uniqueIndex:label_name_color_unique_idx,priority:1"`
 	// updated_by_id uuid,
-	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// parent_id uuid,
-	ParentId *string `json:"parent" extensions:"x-nullable"`
+	ParentId uuid.NullUUID `json:"parent" gorm:"type:uuid" extensions:"x-nullable"`
 	// color character varying(255) COLLATE pg_catalog."default" NOT NULL,
 	Color string `json:"color" gorm:"uniqueIndex:label_name_color_unique_idx,priority:3;default:#000000"`
 
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Parent    *Label     `json:"parent_detail,omitempty" gorm:"foreignKey:ParentId" extensions:"x-nullable"`
@@ -937,7 +968,7 @@ func (l Label) GetEntityType() string {
 	return actField.Label.Field.String()
 }
 
-func (l Label) GetWorkspaceId() string {
+func (l Label) GetWorkspaceId() uuid.UUID {
 	return l.WorkspaceId
 }
 
@@ -1007,7 +1038,7 @@ func (l *Label) BeforeDelete(tx *gorm.DB) error {
 // Состояния задач
 type State struct {
 	// id uuid NOT NULL,
-	ID uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	// created_at timestamp with time zone NOT NULL,
 	CreatedAt time.Time `json:"created_at"`
 	// updated_at timestamp with time zone NOT NULL,
@@ -1022,13 +1053,16 @@ type State struct {
 	// slug character varying(100) COLLATE pg_catalog."default" NOT NULL,
 	Slug string `json:"slug"`
 	// created_by_id uuid,
-	CreatedById *string `json:"created_by" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by" gorm:"type:uuid" extensions:"x-nullable"`
 	// project_id uuid NOT NULL,
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"type:uuid;uniqueIndex:unique_state_idx,priority:1"`
 	// updated_by_id uuid,
-	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// sequence double precision NOT NULL,
 	Sequence uint64 `json:"sequence"`
 	// "group" character varying(20) COLLATE pg_catalog."default" NOT NULL,
@@ -1038,6 +1072,8 @@ type State struct {
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 
@@ -1060,7 +1096,7 @@ func (state *State) ToLightDTO() *dto.StateLight {
 		Description: state.Description,
 		Color:       state.Color,
 		ProjectId:   state.ProjectId,
-		WorkspaceId: state.WorkspaceId,
+		WorkspaceId: state.WorkspaceId.String(),
 		Sequence:    state.Sequence,
 		Group:       state.Group,
 		Default:     state.Default,
@@ -1086,7 +1122,7 @@ func (s State) GetEntityType() string {
 	return actField.Status.Field.String()
 }
 
-func (s State) GetWorkspaceId() string {
+func (s State) GetWorkspaceId() uuid.UUID {
 	return s.WorkspaceId
 }
 
@@ -1125,7 +1161,7 @@ type ProjectEntityI interface {
 }
 
 type ProjectActivity struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"index:project_activities_project_index,sort:desc,type:btree,priority:2;index:project_activities_actor_index,sort:desc,type:btree,priority:2;index:project_activities_mail_index,type:btree,where:notified = false"`
 	// verb character varying IS_NULL:NO
 	Verb string `json:"verb"`
@@ -1138,11 +1174,12 @@ type ProjectActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// project_id uuid IS_NULL:YES
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;index:project_activities_project_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
@@ -1229,7 +1266,7 @@ func (pa ProjectActivity) GetOldIdentifier() string {
 }
 
 func (pa ProjectActivity) GetId() string {
-	return pa.Id
+	return pa.Id.String()
 }
 
 func (activity *ProjectActivity) ToLightDTO() *dto.EntityActivityLight {
@@ -1324,7 +1361,7 @@ func IsProjectMember(tx *gorm.DB, userId uuid.UUID, projectId uuid.UUID) (int, b
 //
 // Возвращает:
 //   - bool: true, если пользователь является участником рабочего пространства, false в противном случае.
-func IsWorkspaceMember(tx *gorm.DB, userId uuid.UUID, workspaceId string) (exist bool) {
+func IsWorkspaceMember(tx *gorm.DB, userId uuid.UUID, workspaceId uuid.UUID) (exist bool) {
 	tx.Model(&WorkspaceMember{}).
 		Select("EXISTS(?)",
 			tx.Model(&WorkspaceMember{}).

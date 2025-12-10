@@ -10,6 +10,7 @@ import (
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -160,7 +161,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 		for _, activity := range da.activities {
 			var authorNotify, memberNotify bool
 			memberNotify = member.DocMemberSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
-			if activity.Doc.CreatedById == member.User.ID.String() {
+			if activity.Doc.CreatedById.String() == member.User.ID.String() {
 				authorNotify = member.DocAuthorSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
 			}
 			if (member.DocAuthor && authorNotify) || (!member.DocAuthor && memberNotify) {
@@ -320,17 +321,17 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 		if member.Member == nil {
 			continue
 		}
-		isAuthor := member.MemberId == doc.Author.ID.String()
-		isWatcher := checkId(doc.Watchers, member.MemberId)
-		isEditor := checkId(doc.Editors, member.MemberId)
-		isReader := checkId(doc.Readers, member.MemberId)
+		isAuthor := member.MemberId == doc.Author.ID
+		isWatcher := checkId(doc.Watchers, member.MemberId.String())
+		isEditor := checkId(doc.Editors, member.MemberId.String())
+		isReader := checkId(doc.Readers, member.MemberId.String())
 		var isAuthorNewDoc, isWatcherNewDoc, isEditorNewDoc, isReaderNewDoc bool
 		if newDoc != nil {
 			newDoc.SetUrl()
-			isAuthorNewDoc = member.MemberId == doc.Author.ID.String()
-			isWatcherNewDoc = checkId(newDoc.Watchers, member.MemberId)
-			isEditorNewDoc = checkId(newDoc.Editors, member.MemberId)
-			isReaderNewDoc = checkId(newDoc.Readers, member.MemberId)
+			isAuthorNewDoc = member.MemberId == doc.Author.ID
+			isWatcherNewDoc = checkId(newDoc.Watchers, member.MemberId.String())
+			isEditorNewDoc = checkId(newDoc.Editors, member.MemberId.String())
+			isReaderNewDoc = checkId(newDoc.Readers, member.MemberId.String())
 		}
 
 		if isReader || isEditor || isAuthor || isWatcher || isAuthorNewDoc || isWatcherNewDoc || isEditorNewDoc || isReaderNewDoc {
@@ -383,21 +384,21 @@ func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
 			Where("docs.id = ?", activity.NewDoc.ID).First(&newDocCreate).Error != nil {
 		}
 	}
-	if activity.DocId != "" { //
-		if v, ok := as.Docs[activity.DocId]; !ok {
+	if activity.DocId != uuid.Nil { //
+		if v, ok := as.Docs[activity.DocId.String()]; !ok {
 			activity.Doc.Workspace = activity.Workspace
 			da := newDocActivity(tx, activity.Doc, newDocCreate)
 			if da != nil {
 				if !da.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Docs[activity.DocId] = *da
+				as.Docs[activity.DocId.String()] = *da
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Docs[activity.DocId] = v
+			as.Docs[activity.DocId.String()] = v
 		}
 	}
 	return
@@ -487,7 +488,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			continue
 		}
 
-		changesMap, ok := actorsChangesMap[*activity.ActorId]
+		changesMap, ok := actorsChangesMap[activity.ActorId.UUID.String()]
 		if !ok {
 			changesMap = make(map[string]dao.DocActivity)
 		}
@@ -508,8 +509,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		}
 
 		changesMap[field] = activity
-		actorsMap[*activity.ActorId] = *activity.Actor
-		actorsChangesMap[*activity.ActorId] = changesMap
+		actorsMap[activity.ActorId.UUID.String()] = *activity.Actor
+		actorsChangesMap[activity.ActorId.UUID.String()] = changesMap
 	}
 
 	var template dao.Template
@@ -522,8 +523,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 	var attachments []dao.DocAttachment
 	if err := tx.
 		Joins("Asset").
-		Where("doc_attachments.workspace_id = ?", activities[0].WorkspaceId).
-		Where("doc_attachments.doc_id = ?", activities[0].DocId).
+		Where("doc_attachments.workspace_id = ?", activities[0].WorkspaceId.String()).
+		Where("doc_attachments.doc_id = ?", activities[0].DocId.String()).
 		Order("doc_attachments.created_at").
 		Find(&attachments).Error; err != nil {
 		return "", "", err

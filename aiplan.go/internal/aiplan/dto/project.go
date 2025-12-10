@@ -19,7 +19,7 @@ type ProjectLight struct {
 	Name          string        `json:"name"`
 	Public        bool          `json:"public"`
 	Identifier    string        `json:"identifier"`
-	ProjectLeadId string        `json:"project_lead"`
+	ProjectLeadId uuid.UUID     `json:"project_lead"`
 	WorkspaceId   string        `json:"workspace"`
 	Emoji         int32         `json:"emoji,string"`
 	CoverImage    *string       `json:"cover_image" extensions:"x-nullable"`
@@ -79,15 +79,15 @@ type ProjectMember struct {
 }
 
 type ProjectFavorites struct {
-	ID        string        `json:"id"`
+	ID        uuid.UUID     `json:"id"`
 	ProjectId uuid.UUID     `json:"project_id"`
 	Project   *ProjectLight `json:"project_detail,omitempty" extensions:"x-nullable"`
 }
 
 type Estimate struct {
-	Id          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Id          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
 
 	ProjectId uuid.UUID       `json:"project_id"`
 	Project   *ProjectLight   `json:"project_detail" extensions:"x-nullable"`
@@ -95,12 +95,12 @@ type Estimate struct {
 }
 
 type EstimatePoint struct {
-	Id          string `json:"id"`
-	Key         int    `json:"key"`
-	Description string `json:"description"`
-	Value       string `json:"value"`
+	Id          uuid.UUID `json:"id"`
+	Key         int       `json:"key"`
+	Description string    `json:"description"`
+	Value       string    `json:"value"`
 
-	EstimateId string    `json:"estimate"`
+	EstimateId uuid.UUID `json:"estimate"`
 	Estimate   *Estimate `json:"estimate_detail" extensions:"x-nullable"`
 
 	ProjectId uuid.UUID     `json:"project"`

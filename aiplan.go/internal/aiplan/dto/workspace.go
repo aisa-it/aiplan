@@ -14,11 +14,11 @@ import (
 )
 
 type WorkspaceLight struct {
-	ID      string        `json:"id"`
+	ID      uuid.UUID     `json:"id"`
 	Name    string        `json:"name"`
 	LogoId  uuid.NullUUID `json:"logo"  extensions:"x-nullable" swaggertype:"string"`
 	Slug    string        `json:"slug"`
-	OwnerId string        `json:"owner_id"`
+	OwnerId uuid.UUID     `json:"owner_id"`
 	Url     types.JsonURL `json:"url,omitempty"`
 }
 
@@ -48,7 +48,7 @@ type WorkspaceMemberLight struct {
 	ID              string     `json:"id"`
 	Role            int        `json:"role"`
 	EditableByAdmin bool       `json:"editable_by_admin"`
-	MemberId        string     `json:"member_id"`
+	MemberId        uuid.UUID  `json:"member_id"`
 	Member          *UserLight `json:"member"`
 }
 
@@ -63,7 +63,7 @@ type WorkspaceMember struct {
 }
 
 type WorkspaceFavorites struct {
-	ID          string     `json:"id"`
-	WorkspaceId string     `json:"workspace_id"`
+	ID          uuid.UUID  `json:"id"`
+	WorkspaceId uuid.UUID  `json:"workspace_id"`
 	Workspace   *Workspace `json:"workspace_detail,omitempty" extensions:"x-nullable"`
 }

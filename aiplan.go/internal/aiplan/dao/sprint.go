@@ -25,7 +25,9 @@ type Sprint struct {
 	UpdatedAt time.Time
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
-	CreatedById uuid.UUID     `gorm:"type:uuid"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.UUID `gorm:"type:uuid"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
 	WorkspaceId uuid.UUID     `gorm:"type:uuid; uniqueIndex:sprint_uniq_idx,priority:1,where:deleted_at is NULL"`
 
@@ -209,9 +211,10 @@ type SprintIssue struct {
 	UpdatedAt time.Time
 
 	SprintId    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:sprint_issue_uniq_idx,priority:3"`
-	IssueId     uuid.UUID `gorm:"type:text;uniqueIndex:sprint_issue_uniq_idx,priority:4"`
+	IssueId     uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:4"`
 	ProjectId   uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:2"`
 	WorkspaceId uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:1"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.UUID `gorm:"type:uuid"`
 
 	Position int `json:"position" gorm:"default:0;index"`
@@ -227,8 +230,9 @@ type SprintIssue struct {
 func (SprintIssue) TableName() string { return "sprint_issues" }
 
 type SprintWatcher struct {
-	Id          uuid.UUID `gorm:"primaryKey;type:uuid"`
-	CreatedAt   time.Time
+	Id        uuid.UUID `gorm:"primaryKey;type:uuid"`
+	CreatedAt time.Time
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.UUID `json:"created_by_id" gorm:"type:uuid" extensions:"x-nullable"`
 
 	WatcherId   uuid.UUID `gorm:"uniqueIndex:sprint_watchers_idx,priority:2"`
@@ -263,11 +267,11 @@ type SprintActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// sprint_id uuid IS_NULL:YES
-	SprintId string `json:"sprint_id" gorm:"index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
+	SprintId uuid.UUID `json:"sprint_id" gorm:"type:uuid;index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
@@ -358,7 +362,7 @@ func (activity *SprintActivity) ToLightDTO() *dto.EntityActivityLight {
 	}
 
 	return &dto.EntityActivityLight{
-		Id:         activity.Id.String(),
+		Id:         activity.Id,
 		CreatedAt:  activity.CreatedAt,
 		Verb:       activity.Verb,
 		Field:      activity.Field,
