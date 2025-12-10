@@ -169,7 +169,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		//TODO add activity to notify
 		return nil, 0, nil
 	case dao.IssueActivity:
-		if a.Field != nil && *a.Field == actField.IssueTransfer.String() && a.Verb == "cloned" {
+		if a.Field != nil && *a.Field == actField.IssueTransfer.Field.String() && a.Verb == "cloned" {
 			return nil, 0, nil
 		}
 
@@ -210,7 +210,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 				IssueActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
 			}
 
-			if a.Field != nil && *a.Field == actField.Comment.String() && a.Verb != "deleted" {
+			if a.Field != nil && *a.Field == actField.Comment.Field.String() && a.Verb != "deleted" {
 				if a.NewIdentifier != nil {
 					commentUUID := uuid.Must(uuid.FromString(*a.NewIdentifier))
 					notification.CommentId = &commentUUID

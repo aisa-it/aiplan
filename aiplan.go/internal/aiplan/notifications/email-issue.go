@@ -191,7 +191,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 	}
 
 	for _, author := range ia.commentActivityUser {
-		field := actField.Comment.String()
+		field := actField.Comment.Field.String()
 
 		if len(author.activities) == 0 {
 			continue
@@ -308,15 +308,15 @@ func (ia *issueActivity) skip(activity dao.IssueActivity) bool {
 		return true
 	}
 
-	if activity.Field != nil && *activity.Field == actField.StartDate.String() {
+	if activity.Field != nil && *activity.Field == actField.StartDate.Field.String() {
 		return true
 	}
 
-	if activity.Field != nil && *activity.Field == actField.CompletedAt.String() {
+	if activity.Field != nil && *activity.Field == actField.CompletedAt.Field.String() {
 		return true
 	}
 
-	if activity.Field != nil && *activity.Field == actField.Link.String() && activity.Verb == "deleted" {
+	if activity.Field != nil && *activity.Field == actField.Link.Field.String() && activity.Verb == "deleted" {
 		return true
 	}
 
@@ -406,7 +406,7 @@ func (ia *issueActivity) AddActivity(activity dao.IssueActivity) bool {
 
 	ia.activities = append(ia.activities, activity)
 
-	if activity.Field != nil && *activity.Field == actField.Comment.String() && activity.NewIdentifier != nil {
+	if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier != nil {
 		if activity.Verb == "created" || activity.Verb == "updated" {
 			//TODO
 			commentUUID := uuid.FromStringOrNil(*activity.NewIdentifier)
@@ -450,7 +450,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 	commentCount := 0
 	for _, activity := range activities {
 		// issue deletion
-		if activity.Field != nil && *activity.Field == actField.Issue.String() && activity.Verb == "deleted" {
+		if activity.Field != nil && *activity.Field == actField.Issue.Field.String() && activity.Verb == "deleted" {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_activity_delete").First(&template).Error; err != nil {
 				return "", "", err
@@ -509,11 +509,11 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			continue
 		}
 
-		if *activity.Field == actField.IssueTransfer.String() && activity.Verb == "cloned" {
+		if *activity.Field == actField.IssueTransfer.Field.String() && activity.Verb == "cloned" {
 			continue
 		}
 
-		if *activity.Field == actField.IssueTransfer.String() && (activity.Verb == "copied" || activity.Verb == "move") {
+		if *activity.Field == actField.IssueTransfer.Field.String() && (activity.Verb == "copied" || activity.Verb == "move") {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_migrate").First(&template).Error; err != nil {
 				return "", "", err
@@ -560,7 +560,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		}
 
 		// comment
-		if *activity.Field == actField.Comment.String() {
+		if *activity.Field == actField.Comment.Field.String() {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_activity_comment").First(&template).Error; err != nil {
 				return "", "", err
@@ -608,7 +608,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		}
 		field := *activity.Field
 
-		if field == actField.Priority.String() {
+		if field == actField.Priority.Field.String() {
 			activity.NewValue = priorityTranslation[activity.NewValue]
 			if activity.OldValue != nil {
 				p := priorityTranslation[*activity.OldValue]
@@ -619,7 +619,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			}
 		}
 
-		if field == actField.TargetDate.String() {
+		if field == actField.TargetDate.Field.String() {
 			newT, errNew := FormatDate(activity.NewValue, "02.01.2006 15:04", &targetUser.UserTimezone)
 
 			if activity.OldValue != nil {
@@ -634,7 +634,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 
 		}
 
-		if field == actField.Description.String() {
+		if field == actField.Description.Field.String() {
 			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
@@ -645,8 +645,8 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			activity.NewValue = newValue
 		}
 
-		if field == actField.LinkTitle.String() || field == actField.LinkUrl.String() {
-			field = actField.Link.String()
+		if field == actField.LinkTitle.Field.String() || field == actField.LinkUrl.Field.String() {
+			field = actField.Link.Field.String()
 		}
 
 		changesMap[field] = activity
