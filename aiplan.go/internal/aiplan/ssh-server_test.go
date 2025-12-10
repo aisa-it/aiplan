@@ -93,12 +93,12 @@ func TestParseGitCommand(t *testing.T) {
 // TestParseRepositoryPath проверяет парсинг пути репозитория
 func TestParseRepositoryPath(t *testing.T) {
 	tests := []struct {
-		name            string
-		path            string
-		wantWorkspace   string
-		wantRepo        string
-		wantErr         bool
-		errContains     string
+		name          string
+		path          string
+		wantWorkspace string
+		wantRepo      string
+		wantErr       bool
+		errContains   string
 	}{
 		{
 			name:          "Valid path with .git",

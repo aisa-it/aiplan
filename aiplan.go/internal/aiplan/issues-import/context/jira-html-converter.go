@@ -131,10 +131,10 @@ func (c *ImportContext) replaceAttachments(src string, issue *dao.Issue, comment
 			if ok {
 				if issue != nil {
 					attach.InlineAsset.IssueId = uuid.NullUUID{Valid: true, UUID: issue.ID}
-					attach.InlineAsset.WorkspaceId = &issue.WorkspaceId
+					attach.InlineAsset.WorkspaceId = uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true}
 				} else if comment != nil {
 					attach.InlineAsset.CommentId = uuid.NullUUID{UUID: comment.Id, Valid: true}
-					attach.InlineAsset.WorkspaceId = &comment.WorkspaceId
+					attach.InlineAsset.WorkspaceId = uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true}
 				} else {
 					slog.Warn("Empty issue and comment for img formatting", "attachmentId", attach.JiraAttachment.ID)
 					return
@@ -437,9 +437,9 @@ func (c *ImportContext) replaceCommentLinks(n *html.Node) bool {
 		// Comment from this import
 		n.Attr = []html.Attribute{
 			{Key: "data-type", Val: "issue"},
-			{Key: "data-slug", Val: comment.WorkspaceId},
+			{Key: "data-slug", Val: comment.WorkspaceId.String()},
 			{Key: "data-project-identifier", Val: comment.ProjectId.String()},
-			{Key: "data-current-issue-id", Val: comment.IssueId},
+			{Key: "data-current-issue-id", Val: comment.IssueId.String()},
 			{Key: "data-comment-id", Val: comment.Id.String()},
 			{Key: "class", Val: "special-link-mention"},
 			{Key: "contenteditable", Val: "false"},

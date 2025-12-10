@@ -11,6 +11,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -120,20 +121,20 @@ type workspaceActivity struct {
 }
 
 func (as *workspaceActivitySorter) sortEntity(tx *gorm.DB, activity dao.WorkspaceActivity) {
-	if activity.WorkspaceId != "" { // TODO check it
-		if v, ok := as.Workspace[activity.WorkspaceId]; !ok {
+	if activity.WorkspaceId != uuid.Nil { // TODO check it
+		if v, ok := as.Workspace[activity.WorkspaceId.String()]; !ok {
 			wa := newWorkspaceActivity(tx, activity.Workspace)
 			if wa != nil {
 				if !wa.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Workspace[activity.WorkspaceId] = *wa
+				as.Workspace[activity.WorkspaceId.String()] = *wa
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Workspace[activity.WorkspaceId] = v
+			as.Workspace[activity.WorkspaceId.String()] = v
 		}
 	}
 	return
@@ -158,12 +159,12 @@ func newWorkspaceActivity(tx *gorm.DB, workspace *dao.Workspace) *workspaceActiv
 	}
 
 	memberMap := utils.SliceToMap(&res.AllMember, func(v *dao.WorkspaceMember) string {
-		return v.MemberId
+		return v.MemberId.String()
 	})
 
 	{ //add Leader
-		if owner, ok := memberMap[workspace.OwnerId]; ok && owner.Member != nil {
-			res.users[memberMap[workspace.OwnerId].Member.Email] = workspaceMember{
+		if owner, ok := memberMap[workspace.OwnerId.String()]; ok && owner.Member != nil {
+			res.users[memberMap[workspace.OwnerId.String()].Member.Email] = workspaceMember{
 				User:                    *owner.Member,
 				WorkspaceOwner:          true,
 				WorkspaceRole:           owner.Role,
@@ -253,8 +254,8 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 				isReader := slices.Contains(doc.ReaderIDs, member.User.ID.String())
 				isEditor := slices.Contains(doc.EditorsIDs, member.User.ID.String())
 
-				if isWatcher || isReader || isEditor || doc.CreatedById == member.User.ID.String() {
-					if doc.CreatedById == member.User.ID.String() {
+				if isWatcher || isReader || isEditor || doc.CreatedById.String() == member.User.ID.String() {
+					if doc.CreatedById.String() == member.User.ID.String() {
 						if member.WorkspaceAuthorSettings.IsNotify(activity.Field, "workspace", activity.Verb, member.WorkspaceRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
@@ -269,7 +270,7 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 				continue
 			}
 			if activity.Field != nil && *activity.Field == actField.Doc.String() && activity.Verb == actField.VerbDeleted {
-				if *activity.ActorId == member.User.ID.String() {
+				if activity.ActorId.UUID.String() == member.User.ID.String() {
 					sendActivities = append(sendActivities, activity)
 					continue
 				}

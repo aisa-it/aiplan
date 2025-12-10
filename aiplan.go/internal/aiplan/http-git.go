@@ -31,11 +31,11 @@ import (
 
 // TreeEntryDTO представляет файл или директорию в Git tree
 type TreeEntryDTO struct {
-	Name string `json:"name"`         // Имя файла/директории
-	Type string `json:"type"`         // "file" или "dir"
-	Mode string `json:"mode"`         // Режим файла (100644, 040000, etc.)
+	Name string `json:"name"`           // Имя файла/директории
+	Type string `json:"type"`           // "file" или "dir"
+	Mode string `json:"mode"`           // Режим файла (100644, 040000, etc.)
 	Size int64  `json:"size,omitempty"` // Размер файла (только для файлов)
-	SHA  string `json:"sha"`          // SHA объекта
+	SHA  string `json:"sha"`            // SHA объекта
 }
 
 // TreeResponseDTO представляет ответ на запрос дерева репозитория
@@ -47,12 +47,12 @@ type TreeResponseDTO struct {
 
 // BlobResponseDTO представляет ответ на запрос содержимого файла
 type BlobResponseDTO struct {
-	Path     string `json:"path"`     // Путь к файлу
-	Ref      string `json:"ref"`      // Ветка/тег/коммит
-	Size     int64  `json:"size"`     // Размер файла
-	SHA      string `json:"sha"`      // SHA объекта
-	Content  string `json:"content"`  // Содержимое файла (base64 encoded)
-	Encoding string `json:"encoding"` // "base64"
+	Path     string `json:"path"`      // Путь к файлу
+	Ref      string `json:"ref"`       // Ветка/тег/коммит
+	Size     int64  `json:"size"`      // Размер файла
+	SHA      string `json:"sha"`       // SHA объекта
+	Content  string `json:"content"`   // Содержимое файла (base64 encoded)
+	Encoding string `json:"encoding"`  // "base64"
 	IsBinary bool   `json:"is_binary"` // Является ли файл бинарным
 }
 
@@ -65,11 +65,11 @@ type PersonDTO struct {
 
 // CommitDTO представляет информацию о коммите
 type CommitDTO struct {
-	SHA        string     `json:"sha"`         // SHA коммита
-	Author     PersonDTO  `json:"author"`      // Автор коммита
-	Committer  PersonDTO  `json:"committer"`   // Коммиттер
-	Message    string     `json:"message"`     // Сообщение коммита
-	ParentSHAs []string   `json:"parent_shas"` // SHA родительских коммитов
+	SHA        string    `json:"sha"`         // SHA коммита
+	Author     PersonDTO `json:"author"`      // Автор коммита
+	Committer  PersonDTO `json:"committer"`   // Коммиттер
+	Message    string    `json:"message"`     // Сообщение коммита
+	ParentSHAs []string  `json:"parent_shas"` // SHA родительских коммитов
 }
 
 // CommitsResponseDTO представляет ответ на запрос истории коммитов
@@ -94,12 +94,12 @@ type BranchesResponseDTO struct {
 
 // RepoInfoDTO представляет информацию о репозитории
 type RepoInfoDTO struct {
-	Name          string     `json:"name"`            // Имя репозитория
-	Workspace     string     `json:"workspace"`       // Slug workspace
-	DefaultBranch string     `json:"default_branch"`  // Ветка по умолчанию
-	BranchesCount int        `json:"branches_count"`  // Количество веток
-	CommitsCount  int        `json:"commits_count"`   // Количество коммитов
-	Size          int64      `json:"size"`            // Размер репозитория (байты)
+	Name          string     `json:"name"`                  // Имя репозитория
+	Workspace     string     `json:"workspace"`             // Slug workspace
+	DefaultBranch string     `json:"default_branch"`        // Ветка по умолчанию
+	BranchesCount int        `json:"branches_count"`        // Количество веток
+	CommitsCount  int        `json:"commits_count"`         // Количество коммитов
+	Size          int64      `json:"size"`                  // Размер репозитория (байты)
 	LastCommit    *CommitDTO `json:"last_commit,omitempty"` // Последний коммит
 }
 

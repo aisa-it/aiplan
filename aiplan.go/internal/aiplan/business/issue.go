@@ -32,14 +32,13 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 		return errors.New("create comment forbidden")
 	}
 
-	issueId := issue.ID.String()
-	actorId := user.ID.String()
+	actorId := uuid.NullUUID{UUID: user.ID, Valid: true}
 	comment := dao.IssueComment{
 		Id:          dao.GenUUID(),
 		WorkspaceId: issue.WorkspaceId,
 		ProjectId:   issue.ProjectId,
-		IssueId:     issueId,
-		ActorId:     &actorId,
+		IssueId:     issue.ID,
+		ActorId:     actorId,
 		CommentHtml: types.RedactorHTML{Body: text},
 	}
 	if len(meta) > 0 {

@@ -72,7 +72,7 @@ func (np *NotificationProcessor) ProcessNotifications() {
 		return
 	}
 
-	var notifyDel []string
+	var notifyDel []uuid.UUID
 	for _, notification := range notifications {
 		if !notification.User.CanReceiveNotifications() {
 			notifyDel = append(notifyDel, notification.ID)
@@ -178,7 +178,7 @@ func (np *NotificationProcessor) sendToApp(notification *dao.DeferredNotificatio
 
 	if sender.isNotifyApp(np.db, notification) {
 		if un, countNotify, _ := np.createUserNotify(notification, sender); un != nil {
-			np.websocketService.Send(uuid.FromStringOrNil(notification.UserID), un.ID, *un, countNotify)
+			np.websocketService.Send(notification.UserID, un.ID, *un, countNotify)
 		}
 	}
 	return true
@@ -200,13 +200,17 @@ func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNoti
 
 	if !exist {
 		un.UserId = notification.UserID
-		un.WorkspaceId = notification.WorkspaceID
+		if notification.WorkspaceID.Valid {
+			un.WorkspaceId = notification.WorkspaceID
+		}
 		un.Workspace = notification.Workspace
-		un.IssueId = notification.IssueID
+		if notification.IssueID.Valid {
+			un.IssueId = notification.IssueID
+		}
 		un.Issue = notification.Issue
 
-		if un.AuthorId != nil {
-			if err := np.db.Where("id = ?", un.AuthorId).First(&un.Author).Error; err != nil {
+		if un.AuthorId.Valid {
+			if err := np.db.Where("id = ?", un.AuthorId.UUID).First(&un.Author).Error; err != nil {
 				return nil, 0, err
 			}
 		}
@@ -265,12 +269,13 @@ func (nm *notifyMessage) getAuthor(tx *gorm.DB) *dao.User {
 }
 
 func (nm *notifyMessage) getUserNotification() *dao.UserNotifications {
+	authorUUID, _ := uuid.FromString(nm.AuthorId)
 	res := dao.UserNotifications{
 		ID:       nm.Id,
 		Type:     "message",
 		Title:    nm.Title,
 		Msg:      nm.Msg,
-		AuthorId: &nm.AuthorId,
+		AuthorId: uuid.NullUUID{UUID: authorUUID, Valid: nm.AuthorId != ""},
 		Viewed:   false,
 	}
 	return &res
@@ -457,7 +462,7 @@ func (s serviceMessage) getUserNotification() *dao.UserNotifications {
 		Type:     "service_message",
 		Title:    s.Title,
 		Msg:      s.Msg,
-		AuthorId: nil,
+		AuthorId: uuid.NullUUID{},
 		Viewed:   false,
 	}
 	return &res

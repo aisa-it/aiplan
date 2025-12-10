@@ -10,6 +10,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -296,10 +297,10 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 		return []userTg{}
 	}
 
-	userMap := make(map[string]userTg)
+	userMap := make(map[uuid.UUID]userTg)
 
 	query := tx.Joins("Member").
-		Where("project_id = ?", act.ProjectId)
+		Where("project_id = ?", act.ProjectId.String())
 
 	if act.NewIssue != nil {
 		act.NewIssue.Author = act.Actor
@@ -308,7 +309,7 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 		maps.Copy(userMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId.String()))
 		maps.Copy(userMap, GetUserTgIdFromIssue(act.NewIssue))
 
-		ids := make([]string, 0, len(userMap))
+		ids := make([]uuid.UUID, 0, len(userMap))
 		for id, _ := range userMap {
 			ids = append(ids, id)
 		}
@@ -323,9 +324,9 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 		return []userTg{}
 	}
 
-	adminMemberIssue := make(map[string]struct{})
+	adminMemberIssue := make(map[uuid.UUID]struct{})
 
-	projMap := make(map[string]userTg)
+	projMap := make(map[uuid.UUID]userTg)
 	for _, member := range projectMembers {
 		if _, ok := userMap[member.MemberId]; ok {
 			adminMemberIssue[member.MemberId] = struct{}{}
@@ -338,10 +339,10 @@ func getUserTgIdProjectActivity(tx *gorm.DB, activity interface{}) []userTg {
 		}
 	}
 	maps.Copy(userMap, projMap)
-	return filterProjectTgIdIsNotify(projectMembers, *act.ActorId, userMap, act.Field, act.Verb, adminMemberIssue)
+	return filterProjectTgIdIsNotify(projectMembers, act.ActorId.UUID, userMap, act.Field, act.Verb, adminMemberIssue)
 }
 
-func filterProjectTgIdIsNotify(wm []dao.ProjectMember, authorId string, userTgId map[string]userTg, field *string, verb string, adminMembers map[string]struct{}) []userTg {
+func filterProjectTgIdIsNotify(wm []dao.ProjectMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string, adminMembers map[uuid.UUID]struct{}) []userTg {
 	res := make([]userTg, 0)
 	for _, member := range wm {
 		if member.Role == types.AdminRole && field != nil && *field == "issue" && authorId != member.MemberId {

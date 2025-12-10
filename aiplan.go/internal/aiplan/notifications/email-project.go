@@ -173,12 +173,12 @@ func newProjectActivity(tx *gorm.DB, project *dao.Project) *projectActivity {
 	}
 
 	memberMap := utils.SliceToMap(&res.AllMember, func(v *dao.ProjectMember) string {
-		return v.MemberId
+		return v.MemberId.String()
 	})
 
 	{ //add Leader
-		if lead, ok := memberMap[project.ProjectLeadId]; ok && lead.Member != nil {
-			res.users[memberMap[project.ProjectLeadId].Member.Email] = projectMember{
+		if lead, ok := memberMap[project.ProjectLeadId.String()]; ok && lead.Member != nil {
+			res.users[memberMap[project.ProjectLeadId.String()].Member.Email] = projectMember{
 				User:                  *lead.Member,
 				ProjectLeader:         true,
 				ProjectRole:           lead.Role,
@@ -267,8 +267,8 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 				isWatcher := slices.Contains(issue.WatcherIDs, member.User.ID.String()) || member.DefaultWatcher
 				isAssignee := slices.Contains(issue.AssigneeIDs, member.User.ID.String()) || member.DefaultAssigner
 
-				if isWatcher || isAssignee || issue.CreatedById == member.User.ID.String() {
-					if issue.CreatedById == member.User.ID.String() {
+				if isWatcher || isAssignee || issue.CreatedById.String() == member.User.ID.String() {
+					if issue.CreatedById.String() == member.User.ID.String() {
 						if member.ProjectAuthorSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
 							sendActivities = append(sendActivities, activity)
 							continue

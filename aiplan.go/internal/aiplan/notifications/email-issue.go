@@ -164,7 +164,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
 			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
-			if activity.Issue.CreatedById == member.User.ID.String() {
+			if activity.Issue.CreatedById.String() == member.User.ID.String() {
 				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
 			}
 			if (member.IssueAuthor && authorNotify) || (!member.IssueAuthor && memberNotify) {
@@ -423,20 +423,20 @@ func (ia *issueActivity) AddActivity(activity dao.IssueActivity) bool {
 }
 
 func (as *issueActivitySorter) sortEntity(activity dao.IssueActivity) {
-	if activity.IssueId != "" { // TODO check it
-		if v, ok := as.Issues[activity.IssueId]; !ok {
+	if activity.IssueId != uuid.Nil { // TODO check it
+		if v, ok := as.Issues[activity.IssueId.String()]; !ok {
 			ia := newIssueActivity(activity.Issue)
 			if ia != nil {
 				if !ia.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Issues[activity.IssueId] = *ia
+				as.Issues[activity.IssueId.String()] = *ia
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Issues[activity.IssueId] = v
+			as.Issues[activity.IssueId.String()] = v
 		}
 	}
 	return
@@ -602,7 +602,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			continue
 		}
 
-		changesMap, ok := actorsChangesMap[*activity.ActorId]
+		changesMap, ok := actorsChangesMap[activity.ActorId.UUID.String()]
 		if !ok {
 			changesMap = make(map[string]dao.IssueActivity)
 		}
@@ -650,8 +650,8 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		}
 
 		changesMap[field] = activity
-		actorsMap[*activity.ActorId] = *activity.Actor
-		actorsChangesMap[*activity.ActorId] = changesMap
+		actorsMap[activity.ActorId.UUID.String()] = *activity.Actor
+		actorsChangesMap[activity.ActorId.UUID.String()] = changesMap
 	}
 
 	var template dao.Template

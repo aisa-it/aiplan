@@ -17,10 +17,14 @@ import (
 type WorkspaceBackup struct {
 	ID          string    `gorm:"primaryKey" json:"id"`
 	CreatedAt   time.Time `json:"created_at"`
-	CreatedBy   string    `json:"created_by_id"`
-	WorkspaceId string    `json:"workspace_id"`
+	CreatedBy   uuid.UUID `json:"created_by_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 	Asset       uuid.UUID `json:"asset"`
 
 	Author    *User      `gorm:"foreignKey:CreatedBy" json:"created_by" extensions:"x-nullable"`
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" json:"workspace_detail" extensions:"x-nullable"`
+}
+
+func (wb *WorkspaceBackup) GetWorkspaceId() uuid.UUID {
+	return wb.WorkspaceId
 }
