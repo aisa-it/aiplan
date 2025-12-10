@@ -132,7 +132,7 @@ func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.
 			query = query.Where("i.draft = false or i.draft is null")
 		}
 
-		if !searchParams.ShowSubIssues {
+		if searchParams.HideSubIssues {
 			query = query.Where("i.parent_id is null")
 		}
 

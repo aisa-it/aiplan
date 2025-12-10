@@ -20,6 +20,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/steps/db"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/utils"
 	jira "github.com/andygrunwald/go-jira"
+	"github.com/gofrs/uuid"
 
 	"github.com/hashicorp/go-retryablehttp"
 )
@@ -171,7 +172,7 @@ func (is *ImportService) StartJiraProjectImport(webURL *url.URL, user dao.User, 
 			TotalIssues:       context.Counters.TotalIssues,
 			TotalAttachments:  context.Counters.TotalAttachments,
 			NewUsers:          len(context.UsersToCreate),
-			TargetWorkspaceId: context.TargetWorkspaceID,
+			TargetWorkspaceId: uuid.FromStringOrNil(context.TargetWorkspaceID),
 			TargetProjectId:   context.Project.ID,
 		}).Error; err != nil {
 			context.Log.Error("Save ImportedProject", "err", err)

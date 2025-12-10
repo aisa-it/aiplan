@@ -30,7 +30,7 @@ import (
 // Рабочие пространства
 type Workspace struct {
 	// id uuid NOT NULL,
-	ID string `gorm:"column:id;primaryKey" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	// created_at timestamp with time zone NOT NULL,
 	CreatedAt time.Time `json:"created_at"`
 	// updated_at timestamp with time zone NOT NULL,
@@ -46,29 +46,33 @@ type Workspace struct {
 	// slug character varying(100) COLLATE pg_catalog."default" NOT NULL,
 	Slug string `json:"slug" gorm:"uniqueIndex:,where:deleted_at is NULL" validate:"slug"`
 	// created_by_id uuid,
-	CreatedById string `json:"created_by_id"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.UUID `json:"created_by_id" gorm:"type:uuid"`
 	// owner_id uuid NOT NULL,
-	OwnerId string `json:"owner_id"`
+	OwnerId uuid.UUID `json:"owner_id" gorm:"type:uuid"`
 	// updated_by_id uuid,
-	UpdatedById      *string `json:"updated_by_id" extensions:"x-nullable"`
-	IntegrationToken string  `json:"-"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById      uuid.NullUUID `json:"updated_by_id" gorm:"type:uuid" extensions:"x-nullable"`
+	IntegrationToken string        `json:"-"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
 	URL *url.URL `json:"-" gorm:"-"`
 
-	Owner *User `json:"owner,omitempty" gorm:"foreignKey:OwnerId" extensions:"x-nullable"`
+	Owner     *User `json:"owner,omitempty" gorm:"foreignKey:OwnerId" extensions:"x-nullable"`
+	CreatedBy *User `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 
 	CurrentUserMembership *WorkspaceMember `json:"current_user_membership,omitempty" gorm:"-" extensions:"x-nullable"`
 	LogoAsset             *FileAsset       `json:"logo_details" gorm:"foreignKey:LogoId" extensions:"x-nullable"`
 	IsFavorite            bool             `json:"is_favorite" gorm:"-"`
 }
 
-func (w Workspace) GetId() string {
+func (w Workspace) GetId() uuid.UUID {
 	return w.ID
 }
 
-func (w Workspace) GetWorkspaceId() string {
+func (w Workspace) GetWorkspaceId() uuid.UUID {
 	return w.GetId()
 }
 
@@ -341,20 +345,24 @@ type WorkspaceMember struct {
 	// role smallint NOT NULL,
 	Role int `json:"role"`
 	// created_by_id uuid,
-	CreatedById *string `json:"created_by_id" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id" gorm:"type:uuid" extensions:"x-nullable"`
 	// member_id uuid NOT NULL,
-	MemberId string `json:"member_id" gorm:"index;uniqueIndex:workspace_members_idx,priority:2"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	MemberId uuid.UUID `json:"member_id" gorm:"type:uuid;index;uniqueIndex:workspace_members_idx,priority:2"`
 	// updated_by_id uuid,
-	UpdatedById *string `json:"updated_by_id" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
-	WorkspaceId string `json:"workspace_id" gorm:"uniqueIndex:workspace_members_idx,priority:1"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid;uniqueIndex:workspace_members_idx,priority:1"`
 
 	// Признак возможности редактирования пользователя админом пространства. true только если пользователь состоит в одном пространстве.
 	EditableByAdmin bool `json:"editable_by_admin" gorm:"-"`
 
 	Workspace *Workspace `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Member    *User      `json:"member" gorm:"foreignKey:MemberId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID" extensions:"x-nullable"`
 
 	NotificationSettingsApp         types.WorkspaceMemberNS `json:"notification_settings_app" gorm:"type:jsonb"`
 	NotificationAuthorSettingsApp   types.WorkspaceMemberNS `json:"notification_author_settings_app" gorm:"type:jsonb"`
@@ -376,7 +384,7 @@ func (wm WorkspaceMember) GetEntityType() string {
 	return actField.Member.String()
 }
 
-func (wm WorkspaceMember) GetWorkspaceId() string {
+func (wm WorkspaceMember) GetWorkspaceId() uuid.UUID {
 	return wm.WorkspaceId
 }
 
@@ -572,17 +580,22 @@ type WorkspaceFavorites struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	ID string `json:"id" gorm:"primaryKey"`
+	ID uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace_id" gorm:"index;uniqueIndex:workspace_favorites_idx,priority:1"`
+	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid;index;uniqueIndex:workspace_favorites_idx,priority:1"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// user_id uuid IS_NULL:NO
-	UserId string `json:"user_id" gorm:"uniqueIndex:workspace_favorites_idx,priority:2"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;uniqueIndex:workspace_favorites_idx,priority:2"`
 
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID" extensions:"x-nullable"`
 }
 
 func (WorkspaceFavorites) TableName() string {
@@ -590,11 +603,11 @@ func (WorkspaceFavorites) TableName() string {
 }
 
 type WorkspaceEntityI interface {
-	GetWorkspaceId() string
+	GetWorkspaceId() uuid.UUID
 }
 
 type WorkspaceActivity struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"index:workspace_activities_workspace_index,sort:desc,type:btree,priority:2;index:workspace_activities_actor_index,sort:desc,type:btree,priority:2;index:workspace_activities_mail_index,type:btree,where:notified = false"`
 	// verb character varying IS_NULL:NO
 	Verb string `json:"verb"`
@@ -607,9 +620,9 @@ type WorkspaceActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace" gorm:"index:workspace_activities_workspace_index,priority:1"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid;index:workspace_activities_workspace_index,priority:1"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:workspace_activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:workspace_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
@@ -671,7 +684,7 @@ func (wa WorkspaceActivity) GetOldIdentifier() string {
 }
 
 func (wa WorkspaceActivity) GetId() string {
-	return wa.Id
+	return wa.Id.String()
 }
 
 func (wa WorkspaceActivity) SetTgSender(id int64) {

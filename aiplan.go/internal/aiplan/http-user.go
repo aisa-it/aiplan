@@ -288,10 +288,10 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	fileAsset := dao.FileAsset{
 		Id:          dao.GenUUID(),
-		CreatedById: &userIdStr,
+		CreatedById: userID,
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -564,11 +564,11 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 
 	var activities []dao.FullActivity
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id IN (?)", workspaceIds)
+		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id IN (?)", projectIds)
+		query = query.Where("fa.project_id::text IN (?)", projectIds)
 	}
 
 	resp, err := dao.PaginationRequest(
@@ -640,11 +640,11 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper
 
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id IN (?)", workspaceIds)
+		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id IN (?)", projectIds)
+		query = query.Where("fa.project_id::text IN (?)", projectIds)
 	}
 
 	tables, err := GetActivitiesTable(query, from, to)
@@ -1444,7 +1444,7 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 	}
 
 	if err := s.db.Save(&dao.UserFeedback{
-		UserID:    user.ID.String(),
+		UserID:    user.ID,
 		UpdatedAt: time.Now(),
 		Stars:     feedback.Stars,
 		Feedback:  feedback.Feedback,
@@ -1517,23 +1517,23 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 
 	var userNotifications []dao.UserNotifications
 
-	getActivityId := func(u *dao.UserNotifications) *string {
-		if u.IssueActivityId != nil {
+	getActivityId := func(u *dao.UserNotifications) uuid.NullUUID {
+		if u.IssueActivityId.Valid {
 			return u.IssueActivityId
 		}
-		if u.ProjectActivityId != nil {
+		if u.ProjectActivityId.Valid {
 			return u.ProjectActivityId
 		}
-		if u.DocActivityId != nil {
+		if u.DocActivityId.Valid {
 			return u.DocActivityId
 		}
-		if u.FormActivityId != nil {
+		if u.FormActivityId.Valid {
 			return u.FormActivityId
 		}
-		if u.WorkspaceActivityId != nil {
+		if u.WorkspaceActivityId.Valid {
 			return u.WorkspaceActivityId
 		}
-		return nil
+		return uuid.NullUUID{}
 	}
 
 	query := s.db.
@@ -1592,7 +1592,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 	elementsRes := utils.Filter(
 		slices.All(*resp.Result.(*[]dao.UserNotifications)),
 		func(t dao.UserNotifications) bool {
-			if id := getActivityId(&t); id != nil {
+			if id := getActivityId(&t); id.Valid {
 				return true
 			}
 			return false
@@ -1600,11 +1600,11 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 
 	res := slices.Collect(elementsRes)
 
-	qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) string {
-		if id := getActivityId(t); id != nil {
-			return *id
+	qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) uuid.UUID {
+		if id := getActivityId(t); id.Valid {
+			return id.UUID
 		}
-		return ""
+		return uuid.Nil
 	})
 
 	var fa []dao.FullActivity
@@ -1614,26 +1614,26 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		Joins("Actor").
 		Joins("Issue").
 		Joins("Doc").
-		Where("ua.id IN (?)", qqq).
+		Where("ua.id::text IN (?)", qqq).
 		Find(&fa).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 	}
 
-	idMap := utils.SliceToMap(&fa, func(t *dao.FullActivity) string {
+	idMap := utils.SliceToMap(&fa, func(t *dao.FullActivity) uuid.UUID {
 		return t.Id
 	})
 
 	for i := 0; i < len(*resp.Result.(*[]dao.UserNotifications)); i++ {
-		var id *string
+		var id uuid.NullUUID
 		if results, ok := resp.Result.(*[]dao.UserNotifications); ok {
 			id = getActivityId(&(*results)[i])
-			if id == nil {
+			if !id.Valid {
 				continue
 			}
 
-			if v, ok := idMap[*id]; ok {
+			if v, ok := idMap[id.UUID]; ok {
 				(*resp.Result.(*[]dao.UserNotifications))[i].FullActivity = &v
 			}
 		}
@@ -1977,7 +1977,7 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
 	user := c.(SearchFilterContext).User
 
-	if filter.AuthorID != user.ID.String() {
+	if filter.AuthorID != user.ID {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
@@ -2008,7 +2008,7 @@ func (s *Services) deleteSearchFilter(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
 	user := c.(SearchFilterContext).User
 
-	if filter.AuthorID != user.ID.String() && !user.IsSuperuser {
+	if filter.AuthorID != user.ID && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
@@ -2088,7 +2088,7 @@ func (s *Services) deleteSearchFilterFromMe(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
 	user := c.(SearchFilterContext).User
 
-	if filter.AuthorID == user.ID.String() {
+	if filter.AuthorID == user.ID {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveOwnFilter)
 	}
 
@@ -2358,7 +2358,7 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 			ID: dao.GenUUID(),
 			//CreatedAt:   time.Now(),
 			//UpdatedAt:   time.Now(),
-			AuthorID:    user.ID.String(),
+			AuthorID:    user.ID,
 			Name:        req.Name,
 			Description: req.Description,
 			Public:      req.Public,

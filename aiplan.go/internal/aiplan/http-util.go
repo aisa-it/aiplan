@@ -104,6 +104,28 @@ func (s *Services) uploadAvatarForm(tx *gorm.DB, file *multipart.FileHeader, dst
 	return tx.Create(&dstAsset).Error
 }
 
+// Helper functions for activity migration
+func parseUUID(s *string) uuid.UUID {
+	if s == nil || *s == "" {
+		return uuid.Nil
+	}
+	return uuid.Must(uuid.FromString(*s))
+}
+
+func parseUUIDString(s string) uuid.UUID {
+	if s == "" {
+		return uuid.Nil
+	}
+	return uuid.Must(uuid.FromString(s))
+}
+
+func parseNullUUID(s *string) uuid.NullUUID {
+	if s == nil || *s == "" {
+		return uuid.NullUUID{}
+	}
+	return uuid.NullUUID{UUID: uuid.Must(uuid.FromString(*s)), Valid: true}
+}
+
 func activityMigrate(db *gorm.DB) {
 	var oldAct []dao.EntityActivity
 	db.FindInBatches(&oldAct, 100, func(tx *gorm.DB, batch int) error {
@@ -119,7 +141,7 @@ func activityMigrate(db *gorm.DB) {
 		for _, activity := range oldAct {
 			switch activity.EntityType {
 			case "issue":
-				if activity.Field != nil && activity.IssueId != nil {
+				if activity.Field != nil && activity.IssueId.Valid {
 					is := dao.IssueActivity{
 						Id:            activity.Id,
 						CreatedAt:     activity.CreatedAt,
@@ -128,8 +150,8 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						IssueId:       *activity.IssueId,
-						ProjectId:     uuid.Must(uuid.FromString(*activity.ProjectId)),
+						IssueId:       activity.IssueId.UUID,
+						ProjectId:     activity.ProjectId.UUID,
 						WorkspaceId:   activity.WorkspaceId,
 						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
@@ -193,46 +215,52 @@ func activityMigrate(db *gorm.DB) {
 							}
 						}
 					case "issue_transfer":
-						idsForNotify = append(idsForNotify, activity.Id)
-						ids = append(ids, activity.Id)
+						idsForNotify = append(idsForNotify, activity.Id.String())
+						ids = append(ids, activity.Id.String())
 						continue
 					default:
 						continue
 					}
 					issueAct = append(issueAct, is)
-					ids = append(ids, activity.Id)
+					ids = append(ids, activity.Id.String())
 
 				} else {
 					if activity.Verb == "deleted" {
-						ids = append(ids, activity.Id)
+						ids = append(ids, activity.Id.String())
 						continue
 					} else {
 						field := "issue"
 						var issue dao.Issue
 						if err := tx.Preload("Project").
-							Where("id = ?", activity.IssueId).
+							Where("id = ?", activity.IssueId.UUID).
 							First(&issue).Error; err != nil {
 							continue
 						}
 
 						pa := dao.ProjectActivity{
-							Id:            activity.Id,
-							CreatedAt:     activity.CreatedAt,
-							Verb:          "created",         // в зависимости от нового поведения
-							Field:         &field,            // в зависимости от нового поведения
-							OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
-							NewValue:      issue.String(),
-							Comment:       activity.Comment,
-							ProjectId:     uuid.Must(uuid.FromString(*activity.ProjectId)),
-							WorkspaceId:   activity.WorkspaceId,
-							ActorId:       activity.ActorId,
-							NewIdentifier: activity.IssueId, // в зависимости от нового поведения
-							OldIdentifier: nil,              // в зависимости от нового поведения
+							Id:          activity.Id,
+							CreatedAt:   activity.CreatedAt,
+							Verb:        "created",         // в зависимости от нового поведения
+							Field:       &field,            // в зависимости от нового поведения
+							OldValue:    activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
+							NewValue:    issue.String(),
+							Comment:     activity.Comment,
+							ProjectId:   activity.ProjectId.UUID,
+							WorkspaceId: activity.WorkspaceId,
+							ActorId:     activity.ActorId,
+							NewIdentifier: func() *string {
+								if activity.IssueId.Valid {
+									s := activity.IssueId.UUID.String()
+									return &s
+								}
+								return nil
+							}(), // в зависимости от нового поведения
+							OldIdentifier: nil, // в зависимости от нового поведения
 							Notified:      activity.Notified,
 							TelegramMsgId: activity.TelegramMsgId,
 						}
 						projectAct = append(projectAct, pa)
-						ids = append(ids, activity.Id)
+						ids = append(ids, activity.Id.String())
 					}
 				}
 
@@ -246,7 +274,7 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						ProjectId:     uuid.Must(uuid.FromString(*activity.ProjectId)),
+						ProjectId:     activity.ProjectId.UUID,
 						WorkspaceId:   activity.WorkspaceId,
 						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
@@ -296,7 +324,7 @@ func activityMigrate(db *gorm.DB) {
 						}
 
 					case "status_name", "status_description", "status_color", "status_group", "label_name", "label_color":
-						ids = append(ids, activity.Id)
+						ids = append(ids, activity.Id.String())
 						continue
 					case "member":
 						var id string
@@ -323,7 +351,7 @@ func activityMigrate(db *gorm.DB) {
 						continue
 					}
 					projectAct = append(projectAct, pa)
-					ids = append(ids, activity.Id)
+					ids = append(ids, activity.Id.String())
 
 				} else {
 					field := "project"
@@ -344,12 +372,13 @@ func activityMigrate(db *gorm.DB) {
 					}
 
 					if wa.Verb == "created" {
-						wa.NewIdentifier = activity.ProjectId
+						projectId := activity.ProjectId.UUID.String()
+						wa.NewIdentifier = &projectId
 					}
 
 					var project dao.Project
 					if err := tx.Preload("Workspace").
-						Where("id = ?", activity.ProjectId).
+						Where("id = ?", activity.ProjectId.UUID).
 						First(&project).Error; err != nil {
 						if gorm.ErrRecordNotFound == err {
 							wa.OldIdentifier = nil
@@ -359,7 +388,7 @@ func activityMigrate(db *gorm.DB) {
 						}
 					}
 					workspaceAct = append(workspaceAct, wa)
-					ids = append(ids, activity.Id)
+					ids = append(ids, activity.Id.String())
 				}
 			case "workspace":
 				if activity.Field != nil && *activity.Field != "" {
@@ -393,7 +422,7 @@ func activityMigrate(db *gorm.DB) {
 						continue
 					}
 					workspaceAct = append(workspaceAct, wa)
-					ids = append(ids, activity.Id)
+					ids = append(ids, activity.Id.String())
 				} else {
 					field := "workspace"
 					ra := dao.RootActivity{
@@ -412,7 +441,8 @@ func activityMigrate(db *gorm.DB) {
 					}
 
 					if ra.Verb == "created" {
-						ra.NewIdentifier = &activity.WorkspaceId
+						workspaceId := activity.WorkspaceId.String()
+						ra.NewIdentifier = &workspaceId
 					}
 
 					var workspace dao.Workspace
@@ -427,7 +457,7 @@ func activityMigrate(db *gorm.DB) {
 						}
 					}
 					rootAct = append(rootAct, ra)
-					ids = append(ids, activity.Id)
+					ids = append(ids, activity.Id.String())
 				}
 
 			case "form":
@@ -441,7 +471,7 @@ func activityMigrate(db *gorm.DB) {
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
 						WorkspaceId:   activity.WorkspaceId,
-						FormId:        *activity.FormId,
+						FormId:        activity.FormId.UUID,
 						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
 						OldIdentifier: activity.OldIdentifier, // в зависимости от нового поведения
@@ -460,7 +490,7 @@ func activityMigrate(db *gorm.DB) {
 						continue
 					}
 					formAct = append(formAct, fa)
-					ids = append(ids, activity.Id)
+					ids = append(ids, activity.Id.String())
 
 				} else {
 					//TODO - создание форм
@@ -482,12 +512,13 @@ func activityMigrate(db *gorm.DB) {
 					}
 
 					if wa.Verb == "created" {
-						wa.NewIdentifier = activity.FormId
+						formId := activity.FormId.UUID.String()
+						wa.NewIdentifier = &formId
 					}
 
 					var form dao.Form
 					if err := tx.Preload("Workspace").
-						Where("id = ?", activity.FormId).
+						Where("id = ?", activity.FormId.UUID).
 						First(&form).Error; err != nil {
 						if gorm.ErrRecordNotFound == err {
 							wa.OldIdentifier = nil
@@ -497,7 +528,7 @@ func activityMigrate(db *gorm.DB) {
 						}
 					}
 					workspaceAct = append(workspaceAct, wa)
-					ids = append(ids, activity.Id)
+					ids = append(ids, activity.Id.String())
 
 				}
 			}
@@ -511,7 +542,7 @@ func activityMigrate(db *gorm.DB) {
 
 				for _, activity := range issueAct {
 					if err := tx.Model(&dao.UserNotifications{}).
-						Where("entity_activity_id = ?", activity.Id).
+						Where("entity_activity_id = ?", activity.Id.String()).
 						Updates(map[string]interface{}{
 							"issue_activity_id":  activity.Id,
 							"entity_activity_id": nil,
@@ -528,7 +559,7 @@ func activityMigrate(db *gorm.DB) {
 
 				for _, activity := range projectAct {
 					if err := tx.Model(&dao.UserNotifications{}).
-						Where("entity_activity_id = ?", activity.Id).
+						Where("entity_activity_id = ?", activity.Id.String()).
 						Updates(map[string]interface{}{
 							"project_activity_id": activity.Id,
 							"entity_activity_id":  nil,
@@ -545,7 +576,7 @@ func activityMigrate(db *gorm.DB) {
 
 				for _, activity := range formAct {
 					if err := tx.Model(&dao.UserNotifications{}).
-						Where("entity_activity_id = ?", activity.Id).
+						Where("entity_activity_id = ?", activity.Id.String()).
 						Updates(map[string]interface{}{
 							"form_activity_id":   activity.Id,
 							"entity_activity_id": nil,
@@ -562,7 +593,7 @@ func activityMigrate(db *gorm.DB) {
 
 				for _, activity := range workspaceAct {
 					if err := tx.Model(&dao.UserNotifications{}).
-						Where("entity_activity_id = ?", activity.Id).
+						Where("entity_activity_id = ?", activity.Id.String()).
 						Updates(map[string]interface{}{
 							"workspace_activity_id": activity.Id,
 							"entity_activity_id":    nil,
@@ -579,7 +610,7 @@ func activityMigrate(db *gorm.DB) {
 
 				for _, activity := range rootAct {
 					if err := tx.Model(&dao.UserNotifications{}).
-						Where("entity_activity_id = ?", activity.Id).
+						Where("entity_activity_id = ?", activity.Id.String()).
 						Updates(map[string]interface{}{
 							"root_activity_id":   activity.Id,
 							"entity_activity_id": nil,

@@ -210,11 +210,10 @@ func (s *Services) createRootDoc(c echo.Context) error {
 			return err
 		}
 
-		userIdStr := user.ID.String()
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
-			CreatedById: &userIdStr,
-			WorkspaceId: &workspace.ID,
+			CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+			WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 			DocId: uuid.NullUUID{
 				UUID:  doc.ID,
 				Valid: true,
@@ -297,11 +296,10 @@ func (s *Services) createDoc(c echo.Context) error {
 			return apierrors.ErrDocChildRoleTooLow
 		}
 
-		userIdStr := user.ID.String()
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
-			CreatedById: &userIdStr,
-			WorkspaceId: &workspace.ID,
+			CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+			WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 			DocId: uuid.NullUUID{
 				UUID:  doc.ID,
 				Valid: true,
@@ -367,19 +365,18 @@ func (s *Services) updateDoc(c echo.Context) error {
 	form, _ := c.MultipartForm()
 
 	if utils.CheckInSet(utils.SliceToSet(fields), "editor_role", "reader_role", "editor_list", "reader_list", "watcher_list") {
-		if doc.CreatedById != user.ID.String() && workspaceMember.Role != types.AdminRole {
+		if doc.CreatedById != user.ID && workspaceMember.Role != types.AdminRole {
 			return EErrorDefined(c, apierrors.ErrDocForbidden)
 		}
 	}
 
 	var editorListOk, readerListOk, watcherListOk bool
 
-	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
-			CreatedById: &userIdStr,
-			WorkspaceId: &workspace.ID,
+			CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+			WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 			DocId: uuid.NullUUID{
 				UUID:  doc.ID,
 				Valid: true,
@@ -400,7 +397,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 		}
 
 		if len(fields) > 0 {
-			workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
+			workspaceUUID := workspace.ID
 			userUUID := user.ID
 
 			memberAccess := make(map[string]dao.DocAccessRules)
@@ -728,7 +725,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		var currentGroup, newGroup []dao.Doc
 		var newParent dao.Doc
-		if err := buildGroupQuery(tx, doc.WorkspaceId, doc.ParentDocID).
+		if err := buildGroupQuery(tx, doc.WorkspaceId.String(), doc.ParentDocID).
 			Preload("ParentDoc").
 			Preload("Workspace").
 			Find(&currentGroup).Error; err != nil {
@@ -761,7 +758,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 				}
 			}
 
-			if err := buildGroupQuery(tx, doc.WorkspaceId, parseNullableUUID(req.ParentId)).
+			if err := buildGroupQuery(tx, doc.WorkspaceId.String(), parseNullableUUID(req.ParentId)).
 				Preload("ParentDoc").
 				Preload("Workspace").
 				Find(&newGroup).Error; err != nil {
@@ -1109,7 +1106,6 @@ func (s *Services) createDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDocCommentEmpty)
 	}
 
-	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where("id = ?", comment.ReplyToCommentId).First(&comment.OriginalComment).Error; err != nil {
@@ -1126,8 +1122,8 @@ func (s *Services) createDocComment(c echo.Context) error {
 
 		fileAsset := dao.FileAsset{
 			Id:           dao.GenUUID(),
-			CreatedById:  &userIdStr,
-			WorkspaceId:  &workspace.ID,
+			CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
+			WorkspaceId:  uuid.NullUUID{UUID: workspace.ID, Valid: true},
 			DocCommentId: uuid.NullUUID{UUID: comment.Id, Valid: true},
 		}
 
@@ -1233,7 +1229,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 
 	oldMap := StructToJSONMap(commentOld)
 
-	if *commentOld.ActorId != user.ID.String() {
+	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -1246,13 +1242,12 @@ func (s *Services) updateDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDocCommentEmpty)
 	}
 
-	userIdStr := user.ID.String()
 	form, _ := c.MultipartForm()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:           dao.GenUUID(),
-			CreatedById:  &userIdStr,
-			WorkspaceId:  &workspace.ID,
+			CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
+			WorkspaceId:  uuid.NullUUID{UUID: workspace.ID, Valid: true},
 			DocCommentId: uuid.NullUUID{UUID: comment.Id, Valid: true},
 		}
 
@@ -1331,7 +1326,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if workspaceMember.Role != types.AdminRole && *comment.ActorId != user.ID.String() {
+	if workspaceMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -1406,7 +1401,7 @@ func (s *Services) addDocCommentReaction(c echo.Context) error {
 	reaction := dao.DocCommentReaction{
 		Id:        dao.GenUUID(),
 		CreatedAt: time.Now(),
-		UserId:    user.ID.String(),
+		UserId:    user.ID,
 		CommentId: comment.Id,
 		Reaction:  reactionRequest.Reaction,
 	}
@@ -1510,7 +1505,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 	doc := c.(DocContext).Doc
 	workspace := c.(DocContext).Workspace
 
-	if !limiter.Limiter.CanAddAttachment(uuid.Must(uuid.FromString(workspace.ID))) {
+	if !limiter.Limiter.CanAddAttachment(workspace.ID) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 	}
 
@@ -1538,29 +1533,29 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		assetId,
 		asset.Header.Get("Content-Type"),
 		&filestorage.Metadata{
-			WorkspaceId: workspace.ID,
+			WorkspaceId: workspace.ID.String(),
 			DocId:       doc.ID.String(),
 		},
 	); err != nil {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	docAttachment := dao.DocAttachment{
 		Id:          dao.GenID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CreatedById: &userIdStr,
-		UpdatedById: &userIdStr,
+		CreatedById: userID,
+		UpdatedById: userID,
 		AssetId:     assetId,
-		DocId:       doc.ID.String(),
+		DocId:       doc.ID,
 		WorkspaceId: workspace.ID,
 	}
 
 	fa := dao.FileAsset{
 		Id:          assetId,
-		CreatedById: &userIdStr,
-		WorkspaceId: &workspace.ID,
+		CreatedById: userID,
+		WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 		Name:        fileName,
 		ContentType: asset.Header.Get("Content-Type"),
 		FileSize:    int(asset.Size),
@@ -1667,7 +1662,7 @@ func (s *Services) addDocToFavorites(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
-	doc, err := dao.GetDoc(s.db, workspace.ID, req.DocID, workspaceMember)
+	doc, err := dao.GetDoc(s.db, workspace.ID.String(), req.DocID, workspaceMember)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return EErrorDefined(c, apierrors.ErrDocNotFound)
@@ -1676,9 +1671,9 @@ func (s *Services) addDocToFavorites(c echo.Context) error {
 	}
 
 	docFavorite := dao.DocFavorites{
-		Id:          dao.GenID(),
-		CreatedById: &workspaceMember.MemberId,
-		DocId:       doc.ID.String(),
+		Id:          dao.GenUUID(),
+		CreatedById: uuid.NullUUID{UUID: workspaceMember.MemberId, Valid: true},
+		DocId:       doc.ID,
 		UserId:      workspaceMember.MemberId,
 		WorkspaceId: workspace.ID,
 		Workspace:   &workspace,
@@ -2049,7 +2044,7 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 		return &dao.Doc{
 			ID:          dao.GenUUID(),
 			Author:      user,
-			UpdatedById: nil,
+			UpdatedById: uuid.NullUUID{},
 			Title:       req.Title,
 			Content:     req.Content,
 			EditorRole:  req.EditorRole,
@@ -2093,8 +2088,7 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 			}
 		}
 		if len(resFields) > 0 {
-			userIdStr := c.(DocContext).User.ID.String()
-			docCopy.UpdatedById = &userIdStr
+			docCopy.UpdatedById = uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
 			resFields = append(resFields, "updated_by_id")
 		}
 
@@ -2120,14 +2114,14 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 		replyId = uuid.NullUUID{UUID: fromString, Valid: true}
 	}
 	if comment == nil {
-		userIdStr := c.(DocContext).User.ID.String()
+		userID := uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
 		commentCreate := &dao.DocComment{
 			Id:               dao.GenUUID(),
 			CommentStripped:  "",
-			CreatedById:      &userIdStr,
+			CreatedById:      userID,
 			WorkspaceId:      c.(DocContext).Workspace.ID,
-			DocId:            c.(DocContext).Doc.ID.String(),
-			ActorId:          &userIdStr,
+			DocId:            c.(DocContext).Doc.ID,
+			ActorId:          userID,
 			Actor:            c.(DocContext).User,
 			CommentHtml:      req.CommentHtml,
 			ReplyToCommentId: replyId,
@@ -2146,8 +2140,7 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 					comment.CommentHtml = req.CommentHtml
 					comment.CommentStripped = comment.CommentHtml.StripTags()
 					resFields = append(resFields, "comment_html", "comment_stripped", "updated_by_id")
-					userIdStr := c.(DocContext).User.ID.String()
-					comment.UpdatedById = &userIdStr
+					comment.UpdatedById = uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
 				}
 			}
 		}
@@ -2168,7 +2161,7 @@ func (s *Services) uploadDocAttachments(tx *gorm.DB, form *multipart.Form, name 
 
 		if err := s.uploadAssetForm(tx, f, &fa,
 			filestorage.Metadata{
-				WorkspaceId: *fa.WorkspaceId,
+				WorkspaceId: fa.WorkspaceId.UUID.String(),
 			}); err != nil {
 			return res, err
 		}

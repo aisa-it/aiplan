@@ -23,7 +23,7 @@ import (
 
 // Пользователи
 type User struct {
-	ID uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 
 	Password   string  `json:"-"`
 	Username   *string `json:"username" gorm:"uniqueIndex:,where:deleted_at is NULL" validate:"omitempty,username"`
@@ -40,11 +40,13 @@ type User struct {
 	StatusEndDate sql.NullTime
 
 	CreatedAt   time.Time      `json:"created_at"`
-	CreatedByID *string        `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	CreatedByID uuid.NullUUID  `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
 
-	UpdatedAt   time.Time `json:"-"`
-	UpdatedById *string   `json:"-" gorm:"index" extensions:"x-nullable"`
+	UpdatedAt time.Time `json:"-"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	// Переименовано поле для избежания конфликта с UpdatedById в других моделях
+	SelfUpdatedByUserId uuid.NullUUID `json:"-" gorm:"column:updated_by_id;type:uuid;index" extensions:"x-nullable"`
 
 	IsSuperuser     bool `json:"is_superuser"`
 	IsActive        bool `json:"is_active" gorm:"default:true"`
@@ -70,7 +72,7 @@ type User struct {
 
 	AuthProvider string `json:"-" gorm:"default:'local'"`
 
-	LastWorkspaceId *string `json:"-" gorm:"index" extensions:"x-nullable"`
+	LastWorkspaceId uuid.NullUUID `json:"-" gorm:"type:uuid;index" extensions:"x-nullable"`
 
 	Role *string `json:"role" extensions:"x-nullable"`
 
@@ -86,7 +88,7 @@ type User struct {
 
 	AvatarAsset   *FileAsset `json:"avatar_details,omitempty" gorm:"foreignKey:AvatarId" extensions:"x-nullable"`
 	CreatedBY     *User      `json:"created_by" gorm:"foreignKey:CreatedByID" extensions:"x-nullable"` // 'BY' NOT A MISTAKE, SOME SPECIAL SHIT FOR MIGRATOR
-	UpdatedBy     *User      `json:"updated_by" gorm:"foreignKey:UpdatedById" extensions:"x-nullable"`
+	SelfUpdatedBy *User      `json:"-" gorm:"foreignKey:SelfUpdatedByUserId;references:ID;constraint:-" extensions:"x-nullable"`
 	LastWorkspace *Workspace `json:"-" gorm:"foreignKey:LastWorkspaceId" extensions:"x-nullable"`
 
 	SearchFilters []SearchFilter `json:"-" gorm:"constraint:OnDelete:CASCADE;many2many:user_search_filters"`
@@ -163,9 +165,12 @@ func (u *User) ToDTO() *dto.User {
 		ViewProps:         u.ViewProps,
 		Settings:          u.Settings,
 		Tutorial:          u.Tutorial,
-		LastWorkspaceId:   u.LastWorkspaceId,
 		NotificationCount: 0,
 		AttachmentsAllow:  nil,
+	}
+	if u.LastWorkspaceId.Valid {
+		workspaceIdStr := u.LastWorkspaceId.UUID.String()
+		userDto.LastWorkspaceId = &workspaceIdStr
 	}
 	if u.LastWorkspace != nil {
 		userDto.LastWorkspaceSlug = &u.LastWorkspace.Slug
@@ -245,14 +250,15 @@ func (User) TableName() string {
 }
 
 type UserFeedback struct {
-	UserID    string    `json:"user_id" gorm:"primaryKey"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserID    uuid.UUID `json:"user_id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"<-:create"`
 	UpdatedAt time.Time `json:"updated_at"`
 
 	Stars    int    `json:"stars"`
 	Feedback string `json:"feedback"`
 
-	User User `json:"user_detail"`
+	User User `json:"user_detail" gorm:"foreignKey:UserID;references:ID"`
 }
 
 func (uf *UserFeedback) ToDTO() *dto.UserFeedback {
@@ -270,11 +276,11 @@ func (uf *UserFeedback) ToDTO() *dto.UserFeedback {
 func (UserFeedback) TableName() string { return "user_feedbacks" }
 
 type SearchFilter struct {
-	ID uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	AuthorID  string    `json:"author_id"`
+	AuthorID  uuid.UUID `json:"author_id" gorm:"type:uuid"`
 
 	Name        string         `json:"name"`
 	NameTokens  types.TsVector `json:"-" gorm:"index:search_filter_name_tokens,type:gin"`
@@ -343,49 +349,50 @@ type UserNotifications struct {
 	CreatedAt time.Time      `json:"created_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	UserId string `json:"user_id" gorm:"index"`
-	User   *User  `json:"user_detail,omitempty" gorm:"foreignKey:UserId" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
+	User   *User     `json:"user_detail,omitempty" gorm:"foreignKey:UserId" extensions:"x-nullable"`
 
 	Type             string          `json:"type"`
-	EntityActivityId *string         `json:"entity_activity,omitempty"`
+	EntityActivityId uuid.NullUUID   `json:"entity_activity,omitempty"`
 	EntityActivity   *EntityActivity `json:"entity_activity_detail,omitempty" gorm:"foreignKey:EntityActivityId" extensions:"x-nullable"`
 
 	CommentId *uuid.UUID    `json:"comment_id,omitempty"`
 	Comment   *IssueComment `json:"comment,omitempty" gorm:"foreignKey:CommentId" extensions:"x-nullable"`
 
-	WorkspaceId *string    `json:"workspace_id,omitempty"`
-	Workspace   *Workspace `json:"workspace,omitempty" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	WorkspaceId uuid.NullUUID `json:"workspace_id,omitempty" gorm:"type:uuid"`
+	Workspace   *Workspace    `json:"workspace,omitempty" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 
-	IssueId *string `json:"issue_id,omitempty"`
-	Issue   *Issue  `json:"issue,omitempty" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
+	IssueId uuid.NullUUID `json:"issue_id,omitempty" gorm:"type:uuid"`
+	Issue   *Issue        `json:"issue,omitempty" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 
-	Title    string  `json:"title,omitempty"`
-	Msg      string  `json:"msg,omitempty"`
-	AuthorId *string `json:"author_id"`
-	Author   *User   `json:"author,omitempty" gorm:"foreignKey:AuthorId" extensions:"x-nullable"`
-	Viewed   bool    `json:"viewed" gorm:"default:false"`
+	Title    string        `json:"title,omitempty"`
+	Msg      string        `json:"msg,omitempty"`
+	AuthorId uuid.NullUUID `json:"author_id" gorm:"type:uuid"`
+	Author   *User         `json:"author,omitempty" gorm:"foreignKey:AuthorId" extensions:"x-nullable"`
+	Viewed   bool          `json:"viewed" gorm:"default:false"`
 
 	TargetUser *User `json:"target_user,omitempty" gorm:"-"`
 
-	IssueActivityId *string        `json:"issue_activity,omitempty"`
+	IssueActivityId uuid.NullUUID  `json:"issue_activity,omitempty"`
 	IssueActivity   *IssueActivity `json:"issue_activity_detail,omitempty" gorm:"foreignKey:IssueActivityId" extensions:"x-nullable"`
 
-	ProjectActivityId *string          `json:"project_activity,omitempty"`
+	ProjectActivityId uuid.NullUUID    `json:"project_activity,omitempty"`
 	ProjectActivity   *ProjectActivity `json:"project_activity_detail,omitempty" gorm:"foreignKey:ProjectActivityId" extensions:"x-nullable"`
 
-	FormActivityId *string       `json:"form_activity,omitempty"`
+	FormActivityId uuid.NullUUID `json:"form_activity,omitempty"`
 	FormActivity   *FormActivity `json:"form_activity_detail,omitempty" gorm:"foreignKey:FormActivityId" extensions:"x-nullable"`
 
-	DocActivityId *string      `json:"doc_activity,omitempty"`
-	DocActivity   *DocActivity `json:"doc_activity_detail,omitempty" gorm:"foreignKey:DocActivityId" extensions:"x-nullable"`
+	DocActivityId uuid.NullUUID `json:"doc_activity,omitempty"`
+	DocActivity   *DocActivity  `json:"doc_activity_detail,omitempty" gorm:"foreignKey:DocActivityId" extensions:"x-nullable"`
 
-	SprintActivityId *string         `json:"sprint_activity,omitempty"`
+	SprintActivityId uuid.NullUUID   `json:"sprint_activity,omitempty"`
 	SprintActivity   *SprintActivity `json:"sprint_activity_detail,omitempty" gorm:"foreignKey:SprintActivityId" extensions:"x-nullable"`
 
-	WorkspaceActivityId *string            `json:"workspace_activity,omitempty"`
+	WorkspaceActivityId uuid.NullUUID      `json:"workspace_activity,omitempty"`
 	WorkspaceActivity   *WorkspaceActivity `json:"workspace_activity_detail,omitempty" gorm:"foreignKey:WorkspaceActivityId" extensions:"x-nullable"`
 
-	RootActivityId *string       `json:"root_activity,omitempty"`
+	RootActivityId uuid.NullUUID `json:"root_activity,omitempty"`
 	RootActivity   *RootActivity `json:"root_activity_detail,omitempty" gorm:"foreignKey:RootActivityId" extensions:"x-nullable"`
 
 	FullActivity *FullActivity `json:"full_activity_detail,omitempty" gorm:"-" extensions:"x-nullable"`
@@ -397,7 +404,7 @@ func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
 	}
 	return &dto.UserNotificationsLight{
 		ID:               un.ID,
-		UserId:           un.UserId,
+		UserId:           un.UserId.String(),
 		Type:             un.Type,
 		Viewed:           un.Viewed,
 		Title:            un.Title,
@@ -405,7 +412,7 @@ func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
 		AuthorId:         un.AuthorId,
 		EntityActivityId: un.EntityActivityId,
 		CommentId:        convertUUIDToStringPtr(un.CommentId),
-		WorkspaceId:      un.WorkspaceId,
+		WorkspaceId:      convertNullUUIDToStringPtr(un.WorkspaceId),
 		IssueId:          un.IssueId,
 	}
 }
@@ -439,6 +446,13 @@ func (un *UserNotifications) AfterCreate(tx *gorm.DB) (err error) {
 	return
 }
 
+func (un *UserNotifications) GetWorkspaceId() uuid.UUID {
+	if un.WorkspaceId.Valid {
+		return un.WorkspaceId.UUID
+	}
+	return uuid.Nil
+}
+
 func (un *UserNotifications) AfterFind(tx *gorm.DB) (err error) {
 	if un.EntityActivity != nil {
 		if un.EntityActivity.Verb == "updated" && (*un.EntityActivity.Field == "assignees" || *un.EntityActivity.Field == "watchers") {
@@ -464,6 +478,14 @@ func convertUUIDToStringPtr(uuidPtr *uuid.UUID) *string {
 		return nil
 	}
 	str := uuidPtr.String()
+	return &str
+}
+
+func convertNullUUIDToStringPtr(nullUuid uuid.NullUUID) *string {
+	if !nullUuid.Valid {
+		return nil
+	}
+	str := nullUuid.UUID.String()
 	return &str
 }
 

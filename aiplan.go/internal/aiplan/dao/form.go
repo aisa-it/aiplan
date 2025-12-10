@@ -2,7 +2,6 @@
 package dao
 
 import (
-	"database/sql"
 	"fmt"
 
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
@@ -20,24 +19,27 @@ import (
 )
 
 type Form struct {
-	ID        uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
+	ID        uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	CreatedById string  `json:"created_by" gorm:"index"`
-	UpdatedById *string `json:"updated_by" extensions:"x-nullable"`
-	Author      *User   `json:"author_detail" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.UUID `json:"created_by" gorm:"type:uuid;index"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
+	Author      *User         `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 
 	Slug        string             `json:"slug" gorm:"uniqueIndex;not null"`
 	Title       string             `json:"title" validate:"required"`
 	Description types.RedactorHTML `json:"description"`
 	AuthRequire bool               `json:"auth_require"`
 
-	TargetProjectId sql.NullString
-	TargetProject   *Project `gorm:"foreignKey:TargetProjectId" extensions:"x-nullable"`
+	TargetProjectId uuid.NullUUID `gorm:"type:uuid"`
+	TargetProject   *Project      `gorm:"foreignKey:TargetProjectId" extensions:"x-nullable"`
 
 	EndDate     *types.TargetDate `json:"end_date" gorm:"index" extensions:"x-nullable"`
-	WorkspaceId string            `json:"workspace" gorm:"index"`
+	WorkspaceId uuid.UUID         `json:"workspace" gorm:"type:uuid;index"`
 	Workspace   *Workspace        `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 
 	Fields                 types.FormFieldsSlice  `json:"fields" gorm:"type:jsonb"`
@@ -59,7 +61,7 @@ func (f Form) GetEntityType() string {
 	return actField.Form.String()
 }
 
-func (f Form) GetWorkspaceId() string {
+func (f Form) GetWorkspaceId() uuid.UUID {
 	return f.WorkspaceId
 }
 
@@ -80,14 +82,15 @@ func (f *Form) ToLightDTO() *dto.FormLight {
 		Description: f.Description,
 		AuthRequire: f.AuthRequire,
 		EndDate:     f.EndDate,
-		WorkspaceId: f.WorkspaceId,
+		WorkspaceId: f.WorkspaceId.String(),
 		Fields:      f.Fields,
 		Active:      f.Active,
 		Url:         types.JsonURL{f.URL},
 	}
 
 	if f.TargetProjectId.Valid {
-		ff.TargetProjectId = &f.TargetProjectId.String
+		targetProjectIdStr := f.TargetProjectId.UUID.String()
+		ff.TargetProjectId = &targetProjectIdStr
 	}
 
 	return ff
@@ -142,7 +145,7 @@ func (form *Form) AfterFind(tx *gorm.DB) error {
 	}
 
 	if form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types.AdminRole {
-		raw = fmt.Sprintf("/%s/forms/%s/", form.WorkspaceId, form.Slug)
+		raw = fmt.Sprintf("/%s/forms/%s/", form.WorkspaceId.String(), form.Slug)
 		u, _ := url.Parse(raw)
 		form.URL = Config.WebURL.ResolveReference(u)
 	} else {
@@ -234,17 +237,18 @@ type FormExtendFields struct {
 }
 
 type FormAnswer struct {
-	ID        uuid.UUID `gorm:"column:id;primaryKey;type:text" json:"id"`
+	ID        uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	SeqId     int       `json:"seq_id" gorm:"uniqueIndex:idx_form_seq,priority:2"`
 	CreatedAt time.Time `json:"created_at"`
 
-	CreatedById uuid.NullUUID `json:"created_by_id" gorm:"index;type:text"`
-	Responder   *User         `json:"responder" gorm:"foreignKey:CreatedById" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id" gorm:"index;type:uuid"`
+	Responder   *User         `json:"responder" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
 
-	WorkspaceId string     `json:"workspace" gorm:"index"`
+	WorkspaceId uuid.UUID  `json:"workspace" gorm:"index;type:uuid"`
 	Workspace   *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 
-	FormId   uuid.UUID `json:"form_id" gorm:"uniqueIndex:idx_form_seq,priority:1;type:text"`
+	FormId   uuid.UUID `json:"form_id" gorm:"uniqueIndex:idx_form_seq,priority:1;type:uuid"`
 	Form     *Form     `json:"form" gorm:"foreignKey:FormId" extensions:"x-nullable"`
 	FormDate time.Time `json:"form_date"`
 
@@ -273,7 +277,7 @@ func (f FormAnswer) GetEntityType() string {
 }
 
 func (f *FormAnswer) GetWorkspaceId() string {
-	return f.WorkspaceId
+	return f.WorkspaceId.String()
 }
 
 func (f *FormAnswer) GetFormId() string {
@@ -345,7 +349,7 @@ type FormEntityI interface {
 }
 
 type FormActivity struct {
-	Id        string    `json:"id" gorm:"primaryKey"`
+	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time `json:"created_at" gorm:"index:form_activities_form_index,sort:desc,type:btree,priority:2;index:form_activities_actor_index,sort:desc,type:btree,priority:2;index:form_activities_mail_index,type:btree,where:notified = false"`
 	// verb character varying IS_NULL:NO
 	Verb string `json:"verb"`
@@ -358,11 +362,11 @@ type FormActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// form_id uuid IS_NULL:YES
-	FormId string `json:"form_id,omitempty" gorm:"index:form_activities_form_index,priority:1" extensions:"x-nullable"`
+	FormId uuid.UUID `json:"form_id,omitempty" gorm:"type:uuid;index:form_activities_form_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:form_activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:form_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
@@ -424,7 +428,7 @@ func (fa FormActivity) GetOldIdentifier() string {
 }
 
 func (fa FormActivity) GetId() string {
-	return fa.Id
+	return fa.Id.String()
 }
 
 // FormActivityExtendFields
@@ -448,16 +452,20 @@ type FormAttachment struct {
 	// asset character varying IS_NULL:NO
 	AssetId uuid.UUID `json:"asset" gorm:"type:uuid"`
 	// created_by_id uuid IS_NULL:YES
-	CreatedById *string `json:"created_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// form_id uuid IS_NULL:NO
-	FormId string `json:"form" gorm:"index"`
+	FormId uuid.UUID `json:"form" gorm:"index;type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
-	UpdatedById *string `json:"updated_by_id,omitempty" extensions:"x-nullable"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Asset     *FileAsset `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы для сущности Form. Используется GORM для определения имени таблицы в базе данных.
@@ -500,11 +508,11 @@ func (fa FormAttachment) GetEntityType() string {
 }
 
 func (f *FormAttachment) GetWorkspaceId() string {
-	return f.WorkspaceId
+	return f.WorkspaceId.String()
 }
 
 func (f *FormAttachment) GetFormId() string {
-	return f.FormId
+	return f.FormId.String()
 }
 
 // ToDTO преобразует FormAttachment в dto.Attachment для удобной передачи данных в интерфейс.
