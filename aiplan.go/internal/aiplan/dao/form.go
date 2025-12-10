@@ -2,7 +2,6 @@
 package dao
 
 import (
-	"database/sql"
 	"fmt"
 
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
@@ -36,8 +35,8 @@ type Form struct {
 	Description types.RedactorHTML `json:"description"`
 	AuthRequire bool               `json:"auth_require"`
 
-	TargetProjectId sql.NullString
-	TargetProject   *Project `gorm:"foreignKey:TargetProjectId" extensions:"x-nullable"`
+	TargetProjectId uuid.NullUUID `gorm:"type:uuid"`
+	TargetProject   *Project      `gorm:"foreignKey:TargetProjectId" extensions:"x-nullable"`
 
 	EndDate     *types.TargetDate `json:"end_date" gorm:"index" extensions:"x-nullable"`
 	WorkspaceId uuid.UUID         `json:"workspace" gorm:"type:uuid;index"`
@@ -90,7 +89,8 @@ func (f *Form) ToLightDTO() *dto.FormLight {
 	}
 
 	if f.TargetProjectId.Valid {
-		ff.TargetProjectId = &f.TargetProjectId.String
+		targetProjectIdStr := f.TargetProjectId.UUID.String()
+		ff.TargetProjectId = &targetProjectIdStr
 	}
 
 	return ff
@@ -245,7 +245,7 @@ type FormAnswer struct {
 	CreatedById uuid.NullUUID `json:"created_by_id" gorm:"index;type:uuid"`
 	Responder   *User         `json:"responder" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
 
-	WorkspaceId string     `json:"workspace" gorm:"index"`
+	WorkspaceId uuid.UUID  `json:"workspace" gorm:"index;type:uuid"`
 	Workspace   *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 
 	FormId   uuid.UUID `json:"form_id" gorm:"uniqueIndex:idx_form_seq,priority:1;type:uuid"`
@@ -277,7 +277,7 @@ func (f FormAnswer) GetEntityType() string {
 }
 
 func (f *FormAnswer) GetWorkspaceId() string {
-	return f.WorkspaceId
+	return f.WorkspaceId.String()
 }
 
 func (f *FormAnswer) GetFormId() string {
@@ -455,12 +455,12 @@ type FormAttachment struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// form_id uuid IS_NULL:NO
-	FormId string `json:"form" gorm:"index"`
+	FormId uuid.UUID `json:"form" gorm:"index;type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Asset     *FileAsset `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
@@ -508,11 +508,11 @@ func (fa FormAttachment) GetEntityType() string {
 }
 
 func (f *FormAttachment) GetWorkspaceId() string {
-	return f.WorkspaceId
+	return f.WorkspaceId.String()
 }
 
 func (f *FormAttachment) GetFormId() string {
-	return f.FormId
+	return f.FormId.String()
 }
 
 // ToDTO преобразует FormAttachment в dto.Attachment для удобной передачи данных в интерфейс.

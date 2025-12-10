@@ -59,7 +59,7 @@ type Project struct {
 	CreatedById      uuid.UUID `json:"created_by" gorm:"type:uuid"`
 	DefaultAssignees []string  `json:"default_assignees" gorm:"-"`
 	DefaultWatchers  []string  `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
-	ProjectLeadId    string    `json:"project_lead"`
+	ProjectLeadId    uuid.UUID `json:"project_lead" gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	WorkspaceId uuid.UUID     `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
@@ -232,7 +232,7 @@ func (p *Project) ChangeLead(tx *gorm.DB, pm *ProjectMember) error {
 	}
 
 	if err := tx.Model(p).Updates(Project{
-		ProjectLeadId: pm.Member.ID.String(),
+		ProjectLeadId: pm.Member.ID,
 		ProjectLead:   pm.Member,
 	}).Error; err != nil {
 		return fmt.Errorf("project lead update")
@@ -260,8 +260,8 @@ func (ProjectWithCount) TableName() string {
 // Возвращает:
 //   - error: ошибка, если произошла ошибка при обновлении роли.
 func (project *Project) BeforeCreate(tx *gorm.DB) error {
-	if project.ProjectLeadId == "" {
-		project.ProjectLeadId = project.CreatedById.String()
+	if project.ProjectLeadId == uuid.Nil {
+		project.ProjectLeadId = project.CreatedById
 	}
 	return nil
 }
@@ -768,7 +768,7 @@ type Estimate struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// name character varying IS_NULL:NO
 	Name string `json:"name"`
 	// description text IS_NULL:NO
@@ -822,7 +822,7 @@ type EstimatePoint struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// key integer IS_NULL:NO
 	Key int `json:"key"`
 	// description text IS_NULL:NO
@@ -833,7 +833,7 @@ type EstimatePoint struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// estimate_id uuid IS_NULL:NO
-	EstimateId string `json:"estimate"`
+	EstimateId uuid.UUID `json:"estimate" gorm:"type:uuid"`
 	// project_id uuid IS_NULL:NO
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project" gorm:"type:uuid"`
@@ -920,7 +920,7 @@ type Label struct {
 	// workspace_id uuid NOT NULL,
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// parent_id uuid,
-	ParentId *string `json:"parent" extensions:"x-nullable"`
+	ParentId uuid.NullUUID `json:"parent" gorm:"type:uuid" extensions:"x-nullable"`
 	// color character varying(255) COLLATE pg_catalog."default" NOT NULL,
 	Color string `json:"color" gorm:"uniqueIndex:label_name_color_unique_idx,priority:3;default:#000000"`
 

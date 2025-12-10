@@ -287,7 +287,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			CreatedById: userID,
 			UpdatedById: userID,
 			AssetId:     assetName,
-			DocId:       doc.ID.String(),
+			DocId:       doc.ID,
 			WorkspaceId: doc.WorkspaceId,
 		}
 
@@ -395,7 +395,7 @@ var issueGroupFields = []string{"priority", "author", "state", "labels", "assign
 // @Security ApiKeyAuth
 // @Accept json
 // @Produce json
-// @Param show_sub_issues query bool false "Включать подзадачи" default(true)
+// @Param hide_sub_issues query bool false "Выключить подзадачи" default(false)
 // @Param order_by query string false "Поле для сортировки" default("sequence_id") enum(id, created_at, updated_at, name, priority, target_date, sequence_id, state, labels, sub_issues_count, link_count, attachment_count, linked_issues_count, assignees, watchers, author, search_rank)
 // @Param group_by query string false "Поле для группировки результатов" default("") enum(priority, author, state, labels, assignees, watchers, project)
 // @Param offset query int false "Смещение для пагинации" default(-1)
@@ -633,7 +633,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Ignore slave issues
-	if !searchParams.ShowSubIssues {
+	if searchParams.HideSubIssues {
 		query = query.Where("issues.parent_id is null")
 	}
 
@@ -1262,7 +1262,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 				newLabels = append(newLabels, dao.IssueLabel{
 					Id:          dao.GenUUID(),
 					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
-					IssueId:     issue.ID.String(),
+					IssueId:     issue.ID,
 					ProjectId:   issue.ProjectId,
 					WorkspaceId: issue.WorkspaceId,
 					CreatedById: userID,
@@ -2501,15 +2501,14 @@ func (s *Services) createIssueComment(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	userIdStr := user.ID.String()
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		comment.Id = dao.GenUUID()
 		comment.ProjectId = project.ID
 		comment.Project = &project
-		comment.IssueId = issue.ID.String()
+		comment.IssueId = issue.ID
 		comment.WorkspaceId = project.WorkspaceId
 		comment.Workspace = issue.Workspace
-		comment.ActorId = &userIdStr
+		comment.ActorId = userID
 		comment.Issue = &issue
 		comment.CommentStripped = types.RemoveInvisibleChars(comment.CommentStripped)
 
@@ -2693,7 +2692,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if *commentOld.ActorId != user.ID.String() {
+	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -2798,7 +2797,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			if !replyNotMember {
 				commentUUID := uuid.Must(uuid.FromString(commentId))
 				comment.Id = commentUUID
-				comment.IssueId = issue.ID.String()
+				comment.IssueId = issue.ID
 				comment.WorkspaceId = issue.WorkspaceId
 				comment.Issue = &issue
 				if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, authorOriginalComment.ID, comment); err == nil {
@@ -2881,7 +2880,7 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if projectMember.Role != types.AdminRole && *comment.ActorId != user.ID.String() {
+	if projectMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 

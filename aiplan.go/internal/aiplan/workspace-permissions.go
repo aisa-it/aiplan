@@ -54,7 +54,7 @@ func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
 		return true, nil
 	}
 
-	if strings.Contains(c.Path(), "/backups/") && workspaceMember.Role != 15 && workspaceContext.Workspace.OwnerId != workspaceContext.User.ID.String() {
+	if strings.Contains(c.Path(), "/backups/") && workspaceMember.Role != 15 && workspaceContext.Workspace.OwnerId != workspaceContext.User.ID {
 		return false, nil
 	}
 
@@ -100,7 +100,7 @@ func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
 		http.MethodPatch,
 		http.MethodDelete:
 		if workspaceMember.Role == 15 ||
-			workspaceContext.Workspace.OwnerId == workspaceContext.User.ID.String() {
+			workspaceContext.Workspace.OwnerId == workspaceContext.User.ID {
 			return true, nil
 		}
 	}

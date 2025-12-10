@@ -1229,7 +1229,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 
 	oldMap := StructToJSONMap(commentOld)
 
-	if *commentOld.ActorId != user.ID.String() {
+	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -1326,7 +1326,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if workspaceMember.Role != types.AdminRole && *comment.ActorId != user.ID.String() {
+	if workspaceMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -1548,7 +1548,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		CreatedById: userID,
 		UpdatedById: userID,
 		AssetId:     assetId,
-		DocId:       doc.ID.String(),
+		DocId:       doc.ID,
 		WorkspaceId: workspace.ID,
 	}
 
@@ -2114,14 +2114,14 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 		replyId = uuid.NullUUID{UUID: fromString, Valid: true}
 	}
 	if comment == nil {
-		userIdStr := c.(DocContext).User.ID.String()
+		userID := uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
 		commentCreate := &dao.DocComment{
 			Id:               dao.GenUUID(),
 			CommentStripped:  "",
-			CreatedById:      uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true},
+			CreatedById:      userID,
 			WorkspaceId:      c.(DocContext).Workspace.ID,
-			DocId:            c.(DocContext).Doc.ID.String(),
-			ActorId:          &userIdStr,
+			DocId:            c.(DocContext).Doc.ID,
+			ActorId:          userID,
 			Actor:            c.(DocContext).User,
 			CommentHtml:      req.CommentHtml,
 			ReplyToCommentId: replyId,

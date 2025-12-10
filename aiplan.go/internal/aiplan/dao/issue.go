@@ -1293,7 +1293,7 @@ type IssueLabel struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
-	IssueId string `json:"issue_id" gorm:"index"`
+	IssueId uuid.UUID `json:"issue_id" gorm:"type:uuid;index"`
 	// label_id uuid IS_NULL:NO
 	LabelId uuid.UUID `json:"label_id" gorm:"foreignKey:ID;references:Label"`
 	// project_id uuid IS_NULL:NO
@@ -1331,11 +1331,11 @@ type IssueComment struct {
 
 	URL *url.URL `json:"-" gorm:"-"`
 
-	IssueId     string    `json:"issue_id" gorm:"index;uniqueIndex:issue_comment_original_id_idx,priority:1"`
+	IssueId     uuid.UUID `json:"issue_id" gorm:"type:uuid;index;uniqueIndex:issue_comment_original_id_idx,priority:1"`
 	ProjectId   uuid.UUID `json:"project_id" gorm:"type:uuid"`
 	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 
-	ActorId *string `json:"actor_id,omitempty" gorm:"index;index:integration,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor_id,omitempty" gorm:"type:uuid;index;index:integration,priority:1" extensions:"x-nullable"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 
@@ -1398,7 +1398,7 @@ func (i IssueComment) GetProjectId() string {
 }
 
 func (i IssueComment) GetIssueId() string {
-	return i.IssueId
+	return i.IssueId.String()
 }
 
 // ToLightDTO преобразует объект IssueComment в структуру IssueCommentLight для упрощения передачи данных в клиентский код.
@@ -1443,15 +1443,21 @@ func (i *IssueComment) ToDTO() *dto.IssueComment {
 		updatedById = &i.UpdatedById.UUID
 	}
 
+	var actorId *string
+	if i.ActorId.Valid {
+		actorIdStr := i.ActorId.UUID.String()
+		actorId = &actorIdStr
+	}
+
 	return &dto.IssueComment{
 		IssueCommentLight: *i.ToLightDTO(),
 		CreatedAt:         i.CreatedAt,
 		UpdatedAt:         i.UpdatedAt,
 		UpdatedById:       updatedById,
-		ActorId:           i.ActorId,
+		ActorId:           actorId,
 		ProjectId:         i.ProjectId,
 		WorkspaceId:       i.WorkspaceId.String(),
-		IssueId:           i.IssueId,
+		IssueId:           i.IssueId.String(),
 		ReplyToCommentId:  i.ReplyToCommentId,
 		OriginalComment:   i.OriginalComment.ToDTO(),
 		Actor:             a,
@@ -1716,11 +1722,11 @@ type RulesLog struct {
 	WorkspaceId uuid.UUID  `json:"workspace" gorm:"type:uuid"`
 	Workspace   *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:NO
-	IssueId string `json:"issue_id" gorm:"index"`
-	Issue   *Issue `json:"issue_detail" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
+	IssueId uuid.UUID `json:"issue_id" gorm:"type:uuid;index"`
+	Issue   *Issue    `json:"issue_detail" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 
-	UserId *string `json:"userId" gorm:"index" extensions:"x-nullable"`
-	User   *User   `json:"user_detail" gorm:"foreignKey:UserId" extensions:"x-nullable"`
+	UserId uuid.NullUUID `json:"userId" gorm:"index" extensions:"x-nullable"`
+	User   *User         `json:"user_detail" gorm:"foreignKey:UserId" extensions:"x-nullable"`
 
 	Time         time.Time `json:"time"`
 	FunctionName *string   `json:"function_name,omitempty" extensions:"x-nullable"`

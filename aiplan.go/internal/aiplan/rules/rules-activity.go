@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -42,9 +43,9 @@ func ResultToLog(issue dao.Issue, user dao.User, result LuaResp, err IRulesError
 		Project:      issue.Project,
 		WorkspaceId:  issue.WorkspaceId,
 		Workspace:    issue.Workspace,
-		IssueId:      issue.ID.String(),
+		IssueId:      issue.ID,
 		Issue:        &issue,
-		UserId:       ptrString(user.ID.String()),
+		UserId:       uuid.NullUUID{UUID: user.ID, Valid: true},
 		User:         &user,
 		Time:         result.GetTime(),
 		FunctionName: result.GetFnName(),
@@ -54,7 +55,6 @@ func ResultToLog(issue dao.Issue, user dao.User, result LuaResp, err IRulesError
 }
 
 func AppendMsg(issue dao.Issue, user dao.User, msg []LuaOut, logs *[]dao.RulesLog) {
-	userId := user.ID.String()
 	for _, out := range msg {
 		*logs = append(*logs, dao.RulesLog{
 			Id:           dao.GenUUID(),
@@ -63,9 +63,9 @@ func AppendMsg(issue dao.Issue, user dao.User, msg []LuaOut, logs *[]dao.RulesLo
 			Project:      issue.Project,
 			WorkspaceId:  issue.WorkspaceId,
 			Workspace:    issue.Workspace,
-			IssueId:      issue.ID.String(),
+			IssueId:      issue.ID,
 			Issue:        &issue,
-			UserId:       &userId,
+			UserId:       uuid.NullUUID{UUID: user.ID, Valid: true},
 			User:         &user,
 			Time:         out.Time,
 			FunctionName: &out.FnName,
@@ -90,9 +90,9 @@ func AppendError(issue dao.Issue, user dao.User, err IRulesError, logs *[]dao.Ru
 			Project:      issue.Project,
 			WorkspaceId:  issue.WorkspaceId,
 			Workspace:    issue.Workspace,
-			IssueId:      issue.ID.String(),
+			IssueId:      issue.ID,
 			Issue:        &issue,
-			UserId:       ptrString(user.ID.String()),
+			UserId:       uuid.NullUUID{UUID: user.ID, Valid: true},
 			User:         &user,
 			Time:         err.GetTime(),
 			FunctionName: err.GetFnName(),

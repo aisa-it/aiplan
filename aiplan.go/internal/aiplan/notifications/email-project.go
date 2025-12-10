@@ -177,8 +177,8 @@ func newProjectActivity(tx *gorm.DB, project *dao.Project) *projectActivity {
 	})
 
 	{ //add Leader
-		if lead, ok := memberMap[project.ProjectLeadId]; ok && lead.Member != nil {
-			res.users[memberMap[project.ProjectLeadId].Member.Email] = projectMember{
+		if lead, ok := memberMap[project.ProjectLeadId.String()]; ok && lead.Member != nil {
+			res.users[memberMap[project.ProjectLeadId.String()].Member.Email] = projectMember{
 				User:                  *lead.Member,
 				ProjectLeader:         true,
 				ProjectRole:           lead.Role,

@@ -280,7 +280,7 @@ type SearchFilter struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	AuthorID  string    `json:"author_id"`
+	AuthorID  uuid.UUID `json:"author_id" gorm:"type:uuid"`
 
 	Name        string         `json:"name"`
 	NameTokens  types.TsVector `json:"-" gorm:"index:search_filter_name_tokens,type:gin"`
@@ -354,7 +354,7 @@ type UserNotifications struct {
 	User   *User     `json:"user_detail,omitempty" gorm:"foreignKey:UserId" extensions:"x-nullable"`
 
 	Type             string          `json:"type"`
-	EntityActivityId *string         `json:"entity_activity,omitempty"`
+	EntityActivityId uuid.NullUUID   `json:"entity_activity,omitempty"`
 	EntityActivity   *EntityActivity `json:"entity_activity_detail,omitempty" gorm:"foreignKey:EntityActivityId" extensions:"x-nullable"`
 
 	CommentId *uuid.UUID    `json:"comment_id,omitempty"`
@@ -363,36 +363,36 @@ type UserNotifications struct {
 	WorkspaceId uuid.NullUUID `json:"workspace_id,omitempty" gorm:"type:uuid"`
 	Workspace   *Workspace    `json:"workspace,omitempty" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 
-	IssueId *string `json:"issue_id,omitempty"`
-	Issue   *Issue  `json:"issue,omitempty" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
+	IssueId uuid.NullUUID `json:"issue_id,omitempty" gorm:"type:uuid"`
+	Issue   *Issue        `json:"issue,omitempty" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 
-	Title    string  `json:"title,omitempty"`
-	Msg      string  `json:"msg,omitempty"`
-	AuthorId *string `json:"author_id"`
-	Author   *User   `json:"author,omitempty" gorm:"foreignKey:AuthorId" extensions:"x-nullable"`
-	Viewed   bool    `json:"viewed" gorm:"default:false"`
+	Title    string        `json:"title,omitempty"`
+	Msg      string        `json:"msg,omitempty"`
+	AuthorId uuid.NullUUID `json:"author_id" gorm:"type:uuid"`
+	Author   *User         `json:"author,omitempty" gorm:"foreignKey:AuthorId" extensions:"x-nullable"`
+	Viewed   bool          `json:"viewed" gorm:"default:false"`
 
 	TargetUser *User `json:"target_user,omitempty" gorm:"-"`
 
-	IssueActivityId *string        `json:"issue_activity,omitempty"`
+	IssueActivityId uuid.NullUUID  `json:"issue_activity,omitempty"`
 	IssueActivity   *IssueActivity `json:"issue_activity_detail,omitempty" gorm:"foreignKey:IssueActivityId" extensions:"x-nullable"`
 
-	ProjectActivityId *string          `json:"project_activity,omitempty"`
+	ProjectActivityId uuid.NullUUID    `json:"project_activity,omitempty"`
 	ProjectActivity   *ProjectActivity `json:"project_activity_detail,omitempty" gorm:"foreignKey:ProjectActivityId" extensions:"x-nullable"`
 
-	FormActivityId *string       `json:"form_activity,omitempty"`
+	FormActivityId uuid.NullUUID `json:"form_activity,omitempty"`
 	FormActivity   *FormActivity `json:"form_activity_detail,omitempty" gorm:"foreignKey:FormActivityId" extensions:"x-nullable"`
 
-	DocActivityId *string      `json:"doc_activity,omitempty"`
-	DocActivity   *DocActivity `json:"doc_activity_detail,omitempty" gorm:"foreignKey:DocActivityId" extensions:"x-nullable"`
+	DocActivityId uuid.NullUUID `json:"doc_activity,omitempty"`
+	DocActivity   *DocActivity  `json:"doc_activity_detail,omitempty" gorm:"foreignKey:DocActivityId" extensions:"x-nullable"`
 
-	SprintActivityId *string         `json:"sprint_activity,omitempty"`
+	SprintActivityId uuid.NullUUID   `json:"sprint_activity,omitempty"`
 	SprintActivity   *SprintActivity `json:"sprint_activity_detail,omitempty" gorm:"foreignKey:SprintActivityId" extensions:"x-nullable"`
 
-	WorkspaceActivityId *string            `json:"workspace_activity,omitempty"`
+	WorkspaceActivityId uuid.NullUUID      `json:"workspace_activity,omitempty"`
 	WorkspaceActivity   *WorkspaceActivity `json:"workspace_activity_detail,omitempty" gorm:"foreignKey:WorkspaceActivityId" extensions:"x-nullable"`
 
-	RootActivityId *string       `json:"root_activity,omitempty"`
+	RootActivityId uuid.NullUUID `json:"root_activity,omitempty"`
 	RootActivity   *RootActivity `json:"root_activity_detail,omitempty" gorm:"foreignKey:RootActivityId" extensions:"x-nullable"`
 
 	FullActivity *FullActivity `json:"full_activity_detail,omitempty" gorm:"-" extensions:"x-nullable"`

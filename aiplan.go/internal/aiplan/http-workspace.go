@@ -76,12 +76,18 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		var workspace dao.Workspace
-		if err := s.db.
+		workspaceQuery := s.db.
 			Joins("Owner").
 			Joins("LogoAsset").
-			Set("userID", user.ID).
-			Where("workspaces.id = ? or slug = ?", slugOrId, slugOrId).
-			First(&workspace).Error; err != nil {
+			Set("userID", user.ID)
+
+		if id, err := uuid.FromString(slugOrId); err == nil {
+			workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
+		} else {
+			workspaceQuery = workspaceQuery.Where("slug = ?", slugOrId)
+		}
+
+		if err := workspaceQuery.First(&workspace).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 			}
@@ -221,7 +227,6 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	if err := c.Bind(&workspace); err != nil {
 		return EError(c, err)
 	}
-	userIdStr := user.ID.String()
 	workspace.ID = id
 	workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspace.Name = strings.TrimSpace(workspace.Name)
@@ -249,7 +254,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 		newMemberOwnerEmail = member.Member.Email
 	}
 
-	if !user.IsSuperuser && userIdStr != oldOwnerId && oldOwnerId != workspace.OwnerId {
+	if !user.IsSuperuser && user.ID != oldOwnerId && oldOwnerId != workspace.OwnerId {
 		return EErrorDefined(c, apierrors.ErrPermissionChangeWorkspaceOwner)
 	}
 
@@ -438,7 +443,7 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if !user.IsSuperuser && user.ID.String() != workspace.OwnerId {
+	if !user.IsSuperuser && user.ID != workspace.OwnerId {
 		return EErrorDefined(c, apierrors.ErrDeleteWorkspaceForbidden)
 	}
 
@@ -726,7 +731,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if requestedMember.MemberId.String() == workspace.OwnerId {
+	if requestedMember.MemberId == workspace.OwnerId {
 		return EErrorDefined(c, apierrors.ErrUpdateOwnerForbidden)
 	}
 
@@ -913,7 +918,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID != requestedMemberId {
 		return EErrorDefined(c, apierrors.ErrDeleteSuperUser)
 	}
-	if workspace.OwnerId == requestedMember.MemberId.String() {
+	if workspace.OwnerId == requestedMember.MemberId {
 		if !user.IsSuperuser {
 			return EErrorDefined(c, apierrors.ErrCannotDeleteWorkspaceAdmin)
 		}
@@ -1384,10 +1389,9 @@ func (s *Services) createWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userIdStr := user.ID.String()
 	req.Bind(&workspace)
 	workspace.ID = dao.GenUUID()
-	workspace.OwnerId = userIdStr
+	workspace.OwnerId = user.ID
 	workspace.CreatedById = user.ID
 	workspace.IntegrationToken = password.MustGenerate(64, 30, 0, false, true)
 
@@ -1513,7 +1517,7 @@ func (s *Services) getWorkspaceToken(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	workspaceMember := c.(WorkspaceContext).WorkspaceMember
 
-	if !user.IsSuperuser && workspaceMember.Role != types.AdminRole && workspace.OwnerId != workspaceMember.MemberId.String() {
+	if !user.IsSuperuser && workspaceMember.Role != types.AdminRole && workspace.OwnerId != workspaceMember.MemberId {
 		return c.NoContent(http.StatusForbidden)
 	}
 	return c.String(http.StatusOK, workspace.IntegrationToken)

@@ -163,8 +163,8 @@ func newWorkspaceActivity(tx *gorm.DB, workspace *dao.Workspace) *workspaceActiv
 	})
 
 	{ //add Leader
-		if owner, ok := memberMap[workspace.OwnerId]; ok && owner.Member != nil {
-			res.users[memberMap[workspace.OwnerId].Member.Email] = workspaceMember{
+		if owner, ok := memberMap[workspace.OwnerId.String()]; ok && owner.Member != nil {
+			res.users[memberMap[workspace.OwnerId.String()].Member.Email] = workspaceMember{
 				User:                    *owner.Member,
 				WorkspaceOwner:          true,
 				WorkspaceRole:           owner.Role,

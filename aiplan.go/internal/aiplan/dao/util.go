@@ -316,7 +316,7 @@ func SliceToSet(sl []string) map[string]interface{} {
 
 func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMember, tx *gorm.DB) error {
 	// Change workspace owner on demand
-	if requestedMember.Workspace.OwnerId == requestedMember.MemberId.String() {
+	if requestedMember.Workspace.OwnerId == requestedMember.MemberId {
 		if err := requestedMember.Workspace.ChangeOwner(tx, actor); err != nil {
 			return err
 		}
@@ -359,10 +359,10 @@ func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMem
 		Model(&Project{}).
 		Where(&Project{
 			WorkspaceId:   requestedMember.Workspace.ID,
-			ProjectLeadId: requestedMember.MemberId.String(),
+			ProjectLeadId: requestedMember.MemberId,
 		}).
 		Updates(Project{
-			ProjectLeadId: actor.MemberId.String(),
+			ProjectLeadId: actor.MemberId,
 		}).Error; err != nil {
 		return err
 	}

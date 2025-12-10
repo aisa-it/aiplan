@@ -205,13 +205,12 @@ func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNoti
 		}
 		un.Workspace = notification.Workspace
 		if notification.IssueID.Valid {
-			issueIDStr := notification.IssueID.UUID.String()
-			un.IssueId = &issueIDStr
+			un.IssueId = notification.IssueID
 		}
 		un.Issue = notification.Issue
 
-		if un.AuthorId != nil {
-			if err := np.db.Where("id = ?", un.AuthorId).First(&un.Author).Error; err != nil {
+		if un.AuthorId.Valid {
+			if err := np.db.Where("id = ?", un.AuthorId.UUID).First(&un.Author).Error; err != nil {
 				return nil, 0, err
 			}
 		}
@@ -270,12 +269,13 @@ func (nm *notifyMessage) getAuthor(tx *gorm.DB) *dao.User {
 }
 
 func (nm *notifyMessage) getUserNotification() *dao.UserNotifications {
+	authorUUID, _ := uuid.FromString(nm.AuthorId)
 	res := dao.UserNotifications{
 		ID:       nm.Id,
 		Type:     "message",
 		Title:    nm.Title,
 		Msg:      nm.Msg,
-		AuthorId: &nm.AuthorId,
+		AuthorId: uuid.NullUUID{UUID: authorUUID, Valid: nm.AuthorId != ""},
 		Viewed:   false,
 	}
 	return &res
@@ -462,7 +462,7 @@ func (s serviceMessage) getUserNotification() *dao.UserNotifications {
 		Type:     "service_message",
 		Title:    s.Title,
 		Msg:      s.Msg,
-		AuthorId: nil,
+		AuthorId: uuid.NullUUID{},
 		Viewed:   false,
 	}
 	return &res

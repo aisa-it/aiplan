@@ -141,7 +141,7 @@ func activityMigrate(db *gorm.DB) {
 		for _, activity := range oldAct {
 			switch activity.EntityType {
 			case "issue":
-				if activity.Field != nil && activity.IssueId != nil && *activity.IssueId != "" {
+				if activity.Field != nil && activity.IssueId.Valid {
 					is := dao.IssueActivity{
 						Id:            activity.Id,
 						CreatedAt:     activity.CreatedAt,
@@ -150,10 +150,10 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						IssueId:       parseUUID(activity.IssueId),
-						ProjectId:     parseUUID(activity.ProjectId),
-						WorkspaceId:   parseUUIDString(activity.WorkspaceId),
-						ActorId:       parseNullUUID(activity.ActorId),
+						IssueId:       activity.IssueId.UUID,
+						ProjectId:     activity.ProjectId.UUID,
+						WorkspaceId:   activity.WorkspaceId,
+						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
 						OldIdentifier: activity.OldIdentifier, // в зависимости от нового поведения
 						Notified:      activity.Notified,
@@ -232,24 +232,30 @@ func activityMigrate(db *gorm.DB) {
 						field := "issue"
 						var issue dao.Issue
 						if err := tx.Preload("Project").
-							Where("id = ?", *activity.IssueId).
+							Where("id = ?", activity.IssueId.UUID).
 							First(&issue).Error; err != nil {
 							continue
 						}
 
 						pa := dao.ProjectActivity{
-							Id:            activity.Id,
-							CreatedAt:     activity.CreatedAt,
-							Verb:          "created",         // в зависимости от нового поведения
-							Field:         &field,            // в зависимости от нового поведения
-							OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
-							NewValue:      issue.String(),
-							Comment:       activity.Comment,
-							ProjectId:     parseUUID(activity.ProjectId),
-							WorkspaceId:   parseUUIDString(activity.WorkspaceId),
-							ActorId:       parseNullUUID(activity.ActorId),
-							NewIdentifier: activity.IssueId, // в зависимости от нового поведения
-							OldIdentifier: nil,              // в зависимости от нового поведения
+							Id:          activity.Id,
+							CreatedAt:   activity.CreatedAt,
+							Verb:        "created",         // в зависимости от нового поведения
+							Field:       &field,            // в зависимости от нового поведения
+							OldValue:    activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
+							NewValue:    issue.String(),
+							Comment:     activity.Comment,
+							ProjectId:   activity.ProjectId.UUID,
+							WorkspaceId: activity.WorkspaceId,
+							ActorId:     activity.ActorId,
+							NewIdentifier: func() *string {
+								if activity.IssueId.Valid {
+									s := activity.IssueId.UUID.String()
+									return &s
+								}
+								return nil
+							}(), // в зависимости от нового поведения
+							OldIdentifier: nil, // в зависимости от нового поведения
 							Notified:      activity.Notified,
 							TelegramMsgId: activity.TelegramMsgId,
 						}
@@ -268,9 +274,9 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						ProjectId:     parseUUID(activity.ProjectId),
-						WorkspaceId:   parseUUIDString(activity.WorkspaceId),
-						ActorId:       parseNullUUID(activity.ActorId),
+						ProjectId:     activity.ProjectId.UUID,
+						WorkspaceId:   activity.WorkspaceId,
+						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
 						OldIdentifier: activity.OldIdentifier, // в зависимости от нового поведения
 						Notified:      activity.Notified,
@@ -357,8 +363,8 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						WorkspaceId:   parseUUIDString(activity.WorkspaceId),
-						ActorId:       parseNullUUID(activity.ActorId),
+						WorkspaceId:   activity.WorkspaceId,
+						ActorId:       activity.ActorId,
 						NewIdentifier: nil, // в зависимости от нового поведения
 						OldIdentifier: nil, // в зависимости от нового поведения
 						Notified:      activity.Notified,
@@ -366,13 +372,13 @@ func activityMigrate(db *gorm.DB) {
 					}
 
 					if wa.Verb == "created" {
-						projectId := *activity.ProjectId
+						projectId := activity.ProjectId.UUID.String()
 						wa.NewIdentifier = &projectId
 					}
 
 					var project dao.Project
 					if err := tx.Preload("Workspace").
-						Where("id = ?", activity.ProjectId).
+						Where("id = ?", activity.ProjectId.UUID).
 						First(&project).Error; err != nil {
 						if gorm.ErrRecordNotFound == err {
 							wa.OldIdentifier = nil
@@ -394,8 +400,8 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						WorkspaceId:   parseUUIDString(activity.WorkspaceId),
-						ActorId:       parseNullUUID(activity.ActorId),
+						WorkspaceId:   activity.WorkspaceId,
+						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
 						OldIdentifier: activity.OldIdentifier, // в зависимости от нового поведения
 						Notified:      activity.Notified,
@@ -435,7 +441,7 @@ func activityMigrate(db *gorm.DB) {
 					}
 
 					if ra.Verb == "created" {
-						workspaceId := activity.WorkspaceId
+						workspaceId := activity.WorkspaceId.String()
 						ra.NewIdentifier = &workspaceId
 					}
 
@@ -464,9 +470,9 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						WorkspaceId:   parseUUIDString(activity.WorkspaceId),
-						FormId:        parseUUID(activity.FormId),
-						ActorId:       parseNullUUID(activity.ActorId),
+						WorkspaceId:   activity.WorkspaceId,
+						FormId:        activity.FormId.UUID,
+						ActorId:       activity.ActorId,
 						NewIdentifier: activity.NewIdentifier, // в зависимости от нового поведения
 						OldIdentifier: activity.OldIdentifier, // в зависимости от нового поведения
 						Notified:      activity.Notified,
@@ -497,8 +503,8 @@ func activityMigrate(db *gorm.DB) {
 						OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
-						WorkspaceId:   parseUUIDString(activity.WorkspaceId),
-						ActorId:       parseNullUUID(activity.ActorId),
+						WorkspaceId:   activity.WorkspaceId,
+						ActorId:       activity.ActorId,
 						NewIdentifier: nil, // в зависимости от нового поведения
 						OldIdentifier: nil, // в зависимости от нового поведения
 						Notified:      activity.Notified,
@@ -506,13 +512,13 @@ func activityMigrate(db *gorm.DB) {
 					}
 
 					if wa.Verb == "created" {
-						formId := *activity.FormId
+						formId := activity.FormId.UUID.String()
 						wa.NewIdentifier = &formId
 					}
 
 					var form dao.Form
 					if err := tx.Preload("Workspace").
-						Where("id = ?", activity.FormId).
+						Where("id = ?", activity.FormId.UUID).
 						First(&form).Error; err != nil {
 						if gorm.ErrRecordNotFound == err {
 							wa.OldIdentifier = nil

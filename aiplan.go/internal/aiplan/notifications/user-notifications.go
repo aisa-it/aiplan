@@ -69,7 +69,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 				UserId:              userId,
 				Type:                "activity",
 				WorkspaceId:         uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				WorkspaceActivityId: func() *string { s := a.Id.String(); return &s }(),
+				WorkspaceActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
@@ -109,7 +109,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 				UserId:            userId,
 				Type:              "activity",
 				WorkspaceId:       uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				ProjectActivityId: func() *string { s := a.Id.String(); return &s }(),
+				ProjectActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
@@ -153,7 +153,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 				UserId:        userId,
 				Type:          "activity",
 				WorkspaceId:   uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				DocActivityId: func() *string { s := a.Id.String(); return &s }(),
+				DocActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
 			}
 
 			//if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
@@ -201,14 +201,13 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			}
 		}
 		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
-			issueIdStr := a.IssueId.String()
 			notification := dao.UserNotifications{
 				ID:              dao.GenID(),
 				UserId:          userId,
 				Type:            "activity",
 				WorkspaceId:     uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				IssueId:         &issueIdStr,
-				IssueActivityId: func() *string { s := a.Id.String(); return &s }(),
+				IssueId:         uuid.NullUUID{UUID: a.IssueId, Valid: true},
+				IssueActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
 			}
 
 			if a.Field != nil && *a.Field == actField.Comment.String() && a.Verb != "deleted" {
@@ -266,7 +265,7 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 		CommentId:   &comment.Id,
 		Comment:     &comment,
 		WorkspaceId: uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true},
-		IssueId:     &comment.IssueId,
+		IssueId:     uuid.NullUUID{UUID: comment.IssueId, Valid: comment.IssueId != uuid.Nil},
 	}
 
 	if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
