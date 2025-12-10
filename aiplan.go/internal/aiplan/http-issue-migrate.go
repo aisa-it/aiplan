@@ -1630,8 +1630,8 @@ func linkedIdToStringKey(s1, s2 string) string {
 
 // NewIssueParam изменяемы поля при копировании одиночной задачи
 type NewIssueParam struct {
-	Priority     types.JSONField[string]   `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
-	TargetDate   types.JSONField[string]   `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
-	AssignersIds types.JSONField[[]string] `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
-	StateId      types.JSONField[uuid.UUID]   `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	Priority     types.JSONField[string]    `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
+	TargetDate   types.JSONField[string]    `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	AssignersIds types.JSONField[[]string]  `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
+	StateId      types.JSONField[uuid.UUID] `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
 }

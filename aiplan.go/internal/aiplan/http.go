@@ -724,6 +724,10 @@ func StructToJSONMap(obj interface{}) map[string]interface{} {
 				res[tagName] = fieldValue.Interface().(types.RedactorHTML)
 				continue
 			}
+			if fieldValue.Type() == reflect.TypeOf(types.FormAnswerNotify{}) {
+				res[tagName] = fieldValue.Interface().(types.FormAnswerNotify)
+				continue
+			}
 			if marshaler, ok := fieldValue.Interface().(json.Marshaler); ok {
 				if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
 					res[tagName] = nil

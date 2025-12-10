@@ -40,11 +40,11 @@ type Form struct {
 	WorkspaceId string            `json:"workspace" gorm:"index"`
 	Workspace   *Workspace        `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 
-	Fields types.FormFieldsSlice `json:"fields" gorm:"type:jsonb"`
-	Active bool                  `json:"active" gorm:"-"`
-
-	URL                    *url.URL         `json:"-" gorm:"-" extensions:"x-nullable"`
-	CurrentWorkspaceMember *WorkspaceMember `json:"current_workspace_member,omitempty" gorm:"-" extensions:"x-nullable"`
+	Fields                 types.FormFieldsSlice  `json:"fields" gorm:"type:jsonb"`
+	Active                 bool                   `json:"active" gorm:"-"`
+	NotificationChannels   types.FormAnswerNotify `json:"notification_channels" gorm:"type:jsonb"`
+	URL                    *url.URL               `json:"-" gorm:"-" extensions:"x-nullable"`
+	CurrentWorkspaceMember *WorkspaceMember       `json:"current_workspace_member,omitempty" gorm:"-" extensions:"x-nullable"`
 }
 
 func (f Form) GetId() string {
