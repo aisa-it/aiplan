@@ -174,7 +174,7 @@ func GetMentionedUsers(db *gorm.DB, text types.RedactorHTML) ([]User, error) {
 func ExtractProjectMemberIDs(members []ProjectMember) []string {
 	ids := make([]string, len(members))
 	for i, member := range members {
-		ids[i] = member.MemberId
+		ids[i] = member.MemberId.String()
 	}
 	return ids
 }
@@ -283,13 +283,8 @@ func BuildUnionSubquery(tx *gorm.DB, alias string, tab UnionableTable, tables ..
 				t = "::" + f[1]
 			}
 
-			if field == "id" && table.TableName() == "sprint_activities" {
-				selectFields = append(selectFields, "id::text")
-				continue
-			}
-
 			if utils.CheckInSet(fieldSet, field) {
-				selectFields = append(selectFields, field)
+				selectFields = append(selectFields, field+t)
 			} else {
 				selectFields = append(selectFields, fmt.Sprintf("NULL%s AS %s", t, field))
 			}
@@ -339,14 +334,16 @@ func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMem
 			return err
 		}
 
+		createdByID := uuid.NullUUID{UUID: actor.MemberId, Valid: true}
+
 		for _, project := range projects {
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
-				DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": actor.MemberId}),
+				DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": createdByID}),
 			}).Create(&ProjectMember{
 				ID:          GenID(),
 				CreatedAt:   time.Now(),
-				CreatedById: &actor.MemberId,
+				CreatedById: createdByID,
 				WorkspaceId: requestedMember.Workspace.ID,
 				ProjectId:   project.ID,
 				Role:        types.AdminRole,
@@ -546,4 +543,165 @@ func ReplaceColumnType(db *gorm.DB, table string, column string, newType string)
 
 		return nil
 	})
+}
+
+// CleanInvalidUUIDs очищает невалидные UUID значения, устанавливая их в NULL
+// Это предотвращает ошибки при конвертации text -> uuid
+func CleanInvalidUUIDs(tx *gorm.DB, table string, column string) error {
+	// Очищаем все значения которые не соответствуют формату UUID
+	// Устанавливаем NULL для hex-кодированных, битых и любых невалидных значений
+	sql := fmt.Sprintf(`
+		UPDATE "%s"
+		SET "%s" = NULL
+		WHERE "%s" IS NOT NULL
+		AND "%s"::text !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+	`, table, column, column, column)
+
+	result := tx.Exec(sql)
+	if result.Error != nil {
+		return fmt.Errorf("failed to clean invalid UUIDs in %s.%s: %w", table, column, result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		slog.Warn("Cleaned invalid UUIDs", "table", table, "column", column, "rows", result.RowsAffected)
+	}
+
+	return nil
+}
+
+// CleanOrphanedForeignKeys очищает "осиротевшие" внешние ключи - записи, которые ссылаются на несуществующие записи в referenced таблице
+func CleanOrphanedForeignKeys(tx *gorm.DB, table string, column string, referencedTable string, referencedColumn string) error {
+	// Сначала проверяем, существует ли колонка в таблице
+	checkColumnSQL := fmt.Sprintf(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = 'public'
+			AND table_name = '%s'
+			AND column_name = '%s'
+		)
+	`, table, column)
+
+	var columnExists bool
+	if err := tx.Raw(checkColumnSQL).Scan(&columnExists).Error; err != nil {
+		return fmt.Errorf("failed to check column existence %s.%s: %w", table, column, err)
+	}
+
+	// Если колонка не существует, просто пропускаем
+	if !columnExists {
+		return nil
+	}
+
+	// Устанавливаем NULL для всех записей, где внешний ключ указывает на несуществующую запись
+	// Используем ::text для приведения типов на случай если referenced колонка уже UUID а текущая ещё text
+	sql := fmt.Sprintf(`
+		UPDATE "%s"
+		SET "%s" = NULL
+		WHERE "%s" IS NOT NULL
+		AND NOT EXISTS (
+			SELECT 1 FROM "%s" WHERE "%s"::text = "%s"."%s"::text
+		)
+	`, table, column, column, referencedTable, referencedColumn, table, column)
+
+	result := tx.Exec(sql)
+	if result.Error != nil {
+		return fmt.Errorf("failed to clean orphaned foreign keys in %s.%s: %w", table, column, result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		slog.Warn("Cleaned orphaned foreign keys", "table", table, "column", column, "referenced_table", referencedTable, "rows", result.RowsAffected)
+	}
+
+	return nil
+}
+
+// DropAllForeignKeys удаляет все foreign key constraints из базы данных (без транзакции)
+func DropAllForeignKeys(tx *gorm.DB) error {
+	const getAllForeignKeysSQL = `
+SELECT
+    tc.table_name AS foreign_table_name,
+    tc.constraint_name
+FROM information_schema.table_constraints AS tc
+WHERE tc.constraint_type = 'FOREIGN KEY'
+    AND tc.table_schema = 'public';`
+
+	type FKConstraint struct {
+		ForeignTableName string
+		ConstraintName   string
+	}
+
+	var constraints []FKConstraint
+	if err := tx.Raw(getAllForeignKeysSQL).Find(&constraints).Error; err != nil {
+		return err
+	}
+
+	for _, fk := range constraints {
+		// Экранируем имена через двойные кавычки для поддержки constraint с цифрами в начале
+		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP CONSTRAINT IF EXISTS \"%s\";", fk.ForeignTableName, fk.ConstraintName)
+		if err := tx.Exec(sql).Error; err != nil {
+			return fmt.Errorf("failed to drop FK constraint %s on table %s: %w", fk.ConstraintName, fk.ForeignTableName, err)
+		}
+	}
+	return nil
+}
+
+// DropAllGeneratedColumns удаляет все generated columns из базы данных
+// Generated columns препятствуют изменению типа referenced columns
+func DropAllGeneratedColumns(tx *gorm.DB) error {
+	const getAllGeneratedColumnsSQL = `
+SELECT
+    table_name,
+    column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+    AND is_generated = 'ALWAYS';`
+
+	type GeneratedColumn struct {
+		TableName  string
+		ColumnName string
+	}
+
+	var columns []GeneratedColumn
+	if err := tx.Raw(getAllGeneratedColumnsSQL).Find(&columns).Error; err != nil {
+		return err
+	}
+
+	for _, col := range columns {
+		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP COLUMN IF EXISTS \"%s\";", col.TableName, col.ColumnName)
+		if err := tx.Exec(sql).Error; err != nil {
+			return fmt.Errorf("failed to drop generated column %s.%s: %w", col.TableName, col.ColumnName, err)
+		}
+		slog.Info("Dropped generated column", "table", col.TableName, "column", col.ColumnName)
+	}
+	return nil
+}
+
+// DropAllCheckConstraints удаляет все check constraints из базы данных (без транзакции)
+func DropAllCheckConstraints(tx *gorm.DB) error {
+	const getAllCheckConstraintsSQL = `
+SELECT
+    tc.table_name,
+    tc.constraint_name
+FROM information_schema.table_constraints AS tc
+WHERE tc.constraint_type = 'CHECK'
+    AND tc.table_schema = 'public';`
+
+	type CheckConstraint struct {
+		TableName      string
+		ConstraintName string
+	}
+
+	var constraints []CheckConstraint
+	if err := tx.Raw(getAllCheckConstraintsSQL).Find(&constraints).Error; err != nil {
+		return err
+	}
+
+	for _, ck := range constraints {
+		// Экранируем имена через двойные кавычки для поддержки constraint с цифрами в начале
+		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP CONSTRAINT IF EXISTS \"%s\";", ck.TableName, ck.ConstraintName)
+		if err := tx.Exec(sql).Error; err != nil {
+			return fmt.Errorf("failed to drop CHECK constraint %s on table %s: %w", ck.ConstraintName, ck.TableName, err)
+		}
+	}
+	return nil
 }

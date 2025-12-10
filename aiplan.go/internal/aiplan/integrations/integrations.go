@@ -67,13 +67,12 @@ func (i *Integration) UploadIntegrationLogo() error {
 	assetName := fmt.Sprintf("%s_logo.svg", *i.User.Username)
 
 	var asset dao.FileAsset
-	userIdStr := i.User.ID.String()
 	if err := i.db.Where("name = ?", assetName).First(&asset).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			asset = dao.FileAsset{
 				Id:          dao.GenUUID(),
 				Name:        assetName,
-				CreatedById: &userIdStr,
+				CreatedById: uuid.NullUUID{UUID: i.User.ID, Valid: true},
 				FileSize:    len(i.AvatarSVG),
 				ContentType: "image/svg+xml",
 			}

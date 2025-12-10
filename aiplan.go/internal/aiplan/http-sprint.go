@@ -329,7 +329,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 
 	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID.String() })
 
-	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
+	workspaceUUID := workspace.ID
 	userUUID := user.ID
 
 	var req requestIssueIdList
@@ -510,7 +510,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 
 	oldMemberIds := utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID })
 
-	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
+	workspaceUUID := workspace.ID
 	userUUID := user.ID
 
 	var req requestUserIdList
@@ -546,7 +546,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 
 		var sprintWatchers []dao.SprintWatcher
 		for _, member := range workspaceMembers {
-			memberUUID := uuid.Must(uuid.FromString(member.MemberId))
+			memberUUID := member.MemberId
 			sprintWatchers = append(sprintWatchers, dao.SprintWatcher{
 				Id:          dao.GenUUID(),
 				CreatedById: userUUID,
@@ -764,8 +764,8 @@ func (rs *requestSprint) toDao(ctx echo.Context) (*dao.Sprint, error) {
 		workspace = v.Workspace
 	}
 
-	userUUID := uuid.Must(uuid.FromString(workspaceMember.MemberId))
-	workspaceUUID := uuid.Must(uuid.FromString(workspace.ID))
+	userUUID := workspaceMember.MemberId
+	workspaceUUID := workspace.ID
 
 	return &dao.Sprint{
 		Id:          dao.GenUUID(),

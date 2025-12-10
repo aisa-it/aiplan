@@ -8,6 +8,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -224,7 +225,7 @@ func getUserTgIdDocActivity(tx *gorm.DB, activity interface{}) []userTg {
 
 	doc := act.Doc
 
-	authorId := doc.CreatedById
+	authorId := doc.CreatedById.String()
 	readerIds := doc.ReaderIDs
 	editorsIds := doc.EditorsIDs
 	watcherIds := doc.WatcherIDs
@@ -233,12 +234,12 @@ func getUserTgIdDocActivity(tx *gorm.DB, activity interface{}) []userTg {
 
 	var workspaceMembers []dao.WorkspaceMember
 	if err := tx.Joins("Member").
-		Where("workspace_id = ?", act.WorkspaceId).
+		Where("workspace_id = ?", act.WorkspaceId.String()).
 		Where("workspace_members.member_id IN (?)", userIds).Find(&workspaceMembers).Error; err != nil {
 		return []userTg{}
 	}
 
-	memberMap := make(map[string]userTg)
+	memberMap := make(map[uuid.UUID]userTg)
 	for _, member := range workspaceMembers {
 		if member.Member.TelegramId != nil && member.Member.CanReceiveNotifications() && !member.Member.Settings.TgNotificationMute {
 			memberMap[member.MemberId] = userTg{
@@ -248,10 +249,10 @@ func getUserTgIdDocActivity(tx *gorm.DB, activity interface{}) []userTg {
 		}
 	}
 
-	return filterDocTgIdIsNotify(workspaceMembers, *act.ActorId, memberMap, act.Field, act.Verb)
+	return filterDocTgIdIsNotify(workspaceMembers, act.ActorId.UUID, memberMap, act.Field, act.Verb)
 }
 
-func filterDocTgIdIsNotify(wm []dao.WorkspaceMember, authorId string, userTgId map[string]userTg, field *string, verb string) []userTg {
+func filterDocTgIdIsNotify(wm []dao.WorkspaceMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string) []userTg {
 	res := make([]userTg, 0)
 	for _, member := range wm {
 		if member.MemberId == authorId {

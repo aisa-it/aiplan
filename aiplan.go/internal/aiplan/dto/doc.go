@@ -68,7 +68,7 @@ type DocComment struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	UpdatedById *string `json:"updated_by_id,omitempty"`
+	UpdatedById *uuid.UUID `json:"updated_by_id,omitempty"`
 
 	CommentType     int         `json:"comment_type"`
 	OriginalComment *DocComment `json:"original_comment,omitempty" extensions:"x-nullable"`
@@ -89,7 +89,7 @@ type CommentReaction struct {
 }
 
 type DocFavorites struct {
-	Id    string    `json:"id"`
-	DocId string    `json:"doc_id"`
+	Id    uuid.UUID `json:"id"`
+	DocId uuid.UUID `json:"doc_id"`
 	Doc   *DocLight `json:"doc"`
 }

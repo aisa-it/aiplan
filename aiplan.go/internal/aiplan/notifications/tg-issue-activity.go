@@ -10,6 +10,7 @@ import (
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -444,19 +445,19 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 	}
 
 	issueUserTgId := GetUserTgIdFromIssue(act.Issue)
-	authorId := act.Issue.Author.ID.String()
+	authorId := act.Issue.Author.ID
 
 	if act.NewIssueComment != nil && act.NewIssueComment.ReplyToCommentId.Valid {
 		if err := tx.Preload("Actor").
-			Where("workspace_id = ? ", act.WorkspaceId).
-			Where("project_id = ?", act.ProjectId).
-			Where("issue_id = ?", act.IssueId).
+			Where("workspace_id = ? ", act.WorkspaceId.String()).
+			Where("project_id = ?", act.ProjectId.String()).
+			Where("issue_id = ?", act.IssueId.String()).
 			Where("id = ?", act.NewIssueComment.ReplyToCommentId.UUID).
 			First(&act.NewIssueComment.OriginalComment).Error; err == nil {
 			if act.NewIssueComment.OriginalComment.Actor.TelegramId != nil &&
 				act.NewIssueComment.OriginalComment.Actor.CanReceiveNotifications() &&
 				!act.NewIssueComment.OriginalComment.Actor.Settings.TgNotificationMute {
-				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID.String()] = userTg{
+				issueUserTgId[act.NewIssueComment.OriginalComment.Actor.ID] = userTg{
 					id:  *act.NewIssueComment.OriginalComment.Actor.TelegramId,
 					loc: act.NewIssueComment.OriginalComment.Actor.UserTimezone,
 				}
@@ -464,12 +465,12 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 		}
 	}
 
-	resMap := make(map[string]userTg)
+	resMap := make(map[uuid.UUID]userTg)
 
 	maps.Copy(resMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId.String()))
 	maps.Copy(resMap, issueUserTgId)
 
-	userIds := make([]string, 0, len(resMap))
+	userIds := make([]uuid.UUID, 0, len(resMap))
 	for k := range resMap {
 		userIds = append(userIds, k)
 	}
@@ -482,7 +483,7 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 	return filterIssueTgIdIsNotify(projectMembers, authorId, resMap, act.Field, act.Verb)
 }
 
-func filterIssueTgIdIsNotify(projectMembers []dao.ProjectMember, authorId string, userTgId map[string]userTg, field *string, verb string) []userTg {
+func filterIssueTgIdIsNotify(projectMembers []dao.ProjectMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string) []userTg {
 	res := make([]userTg, 0)
 	for _, member := range projectMembers {
 		if member.MemberId == authorId {

@@ -67,14 +67,14 @@ type UserNotificationsLight struct {
 	Type   string `json:"type"`
 	Viewed bool   `json:"viewed"`
 
-	Title    string  `json:"title,omitempty"`
-	Msg      string  `json:"msg,omitempty"`
-	AuthorId *string `json:"author_id"  extensions:"x-nullable"`
+	Title    string        `json:"title,omitempty"`
+	Msg      string        `json:"msg,omitempty"`
+	AuthorId uuid.NullUUID `json:"author_id"  extensions:"x-nullable" swaggertype:"string"`
 
-	EntityActivityId *string `json:"entity_activity,omitempty"  extensions:"x-nullable"`
-	CommentId        *string `json:"comment_id,omitempty"  extensions:"x-nullable"`
-	WorkspaceId      *string `json:"workspace_id,omitempty"  extensions:"x-nullable"`
-	IssueId          *string `json:"issue_id,omitempty"  extensions:"x-nullable"`
+	EntityActivityId uuid.NullUUID `json:"entity_activity,omitempty"  extensions:"x-nullable"`
+	CommentId        *string       `json:"comment_id,omitempty"  extensions:"x-nullable"`
+	WorkspaceId      *string       `json:"workspace_id,omitempty"  extensions:"x-nullable"`
+	IssueId          uuid.NullUUID `json:"issue_id,omitempty"  extensions:"x-nullable" swaggertype:"string"`
 }
 
 type UserNotificationsFull struct {
@@ -88,7 +88,7 @@ type UserNotificationsFull struct {
 }
 
 type UserFeedback struct {
-	UserID string `json:"user_id"`
+	UserID uuid.UUID `json:"user_id"`
 
 	Stars    int    `json:"stars"`
 	Feedback string `json:"feedback"`
@@ -110,6 +110,6 @@ type SearchFilterLight struct {
 
 type SearchFilterFull struct {
 	SearchFilterLight
-	AuthorID string     `json:"author_id"`
+	AuthorID uuid.UUID  `json:"author_id"`
 	Author   *UserLight `json:"author_detail"  extensions:"x-nullable"`
 }

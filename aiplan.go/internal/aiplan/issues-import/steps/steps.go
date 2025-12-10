@@ -126,12 +126,12 @@ func DownloadAttachmentsStep(c *context.ImportContext) error {
 
 					// Issue attachment
 					if v.IssueAttachment != nil {
-						metadata.WorkspaceId = v.IssueAttachment.WorkspaceId
+						metadata.WorkspaceId = v.IssueAttachment.WorkspaceId.String()
 						metadata.ProjectId = v.IssueAttachment.ProjectId.String()
 						metadata.IssueId = v.IssueAttachment.IssueId.String()
 					} else if v.InlineAsset != nil {
 						// Inline asset
-						metadata.WorkspaceId = *v.InlineAsset.WorkspaceId
+						metadata.WorkspaceId = v.InlineAsset.WorkspaceId.UUID.String()
 						metadata.IssueId = v.InlineAsset.IssueId.UUID.String()
 					}
 
@@ -165,7 +165,7 @@ func DownloadAttachmentsStep(c *context.ImportContext) error {
 					asset = dao.FileAsset{
 						Id:          v.DstAssetID,
 						CreatedAt:   time.Now(),
-						WorkspaceId: &v.IssueAttachment.WorkspaceId,
+						WorkspaceId: uuid.NullUUID{UUID: v.IssueAttachment.WorkspaceId, Valid: true},
 						Name:        v.JiraAttachment.Filename,
 						FileSize:    v.JiraAttachment.Size,
 					}
@@ -245,13 +245,14 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 			context.UsersToCreate = append(context.UsersToCreate, user)
 		}
 
-		if !dao.IsWorkspaceMember(context.DB, user.ID, context.TargetWorkspaceID) {
+		targetWorkspaceUUID := uuid.FromStringOrNil(context.TargetWorkspaceID)
+		if !dao.IsWorkspaceMember(context.DB, user.ID, targetWorkspaceUUID) {
 			context.WorkspaceMembers = append(context.WorkspaceMembers,
 				dao.WorkspaceMember{
 					ID:          dao.GenID(),
 					Role:        10,
-					MemberId:    user.ID.String(),
-					WorkspaceId: context.TargetWorkspaceID,
+					MemberId:    user.ID,
+					WorkspaceId: targetWorkspaceUUID,
 				})
 		}
 
@@ -259,9 +260,9 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 			dao.ProjectMember{
 				ID:          dao.GenID(),
 				Role:        10,
-				MemberId:    user.ID.String(),
+				MemberId:    user.ID,
 				ProjectId:   context.Project.ID,
-				WorkspaceId: context.TargetWorkspaceID,
+				WorkspaceId: targetWorkspaceUUID,
 			})
 	})
 

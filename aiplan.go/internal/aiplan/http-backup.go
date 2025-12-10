@@ -174,7 +174,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 	backupResp := dao.WorkspaceBackup{
 		ID:          dao.GenID(),
 		CreatedAt:   backup.CreatedAt,
-		CreatedBy:   backup.CreatedBy.ID.String(),
+		CreatedBy:   backup.CreatedBy.ID,
 		Asset:       name,
 		Author:      &backup.CreatedBy,
 		WorkspaceId: workspace.ID,
