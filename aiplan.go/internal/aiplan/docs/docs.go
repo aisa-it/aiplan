@@ -3858,9 +3858,9 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "boolean",
-                        "default": true,
-                        "description": "Включать подзадачи",
-                        "name": "show_sub_issues",
+                        "default": false,
+                        "description": "Выключить подзадачи",
+                        "name": "hide_sub_issues",
                         "in": "query"
                     },
                     {
@@ -17349,8 +17349,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
@@ -18974,8 +18973,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
@@ -19167,8 +19165,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
@@ -19398,8 +19395,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
