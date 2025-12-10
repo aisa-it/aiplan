@@ -70,7 +70,6 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		// Joins faster than Preload(clause.Associations)
 		var project dao.Project
 		projectQuery := s.db.
-			Joins("Workspace").
 			Joins("ProjectLead").
 			Where("projects.workspace_id = ?", workspace.ID).
 			Set("userId", user.ID).
@@ -94,6 +93,8 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if project.CurrentUserMembership == nil {
 			return EErrorDefined(c, apierrors.ErrProjectNotFound)
 		}
+
+		project.Workspace = &workspace
 
 		return next(ProjectContext{c.(WorkspaceContext), project, *project.CurrentUserMembership})
 	}
