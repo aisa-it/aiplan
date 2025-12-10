@@ -372,6 +372,14 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 	var editorListOk, readerListOk, watcherListOk bool
 
+	if hasRecentFieldUpdate[dao.DocActivity](
+		s.db.Where("doc_id = ?", doc.ID),
+		user.ID.String(),
+		utils.SliceToSlice(&fields, func(t *string) string { return actField.ReqFieldMapping(*t) })...,
+	) {
+		return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
+	}
+
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
@@ -1280,7 +1288,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	}
 	newMap := StructToJSONMap(comment)
 	newMap["updateScopeId"] = commentId
-	newMap["field_log"] = actField.Comment
+	newMap["field_log"] = actField.Comment.Field
 
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = commentId

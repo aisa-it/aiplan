@@ -648,3 +648,14 @@ func activityMigrate(db *gorm.DB) {
 		return nil
 	})
 }
+
+func hasRecentFieldUpdate[A dao.Activity](tx *gorm.DB, userId string, fields ...string) bool {
+	var model A
+	err := tx.Model(&model).
+		Where("actor_id = ?", userId).
+		Where("created_at > NOW() - INTERVAL '2 seconds'").
+		Where("field IN (?)", fields).
+		Take(&model).Error
+
+	return err == nil
+}
