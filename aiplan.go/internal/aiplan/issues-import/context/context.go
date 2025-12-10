@@ -336,7 +336,7 @@ func (c *ImportContext) GetProject(key string) error {
 		ID:            projectId,
 		Name:          project.Name,
 		Identifier:    project.Key,
-		ProjectLeadId: lead.ID.String(),
+		ProjectLeadId: lead.ID,
 		WorkspaceId:   uuid.FromStringOrNil(c.TargetWorkspaceID),
 	}
 	return nil
@@ -426,13 +426,14 @@ func (c *ImportContext) mapJiraComment(comment *jira.Comment, issueID string) (*
 		return nil, err
 	}
 
-	actorId := author.ID.String()
+	actorId := uuid.NullUUID{UUID: author.ID, Valid: true}
+	issueUUID, _ := uuid.FromString(issueID)
 	return &dao.IssueComment{
 		Id:          dao.GenUUID(),
 		CommentHtml: types.RedactorHTML{Body: comment.Body},
-		ActorId:     &actorId,
+		ActorId:     actorId,
 		CreatedAt:   created,
-		IssueId:     issueID,
+		IssueId:     issueUUID,
 		ProjectId:   c.Project.ID,
 		WorkspaceId: c.Project.WorkspaceId,
 		OriginalId:  sql.NullString{String: comment.ID, Valid: true},

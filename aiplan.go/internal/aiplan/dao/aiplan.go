@@ -169,7 +169,7 @@ type ReleaseNote struct {
 	TagName     string             `json:"tag_name" gorm:"uniqueIndex"`
 	PublishedAt time.Time          `json:"published_at"`
 	Body        types.RedactorHTML `json:"body"`
-	AuthorId    string             `json:"-"`
+	AuthorId    uuid.UUID          `json:"-" gorm:"type:uuid"`
 
 	Author *User `gorm:"foreignKey:AuthorId" json:"-" extensions:"x-nullable"`
 }
@@ -228,20 +228,20 @@ type EntityActivity struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// issue_id uuid IS_NULL:YES
-	IssueId *string `json:"issue_id,omitempty" gorm:"index:entity_activities_issue_index,priority:1" extensions:"x-nullable"`
+	IssueId uuid.NullUUID `json:"issue_id,omitempty" gorm:"type:uuid;index:entity_activities_issue_index,priority:1" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:YES
-	ProjectId *string `json:"project_id"`
+	ProjectId uuid.NullUUID `json:"project_id" gorm:"type:uuid" extensions:"x-nullable"`
 	// updated_by_id uuid IS_NULL:YES
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId string `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// form_id uuid IS_NULL:YES
-	FormId *string `json:"form_id"`
+	FormId uuid.NullUUID `json:"form_id" gorm:"type:uuid" extensions:"x-nullable"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:entity_activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:entity_activities_actor_index,priority:1" extensions:"x-nullable"`
 	// doc_id uuid IS_NULL:YES
-	DocId *string `json:"doc_id"`
+	DocId uuid.NullUUID `json:"doc_id" gorm:"type:uuid" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
@@ -658,7 +658,7 @@ type RootActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor,omitempty" gorm:"index:activities_actor_index,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
 	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`

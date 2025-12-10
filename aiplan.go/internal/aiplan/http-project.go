@@ -69,15 +69,22 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		// Joins faster than Preload(clause.Associations)
 		var project dao.Project
-		if err := s.db.
+		projectQuery := s.db.
 			Joins("Workspace").
 			Joins("ProjectLead").
 			Where("projects.workspace_id = ?", workspace.ID).
-			Where("projects.id = ? OR projects.identifier = ?", projectId, projectId). // Search by id or identifier
 			Set("userId", user.ID).
 			Preload("DefaultAssigneesDetails", "is_default_assignee = ?", true).
-			Preload("DefaultWatchersDetails", "is_default_watcher = ?", true).
-			First(&project).Error; err != nil {
+			Preload("DefaultWatchersDetails", "is_default_watcher = ?", true)
+
+		// Search by id or identifier
+		if id, err := uuid.FromString(projectId); err == nil {
+			projectQuery = projectQuery.Where("projects.id = ?", id)
+		} else {
+			projectQuery = projectQuery.Where("projects.identifier = ?", projectId)
+		}
+
+		if err := projectQuery.First(&project).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return EErrorDefined(c, apierrors.ErrProjectNotFound)
 			}
@@ -272,7 +279,6 @@ func (s *Services) updateProject(c echo.Context) error {
 	}
 	var newLead dao.ProjectMember
 
-	userIdStr := user.ID.String()
 	project.ID = id
 	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	project.Name = strings.TrimSpace(project.Name)
@@ -299,7 +305,7 @@ func (s *Services) updateProject(c echo.Context) error {
 		oldProjectMap["project_lead_activity_val"] = project.ProjectLead.Email
 	}
 
-	if !user.IsSuperuser && userIdStr != oldLead && changeProjectLead {
+	if !user.IsSuperuser && user.ID != oldLead && changeProjectLead {
 		return EErrorDefined(c, apierrors.ErrChangeProjectLeadForbidden)
 	}
 
@@ -419,7 +425,6 @@ func (s *Services) createProject(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrProjectLimitExceed)
 	}
 
-	userIdStr := user.ID.String()
 	project := dao.Project{
 		ID:          dao.GenUUID(),
 		WorkspaceId: workspace.ID,
@@ -444,8 +449,8 @@ func (s *Services) createProject(c echo.Context) error {
 		if project.Identifier == "" {
 			return errors.New("project identifier empty")
 		}
-		if project.ProjectLeadId == "" {
-			project.ProjectLeadId = userIdStr
+		if project.ProjectLeadId == uuid.Nil {
+			project.ProjectLeadId = user.ID
 		}
 
 		// Create project
@@ -822,7 +827,7 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if requestedProjectMember.MemberId.String() == project.ProjectLeadId {
+	if requestedProjectMember.MemberId == project.ProjectLeadId {
 		return EErrorDefined(c, apierrors.ErrChangeLeadRoleForbidden)
 	}
 
@@ -1417,7 +1422,7 @@ func (s *Services) createProjectEstimate(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	data.Estimate.Id = dao.GenID()
+	data.Estimate.Id = dao.GenUUID()
 	data.Estimate.CreatedAt = time.Now()
 	data.Estimate.CreatedById = userID
 	data.Estimate.UpdatedAt = time.Now()
@@ -1430,7 +1435,7 @@ func (s *Services) createProjectEstimate(c echo.Context) error {
 	}
 
 	for i := 0; i < len(data.EstimatePoints); i++ {
-		data.EstimatePoints[i].Id = dao.GenID()
+		data.EstimatePoints[i].Id = dao.GenUUID()
 		data.EstimatePoints[i].CreatedAt = time.Now()
 		data.EstimatePoints[i].CreatedById = userID
 		data.EstimatePoints[i].UpdatedAt = time.Now()
@@ -1700,7 +1705,6 @@ func (s *Services) createIssue(c echo.Context) error {
 		}
 
 		// Fill params
-		issueId := issueNew.ID.String()
 
 		// Add blockers
 		if len(issue.BlockersList) > 0 {
@@ -1774,7 +1778,7 @@ func (s *Services) createIssue(c echo.Context) error {
 				newLabels = append(newLabels, dao.IssueLabel{
 					Id:          dao.GenUUID(),
 					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
-					IssueId:     issueId,
+					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,

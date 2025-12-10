@@ -14,6 +14,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 )
 
 type prepareChanges struct {
@@ -39,36 +40,35 @@ func createAddBlockingActivity(activities *[]dao.EntityActivity, id, targetId st
 	fieldBlocks := "blocks"
 	fieldBlocking := "blocking"
 	idTarget := issueSrc.ID.String()
-	actorId := actor.ID.String()
+	actorId := uuid.NullUUID{UUID: actor.ID, Valid: true}
 
 	oldV := ""
 	newV := fmt.Sprintf("%s-%d", project.Identifier, issueSrc.SequenceId)
-	projectIdStr := project.ID.String()
 	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       &targetId,
-		ActorId:       &actorId,
+		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(targetId), Valid: true},
+		ActorId:       actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldV,
 		NewValue:      newV,
 		Field:         &fieldBlocks,
-		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId.String(),
+		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
+		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s added blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
 		NewIdentifier: &id,
 	})
 
 	newV = fmt.Sprintf("%s-%d", project.Identifier, issueTarget.SequenceId)
 	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       &idTarget,
-		ActorId:       &actorId,
+		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(idTarget), Valid: true},
+		ActorId:       actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldV,
 		NewValue:      newV,
 		Field:         &fieldBlocking,
-		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId.String(),
+		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
+		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s added blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
 		NewIdentifier: &targetId,
 	})
@@ -91,35 +91,34 @@ func createRemoveBlockingActivity(activities *[]dao.EntityActivity, id, targetId
 	fieldBlocks := "blocks"
 	fieldBlocking := "blocking"
 	idTarget := issueSrc.ID.String()
-	actorId := actor.ID.String()
+	actorId := uuid.NullUUID{UUID: actor.ID, Valid: true}
 	newV := ""
 	oldVBlocking := fmt.Sprintf("%s-%d", project.Identifier, issueSrc.SequenceId)
-	projectIdStr := project.ID.String()
 	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       &targetId,
-		ActorId:       &actorId,
+		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(targetId), Valid: true},
+		ActorId:       actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldVBlocking,
 		NewValue:      newV,
 		Field:         &fieldBlocks,
-		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId.String(),
+		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
+		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s removed blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
 		OldIdentifier: &id,
 	})
 
 	oldVBlocked := fmt.Sprintf("%s-%d", project.Identifier, issueTarget.SequenceId)
 	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       &idTarget,
-		ActorId:       &actorId,
+		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(idTarget), Valid: true},
+		ActorId:       actorId,
 		Actor:         &actor,
 		Verb:          "updated",
 		OldValue:      &oldVBlocked,
 		NewValue:      newV,
 		Field:         &fieldBlocking,
-		ProjectId:     &projectIdStr,
-		WorkspaceId:   project.WorkspaceId.String(),
+		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
+		WorkspaceId:   project.WorkspaceId,
 		Comment:       fmt.Sprintf("%s removed blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
 		OldIdentifier: &targetId,
 	})

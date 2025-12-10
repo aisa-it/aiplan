@@ -236,7 +236,7 @@ func (a *TemplateActivity) BuildDocActivity(entity DocEntityI) DocActivity {
 }
 
 func (a *TemplateActivity) BuildRootActivity(entity interface{}) RootActivity {
-	actorId := a.Actor.ID.String()
+	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
 	return RootActivity{
 		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
 		Verb:          a.Verb,
@@ -244,7 +244,7 @@ func (a *TemplateActivity) BuildRootActivity(entity interface{}) RootActivity {
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		ActorId:       &actorId,
+		ActorId:       actorId,
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,

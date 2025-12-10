@@ -696,7 +696,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 	var defaultAssignees []uuid.UUID
 	if err := s.db.Select("member_id").
 		Model(&dao.ProjectMember{}).
-		Where("project_id = ? and is_default_assignee = true", form.TargetProjectId.String).
+		Where("project_id = ? and is_default_assignee = true", form.TargetProjectId.UUID).
 		Find(&defaultAssignees).Error; err != nil {
 		return err
 	}
@@ -707,7 +707,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		ID:              dao.GenUUID(),
 		Name:            fmt.Sprintf("Ответ №%d формы \"%s\"", answer.SeqId, form.Title),
 		CreatedById:     systemUser.ID,
-		ProjectId:       uuid.Must(uuid.FromString(form.TargetProjectId.String)),
+		ProjectId:       form.TargetProjectId.UUID,
 		WorkspaceId:     form.WorkspaceId,
 		DescriptionHtml: buf.String(),
 		//DescriptionStripped: issue.DescriptionStripped,
@@ -803,8 +803,8 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 		CreatedById: userID,
 		UpdatedById: userID,
 		AssetId:     assetId,
-		FormId:      form.ID.String(),
-		WorkspaceId: form.WorkspaceId.String(),
+		FormId:      form.ID,
+		WorkspaceId: form.WorkspaceId,
 	}
 
 	fa := dao.FileAsset{
@@ -1024,7 +1024,8 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 			}
 		}
 		if rf.TargetProjectId != nil {
-			form.TargetProjectId = sql.NullString{Valid: true, String: *rf.TargetProjectId}
+			projectUUID, _ := uuid.FromString(*rf.TargetProjectId)
+			form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 		}
 		form.Fields = rf.Fields
 	} else {
@@ -1082,11 +1083,12 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 					}
 				case "target_project_id":
 					if value == nil {
-						form.TargetProjectId = sql.NullString{Valid: false}
+						form.TargetProjectId = uuid.NullUUID{Valid: false}
 						continue
 					}
 					if id, ok := value.(string); ok {
-						form.TargetProjectId = sql.NullString{Valid: true, String: id}
+						projectUUID, _ := uuid.FromString(id)
+						form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 					} else {
 						return nil, fmt.Errorf("target_project_id")
 					}

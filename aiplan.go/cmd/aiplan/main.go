@@ -97,6 +97,20 @@ func main() {
 		allColumns := utils.GetUUIDColumnsFromModels(models)
 		slog.Info("Auto-detected UUID columns from models", "count", len(allColumns))
 
+		// Add many2many fields migration
+		allColumns = append(allColumns,
+			utils.ColumnInfo{
+				Table:       "user_search_filters",
+				Column:      "user_id",
+				CurrentType: "text",
+			},
+			utils.ColumnInfo{
+				Table:       "user_search_filters",
+				Column:      "search_filter_id",
+				CurrentType: "text",
+			},
+		)
+
 		// Filter columns that need migration (exclude uuid, bytea, non-existent)
 		columnsToMigrate, err := utils.FilterMigratableColumns(db, allColumns)
 		if err != nil {
@@ -245,11 +259,11 @@ func main() {
 
 			// Step 6: AutoMigrate models (first without FK, then with FK)
 			slog.Info("Migrate models without relations")
-			tx.Config.DisableForeignKeyConstraintWhenMigrating = true
+			tx.DisableForeignKeyConstraintWhenMigrating = true
 			if err := tx.AutoMigrate(models...); err != nil {
 				return fmt.Errorf("failed to auto-migrate models without relations: %w", err)
 			}
-			tx.Config.DisableForeignKeyConstraintWhenMigrating = false
+			tx.DisableForeignKeyConstraintWhenMigrating = false
 
 			slog.Info("Migrate models with relations")
 			if err := tx.AutoMigrate(models...); err != nil {

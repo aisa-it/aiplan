@@ -19,7 +19,7 @@ type Team struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// name character varying IS_NULL:NO
 	Name string `json:"name"`
 	// description text IS_NULL:NO
@@ -51,7 +51,7 @@ type TeamMembers struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 	// created_by_id uuid IS_NULL:YES
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
@@ -59,7 +59,7 @@ type TeamMembers struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	MemberId uuid.UUID `json:"member_id" gorm:"type:uuid"`
 	// team_id uuid IS_NULL:NO
-	TeamId string `json:"team_id"`
+	TeamId uuid.UUID `json:"team_id" gorm:"type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`

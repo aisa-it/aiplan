@@ -270,7 +270,7 @@ func (mc *MapperContext) MapLabels() error {
 
 		mc.c.IssueLabels.Append(dao.IssueLabel{
 			Id:          dao.GenUUID(),
-			IssueId:     mc.issue.ID.String(),
+			IssueId:     mc.issue.ID,
 			LabelId:     issueLabel.ID,
 			ProjectId:   mc.c.Project.ID,
 			WorkspaceId: mc.c.Project.WorkspaceId,
@@ -345,7 +345,7 @@ func (mc *MapperContext) MapReleases() error {
 
 		mc.c.IssueLabels.Append(dao.IssueLabel{
 			Id:          dao.GenUUID(),
-			IssueId:     mc.issue.ID.String(),
+			IssueId:     mc.issue.ID,
 			LabelId:     tag.ID,
 			ProjectId:   mc.issue.ProjectId,
 			WorkspaceId: mc.issue.WorkspaceId,

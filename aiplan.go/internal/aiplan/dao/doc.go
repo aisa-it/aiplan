@@ -425,9 +425,9 @@ type DocComment struct {
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`
 	// doc_id uuid IS_NULL:NO
-	DocId string `json:"doc_id"`
+	DocId uuid.UUID `json:"doc_id" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
-	ActorId *string `json:"actor_id,omitempty" gorm:"index;index:integration_doc,priority:1" extensions:"x-nullable"`
+	ActorId uuid.NullUUID `json:"actor_id,omitempty" gorm:"type:uuid;index;index:integration_doc,priority:1" extensions:"x-nullable"`
 	// comment_html text IS_NULL:NO
 	CommentHtml types.RedactorHTML `json:"comment_html"`
 	// comment_json jsonb IS_NULL:NO
@@ -478,12 +478,12 @@ func (dc DocComment) GetWorkspaceId() uuid.UUID {
 }
 
 func (dc DocComment) GetDocId() string {
-	return dc.DocId
+	return dc.DocId.String()
 }
 
 // Выполняет дополнительные операции после успешного поиска записи в базе данных. В частности, обновляет информацию об URL, получает итоги реакции на комментарии и другие необходимые действия после извлечения данных из базы.
 func (dc *DocComment) AfterFind(tx *gorm.DB) error {
-	raw := fmt.Sprintf("/api/auth/workspaces/%s/doc/%s/comments/%s/", dc.WorkspaceId.String(), dc.DocId, dc.Id)
+	raw := fmt.Sprintf("/api/auth/workspaces/%s/doc/%s/comments/%s/", dc.WorkspaceId.String(), dc.DocId.String(), dc.Id)
 	u, _ := url.Parse(raw)
 	dc.URL = Config.WebURL.ResolveReference(u)
 
@@ -859,7 +859,7 @@ type DocAttachment struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// doc_id uuid IS_NULL:NO
-	DocId string `json:"doc" gorm:"index"`
+	DocId uuid.UUID `json:"doc" gorm:"index;type:uuid"`
 	// updated_by_id uuid IS_NULL:YES
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
@@ -911,7 +911,7 @@ func (da DocAttachment) GetWorkspaceId() uuid.UUID {
 }
 
 func (da DocAttachment) GetDocId() string {
-	return da.DocId
+	return da.DocId.String()
 }
 
 // Преобразует структуру Doc в структуру dto.Attachment для удобства передачи данных в API.

@@ -49,7 +49,7 @@ type Workspace struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.UUID `json:"created_by_id" gorm:"type:uuid"`
 	// owner_id uuid NOT NULL,
-	OwnerId string `json:"owner_id"`
+	OwnerId uuid.UUID `json:"owner_id" gorm:"type:uuid"`
 	// updated_by_id uuid,
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById      uuid.NullUUID `json:"updated_by_id" gorm:"type:uuid" extensions:"x-nullable"`
@@ -326,7 +326,7 @@ func (w *Workspace) ChangeOwner(tx *gorm.DB, wm *WorkspaceMember) error {
 	}
 
 	if err := tx.Model(w).Updates(Workspace{
-		OwnerId: wm.MemberId.String(),
+		OwnerId: wm.MemberId,
 	}).Error; err != nil {
 		return fmt.Errorf("workspace owner update")
 	}

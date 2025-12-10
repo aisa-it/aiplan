@@ -18,7 +18,7 @@ type WorkspaceLight struct {
 	Name    string        `json:"name"`
 	LogoId  uuid.NullUUID `json:"logo"  extensions:"x-nullable" swaggertype:"string"`
 	Slug    string        `json:"slug"`
-	OwnerId string        `json:"owner_id"`
+	OwnerId uuid.UUID     `json:"owner_id"`
 	Url     types.JsonURL `json:"url,omitempty"`
 }
 

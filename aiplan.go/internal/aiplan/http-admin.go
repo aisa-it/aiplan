@@ -1271,7 +1271,7 @@ func (s *Services) createReleaseNote(c echo.Context) error {
 	if err := c.Bind(&note); err != nil {
 		return EError(c, err)
 	}
-	note.AuthorId = c.(AuthContext).User.ID.String()
+	note.AuthorId = c.(AuthContext).User.ID
 	note.TagName = appVersion
 	note.PublishedAt = time.Now()
 	if len(note.Body.Body) == 0 {
@@ -1329,7 +1329,7 @@ func (s *Services) updateReleaseNote(c echo.Context) error {
 
 	data.ID = c.(ReleaseNoteContext).ReleaseNote.ID
 	data.TagName = c.(ReleaseNoteContext).ReleaseNote.TagName
-	data.AuthorId = c.(ReleaseNoteContext).User.ID.String()
+	data.AuthorId = c.(ReleaseNoteContext).User.ID
 	if len(data.Body.Body) == 0 {
 		return EErrorDefined(c, apierrors.ErrReleaseNoteEmptyBody)
 	}

@@ -42,7 +42,7 @@ func (b *Business) ProjectCtxClean() {
 }
 
 func (b *Business) DeleteProject() error {
-	if !b.projectCtx.user.IsSuperuser && b.projectCtx.user.ID.String() != b.projectCtx.project.ProjectLeadId && b.projectCtx.workspaceMember.Role != types.AdminRole {
+	if !b.projectCtx.user.IsSuperuser && b.projectCtx.user.ID != b.projectCtx.project.ProjectLeadId && b.projectCtx.workspaceMember.Role != types.AdminRole {
 		return apierrors.ErrDeleteProjectForbidden
 	}
 
@@ -142,13 +142,13 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 				Find(&actorWm).Error; err != nil {
 				return err
 			}
-			if actorWm.Role != types.AdminRole && actorWm.Workspace.OwnerId != actor.ID {
+			if actorWm.Role != types.AdminRole && actorWm.Workspace.OwnerId != actor.MemberId {
 				return apierrors.ErrCannotDeleteWorkspaceAdmin
 			}
 		}
 	}
 
-	if requestedMember.Project.ProjectLeadId == requestedMember.MemberId.String() {
+	if requestedMember.Project.ProjectLeadId == requestedMember.MemberId {
 		if !actor.Member.IsSuperuser {
 			return apierrors.ErrCannotRemoveProjectLead
 		}

@@ -96,7 +96,7 @@ func (s *Services) hasProjectPermissions(c echo.Context) (bool, error) {
 			return true, nil
 		}
 
-		if projectMember.Role == 15 || projectContext.Project.ProjectLeadId == projectContext.User.ID.String() {
+		if projectMember.Role == 15 || projectContext.Project.ProjectLeadId == projectContext.User.ID {
 			return true, nil
 		}
 	}
