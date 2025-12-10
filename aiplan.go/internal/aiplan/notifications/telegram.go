@@ -608,6 +608,53 @@ func (ts *TelegramService) SendMessage(tgId int64, format string, anyStr []strin
 	return true
 }
 
+func (ts *TelegramService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAnswer, user *dao.User) {
+	var d strings.Builder
+	var out []string
+
+	if user != nil {
+		d.WriteString(fmt.Sprintf("%s ", user.GetName()))
+	} else {
+		d.WriteString(fmt.Sprintf("Анонимный пользователь "))
+	}
+	d.WriteString("прошел форму [%s](%s)\n")
+	out = append(out, form.Title, form.URL.String())
+	count := 0
+	for _, field := range answer.Fields {
+		count++
+		d.WriteString(fmt.Sprintf(" %d\\. *%s* ", count, field.Label))
+		switch field.Type {
+		case "checkbox":
+			if v := field.Val.(bool); v {
+				d.WriteString(" ☑️\n")
+			} else {
+				d.WriteString(" ❌\n")
+			}
+		case "numeric":
+			d.WriteString("```\n%s```\n")
+			out = append(out, fmt.Sprint(field.Val))
+		case "input", "textarea":
+			d.WriteString("```\n%s\n```\n")
+			out = append(out, substr(fmt.Sprint(field.Val), 0, 4000))
+		case "multiselect":
+			if values, ok := field.Val.([]interface{}); ok {
+				for _, v := range values {
+					d.WriteString("\n \\-  %s")
+					out = append(out, fmt.Sprint(v))
+				}
+				d.WriteString("\n")
+			}
+		case "date":
+			d.WriteString("```\n%s\n```\n")
+			out = append(out, fmt.Sprint(time.UnixMilli(int64(field.Val.(float64))).Format("02.01.2006")))
+		case "color":
+			d.WriteString("```\n%s\n```\n")
+			out = append(out, fmt.Sprint(field.Val))
+		}
+	}
+	ts.SendMessage(tgId, d.String(), out)
+}
+
 func escapeCharacters(data string) string {
 	data = html.UnescapeString(data)
 	res := strings.ReplaceAll(data, "\\", "")

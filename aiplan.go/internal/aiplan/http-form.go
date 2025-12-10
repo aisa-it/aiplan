@@ -10,18 +10,17 @@
 package aiplan
 
 import (
-	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
 	"go/types"
-	"html/template"
 	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"github.com/gofrs/uuid"
@@ -625,6 +624,25 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		}(&form, &answer, user)
 	}
 
+	if form.NotificationChannels.Email || form.NotificationChannels.Telegram {
+		//res, err := business.GenBodyAnswer(&answer, user)
+		//if err != nil {
+		//	return EError(c, err)
+		//}
+
+		//res, err := business.GenTelegramBodyAnswer(&answer, user)
+		//if err != nil {
+		//	return EError(c, err)
+		//}
+
+		//d := strings.Builder{}
+		//d.
+		//	d.String()
+
+		s.notificationsService.Tg.SendFormAnswer(*user.TelegramId, form, &answer, user)
+		s.emailService.FormAnswerNotify(&form, &answer, user)
+	}
+
 	result := respAnswers{
 		Form:   *form.ToLightDTO(),
 		Fields: resultAnswers,
@@ -652,45 +670,10 @@ func (s *Services) createAnswerNoAuth(c echo.Context) error {
 	return s.createAnswerAuth(c)
 }
 
-const answerIssueTmpl = `{{if .User}}<p>Пользователь: {{.User.GetName}}, {{.User.Email}}</p>{{else}}<p>Анонимный пользователь</p>{{end}}<ol>{{- range .Answers -}}<li><p><span style="font-size: 14px"><strong>{{- .Label -}}</strong></span><br><span style="font-size: 14px">{{- getValString .Type .Val -}}</span></p></li>{{- end -}}</ol>`
-
 func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, user *dao.User) error {
-	t, err := template.New("AnswerIssue").Funcs(template.FuncMap{
-		"getValString": func(t string, val interface{}) template.HTML {
-			switch t {
-			case "checkbox":
-				if v := val.(bool); v {
-					return template.HTML("Да")
-				} else {
-					return template.HTML("Нет")
-				}
-			case "date":
-				return template.HTML(time.UnixMilli(int64(val.(float64))).Format("02.01.2006"))
-			case "multiselect":
-				if values, ok := val.([]interface{}); ok {
-					var stringValues []string
-					for _, v := range values {
-						stringValues = append(stringValues, fmt.Sprint(v))
-					}
-					return template.HTML(strings.Join(stringValues, "<br>"))
-				}
-				return template.HTML(fmt.Sprint(val))
-			}
-			return template.HTML(fmt.Sprint(val))
-		},
-	}).Parse(answerIssueTmpl)
-	if err != nil {
-		return err
-	}
 
-	buf := new(bytes.Buffer)
-	if err := t.Execute(buf, struct {
-		User    *dao.User
-		Answers types2.FormFieldsSlice
-	}{
-		User:    user,
-		Answers: answer.Fields,
-	}); err != nil {
+	res, err := business.GenBodyAnswer(answer, user)
+	if err != nil {
 		return err
 	}
 
@@ -710,7 +693,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		CreatedById:     systemUser.ID.String(),
 		ProjectId:       uuid.Must(uuid.FromString(form.TargetProjectId.String)),
 		WorkspaceId:     form.WorkspaceId,
-		DescriptionHtml: buf.String(),
+		DescriptionHtml: res,
 		//DescriptionStripped: issue.DescriptionStripped,
 	}
 
@@ -995,16 +978,17 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 // ***** REQUEST *****
 
 type reqForm struct {
-	Title           string                 `json:"title,omitempty" validate:"required"`
-	Description     types2.RedactorHTML    `json:"description,omitempty"`
-	AuthRequire     bool                   `json:"auth_require,omitempty"`
-	EndDate         *types2.TargetDate     `json:"end_date,omitempty" extensions:"x-nullable"`
-	TargetProjectId *string                `json:"target_project_id" extensions:"x-nullable"`
-	Fields          types2.FormFieldsSlice `json:"fields,omitempty"`
+	Title                string                  `json:"title,omitempty" validate:"required"`
+	Description          types2.RedactorHTML     `json:"description,omitempty"`
+	AuthRequire          bool                    `json:"auth_require,omitempty"`
+	EndDate              *types2.TargetDate      `json:"end_date,omitempty" extensions:"x-nullable"`
+	TargetProjectId      *string                 `json:"target_project_id" extensions:"x-nullable"`
+	Fields               types2.FormFieldsSlice  `json:"fields,omitempty"`
+	NotificationChannels types2.FormAnswerNotify `json:"notification_channels,omitempty"`
 }
 
 func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao.Form, error) {
-	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id"}
+	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id", "notification_channels"}
 
 	if form == nil {
 		form = &dao.Form{}
@@ -1090,6 +1074,12 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 						form.TargetProjectId = sql.NullString{Valid: true, String: id}
 					} else {
 						return nil, fmt.Errorf("target_project_id")
+					}
+				case "notification_channels":
+					if channels, ok := value.(types2.FormAnswerNotify); ok {
+						form.NotificationChannels = channels
+					} else {
+						return nil, fmt.Errorf("notification_channels")
 					}
 				}
 			}

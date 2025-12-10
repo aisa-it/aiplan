@@ -29,8 +29,8 @@ type IssueLight struct {
 	Url        types.JsonURL `json:"url,omitempty"`
 	ShortUrl   types.JsonURL `json:"short_url,omitempty"`
 
-	StateId  uuid.UUID `json:"state"`
-	State    *StateLight   `json:"state_detail" extensions:"x-nullable"`
+	StateId  uuid.UUID   `json:"state"`
+	State    *StateLight `json:"state_detail" extensions:"x-nullable"`
 	Priority *string     `json:"priority" extensions:"x-nullable"`
 }
 

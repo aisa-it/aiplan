@@ -129,7 +129,7 @@ var (
 	ErrFormNotFound           = DefinedError{Code: 3201, StatusCode: http.StatusNotFound, Err: "form not found", RuErr: "Форма не найдена"}
 	ErrFormAnswerForbidden    = DefinedError{Code: 3202, StatusCode: http.StatusForbidden, Err: "access to the form requires authorization", RuErr: "Для доступа к форме необходимо пройти авторизацию"}
 	ErrFormForbidden          = DefinedError{Code: 3203, StatusCode: http.StatusForbidden, Err: "not allowed for current role", RuErr: "У вас недостаточно прав для выполнения действия"}
-	ErrFormBadConvertRequest  = DefinedError{Code: 3204, StatusCode: http.StatusBadRequest, Err: "bad request, field: '%s'", RuErr: "При создании/обновлении формы передан неверный тип поля"}
+	ErrFormBadConvertRequest  = DefinedError{Code: 3204, StatusCode: http.StatusBadRequest, Err: "bad request, field: '%s'", RuErr: "При создании/обновлении формы передан неверный тип поля: '%s'"}
 	ErrFormBadRequest         = DefinedError{Code: 3205, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
 	ErrFormRequestValidate    = DefinedError{Code: 3206, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
 	ErrFormCheckFields        = DefinedError{Code: 3207, StatusCode: http.StatusBadRequest, Err: "fields request error: '%s'", RuErr: "При создании формы задан неподдерживаемый тип поля"}

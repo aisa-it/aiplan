@@ -17,9 +17,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 )
 
