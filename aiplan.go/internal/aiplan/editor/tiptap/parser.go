@@ -9,8 +9,9 @@ import (
 )
 
 func init() {
-	// Регистрируем парсер TipTap в edtypes
+	// Регистрируем парсер и сериализатор TipTap в edtypes
 	edtypes.TipTapParser = ParseJSON
+	edtypes.TipTapSerializer = Serialize
 }
 
 // ParseJSON парсит JSON контент TipTap редактора в структуру edtypes.Document.
@@ -55,12 +56,16 @@ func parseNode(node TipTapNode) any {
 		return parseSpoiler(node)
 	case "info-block":
 		return parseInfoBlock(node)
-	case "image":
+	case "image", "imageResize":
 		return parseImage(node)
 	case "date-node":
 		return parseDateNode(node)
 	case "issueLinkMention":
 		return parseIssueLinkMention(node)
+	case "mention":
+		return parseMention(node)
+	case "hardBreak":
+		return parseHardBreak(node)
 	default:
 		slog.Warn("Unknown node type", "type", node.Type)
 		return nil

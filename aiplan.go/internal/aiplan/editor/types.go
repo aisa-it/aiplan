@@ -22,6 +22,8 @@ type (
 	Color            = edtypes.Color
 	DateNode         = edtypes.DateNode
 	IssueLinkMention = edtypes.IssueLinkMention
+	Mention          = edtypes.Mention
+	HardBreak        = edtypes.HardBreak
 )
 
 // Реэкспорт констант

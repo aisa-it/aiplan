@@ -25,6 +25,7 @@ import (
 	"codeberg.org/go-pdf/fpdf"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor"
+	_ "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor/tiptap" // Регистрация TipTap парсера и сериализатора
 )
 
 var (

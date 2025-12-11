@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor"
+	_ "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor/tiptap" // Регистрация TipTap парсера и сериализатора
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/lib/pq"
 
@@ -66,9 +68,10 @@ type Issue struct {
 	// workspace_id uuid NOT NULL,
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid;index:,type:hash,where:deleted_at is not null"`
 
-	DescriptionHtml     string  `json:"description_html" gorm:"default:<p></p>"`
-	DescriptionStripped *string `json:"description_stripped" extensions:"x-nullable"`
-	DescriptionType     int     `json:"description_type" gorm:"default:0"`
+	DescriptionHtml     string          `json:"description_html" gorm:"default:<p></p>"`
+	DescriptionStripped *string         `json:"description_stripped" extensions:"x-nullable"`
+	DescriptionType     int             `json:"description_type" gorm:"default:0"`
+	DescriptionJSON     editor.Document `gorm:"type:jsonb"`
 
 	Tokens types.TsVector `json:"-" gorm:"index:tokens_gin,type:gin,where:deleted_at is not null;->:false"`
 
@@ -296,6 +299,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 		DescriptionHtml:     i.DescriptionHtml,
 		DescriptionStripped: i.DescriptionStripped,
 		DescriptionType:     i.DescriptionType,
+		DescriptionJSON:     i.DescriptionJSON,
 		EstimatePoint:       i.EstimatePoint,
 		Draft:               i.Draft,
 		Pinned:              i.Pinned,
@@ -323,7 +327,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 // Возвращает:
 //   - []string: список строк, представляющих имена полей, которые можно обновлять.
 func (Issue) FieldsAllowedForUpdate() []string {
-	return []string{"name", "priority", "target_date", "start_date", "completed_at", "parent_id", "state_id", "description_html", "description_stripped", "description_type", "completed_at", "estimate_point", "updated_at", "updated_by_id", "draft", "sort_order"}
+	return []string{"name", "priority", "target_date", "start_date", "completed_at", "parent_id", "state_id", "description_html", "description_stripped", "description_type", "description_json", "completed_at", "estimate_point", "updated_at", "updated_by_id", "draft", "sort_order"}
 }
 
 // BeforeSave - проверяет, какие поля можно обновлять в Issue. Возвращает список разрешенных полей для обновления.
