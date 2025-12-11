@@ -81,7 +81,7 @@ func (s Sprint) GetString() string {
 
 // GetEntityType Возвращает тип сущности спринта (sprint). Используется для определения типа данных при работе с активностями.
 func (s Sprint) GetEntityType() string {
-	return actField.Sprint.String()
+	return actField.Sprint.Field.String()
 }
 
 func (s Sprint) GetWorkspaceId() string {
@@ -165,6 +165,14 @@ func (s *Sprint) BeforeDelete(tx *gorm.DB) (err error) {
 	}
 
 	return nil
+}
+
+func (s *Sprint) GetIssuesIDs() []uuid.UUID {
+	ids := make([]uuid.UUID, len(s.Issues))
+	for i, issue := range s.Issues {
+		ids[i] = issue.ID
+	}
+	return ids
 }
 
 func (s *Sprint) ToLightDTO() *dto.SprintLight {

@@ -25,7 +25,7 @@ func entityUpdatedActivity[E dao.Entity, A dao.Activity](
 	actor dao.User) ([]A, error) {
 	result := make([]A, 0)
 	for key := range requestedData {
-		if f := getFuncUpdate[E, A](actField.ActivityField(key)); f != nil {
+		if f := getFuncUpdate[E, A](key); f != nil {
 			acts, err := f(tracker, requestedData, currentInstance, entity, actor)
 			if err != nil {
 				return nil, ErrStack.TrackErrorStack(err)

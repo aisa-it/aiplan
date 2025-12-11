@@ -18,6 +18,8 @@ type SearchGroupSize struct {
 }
 
 func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.Sprint, searchParams *types.SearchParams) ([]SearchGroupSize, error) {
+	query := db.Session(&gorm.Session{})
+
 	// Определение запроса для фильтрации по проектам
 	// Если указан спринт, выбираем project_id из таблицы SprintIssue для данного спринта
 	// Если указан конкретный projectId, используем его напрямую
@@ -31,7 +33,6 @@ func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.
 		projectQuery = searchParams.Filters.ProjectIds
 	}
 
-	query := db.Session(&gorm.Session{})
 	switch searchParams.GroupByParam {
 	case "priority":
 		query = query.
@@ -113,6 +114,10 @@ func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.
 					Model(&dao.ProjectMember{}),
 				)
 		}
+	}
+
+	if sprint != nil {
+		query = query.Where("i.id in (?)", sprint.GetIssuesIDs())
 	}
 
 	{

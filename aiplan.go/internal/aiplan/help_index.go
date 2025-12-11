@@ -9,7 +9,6 @@ package aiplan
 
 import (
 	"bufio"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -33,19 +32,6 @@ func NewHelpIndex(root string) func(echo.Context) error {
 
 	return func(c echo.Context) error {
 		return c.JSON(http.StatusOK, index)
-	}
-}
-
-func printTree(root []*HelpPage, shift int) {
-	for _, sub := range root {
-		if sub == nil {
-			fmt.Print("├─" + strings.Repeat("─", 3*shift) + " <nil>\n")
-			continue
-		}
-		fmt.Printf("├─"+strings.Repeat("─", 3*shift)+" %s %d subpages\n", sub.FullPath, len(sub.SubPages))
-		if len(sub.SubPages) > 0 {
-			printTree(sub.SubPages, shift+1)
-		}
 	}
 }
 

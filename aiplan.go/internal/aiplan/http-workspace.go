@@ -1472,33 +1472,6 @@ func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 	})
 }
 
-// ############# Workspace Views methods ###################
-
-// Создание просмотра рабочего пространства
-func (s *Services) createWorkspaceView(c echo.Context) error {
-	user := *c.(AuthContext).User
-	slug := c.Param("workspaceSlug")
-
-	var data map[string]json.RawMessage
-	if err := json.NewDecoder(c.Request().Body).Decode(&data); err != nil {
-		return EError(c, err)
-	}
-
-	var workspaceMember dao.WorkspaceMember
-	if err := s.db.Where("member_id = ?", user.ID).
-		Joins("Workspace").
-		Where("slug = ?", slug).
-		Find(&workspaceMember).Error; err != nil {
-		return EError(c, err)
-	}
-
-	if err := s.db.Save(&workspaceMember).Error; err != nil {
-		return EError(c, err)
-	}
-
-	return c.NoContent(http.StatusOK)
-}
-
 // getWorkspaceToken godoc
 // @id getWorkspaceToken
 // @Summary Пространство (токен): получение токена для пространства

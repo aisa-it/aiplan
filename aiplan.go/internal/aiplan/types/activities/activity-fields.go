@@ -4,6 +4,112 @@ import "fmt"
 
 type ActivityField string
 
+type FieldMapping struct {
+	Req   string
+	Field ActivityField
+}
+
+func makeFieldMap(actFs ...FieldMapping) map[string]string {
+	m := make(map[string]string)
+	for _, act := range actFs {
+		if act.Req != "" {
+			m[act.Req] = act.Field.String()
+		}
+	}
+	return m
+}
+
+var (
+	fieldChange = makeFieldMap(
+		Comment, DescriptionHtml, Status,
+		Readers, Editors, Watchers, Assignees,
+		Linked, Issues, Blocks, Blocking)
+
+	Issue = FieldMapping{"", "issue"}
+	Doc   = FieldMapping{"", "doc"}
+
+	Comment     = FieldMapping{"comment_html", "comment"}
+	CommentHtml = FieldMapping{"comment_html", "comment_html"}
+
+	Readers   = FieldMapping{"readers_list", "readers"}
+	Editors   = FieldMapping{"editors_list", "editors"}
+	Watchers  = FieldMapping{"watchers_list", "watchers"}
+	Assignees = FieldMapping{"assignees_list", "assignees"}
+	Linked    = FieldMapping{"linked_issues_ids", "linked"}
+	Issues    = FieldMapping{"issue_list", "issues"}
+
+	Blocks   = FieldMapping{"blocks_list", "blocks"}
+	Blocking = FieldMapping{"blockers_list", "blocking"}
+
+	Attachment = FieldMapping{"", "attachment"}
+
+	Description     = FieldMapping{"description", "description"}
+	DescriptionHtml = FieldMapping{"description_html", "description"}
+
+	Title            = FieldMapping{"title", "title"}
+	Emoj             = FieldMapping{"emoji", "emoji"}
+	Public           = FieldMapping{"public", "public"}
+	Identifier       = FieldMapping{"identifier", "identifier"}
+	ProjectLead      = FieldMapping{"project_lead", "project_lead"}
+	Priority         = FieldMapping{"priority", "priority"}
+	Role             = FieldMapping{"role", "role"}
+	ReaderRole       = FieldMapping{"reader_role", "reader_role"}
+	EditorRole       = FieldMapping{"editor_role", "editor_role"}
+	Status           = FieldMapping{"state", "status"}
+	DefaultAssignees = FieldMapping{"default_assignees", "default_assignees"}
+	DefaultWatchers  = FieldMapping{"default_watchers", "default_watchers"}
+
+	SubIssue = FieldMapping{"", "sub_issue"}
+
+	Token         = FieldMapping{"integration_token", "integration_token"}
+	Owner         = FieldMapping{"owner_id", "owner_id"}
+	Logo          = FieldMapping{"logo", "logo"}
+	Parent        = FieldMapping{"parent", "parent"}
+	Default       = FieldMapping{"default", "default"}
+	EstimatePoint = FieldMapping{"estimate_point", "estimate_point"}
+	Url           = FieldMapping{"url", "url"}
+	DocSort       = FieldMapping{"doc_sort", "doc_sort"}
+	Name          = FieldMapping{"name", "name"}
+	Template      = FieldMapping{"template", "template"}
+	Color         = FieldMapping{"color", "color"}
+	TargetDate    = FieldMapping{"target_date", "target_date"}
+	StartDate     = FieldMapping{"start_date", "start_date"}
+	CompletedAt   = FieldMapping{"completed_at", "completed_at"}
+	EndDate       = FieldMapping{"end_date", "end_date"}
+	Label         = FieldMapping{"labels_list", "label"}
+	AuthRequire   = FieldMapping{"auth_require", "auth_require"}
+	Fields        = FieldMapping{"fields", "fields"}
+	Group         = FieldMapping{"group", "group"}
+	Sprint        = FieldMapping{"sprint", "sprint"}
+
+	Member = FieldMapping{"", "member"}
+
+	Link      = FieldMapping{"", "link"} //
+	LinkTitle = FieldMapping{"", "link_title"}
+	LinkUrl   = FieldMapping{"", "link_url"}
+
+	LabelName  = FieldMapping{"", "label_name"} // todo <<<
+	LabelColor = FieldMapping{"", "label_color"}
+
+	StatusColor       = FieldMapping{"", "status_color"} // todo <<<
+	StatusGroup       = FieldMapping{"", "status_group"}
+	StatusDescription = FieldMapping{"", "status_description"}
+	StatusName        = FieldMapping{"", "status_name"}
+	StatusDefault     = FieldMapping{"", "status_default"}
+
+	TemplateName     = FieldMapping{"", "template_name"} // todo <<<
+	TemplateTemplate = FieldMapping{"", "template_template"}
+
+	Project  = FieldMapping{"", "project"}
+	Deadline = FieldMapping{"", "deadline"}
+
+	Form           = FieldMapping{"", "form"}
+	Integration    = FieldMapping{"", "integration"}
+	WorkspaceOwner = FieldMapping{"", "owner"}
+	IssueTransfer  = FieldMapping{"", "issue_transfer"}
+	Workspace      = FieldMapping{"", "workspace"}
+)
+
 const (
 	EntityUpdatedActivity = "entity.updated"
 	EntityCreateActivity  = "entity.create"
@@ -18,126 +124,6 @@ const (
 	VerbDeleted = "deleted"
 	VerbCreated = "created"
 	VerbMove    = "move"
-
-	ReqName             = "name"
-	ReqTitle            = "title"
-	ReqTemplate         = "template"
-	ReqWatchers         = "watchers_list"
-	ReqAssignees        = "assignees_list"
-	ReqReaders          = "readers_list"
-	ReqEditors          = "editors_list"
-	ReqIssues           = "issue_list"
-	ReqSprint           = "sprint"
-	ReqEmoj             = "emoji"
-	ReqPublic           = "public"
-	ReqIdentifier       = "identifier"
-	ReqProjectLead      = "project_lead"
-	ReqPriority         = "priority"
-	ReqRole             = "role"
-	ReqDefaultAssignees = "default_assignees"
-	ReqDefaultWatchers  = "default_watchers"
-	ReqDescription      = "description"
-	ReqDescriptionHtml  = "description_html"
-	ReqColor            = "color"
-	ReqTargetDate       = "target_date"
-	ReqStartDate        = "start_date"
-	ReqCompletedAt      = "completed_at"
-	ReqEndDate          = "end_date"
-	ReqLabel            = "labels_list"
-	ReqAuthRequire      = "auth_require"
-	ReqFields           = "fields"
-	ReqGroup            = "group"
-	ReqState            = "state"
-	ReqParent           = "parent"
-	ReqDefault          = "default"
-	ReqEstimatePoint    = "estimate_point"
-	ReqBlocksList       = "blocks_list"
-	ReqBlockersList     = "blockers_list"
-	ReqUrl              = "url"
-	ReqCommentHtml      = "comment_html"
-	ReqDocSort          = "doc_sort"
-	ReqReaderRole       = "reader_role"
-	ReqEditorRole       = "editor_role"
-	ReqLinked           = "linked_issues_ids"
-	ReqLogo             = "logo"
-	ReqToken            = "integration_token"
-	ReqOwner            = "owner_id"
-
-	Readers          ActivityField = "readers"
-	Editors          ActivityField = "editors"
-	Watchers         ActivityField = "watchers"
-	Assignees        ActivityField = "assignees"
-	Linked           ActivityField = "linked"
-	Issues           ActivityField = "issues"
-	Issue            ActivityField = "issue"
-	Blocks           ActivityField = "blocks"
-	Blocking         ActivityField = "blocking"
-	Attachment       ActivityField = "attachment"
-	Comment          ActivityField = "comment"
-	Doc              ActivityField = "doc"
-	Description      ActivityField = "description"
-	Title            ActivityField = "title"
-	Emoj             ActivityField = "emoji"
-	Public           ActivityField = "public"
-	Identifier       ActivityField = "identifier"
-	ProjectLead      ActivityField = "project_lead"
-	Priority         ActivityField = "priority"
-	Role             ActivityField = "role"
-	ReaderRole       ActivityField = "reader_role"
-	EditorRole       ActivityField = "editor_role"
-	Status           ActivityField = "status"
-	DefaultAssignees ActivityField = "default_assignees"
-	DefaultWatchers  ActivityField = "default_watchers"
-	SubIssue         ActivityField = "sub_issue"
-	Token            ActivityField = "integration_token"
-	OwnerId          ActivityField = "owner_id"
-	Owner            ActivityField = "owner"
-	Logo             ActivityField = "logo"
-	Parent           ActivityField = "parent"
-	Default          ActivityField = "default"
-	EstimatePoint    ActivityField = "estimate_point"
-	Url              ActivityField = "url"
-	CommentHtml      ActivityField = "comment_html"
-	DocSort          ActivityField = "doc_sort"
-	Name             ActivityField = "name"
-	Template         ActivityField = "template"
-	Color            ActivityField = "color"
-	DescriptionHtml  ActivityField = "description_html"
-	TargetDate       ActivityField = "target_date"
-	StartDate        ActivityField = "start_date"
-	CompletedAt      ActivityField = "completed_at"
-	EndDate          ActivityField = "end_date"
-	Label            ActivityField = "label"
-	AuthRequire      ActivityField = "auth_require"
-	Fields           ActivityField = "fields"
-	Group            ActivityField = "group"
-	Member           ActivityField = "member"
-
-	Link      ActivityField = "link"
-	LinkTitle ActivityField = "link_title"
-	LinkUrl   ActivityField = "link_url"
-
-	LabelName  ActivityField = "label_name"
-	LabelColor ActivityField = "label_color"
-
-	StatusColor       ActivityField = "status_color"
-	StatusGroup       ActivityField = "status_group"
-	StatusDescription ActivityField = "status_description"
-	StatusName        ActivityField = "status_name"
-	StatusDefault     ActivityField = "status_default"
-
-	TemplateName     ActivityField = "template_name"
-	TemplateTemplate ActivityField = "template_template"
-
-	Project  ActivityField = "project"
-	Deadline ActivityField = "deadline"
-
-	Form           ActivityField = "form"
-	Integration    ActivityField = "integration"
-	WorkspaceOwner ActivityField = "owner"
-	IssueTransfer  ActivityField = "issue_transfer"
-	Sprint         ActivityField = "sprint"
-	Workspace      ActivityField = "workspace"
 )
 
 func (a ActivityField) String() string {
@@ -154,4 +140,11 @@ func (a ActivityField) WithFuncStr() string {
 
 func (a ActivityField) WithGetFieldStr() string {
 	return fmt.Sprintf("%s_%s", a.String(), "get_field")
+}
+
+func ReqFieldMapping(in string) string {
+	if v, ok := fieldChange[in]; ok {
+		return v
+	}
+	return in
 }

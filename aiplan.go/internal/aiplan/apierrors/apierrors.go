@@ -207,6 +207,7 @@ var (
 	ErrEntityToLarge        = DefinedError{Code: 5010, StatusCode: http.StatusRequestEntityTooLarge, Err: "size exceeds the allowed limit", RuErr: "Размер файла превышает допустимый."}
 	ErrDuplicateEmail       = DefinedError{Code: 5011, StatusCode: http.StatusBadRequest, Err: "duplicated email", RuErr: "Пользователь с таким email уже добавлен"}
 	ErrFileTooLarge         = DefinedError{Code: 5012, StatusCode: http.StatusRequestEntityTooLarge, Err: "uploaded file exceeds the 50MB size limit", RuErr: "Загруженный файл превышает допустимый размер 50 МБ"}
+	ErrUpdateTooFrequent    = DefinedError{Code: 5013, StatusCode: http.StatusTooManyRequests, Err: "update too frequent, please wait", RuErr: "Слишком частые обновления, пожалуйста, подождите"}
 
 	// 6*** - user errors
 	ErrUserNotFound             = DefinedError{Code: 6001, StatusCode: http.StatusNotFound, Err: "user not found", RuErr: "Пользователь не найден"}

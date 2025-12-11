@@ -1014,8 +1014,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		issueMapOld[actField.Status.WithActivityValStr()] = issue.State.Name
-		data[actField.Status.WithActivityValStr()] = newState.Name
+		issueMapOld[actField.Status.Field.WithActivityValStr()] = issue.State.Name
+		data[actField.Status.Field.WithActivityValStr()] = newState.Name
 		if newState.Group == "started" && issue.State.Group != "started" {
 			data["start_date"] = &types.TargetDate{Time: time.Now()}
 		}
@@ -1077,7 +1077,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if err := s.db.Where("project_id = ?", project.ID).Find(&allProjectLabels).Error; err != nil {
 			return EError(c, err)
 		}
-		data[actField.Label.WithGetFieldStr()] = "labels"
+		data[actField.Label.Field.WithGetFieldStr()] = "labels"
 	}
 
 	// Reset sort order
@@ -1169,6 +1169,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 				issue.InlineAttachments = append(issue.InlineAttachments, fileAsset)
 			}
+		}
+
+		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return actField.ReqFieldMapping(k) })
+		if hasRecentFieldUpdate[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID.String(), dataField...) {
+			return apierrors.ErrUpdateTooFrequent
 		}
 
 		// Update blockers
@@ -2229,6 +2234,13 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 	oldLink.Title = newLink.Title
 	oldLink.Url = newLink.Url
 
+	{ //rateLimit
+		dataField := utils.MapToSlice(oldMap, func(k string, v interface{}) string { return fmt.Sprintf("link_%s", actField.ReqFieldMapping(k)) })
+		if hasRecentFieldUpdate[dao.IssueActivity](s.db.Where("issue_id = ?", oldLink.IssueId), user.ID.String(), dataField...) {
+			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
+		}
+	}
+
 	if err := s.db.Omit(clause.Associations).Save(&oldLink).Error; err != nil {
 		return EError(c, err)
 	}
@@ -2238,9 +2250,6 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 	oldMap["updateScope"] = "link"
 	oldMap["updateScopeId"] = linkId
 
-	//if err := s.tracker.TrackActivity(tracker.LINK_UPDATED_ACTIVITY, newMap, oldMap, issueId, tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
 	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, oldLink, &user)
 	if err != nil {
 		errStack.GetError(c, err)
@@ -2830,7 +2839,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 
 	newMap := StructToJSONMap(commentOld)
 	newMap["updateScopeId"] = commentId
-	newMap["field_log"] = actField.Comment
+	newMap["field_log"] = actField.Comment.Field
 
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = commentId
@@ -3047,7 +3056,7 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		Order("ia.created_at DESC")
 
 	if field != "" {
-		query = query.Where("ia.field = ?", actField.Status)
+		query = query.Where("ia.field = ?", actField.Status.Field.String())
 		if field == "state" {
 			query = query.Select("ia.*, round(extract('epoch' from ia.created_at - (LAG(ia.created_at, 1, \"Issue\".created_at) over (order by ia.created_at))) * 1000) as state_lag")
 
@@ -3055,7 +3064,7 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 			query = query.Select("ia.*")
 		}
 	} else {
-		query = query.Where("ia.field <> ?", actField.Status)
+		query = query.Where("ia.field <> ?", actField.Status.Field.String())
 	}
 
 	type fullActivityWithLag struct {

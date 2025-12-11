@@ -11,6 +11,8 @@ package dto
 import (
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor"
+	_ "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor/tiptap" // Регистрация TipTap парсера и сериализатора
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 )
@@ -63,12 +65,13 @@ type Issue struct {
 	ParentId    *string    `json:"parent,omitempty"`
 	UpdatedById *uuid.UUID `json:"updated_by" extensions:"x-nullable"`
 
-	DescriptionHtml     string  `json:"description_html"`
-	DescriptionStripped *string `json:"description_stripped" extensions:"x-nullable"`
-	DescriptionType     int     `json:"description_type"`
-	EstimatePoint       int     `json:"estimate_point"`
-	Draft               bool    `json:"draft"`
-	Pinned              bool    `json:"pinned"`
+	DescriptionHtml     string          `json:"description_html"`
+	DescriptionStripped *string         `json:"description_stripped" extensions:"x-nullable"`
+	DescriptionType     int             `json:"description_type"`
+	DescriptionJSON     editor.Document `json:"description_json"`
+	EstimatePoint       int             `json:"estimate_point"`
+	Draft               bool            `json:"draft"`
+	Pinned              bool            `json:"pinned"`
 
 	Parent    *IssueLight      `json:"parent_detail"  extensions:"x-nullable"`
 	Workspace *WorkspaceLight  `json:"workspace_detail"  extensions:"x-nullable"`
