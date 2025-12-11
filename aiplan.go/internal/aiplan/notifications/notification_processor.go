@@ -254,10 +254,10 @@ type INotifySend interface {
 
 // Workspace message
 type notifyMessage struct {
-	Id       string `json:"id"`
-	Title    string `json:"title"`
-	Msg      string `json:"msg"`
-	AuthorId string `json:"author_id"`
+	Id       uuid.UUID `json:"id"`
+	Title    string    `json:"title"`
+	Msg      string    `json:"msg"`
+	AuthorId string    `json:"author_id"`
 }
 
 func (nm *notifyMessage) getAuthor(tx *gorm.DB) *dao.User {
@@ -337,7 +337,7 @@ func (nm *notifyMessage) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNoti
 
 // notifyDeadline
 type notifyDeadline struct {
-	Id       string    `json:"id"`
+	Id       uuid.UUID `json:"id"`
 	Body     string    `json:"body"`
 	Deadline time.Time `json:"deadline"`
 }
@@ -451,9 +451,9 @@ func (nd *notifyDeadline) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNot
 
 // service message
 type serviceMessage struct {
-	Id    string `json:"id"`
-	Title string `json:"title"`
-	Msg   string `json:"msg"`
+	Id    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+	Msg   string    `json:"msg"`
 }
 
 func (s serviceMessage) getUserNotification() *dao.UserNotifications {

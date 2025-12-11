@@ -611,16 +611,16 @@ func (ts *TelegramService) SendFormAnswer(tgId int64, form dao.Form, answer *dao
 	var out []string
 
 	if user != nil {
-		d.WriteString(fmt.Sprintf("%s ", user.GetName()))
+		d.WriteString(fmt.Sprintf("*%s* ", user.GetName()))
 	} else {
-		d.WriteString(fmt.Sprintf("Анонимный пользователь "))
+		d.WriteString(fmt.Sprintf("*Анонимный пользователь* "))
 	}
-	d.WriteString("прошел форму [%s](%s)\n")
-	out = append(out, form.Title, form.URL.String())
+	d.WriteString("прошел форму [%s](%s)\n\n")
+	out = append(out, fmt.Sprintf("%s/%s", form.Workspace.Name, form.Title), form.URL.String())
 	count := 0
 	for _, field := range answer.Fields {
 		count++
-		d.WriteString(fmt.Sprintf(" %d\\. *%s* ", count, field.Label))
+		d.WriteString(fmt.Sprintf(" %d\\. *%s* ", count, escapeCharacters(field.Label)))
 		switch field.Type {
 		case "checkbox":
 			if v := field.Val.(bool); v {
@@ -629,25 +629,45 @@ func (ts *TelegramService) SendFormAnswer(tgId int64, form dao.Form, answer *dao
 				d.WriteString(" ❌\n")
 			}
 		case "numeric":
-			d.WriteString("```\n%s```\n")
-			out = append(out, fmt.Sprint(field.Val))
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				d.WriteString("```\n%s```\n")
+				out = append(out, fmt.Sprint(field.Val))
+			}
 		case "input", "textarea":
-			d.WriteString("```\n%s\n```\n")
-			out = append(out, substr(fmt.Sprint(field.Val), 0, 4000))
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				d.WriteString("```\n%s\n```\n")
+				out = append(out, substr(fmt.Sprint(field.Val), 0, 4000))
+			}
 		case "multiselect":
-			if values, ok := field.Val.([]interface{}); ok {
-				for _, v := range values {
-					d.WriteString("\n \\-  %s")
-					out = append(out, fmt.Sprint(v))
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				if values, ok := field.Val.([]interface{}); ok {
+					for _, v := range values {
+						d.WriteString("\n \\-  %s")
+						out = append(out, fmt.Sprint(v))
+					}
+					d.WriteString("\n")
 				}
-				d.WriteString("\n")
 			}
 		case "date":
-			d.WriteString("```\n%s\n```\n")
-			out = append(out, fmt.Sprint(time.UnixMilli(int64(field.Val.(float64))).Format("02.01.2006")))
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				d.WriteString("```\n%s\n```\n")
+				out = append(out, fmt.Sprint(time.UnixMilli(int64(field.Val.(float64))).Format("02.01.2006")))
+			}
 		case "color":
-			d.WriteString("```\n%s\n```\n")
-			out = append(out, fmt.Sprint(field.Val))
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				d.WriteString("```\n%s\n```\n")
+				out = append(out, fmt.Sprint(field.Val))
+			}
 		}
 	}
 	ts.SendMessage(tgId, d.String(), out)

@@ -345,7 +345,7 @@ func (sf *SearchFilter) SetUrl() {
 }
 
 type UserNotifications struct {
-	ID        string         `gorm:"column:id;primaryKey" json:"id"`
+	ID        uuid.UUID      `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
@@ -403,7 +403,7 @@ func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
 		return nil
 	}
 	return &dto.UserNotificationsLight{
-		ID:               un.ID,
+		ID:               un.ID.String(),
 		UserId:           un.UserId.String(),
 		Type:             un.Type,
 		Viewed:           un.Viewed,
@@ -433,8 +433,8 @@ func (un *UserNotifications) ToFullDTO() *dto.UserNotificationsFull {
 }
 
 func (un *UserNotifications) AfterCreate(tx *gorm.DB) (err error) {
-	if un.ID == "" {
-		un.ID = GenID()
+	if un.ID == uuid.Nil {
+		un.ID = GenUUID()
 	}
 	if un.Title != "" {
 		un.Title = policy.StripTagsPolicy.Sanitize(un.Title)

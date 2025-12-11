@@ -16,11 +16,11 @@ import (
 type ProjectLight struct {
 	ID uuid.UUID `json:"id"`
 
-	Name          string    `json:"name"`
-	Public        bool      `json:"public"`
-	Identifier    string    `json:"identifier"`
-	ProjectLeadId uuid.UUID `json:"project_lead"`
-	WorkspaceId   string    `json:"workspace"`
+	Name          string        `json:"name"`
+	Public        bool          `json:"public"`
+	Identifier    string        `json:"identifier"`
+	ProjectLeadId uuid.UUID     `json:"project_lead"`
+	WorkspaceId   string        `json:"workspace"`
 	Emoji         int32         `json:"emoji,string"`
 	CoverImage    *string       `json:"cover_image" extensions:"x-nullable"`
 	LogoId        uuid.NullUUID `json:"logo"  extensions:"x-nullable" swaggertype:"string"`

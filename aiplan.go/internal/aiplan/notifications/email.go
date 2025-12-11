@@ -131,7 +131,7 @@ func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
 			}
 
 			if err := tx.Create(&dao.Template{
-				Id:       dao.GenID(),
+				Id:       dao.GenUUID(),
 				Name:     name,
 				Template: string(data),
 			}).Error; err != nil {

@@ -33,17 +33,17 @@ func NewNotificationCleaner(db *gorm.DB) *NotificationCleaner {
 	return &NotificationCleaner{db}
 }
 
-func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUID, activity A) (*string, int, error) {
+func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUID, activity A) (uuid.UUID, int, error) {
 	if userId == uuid.Nil {
-		return nil, 0, nil
+		return uuid.Nil, 0, nil
 	}
 
-	var notifyId string
+	var notifyId uuid.UUID
 
 	switch a := any(activity).(type) {
 	case dao.RootActivity:
 		//TODO add activity to notify
-		return nil, 0, nil
+		return uuid.Nil, 0, nil
 
 	case dao.WorkspaceActivity:
 		var member dao.WorkspaceMember
@@ -53,19 +53,19 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			Where("member_id = ?", userId).
 			Where("workspace_members.role = ?", types.AdminRole).
 			First(&member).Error; err != nil {
-			return nil, 0, err
+			return uuid.Nil, 0, err
 		}
 		if !member.Member.CanReceiveNotifications() {
-			return nil, 0, fmt.Errorf("user can not receive notify")
+			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
 		}
 
 		if member.Member.Settings.AppNotificationMute {
-			return nil, 0, fmt.Errorf("user off app notify")
+			return uuid.Nil, 0, fmt.Errorf("user off app notify")
 		}
 
 		if member.NotificationSettingsApp.IsNotify(a.Field, "workspace", a.Verb, member.Role) {
 			notification := dao.UserNotifications{
-				ID:                  dao.GenID(),
+				ID:                  dao.GenUUID(),
 				UserId:              userId,
 				Type:                "activity",
 				WorkspaceId:         uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
@@ -73,7 +73,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return nil, 0, err
+				return uuid.Nil, 0, err
 			}
 			notifyId = notification.ID
 		}
@@ -81,15 +81,15 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 	case dao.ProjectActivity:
 		var member dao.ProjectMember
 		if err := tx.Joins("Member").Where("project_id = ?", a.ProjectId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return nil, 0, err
+			return uuid.Nil, 0, err
 		}
 
 		if !member.Member.CanReceiveNotifications() {
-			return nil, 0, fmt.Errorf("user can not receive notify")
+			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
 		}
 
 		if member.Member.Settings.AppNotificationMute {
-			return nil, 0, fmt.Errorf("user off app notify")
+			return uuid.Nil, 0, fmt.Errorf("user off app notify")
 		}
 
 		var notifyOk, isAuthorNotify, isMemberNotify bool
@@ -105,7 +105,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 
 		if (isProjectAdm && isMemberNotify) || (!isProjectAdm && notifyOk) {
 			notification := dao.UserNotifications{
-				ID:                dao.GenID(),
+				ID:                dao.GenUUID(),
 				UserId:            userId,
 				Type:              "activity",
 				WorkspaceId:       uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
@@ -113,7 +113,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return nil, 0, err
+				return uuid.Nil, 0, err
 			}
 			notifyId = notification.ID
 		}
@@ -123,14 +123,14 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		if err := tx.Joins("Member").
 			Where("workspace_id = ?", a.WorkspaceId).
 			Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return nil, 0, err
+			return uuid.Nil, 0, err
 		}
 		if !member.Member.CanReceiveNotifications() {
-			return nil, 0, fmt.Errorf("user can not receive notify")
+			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
 		}
 
 		if member.Member.Settings.AppNotificationMute {
-			return nil, 0, fmt.Errorf("user off app notify")
+			return uuid.Nil, 0, fmt.Errorf("user off app notify")
 		}
 
 		var authorOK, authorNotifyOk, memberNotifyOK bool
@@ -149,7 +149,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
 
 			notification := dao.UserNotifications{
-				ID:            dao.GenID(),
+				ID:            dao.GenUUID(),
 				UserId:        userId,
 				Type:          "activity",
 				WorkspaceId:   uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
@@ -161,29 +161,53 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			//}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return nil, 0, err
+				return uuid.Nil, 0, err
 			}
 			notifyId = notification.ID
 		}
 	case dao.FormActivity:
-		//TODO add activity to notify
-		return nil, 0, nil
+		var member dao.WorkspaceMember
+		if err := tx.Joins("Member").Where("workspace_id = ?", a.WorkspaceId).Where("member_id = ?", userId).First(&member).Error; err != nil {
+			return uuid.Nil, 0, err
+		}
+
+		if !member.Member.CanReceiveNotifications() {
+			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
+		}
+
+		if member.Member.Settings.AppNotificationMute {
+			return uuid.Nil, 0, fmt.Errorf("user off app notify")
+		}
+		a.Form.CurrentWorkspaceMember = &member
+
+		notification := dao.UserNotifications{
+			ID:             dao.GenUUID(),
+			UserId:         userId,
+			Type:           "activity",
+			WorkspaceId:    uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
+			FormActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
+		}
+
+		if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
+			return uuid.Nil, 0, err
+		}
+		notifyId = notification.ID
 	case dao.IssueActivity:
 		if a.Field != nil && *a.Field == actField.IssueTransfer.String() && a.Verb == "cloned" {
-			return nil, 0, nil
+			return uuid.Nil, 0, nil
 		}
 
 		var member dao.ProjectMember
 		if err := tx.Joins("Member").Where("project_id = ?", a.ProjectId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return nil, 0, err
+			return uuid.Nil, 0, err
 		}
 
 		if !member.Member.CanReceiveNotifications() {
-			return nil, 0, fmt.Errorf("user can not receive notify")
+			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
 		}
 
 		if member.Member.Settings.AppNotificationMute {
-			return nil, 0, fmt.Errorf("user off app notify")
+			return uuid.Nil, 0, fmt.Errorf("user off app notify")
 		}
 
 		var authorOK, authorNotifyOk, memberNotifyOK bool
@@ -202,7 +226,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		}
 		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
 			notification := dao.UserNotifications{
-				ID:              dao.GenID(),
+				ID:              dao.GenUUID(),
 				UserId:          userId,
 				Type:            "activity",
 				WorkspaceId:     uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
@@ -218,13 +242,13 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			}
 
 			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return nil, 0, err
+				return uuid.Nil, 0, err
 			}
 			notifyId = notification.ID
 		}
 
 	default:
-		return nil, 0, errStack.TrackErrorStack(fmt.Errorf("unknown type notify %T", a))
+		return uuid.Nil, 0, errStack.TrackErrorStack(fmt.Errorf("unknown type notify %T", a))
 	}
 
 	var count int
@@ -234,13 +258,13 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 		Where("deleted_at IS NULL").
 		Model(&dao.UserNotifications{}).
 		Find(&count).Error; err != nil {
-		return nil, 0, err
+		return uuid.Nil, 0, err
 	}
 
-	if notifyId == "" {
-		return nil, count, nil
+	if notifyId == uuid.Nil {
+		return uuid.Nil, count, nil
 	}
-	return &notifyId, count, nil
+	return notifyId, count, nil
 }
 
 func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao.IssueComment) (*dao.UserNotifications, int, error) {
@@ -259,13 +283,63 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 	}
 
 	notification := dao.UserNotifications{
-		ID:          dao.GenID(),
+		ID:          dao.GenUUID(),
 		UserId:      userId,
 		Type:        "comment",
 		CommentId:   &comment.Id,
 		Comment:     &comment,
 		WorkspaceId: uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true},
 		IssueId:     uuid.NullUUID{UUID: comment.IssueId, Valid: comment.IssueId != uuid.Nil},
+	}
+
+	if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var count int
+	if err := tx.Select("count(*)").
+		Where("viewed = false").
+		Where("user_id = ?", userId).
+		Where("deleted_at IS NULL").
+		Model(&dao.UserNotifications{}).
+		Find(&count).Error; err != nil {
+		return nil, 0, err
+	}
+	return &notification, count, nil
+}
+
+func CreateUserNotificationAddCFormAnswer(tx *gorm.DB, userId uuid.UUID, answer dao.FormAnswer, activityId uuid.UUID) (*dao.UserNotifications, int, error) {
+	var user dao.User
+
+	if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if !user.CanReceiveNotifications() {
+		return nil, 0, fmt.Errorf("user can not receive notify")
+	}
+
+	if user.Settings.AppNotificationMute {
+		return nil, 0, fmt.Errorf("user off app notify")
+	}
+
+	var msg string
+	if answer.Responder != nil {
+		msg = answer.Responder.GetName()
+	} else {
+		msg = "Анонимный пользователь"
+	}
+
+	msg += " отправил ответ на форму"
+
+	notification := dao.UserNotifications{
+		ID:             dao.GenUUID(),
+		UserId:         userId,
+		Type:           "notify",
+		Title:          fmt.Sprintf("Прохождение формы: \"%s\"", answer.Form.Title),
+		Msg:            msg,
+		WorkspaceId:    uuid.NullUUID{UUID: answer.WorkspaceId, Valid: true},
+		FormActivityId: uuid.NullUUID{UUID: activityId, Valid: true},
 	}
 
 	if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {

@@ -614,6 +614,16 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	}); err != nil {
 		return EError(c, err)
 	}
+	if user == nil {
+		if err := s.db.Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	err = tracker.TrackActivity[dao.FormAnswer, dao.FormActivity](s.tracker, activities.EntityCreateActivity, nil, nil, answer, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
 
 	if form.TargetProjectId.Valid {
 		go func(form *dao.Form, answer *dao.FormAnswer, user *dao.User) {
@@ -623,24 +633,19 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		}(&form, &answer, user)
 	}
 
-	if form.NotificationChannels.Email || form.NotificationChannels.Telegram {
-		//res, err := business.GenBodyAnswer(&answer, user)
-		//if err != nil {
-		//	return EError(c, err)
-		//}
-
-		//res, err := business.GenTelegramBodyAnswer(&answer, user)
-		//if err != nil {
-		//	return EError(c, err)
-		//}
-
-		//d := strings.Builder{}
-		//d.
-		//	d.String()
-
-		s.notificationsService.Tg.SendFormAnswer(*user.TelegramId, form, &answer, user)
+	if form.NotificationChannels.Email && !form.Author.Settings.EmailNotificationMute {
 		s.emailService.FormAnswerNotify(&form, &answer, user)
 	}
+
+	if form.NotificationChannels.Telegram && !form.Author.Settings.TgNotificationMute && form.Author.TelegramId != nil {
+		s.notificationsService.Tg.SendFormAnswer(*form.Author.TelegramId, form, &answer, answer.Responder)
+	}
+
+	//if form.NotificationChannels.App && !form.Author.Settings.AppNotificationMute {
+	//	if notify, countNotify, err := notifications.CreateUserNotificationAddCFormAnswer(s.db, form.Author.ID, answer); err == nil {
+	//		s.notificationsService.Ws.Send(form.Author.ID, notify.ID, notify, countNotify)
+	//	}
+	//}
 
 	result := respAnswers{
 		Form:   *form.ToLightDTO(),

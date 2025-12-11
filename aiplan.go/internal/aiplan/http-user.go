@@ -1545,6 +1545,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		Joins("IssueActivity").
 		Joins("ProjectActivity").
 		Joins("DocActivity").
+		Joins("FormActivity").
 
 		//Joins("IssueActivity").
 		//Preload("IssueActivity.Actor").
@@ -1562,7 +1563,6 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		//Preload("DocActivity.Actor").
 		//Preload("DocActivity.Workspace").
 		//Preload("DocActivity.Doc").
-		//Joins("FormActivity").
 		//Preload("FormActivity.Actor").
 		//Preload("FormActivity.Workspace").
 		//Preload("FormActivity.Form").
@@ -1614,6 +1614,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		Joins("Actor").
 		Joins("Issue").
 		Joins("Doc").
+		Joins("Form").
 		Where("ua.id::text IN (?)", qqq).
 		Find(&fa).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
@@ -1648,7 +1649,7 @@ func userNotifyToSimple(tx *gorm.DB, from interface{}) *[]notifications.Notifica
 	res := make([]notifications.NotificationResponse, 0, len(*temp))
 	for _, notify := range *temp {
 		tmp := notifications.NotificationResponse{
-			Id:        notify.ID,
+			Id:        notify.ID.String(),
 			Type:      notify.Type,
 			Viewed:    &notify.Viewed,
 			CreatedAt: notify.CreatedAt.UTC(),
@@ -1694,6 +1695,7 @@ func userNotifyToSimple(tx *gorm.DB, from interface{}) *[]notifications.Notifica
 					Project:   notify.FullActivity.Project.ToLightDTO(),
 					Workspace: notify.FullActivity.Workspace.ToLightDTO(),
 					Doc:       notify.FullActivity.Doc.ToLightDTO(),
+					Form:      notify.FullActivity.Form.ToLightDTO(),
 				}
 				entityActivity := notify.FullActivity.ToLightDTO()
 				//entityActivity.NewEntity = dao.GetActionEntity(*notify.FullActivity, "New")
@@ -1708,14 +1710,6 @@ func userNotifyToSimple(tx *gorm.DB, from interface{}) *[]notifications.Notifica
 					Workspace: notify.EntityActivity.Workspace.ToLightDTO(),
 					//Doc:       notify.EntityActivity.Doc.ToLightDTO(),
 				}
-				//tmp.Data = notify.IssueActivity.ToLightDTO()
-			}
-
-			if notify.EntityActivity != nil {
-				//var user dto.UserLight
-				//if notify.TargetUser != nil {
-				//	user = *notify.TargetUser.ToLightDTO()
-				//}
 				entityActivity := notify.EntityActivity.ToLightDTO()
 				entityActivity.NewEntity = dao.GetActionEntity(*notify.EntityActivity, "New")
 				entityActivity.OldEntity = dao.GetActionEntity(*notify.EntityActivity, "Old")

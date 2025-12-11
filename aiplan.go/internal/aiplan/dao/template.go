@@ -11,12 +11,13 @@ import (
 	"regexp"
 	"text/template"
 
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
 type Template struct {
 	// id uuid IS_NULL:NO
-	Id string `json:"id"`
+	Id uuid.UUID `json:"id"`
 	// name text IS_NULL:NO
 	Name string `json:"name" gorm:"index"`
 	// template text IS_NULL:NO
