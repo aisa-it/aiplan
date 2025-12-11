@@ -615,6 +615,53 @@ func CleanOrphanedForeignKeys(tx *gorm.DB, table string, column string, referenc
 	return nil
 }
 
+// CleanAllOrphanedForeignKeys автоматически очищает все битые foreign keys из базы данных
+func CleanAllOrphanedForeignKeys(tx *gorm.DB) error {
+	const getAllForeignKeysSQL = `
+SELECT
+    kcu.table_name,
+    kcu.column_name,
+    ccu.table_name AS referenced_table_name,
+    ccu.column_name AS referenced_column_name
+FROM information_schema.table_constraints AS tc
+JOIN information_schema.key_column_usage AS kcu
+    ON tc.constraint_name = kcu.constraint_name
+    AND tc.table_schema = kcu.table_schema
+JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = tc.constraint_name
+    AND ccu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY'
+    AND tc.table_schema = 'public'
+ORDER BY kcu.table_name, kcu.column_name;`
+
+	type FKInfo struct {
+		TableName            string
+		ColumnName           string
+		ReferencedTableName  string
+		ReferencedColumnName string
+	}
+
+	var foreignKeys []FKInfo
+	if err := tx.Raw(getAllForeignKeysSQL).Find(&foreignKeys).Error; err != nil {
+		return fmt.Errorf("failed to get foreign keys list: %w", err)
+	}
+
+	slog.Info("Found foreign keys to clean", "count", len(foreignKeys))
+
+	for i, fk := range foreignKeys {
+		if err := CleanOrphanedForeignKeys(tx, fk.TableName, fk.ColumnName, fk.ReferencedTableName, fk.ReferencedColumnName); err != nil {
+			return fmt.Errorf("failed to clean orphaned foreign keys in %s.%s: %w", fk.TableName, fk.ColumnName, err)
+		}
+
+		// Прогресс логирование каждые 10 FK или на последнем
+		if i%10 == 0 || i == len(foreignKeys)-1 {
+			slog.Info("Cleaning FK progress", "completed", i+1, "total", len(foreignKeys))
+		}
+	}
+
+	return nil
+}
+
 // DropAllForeignKeys удаляет все foreign key constraints из базы данных (без транзакции)
 func DropAllForeignKeys(tx *gorm.DB) error {
 	const getAllForeignKeysSQL = `
@@ -635,11 +682,56 @@ WHERE tc.constraint_type = 'FOREIGN KEY'
 		return err
 	}
 
-	for _, fk := range constraints {
+	slog.Info("Found foreign key constraints to drop", "count", len(constraints))
+
+	// Увеличиваем lock_timeout и statement_timeout для длительных операций
+	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+		slog.Warn("Failed to set lock_timeout", "err", err)
+	}
+	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+		slog.Warn("Failed to set statement_timeout", "err", err)
+	}
+
+	for i, fk := range constraints {
 		// Экранируем имена через двойные кавычки для поддержки constraint с цифрами в начале
 		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP CONSTRAINT IF EXISTS \"%s\";", fk.ForeignTableName, fk.ConstraintName)
-		if err := tx.Exec(sql).Error; err != nil {
-			return fmt.Errorf("failed to drop FK constraint %s on table %s: %w", fk.ConstraintName, fk.ForeignTableName, err)
+
+		// Retry логика для deadlock и lock timeout
+		const maxRetries = 5
+		var lastErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := tx.Exec(sql).Error; err != nil {
+				// Проверяем на deadlock (40P01) или lock timeout (55P03)
+				isDeadlock := strings.Contains(err.Error(), "40P01") || strings.Contains(err.Error(), "deadlock detected")
+				isLockTimeout := strings.Contains(err.Error(), "55P03") || strings.Contains(err.Error(), "lock timeout")
+
+				if (isDeadlock || isLockTimeout) && attempt < maxRetries {
+					errType := "deadlock"
+					if isLockTimeout {
+						errType = "lock timeout"
+					}
+					slog.Warn("Retrying after "+errType,
+						"constraint", fk.ConstraintName,
+						"table", fk.ForeignTableName,
+						"attempt", attempt,
+						"maxRetries", maxRetries)
+					// Увеличенная пауза перед retry
+					time.Sleep(time.Duration(attempt*500) * time.Millisecond)
+					lastErr = err
+					continue
+				}
+				return fmt.Errorf("failed to drop FK constraint %s on table %s (attempt %d/%d): %w",
+					fk.ConstraintName, fk.ForeignTableName, attempt, maxRetries, err)
+			}
+			// Успешно удалили
+			if i%10 == 0 || i == len(constraints)-1 {
+				slog.Info("Dropping FK constraints progress", "completed", i+1, "total", len(constraints))
+			}
+			break
+		}
+		if lastErr != nil {
+			return fmt.Errorf("failed to drop FK constraint %s on table %s after %d retries: %w",
+				fk.ConstraintName, fk.ForeignTableName, maxRetries, lastErr)
 		}
 	}
 	return nil
@@ -666,12 +758,55 @@ WHERE table_schema = 'public'
 		return err
 	}
 
-	for _, col := range columns {
+	slog.Info("Found generated columns to drop", "count", len(columns))
+
+	// Увеличиваем lock_timeout и statement_timeout для длительных операций
+	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+		slog.Warn("Failed to set lock_timeout", "err", err)
+	}
+	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+		slog.Warn("Failed to set statement_timeout", "err", err)
+	}
+
+	for i, col := range columns {
 		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP COLUMN IF EXISTS \"%s\";", col.TableName, col.ColumnName)
-		if err := tx.Exec(sql).Error; err != nil {
-			return fmt.Errorf("failed to drop generated column %s.%s: %w", col.TableName, col.ColumnName, err)
+
+		// Retry логика для deadlock и lock timeout
+		const maxRetries = 5
+		var lastErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := tx.Exec(sql).Error; err != nil {
+				// Проверяем на deadlock (40P01) или lock timeout (55P03)
+				isDeadlock := strings.Contains(err.Error(), "40P01") || strings.Contains(err.Error(), "deadlock detected")
+				isLockTimeout := strings.Contains(err.Error(), "55P03") || strings.Contains(err.Error(), "lock timeout")
+
+				if (isDeadlock || isLockTimeout) && attempt < maxRetries {
+					errType := "deadlock"
+					if isLockTimeout {
+						errType = "lock timeout"
+					}
+					slog.Warn("Retrying after "+errType,
+						"column", col.ColumnName,
+						"table", col.TableName,
+						"attempt", attempt,
+						"maxRetries", maxRetries)
+					// Увеличенная пауза перед retry
+					time.Sleep(time.Duration(attempt*500) * time.Millisecond)
+					lastErr = err
+					continue
+				}
+				return fmt.Errorf("failed to drop generated column %s.%s (attempt %d/%d): %w",
+					col.TableName, col.ColumnName, attempt, maxRetries, err)
+			}
+			if i%5 == 0 || i == len(columns)-1 {
+				slog.Info("Dropping generated columns progress", "completed", i+1, "total", len(columns))
+			}
+			break
 		}
-		slog.Info("Dropped generated column", "table", col.TableName, "column", col.ColumnName)
+		if lastErr != nil {
+			return fmt.Errorf("failed to drop generated column %s.%s after %d retries: %w",
+				col.TableName, col.ColumnName, maxRetries, lastErr)
+		}
 	}
 	return nil
 }
@@ -696,11 +831,55 @@ WHERE tc.constraint_type = 'CHECK'
 		return err
 	}
 
-	for _, ck := range constraints {
+	slog.Info("Found check constraints to drop", "count", len(constraints))
+
+	// Увеличиваем lock_timeout и statement_timeout для длительных операций
+	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+		slog.Warn("Failed to set lock_timeout", "err", err)
+	}
+	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+		slog.Warn("Failed to set statement_timeout", "err", err)
+	}
+
+	for i, ck := range constraints {
 		// Экранируем имена через двойные кавычки для поддержки constraint с цифрами в начале
 		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP CONSTRAINT IF EXISTS \"%s\";", ck.TableName, ck.ConstraintName)
-		if err := tx.Exec(sql).Error; err != nil {
-			return fmt.Errorf("failed to drop CHECK constraint %s on table %s: %w", ck.ConstraintName, ck.TableName, err)
+
+		// Retry логика для deadlock и lock timeout
+		const maxRetries = 5
+		var lastErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := tx.Exec(sql).Error; err != nil {
+				// Проверяем на deadlock (40P01) или lock timeout (55P03)
+				isDeadlock := strings.Contains(err.Error(), "40P01") || strings.Contains(err.Error(), "deadlock detected")
+				isLockTimeout := strings.Contains(err.Error(), "55P03") || strings.Contains(err.Error(), "lock timeout")
+
+				if (isDeadlock || isLockTimeout) && attempt < maxRetries {
+					errType := "deadlock"
+					if isLockTimeout {
+						errType = "lock timeout"
+					}
+					slog.Warn("Retrying after "+errType,
+						"constraint", ck.ConstraintName,
+						"table", ck.TableName,
+						"attempt", attempt,
+						"maxRetries", maxRetries)
+					// Увеличенная пауза перед retry
+					time.Sleep(time.Duration(attempt*500) * time.Millisecond)
+					lastErr = err
+					continue
+				}
+				return fmt.Errorf("failed to drop CHECK constraint %s on table %s (attempt %d/%d): %w",
+					ck.ConstraintName, ck.TableName, attempt, maxRetries, err)
+			}
+			if i%10 == 0 || i == len(constraints)-1 {
+				slog.Info("Dropping check constraints progress", "completed", i+1, "total", len(constraints))
+			}
+			break
+		}
+		if lastErr != nil {
+			return fmt.Errorf("failed to drop CHECK constraint %s on table %s after %d retries: %w",
+				ck.ConstraintName, ck.TableName, maxRetries, lastErr)
 		}
 	}
 	return nil

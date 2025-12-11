@@ -655,29 +655,6 @@ func (ts *TelegramService) GetBotLink() string {
 	return "https://t.me/" + ts.bot.Self.UserName
 }
 
-func getUsersList(users []dao.User) string {
-	res := "*Список пользователей:*\n"
-	for _, user := range users {
-		res += fmt.Sprintf("*%s %s* \\(%s\\) ", escapeCharacters(user.FirstName), escapeCharacters(user.LastName), escapeCharacters(user.Email))
-		if user.IsSuperuser {
-			res += "👑"
-		}
-		if !user.IsActive {
-			res += "⛔️"
-		}
-		res += "\n"
-	}
-	return res
-}
-
-func getWorkspacesList(workspaces []dao.Workspace) string {
-	res := "*Список рабочих пространств:*\n"
-	for _, workspace := range workspaces {
-		res += fmt.Sprintf("*%s* [%s](%s)\n", escapeCharacters(workspace.Name), escapeCharacters(workspace.Slug), escapeCharacters(workspace.URL.String()))
-	}
-	return res
-}
-
 // Stelegramf - SprintF с инкапсуляцией строк для телеграммовского MarkdownV2
 func Stelegramf(format string, a ...any) string {
 	for i, v := range a {

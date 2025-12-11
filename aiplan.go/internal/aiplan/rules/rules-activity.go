@@ -102,7 +102,3 @@ func AppendError(issue dao.Issue, user dao.User, err IRulesError, logs *[]dao.Ru
 		})
 	}
 }
-
-func ptrString(s string) *string {
-	return &s
-}
