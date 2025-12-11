@@ -1,0 +1,85 @@
+version: "2"
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Critical - Security and correctness
+    - gosec # Security issues
+    - staticcheck # Go static analysis
+    - errcheck # Unchecked errors
+    - govet # Go vet
+
+    # Important - Code quality
+    - unused # Unused code/variables
+    - ineffassign # Ineffective assignments
+    - nilerr # Nil error checks
+    - errorlint # Error wrapping
+    - contextcheck # Context usage
+
+    # Nice to have - Complexity
+    - cyclop # Cyclomatic complexity
+    - funlen # Function length
+    - prealloc # Preallocate slices
+    - perfsprint # Performance in fmt.Sprintf
+    - unconvert # Unnecessary type conversions
+    - unparam # Unused function parameters
+    - wastedassign # Wasted assignments
+
+  disable:
+    # Formatting (handled by go fmt)
+    - wsl
+    - wsl_v5
+    - lll # Long lines
+    - whitespace
+    - canonicalheader
+
+    # Naming conventions
+    - varnamelen # Short variable names are OK (v, i, err)
+    - tagliatelle # Struct tag case conventions
+    - tagalign # Struct tag alignment
+
+    # Magic numbers
+    - mnd # Too many false positives
+
+    # Over-strict
+    - revive # Too opinionated
+    - gocognit # Cognitive complexity
+    - nestif # Nested if statements
+    - gochecknoglobals # Global variables sometimes necessary
+    - gochecknoinits # Init functions sometimes OK
+    - wrapcheck # Error wrapping not always needed
+    - ireturn # Interface returns too strict
+    - godot # Comments ending with dot
+    - godoclint # Doc comments
+    - exhaustruct # All struct fields required
+    - forbidigo # Forbidden patterns
+    - forcetypeassert # Type assertions
+    - gocritic # Various style issues
+    - recvcheck # Receiver naming
+    - testpackage # Test package naming
+    - dupl # Code duplication
+    - dupword # Duplicate words
+    - paralleltest # Parallel test requirements
+    - noctx # goroutine context
+    - dogsled # Blank identifiers
+    - embeddedstructfieldcheck
+    - testifylint
+    - nonamedreturns
+    - noinlineerr
+    - sloglint
+    - usestdlibvars
+    - usetesting
+    - rowserrcheck
+    - musttag
+    - nilnil
+    - gosmopolitan
+    - depguard
+
+  exclusions:
+    presets:
+      - std-error-handling
+
+    paths:
+      - cmd/aiagent

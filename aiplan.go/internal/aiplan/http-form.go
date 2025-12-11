@@ -599,16 +599,6 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		if err := tx.Model(&dao.FormAnswer{}).Create(&answer).Error; err != nil {
 			return err
 		}
-		//data := StructToJSONMap(answer)
-
-		//if user == nil {
-		//	actor = dao.User{}
-		//} else {
-		//	actor = *user
-		//}
-
-		// TODO добавить активность по ответам?
-		//return s.tracker.TrackActivity(tracker.FORM_ANSWER_SEND_ACTIVITY, data, nil, form.ID.String(), tracker.ENTITY_TYPE_FORM, nil, *user)
 		return nil
 
 	}); err != nil {
@@ -640,12 +630,6 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	if form.NotificationChannels.Telegram && !form.Author.Settings.TgNotificationMute && form.Author.TelegramId != nil {
 		s.notificationsService.Tg.SendFormAnswer(*form.Author.TelegramId, form, &answer, answer.Responder)
 	}
-
-	//if form.NotificationChannels.App && !form.Author.Settings.AppNotificationMute {
-	//	if notify, countNotify, err := notifications.CreateUserNotificationAddCFormAnswer(s.db, form.Author.ID, answer); err == nil {
-	//		s.notificationsService.Ws.Send(form.Author.ID, notify.ID, notify, countNotify)
-	//	}
-	//}
 
 	result := respAnswers{
 		Form:   *form.ToLightDTO(),
@@ -1093,10 +1077,6 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 	}
 
 	return form, nil
-}
-
-type reqAnswer struct {
-	Val interface{} `json:"value,omitempty"`
 }
 
 //**RESPONSE**

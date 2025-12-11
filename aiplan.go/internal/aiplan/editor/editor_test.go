@@ -79,36 +79,3 @@ func TestColorJSON(t *testing.T) {
 		t.Fatal("Not equal", c, newC)
 	}
 }
-
-func printDocument(document *Document) {
-	for _, el := range document.Elements {
-		switch e := el.(type) {
-		case Code:
-			fmt.Println("Code", e.Content)
-		case Paragraph:
-			fmt.Println("Paragraph")
-			for _, t := range e.Content {
-				switch content := t.(type) {
-				case Text:
-					fmt.Printf(" Text: %s (%+v)\n", content.Content, content)
-				case *Image:
-					fmt.Printf(" Image: %s (%+v)\n", content.Src, content)
-				}
-			}
-		case List:
-			fmt.Printf("List Numbered: %t Task: %t \n", e.Numbered, e.TaskList)
-			for _, li := range e.Elements {
-				fmt.Printf(" Content: %v Checked: %t\n", li.Content, li.Checked)
-			}
-		case Quote:
-			fmt.Println("Quote", e.Content)
-		case Table:
-			fmt.Printf("Table Sizes(%v)\n", e.ColWidth)
-			fmt.Println(len(e.Rows), len(e.Rows[0]))
-		case Spoiler:
-			fmt.Println("Spoiler", e.Title, e.Content)
-		case InfoBlock:
-			fmt.Println("InfoBlock", e.Title, e.Content)
-		}
-	}
-}

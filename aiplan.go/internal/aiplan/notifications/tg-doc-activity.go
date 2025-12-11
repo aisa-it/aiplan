@@ -61,29 +61,29 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 		switch activity.Verb {
 		case "updated":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Description:
+			case actField.Description.Field:
 				msg.Text = act.Title("изменил(-а) описание документа")
 				msg.Text += Stelegramf("```\n%s```",
 					HtmlToTg(activity.NewValue),
 				)
-			case actField.Title:
+			case actField.Title.Field:
 				var oldV string
 				if activity.OldValue != nil {
 					oldV = *activity.OldValue
 				}
 				msg.Text = act.Title("изменил(-a) в документе")
 				msg.Text += Stelegramf("*%s*: ~%s~ %s", fieldsTranslation[*activity.Field], oldV, activity.NewValue)
-			case actField.Comment:
+			case actField.Comment.Field:
 				msg.Text = act.Title("изменил(-a) комментарий в документе")
 				msg.Text += Stelegramf("```\n%s```",
 					HtmlToTg(activity.NewDocComment.CommentHtml.Body),
 				)
-			case actField.ReaderRole, actField.EditorRole:
+			case actField.ReaderRole.Field, actField.EditorRole.Field:
 				msg.Text = act.Title("изменил(-a) роли в документе")
-				if actField.ActivityField(*activity.Field) == actField.ReaderRole {
+				if actField.ActivityField(*activity.Field) == actField.ReaderRole.Field {
 					msg.Text += Stelegramf("*%s*: ", "Просмотр раздела")
 				}
-				if actField.ActivityField(*activity.Field) == actField.EditorRole {
+				if actField.ActivityField(*activity.Field) == actField.EditorRole.Field {
 					msg.Text += Stelegramf("*%s*: ", "Редактирование")
 				}
 				msg.Text += Stelegramf("~%s~ %s", memberRoleStr(fmt.Sprint(*activity.OldValue)), memberRoleStr(activity.NewValue))
@@ -93,16 +93,16 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 			}
 		case "created":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Attachment:
+			case actField.Attachment.Field:
 				msg.Text = act.Title("добавил(-a) вложение в документ")
 				msg.Text += Stelegramf("*%s*", activity.NewValue)
 				//if activity.NewDocAttachment.Asset != nil {
 				//	msg.Text += Stelegramf("\\- %d", activity.NewDocAttachment.Asset.FileSize)
 				//}
-			case actField.Doc:
+			case actField.Doc.Field:
 				msg.Text = act.Title("создал(-a) в документе")
 				msg.Text += Stelegramf("*Вложенный документ*: [%s](%s)", activity.NewValue, activity.NewDoc.URL.String())
-			case actField.Comment:
+			case actField.Comment.Field:
 				msg.Text = act.Title("прокомментировал(-a) документ")
 				msg.Text += Stelegramf("```\n%s```",
 					HtmlToTg(activity.NewDocComment.CommentHtml.Body),
@@ -112,16 +112,16 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 			}
 		case "added":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Doc:
+			case actField.Doc.Field:
 				msg.Text = act.Title("добавил(-a) в документ")
 				msg.Text += Stelegramf("*Вложенный документ*: [%s](%s)", activity.NewValue, activity.NewDoc.URL.String())
-			case actField.Readers:
+			case actField.Readers.Field:
 				msg.Text = act.Title("добавил(-a) пользователя в документ")
 				msg.Text += Stelegramf("Права *Просмотр*:  %s\n", getUserName(activity.NewDocReader))
-			case actField.Editors:
+			case actField.Editors.Field:
 				msg.Text = act.Title("добавил(-a) пользователя в документ")
 				msg.Text += Stelegramf("Права *Редактирование*:  %s\n", getUserName(activity.NewDocEditor))
-			case actField.Watchers:
+			case actField.Watchers.Field:
 				msg.Text = act.Title("добавил(-a) пользователя в документ")
 				msg.Text += Stelegramf("*Наблюдатель*:  %s\n", getUserName(activity.NewDocWatcher))
 			default:
@@ -129,26 +129,26 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 			}
 		case "deleted":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Attachment:
+			case actField.Attachment.Field:
 				msg.Text = act.Title("удалил(-a) вложение из документа")
 				if activity.OldValue != nil {
 					msg.Text += Stelegramf("~%s~", *activity.OldValue)
 				}
-			case actField.Comment:
+			case actField.Comment.Field:
 				msg.Text = act.Title("удалил(-a) комментарий из документа")
 				if activity.OldValue != nil {
 					msg.Text += Stelegramf("```\n%s```",
 						HtmlToTg(*activity.OldValue),
 					)
 				}
-			case actField.Doc:
+			case actField.Doc.Field:
 				msg.Text = act.Title("удалил(-a) из документа")
 				msg.Text += Stelegramf("*Вложенный документ*:  ~%s~\n", fmt.Sprint(*activity.OldValue))
 			default:
 				return
 			}
 		case "move_workspace_to_doc", "move_doc_to_doc", "move_doc_to_workspace":
-			if actField.ActivityField(*activity.Field) != actField.Doc {
+			if actField.ActivityField(*activity.Field) != actField.Doc.Field {
 				return
 			}
 			if activity.Verb == "move_doc_to_workspace" {
@@ -169,16 +169,16 @@ func (tnd *TgNotifyDoc) LogActivity(activity dao.DocActivity) {
 			}
 		case "removed":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Doc:
+			case actField.Doc.Field:
 				msg.Text = act.Title("убрал(-a) из документа")
 				msg.Text += Stelegramf("*Вложенный документ*: [%s](%s)", *activity.OldValue, activity.OldDoc.URL.String())
-			case actField.Readers:
+			case actField.Readers.Field:
 				msg.Text = act.Title("убрал(-a) пользователя из документа")
 				msg.Text += Stelegramf("Права *Просмотр*:  ~%s~\n", getUserName(activity.OldDocReader))
-			case actField.Editors:
+			case actField.Editors.Field:
 				msg.Text = act.Title("убрал(-a) пользователя из документа")
 				msg.Text += Stelegramf("Права *Редактирование*:  ~%s~\n", getUserName(activity.OldDocEditor))
-			case actField.Watchers:
+			case actField.Watchers.Field:
 				msg.Text = act.Title("убрал(-a) пользователя из документа")
 				msg.Text += Stelegramf("*Наблюдатель*:  ~%s~\n", getUserName(activity.OldDocWatcher))
 			default:

@@ -1640,11 +1640,11 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		}
 	}
 
-	resp.Result = userNotifyToSimple(s.db, resp.Result)
+	resp.Result = userNotifyToSimple(resp.Result)
 	return c.JSON(http.StatusOK, resp)
 }
 
-func userNotifyToSimple(tx *gorm.DB, from interface{}) *[]notifications.NotificationResponse {
+func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse {
 	temp := from.(*[]dao.UserNotifications)
 	res := make([]notifications.NotificationResponse, 0, len(*temp))
 	for _, notify := range *temp {

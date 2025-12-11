@@ -70,7 +70,6 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		// Joins faster than Preload(clause.Associations)
 		var project dao.Project
 		projectQuery := s.db.
-			Joins("Workspace").
 			Joins("ProjectLead").
 			Where("projects.workspace_id = ?", workspace.ID).
 			Set("userId", user.ID).
@@ -94,6 +93,8 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if project.CurrentUserMembership == nil {
 			return EErrorDefined(c, apierrors.ErrProjectNotFound)
 		}
+
+		project.Workspace = &workspace
 
 		return next(ProjectContext{c.(WorkspaceContext), project, *project.CurrentUserMembership})
 	}
@@ -2014,6 +2015,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 	label.UpdatedAt = time.Now()
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// TODO rate limit
 		// Обновляем только выбранные поля
 		if err := tx.Model(&label).
 			Select([]string{"name", "description", "parent_id", "color"}).
@@ -2359,6 +2361,7 @@ func (s *Services) updateState(c echo.Context) error {
 	oldStateMap := StructToJSONMap(state)
 	oldStateMap["updateScope"] = "status"
 	oldStateMap["updateScopeId"] = stateId.String()
+	//TODO rate limit
 
 	var currentDefaultState dao.State
 	if err := s.db.
@@ -2870,7 +2873,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 	oldTemplateMap := StructToJSONMap(template)
 	oldTemplateMap["updateScope"] = "template"
 	oldTemplateMap["updateScopeId"] = templateId
-
+	// TODO rate limit
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)

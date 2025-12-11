@@ -28,9 +28,6 @@ type ActivityHandler interface {
 type ActivitiesTracker struct {
 	db *gorm.DB
 
-	activityLogFunc  []func(activity dao.EntityActivity)
-	activityLogFuncI []func(activity dao.ActivityI)
-
 	handlers []ActivityHandler
 }
 
@@ -49,93 +46,93 @@ func (t *ActivitiesTracker) RegisterHandler(handler ActivityHandler) {
 }
 
 // attachment (issue(+),)
-func getFuncUpdate[E dao.Entity, A dao.Activity](field actField.ActivityField) activityFuncGen[E, A] {
+func getFuncUpdate[E dao.Entity, A dao.Activity](field string) activityFuncGen[E, A] {
 	switch field {
-	case actField.ReqAssignees: // issue(+)
+	case actField.Assignees.Req: // issue(+)
 		return issueAssigneesUpdate[E, A]
-	case actField.ReqWatchers: // issue(+)
+	case actField.Watchers.Req: // issue(+)
 		return entityWatchersUpdate[E, A]
-	case actField.ReqReaders:
+	case actField.Readers.Req:
 		return entityReadersUpdate[E, A]
-	case actField.ReqEditors:
+	case actField.Editors.Req:
 		return entityEditorsUpdate[E, A]
-	case actField.ReqIssues:
+	case actField.Issues.Req:
 		return entityIssuesUpdate[E, A]
-	case actField.ReqSprint:
+	case actField.Sprint.Req:
 		return entitySprintUpdate[E, A]
-	case actField.ReqName: // issue(+)
+	case actField.Name.Req: // issue(+)
 		return entityNameUpdate[E, A]
-	case actField.ReqTemplate:
+	case actField.Template.Req:
 		return entityTemplateUpdate[E, A]
-	case actField.ReqLogo: // issue(+)
+	case actField.Logo.Req: // issue(+)
 		return entityLogoUpdate[E, A]
-	case actField.ReqToken:
+	case actField.Token.Req:
 		return entityTokenUpdate[E, A]
-	case actField.ReqOwner:
+	case actField.Owner.Req:
 		return entityOwnerUpdate[E, A]
-	case actField.ReqTitle:
+	case actField.Title.Req:
 		return entityTitleUpdate[E, A]
-	case actField.ReqEmoj:
+	case actField.Emoj.Req:
 		return entityEmojiUpdate[E, A]
-	case actField.ReqPublic:
+	case actField.Public.Req:
 		return entityPublicUpdate[E, A]
-	case actField.ReqIdentifier:
+	case actField.Identifier.Req:
 		return entityIdentifierUpdate[E, A]
-	case actField.ReqProjectLead:
+	case actField.ProjectLead.Req:
 		return entityProjectLeadUpdate[E, A]
-	case actField.ReqPriority: // issue(+)
+	case actField.Priority.Req: // issue(+)
 		return entityPriorityUpdate[E, A]
-	case actField.ReqRole:
+	case actField.Role.Req:
 		return entityRoleUpdate[E, A]
-	case actField.ReqDefaultAssignees:
+	case actField.DefaultAssignees.Req:
 		return entityDefaultAssigneesUpdate[E, A]
-	case actField.ReqDefaultWatchers:
+	case actField.DefaultWatchers.Req:
 		return entityDefaultWatchersUpdate[E, A]
-	case actField.ReqDescription: // issue(+)
+	case actField.Description.Req: // issue(+)
 		return entityDescriptionUpdate[E, A]
-	case actField.ReqDescriptionHtml: // issue(+)
+	case actField.DescriptionHtml.Req: // issue(+)
 		return entityDescriptionHtmlUpdate[E, A]
-	case actField.ReqColor:
+	case actField.Color.Req:
 		return entityColorUpdate[E, A]
-	case actField.ReqTargetDate: // issue(+)
+	case actField.TargetDate.Req: // issue(+)
 		return entityTargetDateUpdate[E, A]
-	case actField.ReqStartDate:
+	case actField.StartDate.Req:
 		return entityStartDateUpdate[E, A]
-	case actField.ReqCompletedAt:
+	case actField.CompletedAt.Req:
 		return entityCompletedAtUpdate[E, A]
-	case actField.ReqEndDate:
+	case actField.EndDate.Req:
 		return entityEndDateUpdate[E, A]
-	case actField.ReqLabel: // issue(+)
+	case actField.Label.Req: // issue(+)
 		return entityLabelUpdate[E, A]
-	case actField.ReqAuthRequire:
+	case actField.AuthRequire.Req:
 		return entityAuthRequireUpdate[E, A]
-	case actField.ReqFields:
+	case actField.Fields.Req:
 		return entityFieldsUpdate[E, A]
-	case actField.ReqGroup:
+	case actField.Group.Req:
 		return entityGroupUpdate[E, A]
-	case actField.ReqState: // issue(+)
+	case actField.Status.Req: // issue(+)
 		return entityStateUpdate[E, A]
-	case actField.ReqParent:
+	case actField.Parent.Req:
 		return issueParentUpdate[E, A]
-	case actField.ReqDefault:
+	case actField.Default.Req:
 		return entityDefaultUpdate[E, A]
-	case actField.ReqEstimatePoint:
+	case actField.EstimatePoint.Req:
 		return entityEstimatePointUpdate[E, A]
-	case actField.ReqBlocksList:
+	case actField.Blocks.Req:
 		return issueBlocksListUpdate[E, A]
-	case actField.ReqBlockersList:
+	case actField.Blocking.Req:
 		return issueBlockersListUpdate[E, A]
-	case actField.ReqUrl: // issue(+)
+	case actField.Url.Req: // issue(+)
 		return entityUrlUpdate[E, A]
-	case actField.ReqCommentHtml: // issue(+)
+	case actField.Comment.Req: // issue(+)
 		return entityCommentHtmlUpdate[E, A]
-	case actField.ReqDocSort:
+	case actField.DocSort.Req:
 		return entityDocSortUpdate[E, A]
-	case actField.ReqLinked:
+	case actField.Linked.Req:
 		return issueLinkedUpdate[E, A]
-	case actField.ReqEditorRole:
+	case actField.EditorRole.Req:
 		return entityEditorRoleUpdate[E, A]
-	case actField.ReqReaderRole:
+	case actField.ReaderRole.Req:
 		return entityReaderRoleUpdate[E, A]
 	}
 	return nil

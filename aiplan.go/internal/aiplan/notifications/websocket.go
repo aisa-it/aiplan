@@ -111,7 +111,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 	userIdStr := userId.String()
 	switch v := data.(type) {
 	case dao.IssueActivity:
-		if v.Verb == "deleted" && *v.Field != actField.Linked.String() {
+		if v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
 			return nil
 		}
 		msg.Type = "activity"
@@ -154,7 +154,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 		}
 		msg.Data = v.ToLightDTO()
 	case dao.EntityActivity:
-		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.String() {
+		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
 			return nil
 		}
 		msg.Type = "activity"
@@ -169,7 +169,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 		//tmp.NewEntity = v.AffectedUser.ToLightDTO()
 		msg.Data = tmp
 	case dao.FullActivity:
-		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.String() {
+		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
 			return nil
 		}
 		msg.Type = "activity"
