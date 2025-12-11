@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 )
 
@@ -206,6 +207,49 @@ func (es *EmailService) UserChangeEmailNotify(user dao.User, newEmail, code stri
 
 	return es.Send(mail{
 		To:          newEmail,
+		Subject:     subject,
+		Content:     content,
+		TextContent: textContent,
+	})
+}
+
+func (es *EmailService) FormAnswerNotify(form *dao.Form, answer *dao.FormAnswer, user *dao.User) error {
+	subject := fmt.Sprintf("Новый ответ на форму: %s", form.Title)
+
+	answerBody, err := business.GenBodyAnswer(answer, user)
+	if err != nil {
+		return fmt.Errorf("failed to generate answer body: %w", err)
+	}
+
+	context := struct {
+		FormTitle  string
+		AnswerBody string
+		FormURL    string
+	}{
+		FormTitle:  form.Title,
+		AnswerBody: answerBody,
+		FormURL:    form.URL.String(),
+	}
+
+	var template dao.Template
+	if err := es.db.Where("name = ?", "form_answer_notify").First(&template).Error; err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	if err := template.ParsedTemplate.Execute(&buf, context); err != nil {
+		return err
+	}
+
+	content, err := es.getHTML(subject, buf.String())
+	if err != nil {
+		return err
+	}
+
+	textContent := htmlStripPolicy.Sanitize(content)
+
+	return es.Send(mail{
+		To:          form.Author.Email,
 		Subject:     subject,
 		Content:     content,
 		TextContent: textContent,

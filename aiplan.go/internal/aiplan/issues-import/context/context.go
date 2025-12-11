@@ -149,7 +149,7 @@ func NewImportContext(
 
 		ImportAuthor: user,
 
-		//IgnoreAttachments: true, // For tests
+		IgnoreAttachments: true, // For tests
 
 		ID: uuid.Must(uuid.NewV4()),
 
@@ -337,6 +337,7 @@ func (c *ImportContext) GetProject(key string) error {
 		Name:          project.Name,
 		Identifier:    project.Key,
 		ProjectLeadId: lead.ID,
+		CreatedById:   c.ImportAuthor.ID,
 		WorkspaceId:   uuid.FromStringOrNil(c.TargetWorkspaceID),
 	}
 	return nil

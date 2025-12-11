@@ -34,6 +34,7 @@ var DefaultViewProps ViewProps = ViewProps{
 		Projects:   []string{},
 	},
 	Columns: []string{
+		"name",
 		"priority",
 		"state",
 		"target_date",
@@ -46,7 +47,6 @@ var DefaultViewProps ViewProps = ViewProps{
 		"linked_issues_count",
 		"link_count",
 		"attachment_count",
-		"name",
 	},
 	GroupTablesHide: make(map[string]bool),
 	ActiveTab:       "all",

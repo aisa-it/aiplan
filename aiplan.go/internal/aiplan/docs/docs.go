@@ -17904,6 +17904,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.FormFields"
                     }
                 },
+                "notification_channels": {
+                    "$ref": "#/definitions/types.FormAnswerNotify"
+                },
                 "target_project_id": {
                     "type": "string",
                     "x-nullable": true
@@ -20876,6 +20879,20 @@ const docTemplate = `{
                 },
                 "weekday": {
                     "$ref": "#/definitions/types.WeekdayShort"
+                }
+            }
+        },
+        "types.FormAnswerNotify": {
+            "type": "object",
+            "properties": {
+                "app": {
+                    "type": "boolean"
+                },
+                "email": {
+                    "type": "boolean"
+                },
+                "telegram": {
+                    "type": "boolean"
                 }
             }
         },

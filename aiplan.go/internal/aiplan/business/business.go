@@ -48,6 +48,27 @@ func NewBL(db *gorm.DB, tracker *tracker.ActivitiesTracker) (*Business, error) {
 			return nil, err
 		}
 	}
+	var noAuthServiceUser *dao.User
+	if err := b.db.Where("username = ?", "no_auth_user").First(&noAuthServiceUser).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			slog.Error("Fetch noAuth service user", "err", err)
+			return nil, err
+		}
+		username := "no_auth_user"
+		noAuthServiceUser = &dao.User{
+			ID:            dao.GenUUID(),
+			Username:      &username,
+			FirstName:     "Пользователь",
+			LastName:      "Анонимный",
+			Email:         "no.auth.user@aiplan.ru",
+			IsActive:      true,
+			IsIntegration: true,
+		}
+		if err := b.db.Create(&noAuthServiceUser).Error; err != nil {
+			slog.Error("Created deleted service user", "err", err)
+			return nil, err
+		}
+	}
 
 	return b, nil
 }
