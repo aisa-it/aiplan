@@ -210,7 +210,7 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 	}
 
 	data := map[string]interface{}{
-		"updateScopeId": requestedMember.MemberId,
+		"updateScopeId": requestedMember.MemberId.String(),
 	}
 
 	if err := b.db.Transaction(func(tx *gorm.DB) error {

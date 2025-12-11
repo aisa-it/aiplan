@@ -270,7 +270,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			newWorkspaceMap["owner_id_updateScopeId"] = newMemberOwnerId
 			newWorkspaceMap["owner_id_field_log"] = activities.Owner
 			oldWorkspaceMap["owner_id_activity_val"] = user.Email
-			oldWorkspaceMap["owner_id_updateScopeId"] = user.ID
+			oldWorkspaceMap["owner_id_updateScopeId"] = user.ID.String()
 			oldWorkspaceMap["owner_id_field_log"] = activities.Owner
 		}
 
@@ -801,7 +801,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 			}
 
 			newMemberMap = StructToJSONMap(requestedMember)
-			newMemberMap["updateScopeId"] = requestedMember.MemberId
+			newMemberMap["updateScopeId"] = requestedMember.MemberId.String()
 
 			return nil
 		}); err != nil {
@@ -1244,7 +1244,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 					newMemberMap := StructToJSONMap(projectMember)
 
-					newMemberMap["updateScopeId"] = projectMember.MemberId
+					newMemberMap["updateScopeId"] = projectMember.MemberId.String()
 					newMemberMap["member_activity_val"] = projectMember.Role
 
 					createMemberLog = append(createMemberLog, memberTracker{projectMember, newMemberMap})
@@ -1267,7 +1267,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 		}
 
 		data := map[string]interface{}{
-			"updateScopeId":       workspaceMember.MemberId,
+			"updateScopeId":       workspaceMember.MemberId.String(),
 			"member_activity_val": workspaceMember.Role,
 		}
 

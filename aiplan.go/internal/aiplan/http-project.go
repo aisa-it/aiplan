@@ -1025,7 +1025,7 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	// Трекинг активности при добавлении пользователя в проект
 	newMemberMap := StructToJSONMap(projectMember)
 
-	newMemberMap["updateScopeId"] = projectMember.MemberId
+	newMemberMap["updateScopeId"] = projectMember.MemberId.String()
 	newMemberMap["member_activity_val"] = projectMember.Role
 
 	err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, newMemberMap, nil, projectMember, &user)
@@ -2372,7 +2372,7 @@ func (s *Services) updateState(c echo.Context) error {
 		if currentDefaultState.Name != "" {
 			if req.Default != nil && *req.Default == true {
 				oldStateMap["default_activity_val"] = currentDefaultState.Name
-				oldStateMap["updateScopeId"] = currentDefaultState.ID
+				oldStateMap["updateScopeId"] = currentDefaultState.ID.String()
 			}
 		}
 	}
