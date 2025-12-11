@@ -884,3 +884,18 @@ WHERE tc.constraint_type = 'CHECK'
 	}
 	return nil
 }
+
+// VacuumFull выполняет VACUUM FULL для всей базы данных
+// VACUUM FULL пересоздает таблицы без фрагментации и возвращает место на диске
+// ВАЖНО: VACUUM FULL блокирует таблицы, поэтому должен выполняться только во время миграции
+func VacuumFull(db *gorm.DB) error {
+	slog.Info("Starting VACUUM FULL")
+
+	// VACUUM FULL нельзя выполнить внутри транзакции, поэтому используем db напрямую
+	if err := db.Exec("VACUUM FULL;").Error; err != nil {
+		return fmt.Errorf("failed to execute VACUUM FULL: %w", err)
+	}
+
+	slog.Info("VACUUM FULL completed successfully")
+	return nil
+}
