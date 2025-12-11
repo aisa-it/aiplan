@@ -65,8 +65,8 @@ func (f Form) GetWorkspaceId() uuid.UUID {
 	return f.WorkspaceId
 }
 
-func (f Form) GetFormId() string {
-	return f.GetId()
+func (f Form) GetFormId() uuid.UUID {
+	return f.ID
 }
 
 // ToLightDTO преобразует Form в FormLight для упрощенной передачи данных. Используется для создания более легкой версии формы для отображения в интерфейсе.
@@ -156,8 +156,13 @@ func (form *Form) AfterFind(tx *gorm.DB) error {
 }
 
 func (form *Form) SetUrl() {
-	raw := fmt.Sprintf("/f/%s/", form.Slug)
-	u, _ := url.Parse(raw)
+	var u *url.URL
+	if form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types.AdminRole {
+		u, _ = url.Parse(fmt.Sprintf("/%s/forms/%s/", form.WorkspaceId.String(), form.Slug))
+		form.URL = Config.WebURL.ResolveReference(u)
+	} else {
+		u, _ = url.Parse(fmt.Sprintf("/f/%s/", form.Slug))
+	}
 	form.URL = Config.WebURL.ResolveReference(u)
 }
 
@@ -276,12 +281,12 @@ func (f FormAnswer) GetEntityType() string {
 	return "form_answers"
 }
 
-func (f *FormAnswer) GetWorkspaceId() string {
-	return f.WorkspaceId.String()
+func (f FormAnswer) GetWorkspaceId() uuid.UUID {
+	return f.WorkspaceId
 }
 
-func (f *FormAnswer) GetFormId() string {
-	return f.FormId.String()
+func (f FormAnswer) GetFormId() uuid.UUID {
+	return f.FormId
 }
 
 // ToDTO преобразует FormAnswer в dto.FormAnswer для удобной передачи данных в интерфейс.
@@ -345,7 +350,7 @@ func (answer *FormAnswer) AfterFind(tx *gorm.DB) error {
 
 type FormEntityI interface {
 	WorkspaceEntityI
-	GetFormId() string
+	GetFormId() uuid.UUID
 }
 
 type FormActivity struct {
@@ -431,6 +436,35 @@ func (fa FormActivity) GetId() string {
 	return fa.Id.String()
 }
 
+func (wa FormActivity) GetUrl() *string {
+	if wa.Form.URL != nil {
+		urlStr := wa.Form.URL.String()
+		return &urlStr
+	}
+	return nil
+}
+
+func (activity *FormActivity) ToLightDTO() *dto.EntityActivityLight {
+	if activity == nil {
+		return nil
+	}
+
+	return &dto.EntityActivityLight{
+		Id:         activity.Id,
+		CreatedAt:  activity.CreatedAt,
+		Verb:       activity.Verb,
+		Field:      activity.Field,
+		OldValue:   activity.OldValue,
+		NewValue:   activity.NewValue,
+		EntityType: "form",
+
+		NewEntity: GetActionEntity(*activity, "New"),
+		OldEntity: GetActionEntity(*activity, "Old"),
+
+		EntityUrl: activity.GetUrl(),
+	}
+}
+
 // FormActivityExtendFields
 // -migration
 type FormActivityExtendFields struct {
@@ -507,12 +541,12 @@ func (fa FormAttachment) GetEntityType() string {
 	return actField.Attachment.String()
 }
 
-func (f *FormAttachment) GetWorkspaceId() string {
-	return f.WorkspaceId.String()
+func (f *FormAttachment) GetWorkspaceId() uuid.UUID {
+	return f.WorkspaceId
 }
 
-func (f *FormAttachment) GetFormId() string {
-	return f.FormId.String()
+func (f *FormAttachment) GetFormId() uuid.UUID {
+	return f.FormId
 }
 
 // ToDTO преобразует FormAttachment в dto.Attachment для удобной передачи данных в интерфейс.

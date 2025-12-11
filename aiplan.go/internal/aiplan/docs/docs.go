@@ -3858,9 +3858,9 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "boolean",
-                        "default": true,
-                        "description": "Включать подзадачи",
-                        "name": "show_sub_issues",
+                        "default": false,
+                        "description": "Выключить подзадачи",
+                        "name": "hide_sub_issues",
                         "in": "query"
                     },
                     {
@@ -17349,8 +17349,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
@@ -17901,6 +17900,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/types.FormFields"
                     }
+                },
+                "notification_channels": {
+                    "$ref": "#/definitions/types.FormAnswerNotify"
                 },
                 "target_project_id": {
                     "type": "string",
@@ -18974,8 +18976,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
@@ -19167,8 +19168,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
@@ -19398,8 +19398,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "state": {
-                    "type": "string",
-                    "x-nullable": true
+                    "type": "string"
                 },
                 "state_detail": {
                     "allOf": [
@@ -20862,6 +20861,20 @@ const docTemplate = `{
                 },
                 "weekday": {
                     "$ref": "#/definitions/types.WeekdayShort"
+                }
+            }
+        },
+        "types.FormAnswerNotify": {
+            "type": "object",
+            "properties": {
+                "app": {
+                    "type": "boolean"
+                },
+                "email": {
+                    "type": "boolean"
+                },
+                "telegram": {
+                    "type": "boolean"
                 }
             }
         },

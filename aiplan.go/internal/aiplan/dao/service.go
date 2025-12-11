@@ -29,7 +29,7 @@ type Entity interface {
 		Issue | IssueLink | IssueComment | IssueAttachment |
 		Sprint |
 		Doc | DocComment | DocAttachment |
-		Form
+		Form | FormAnswer
 }
 
 type Activity interface {
@@ -196,7 +196,7 @@ func (a *TemplateActivity) BuildIssueActivity(entity IssueEntityI) IssueActivity
 func (a *TemplateActivity) BuildFormActivity(entity FormEntityI) FormActivity {
 	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
 	workspaceId := entity.GetWorkspaceId()
-	formId := uuid.Must(uuid.FromString(entity.GetFormId()))
+	formId := entity.GetFormId()
 	return FormActivity{
 		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
 		Verb:          a.Verb,
