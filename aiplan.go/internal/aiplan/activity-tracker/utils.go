@@ -7,122 +7,12 @@
 package tracker
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"github.com/gofrs/uuid"
 )
-
-type prepareChanges struct {
-	utils.IDChangeSet
-	TargetId string
-	IdsMap   map[string]dao.Issue
-}
-
-// createAddBlockingActivity Добавляет запись в историю изменений блокировок задачи.  Записывает добавление блокировки к задаче, включая автора, время и комментарий.  Также добавляет запись об обновлении статуса блокировки в целевой задаче.
-//
-// Параметры:
-//   - activities:  Массив сущностей активности для добавления новой активности.
-//   - id: Идентификатор новой активности.
-//   - targetId: Идентификатор целевой задачи, к которой добавляется блокировка.
-//   - issueSrc:  Исходная задача, из которой берется блокировка.
-//   - issueTarget: Целевая задача, к которой добавляется блокировка.
-//   - project: Проект, к которому относится задача.
-//   - actor: Пользователь, выполняющий действие.
-//
-// Возвращает:
-//   - Нет (функция не возвращает значения)
-func createAddBlockingActivity(activities *[]dao.EntityActivity, id, targetId string, issueSrc, issueTarget dao.Issue, project *dao.Project, actor dao.User) {
-	fieldBlocks := "blocks"
-	fieldBlocking := "blocking"
-	idTarget := issueSrc.ID.String()
-	actorId := uuid.NullUUID{UUID: actor.ID, Valid: true}
-
-	oldV := ""
-	newV := fmt.Sprintf("%s-%d", project.Identifier, issueSrc.SequenceId)
-	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(targetId), Valid: true},
-		ActorId:       actorId,
-		Actor:         &actor,
-		Verb:          "updated",
-		OldValue:      &oldV,
-		NewValue:      newV,
-		Field:         &fieldBlocks,
-		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
-		WorkspaceId:   project.WorkspaceId,
-		Comment:       fmt.Sprintf("%s added blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
-		NewIdentifier: &id,
-	})
-
-	newV = fmt.Sprintf("%s-%d", project.Identifier, issueTarget.SequenceId)
-	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(idTarget), Valid: true},
-		ActorId:       actorId,
-		Actor:         &actor,
-		Verb:          "updated",
-		OldValue:      &oldV,
-		NewValue:      newV,
-		Field:         &fieldBlocking,
-		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
-		WorkspaceId:   project.WorkspaceId,
-		Comment:       fmt.Sprintf("%s added blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
-		NewIdentifier: &targetId,
-	})
-}
-
-// createRemoveBlockingActivity Удаляет запись в историю изменений блокировок задачи. Записывает удаление блокировки с задачи, включая автора, время и комментарий.
-//
-// Парамметры:
-//   - activities: Массив сущностей активности для добавления новой активности.
-//   - id: Идентификатор удаляемой активности.
-//   - targetId: Идентификатор целевой задачи, с которой удаляется блокировка.
-//   - issueSrc: Исходная задача, из которой берется блокировка.
-//   - issueTarget: Целевая задача, с которой удаляется блокировка.
-//   - project: Проект, к которому относится задача.
-//   - actor: Пользователь, выполняющий действие.
-//
-// Возвращает:
-//   - Нет (функция не возвращает значения)
-func createRemoveBlockingActivity(activities *[]dao.EntityActivity, id, targetId string, issueSrc, issueTarget dao.Issue, project *dao.Project, actor dao.User) {
-	fieldBlocks := "blocks"
-	fieldBlocking := "blocking"
-	idTarget := issueSrc.ID.String()
-	actorId := uuid.NullUUID{UUID: actor.ID, Valid: true}
-	newV := ""
-	oldVBlocking := fmt.Sprintf("%s-%d", project.Identifier, issueSrc.SequenceId)
-	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(targetId), Valid: true},
-		ActorId:       actorId,
-		Actor:         &actor,
-		Verb:          "updated",
-		OldValue:      &oldVBlocking,
-		NewValue:      newV,
-		Field:         &fieldBlocks,
-		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
-		WorkspaceId:   project.WorkspaceId,
-		Comment:       fmt.Sprintf("%s removed blocking issue %s-%d", actor.Email, project.Identifier, issueSrc.SequenceId),
-		OldIdentifier: &id,
-	})
-
-	oldVBlocked := fmt.Sprintf("%s-%d", project.Identifier, issueTarget.SequenceId)
-	*activities = append(*activities, dao.EntityActivity{
-		IssueId:       uuid.NullUUID{UUID: uuid.FromStringOrNil(idTarget), Valid: true},
-		ActorId:       actorId,
-		Actor:         &actor,
-		Verb:          "updated",
-		OldValue:      &oldVBlocked,
-		NewValue:      newV,
-		Field:         &fieldBlocking,
-		ProjectId:     uuid.NullUUID{UUID: project.ID, Valid: true},
-		WorkspaceId:   project.WorkspaceId,
-		Comment:       fmt.Sprintf("%s removed blocked issue %s-%d", actor.Email, project.Identifier, issueTarget.SequenceId),
-		OldIdentifier: &targetId,
-	})
-}
 
 // FormatDate преобразует строку даты в указанный формат.  Принимает строку даты, формат вывода и часовой пояс.  Пытается распарсить дату с использованием различных форматов, указанных в layouts.  Если парсинг успешен, форматирует дату в указанный формат и применяет часовой пояс, если он указан.  В случае ошибки парсинга возвращает пустую строку и ошибку.
 //

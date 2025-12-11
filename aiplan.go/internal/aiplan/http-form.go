@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"go/types"
+	"html"
 	"html/template"
 	"log/slog"
 	"math"
@@ -664,18 +665,22 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 					return template.HTML("Нет")
 				}
 			case "date":
+				//nolint:gosec // time.UnixMilli format output is safe
 				return template.HTML(time.UnixMilli(int64(val.(float64))).Format("02.01.2006"))
 			case "multiselect":
 				if values, ok := val.([]interface{}); ok {
 					var stringValues []string
 					for _, v := range values {
-						stringValues = append(stringValues, fmt.Sprint(v))
+						stringValues = append(stringValues, html.EscapeString(fmt.Sprint(v)))
 					}
+					//nolint:gosec // all values are escaped with html.EscapeString
 					return template.HTML(strings.Join(stringValues, "<br>"))
 				}
-				return template.HTML(fmt.Sprint(val))
+				//nolint:gosec // value is escaped with html.EscapeString
+				return template.HTML(html.EscapeString(fmt.Sprint(val)))
 			}
-			return template.HTML(fmt.Sprint(val))
+			//nolint:gosec // value is escaped with html.EscapeString
+			return template.HTML(html.EscapeString(fmt.Sprint(val)))
 		},
 	}).Parse(answerIssueTmpl)
 	if err != nil {
@@ -1098,10 +1103,6 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 	}
 
 	return form, nil
-}
-
-type reqAnswer struct {
-	Val interface{} `json:"value,omitempty"`
 }
 
 //**RESPONSE**

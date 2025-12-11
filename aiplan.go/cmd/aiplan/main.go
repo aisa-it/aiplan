@@ -151,99 +151,10 @@ func main() {
 			}
 			slog.Info("All invalid UUIDs cleaned")
 
-			// Step 4.5: Clean orphaned foreign keys (created_by_id and updated_by_id that reference non-existent users)
+			// Step 4.5: Clean orphaned foreign keys (автоматически получаем все FK из БД)
 			slog.Info("Cleaning orphaned foreign keys")
-			foreignKeyColumns := []struct {
-				table            string
-				column           string
-				referencedTable  string
-				referencedColumn string
-			}{
-				// created_by_id fields referencing users
-				{"doc_attachments", "created_by_id", "users", "id"},
-				{"doc_comment_reactions", "created_by_id", "users", "id"},
-				{"doc_comments", "created_by_id", "users", "id"},
-				{"doc_favorites", "created_by_id", "users", "id"},
-				{"docs", "created_by_id", "users", "id"},
-				{"entity_activities", "created_by_id", "users", "id"},
-				{"estimate_points", "created_by_id", "users", "id"},
-				{"estimates", "created_by_id", "users", "id"},
-				{"form_answers", "created_by_id", "users", "id"},
-				{"form_attachments", "created_by_id", "users", "id"},
-				{"forms", "created_by_id", "users", "id"},
-				{"issue_assignees", "created_by_id", "users", "id"},
-				{"issue_blockers", "created_by_id", "users", "id"},
-				{"issue_labels", "created_by_id", "users", "id"},
-				{"issue_links", "created_by_id", "users", "id"},
-				{"issue_properties", "created_by_id", "users", "id"},
-				{"issue_watchers", "created_by_id", "users", "id"},
-				{"issues", "created_by_id", "users", "id"},
-				{"labels", "created_by_id", "users", "id"},
-				{"project_favorites", "created_by_id", "users", "id"},
-				{"project_members", "created_by_id", "users", "id"},
-				{"projects", "created_by_id", "users", "id"},
-				{"sprint_issues", "created_by_id", "users", "id"},
-				{"sprint_watchers", "created_by_id", "users", "id"},
-				{"sprints", "created_by_id", "users", "id"},
-				{"states", "created_by_id", "users", "id"},
-				{"team_members", "created_by_id", "users", "id"},
-				{"teams", "created_by_id", "users", "id"},
-				{"users", "created_by_id", "users", "id"},
-				{"workspace_favorites", "created_by_id", "users", "id"},
-				{"workspace_members", "created_by_id", "users", "id"},
-				{"workspaces", "created_by_id", "users", "id"},
-				// updated_by_id fields referencing users
-				{"doc_attachments", "updated_by_id", "users", "id"},
-				{"doc_comments", "updated_by_id", "users", "id"},
-				{"docs", "updated_by_id", "users", "id"},
-				{"entity_activities", "updated_by_id", "users", "id"},
-				{"estimate_points", "updated_by_id", "users", "id"},
-				{"estimates", "updated_by_id", "users", "id"},
-				{"form_attachments", "updated_by_id", "users", "id"},
-				{"forms", "updated_by_id", "users", "id"},
-				{"issue_assignees", "updated_by_id", "users", "id"},
-				{"issue_blockers", "updated_by_id", "users", "id"},
-				{"issue_comments", "updated_by_id", "users", "id"},
-				{"issue_labels", "updated_by_id", "users", "id"},
-				{"issue_links", "updated_by_id", "users", "id"},
-				{"issue_properties", "updated_by_id", "users", "id"},
-				{"issue_watchers", "updated_by_id", "users", "id"},
-				{"issues", "updated_by_id", "users", "id"},
-				{"labels", "updated_by_id", "users", "id"},
-				{"project_favorites", "updated_by_id", "users", "id"},
-				{"project_members", "updated_by_id", "users", "id"},
-				{"projects", "updated_by_id", "users", "id"},
-				{"sprints", "updated_by_id", "users", "id"},
-				{"states", "updated_by_id", "users", "id"},
-				{"team_members", "updated_by_id", "users", "id"},
-				{"teams", "updated_by_id", "users", "id"},
-				{"users", "updated_by_id", "users", "id"},
-				{"workspace_favorites", "updated_by_id", "users", "id"},
-				{"workspace_members", "updated_by_id", "users", "id"},
-				{"workspaces", "updated_by_id", "users", "id"},
-				// Activity tables - actor_id references users
-				{"issue_activities", "actor_id", "users", "id"},
-				{"sprint_activities", "actor_id", "users", "id"},
-				{"project_activities", "actor_id", "users", "id"},
-				{"doc_activities", "actor_id", "users", "id"},
-				{"form_activities", "actor_id", "users", "id"},
-				{"workspace_activities", "actor_id", "users", "id"},
-				// Activity tables - entity references
-				{"issue_activities", "issue_id", "issues", "id"},
-				{"issue_activities", "workspace_id", "workspaces", "id"},
-				{"sprint_activities", "sprint_id", "sprints", "id"},
-				{"sprint_activities", "workspace_id", "workspaces", "id"},
-				{"project_activities", "workspace_id", "workspaces", "id"},
-				{"doc_activities", "doc_id", "docs", "id"},
-				{"doc_activities", "workspace_id", "workspaces", "id"},
-				{"form_activities", "form_id", "forms", "id"},
-				{"form_activities", "workspace_id", "workspaces", "id"},
-				{"workspace_activities", "workspace_id", "workspaces", "id"},
-			}
-			for _, fk := range foreignKeyColumns {
-				if err := dao.CleanOrphanedForeignKeys(tx, fk.table, fk.column, fk.referencedTable, fk.referencedColumn); err != nil {
-					return fmt.Errorf("failed to clean orphaned foreign keys in %s.%s: %w", fk.table, fk.column, err)
-				}
+			if err := dao.CleanAllOrphanedForeignKeys(tx); err != nil {
+				return fmt.Errorf("failed to clean all orphaned foreign keys: %w", err)
 			}
 			slog.Info("All orphaned foreign keys cleaned")
 

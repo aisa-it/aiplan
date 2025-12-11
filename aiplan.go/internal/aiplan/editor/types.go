@@ -28,6 +28,8 @@ type Document struct {
 }
 type Paragraph struct {
 	Content []any
+	Indent  int       // для атрибута indent (0 = нет отступа)
+	Align   TextAlign // для атрибута textAlign
 }
 
 type Text struct {
@@ -163,4 +165,15 @@ func (c *Color) UnmarshalJSON(data []byte) error {
 	*c = cc
 
 	return err
+}
+
+type DateNode struct {
+	Date string
+}
+
+type IssueLinkMention struct {
+	Slug              string
+	ProjectIdentifier string
+	CurrentIssueId    string
+	OriginalUrl       string
 }

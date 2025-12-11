@@ -9,7 +9,6 @@ package aiplan
 
 import (
 	"regexp"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -160,15 +159,6 @@ func isValidLatinLowerDigitHyphen(str string) bool {
 	pt := `^[a-z0-9-]+$`
 	re := regexp.MustCompile(pt)
 	return re.MatchString(str)
-}
-
-func validateAnyLetterOrDigit(str string) bool {
-	for _, char := range str {
-		if unicode.IsLetter(char) || unicode.IsDigit(char) {
-			return true
-		}
-	}
-	return false
 }
 
 var (

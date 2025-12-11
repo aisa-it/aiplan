@@ -28,9 +28,6 @@ type ActivityHandler interface {
 type ActivitiesTracker struct {
 	db *gorm.DB
 
-	activityLogFunc  []func(activity dao.EntityActivity)
-	activityLogFuncI []func(activity dao.ActivityI)
-
 	handlers []ActivityHandler
 }
 
