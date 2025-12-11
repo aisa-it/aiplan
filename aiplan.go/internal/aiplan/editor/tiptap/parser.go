@@ -5,12 +5,17 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor/edtypes"
 )
 
-// ParseJSON парсит JSON контент TipTap редактора в структуру editor.Document.
+func init() {
+	// Регистрируем парсер TipTap в edtypes
+	edtypes.TipTapParser = ParseJSON
+}
+
+// ParseJSON парсит JSON контент TipTap редактора в структуру edtypes.Document.
 // Принимает io.Reader с JSON данными и возвращает распарсенный документ.
-func ParseJSON(r io.Reader) (*editor.Document, error) {
+func ParseJSON(r io.Reader) (*edtypes.Document, error) {
 	// Десериализовать JSON в TipTapDocument
 	var tipTapDoc TipTapDocument
 	if err := json.NewDecoder(r).Decode(&tipTapDoc); err != nil {
@@ -18,7 +23,7 @@ func ParseJSON(r io.Reader) (*editor.Document, error) {
 	}
 
 	// Создать результирующий документ
-	doc := &editor.Document{
+	doc := &edtypes.Document{
 		Elements: make([]any, 0),
 	}
 
@@ -33,7 +38,7 @@ func ParseJSON(r io.Reader) (*editor.Document, error) {
 	return doc, nil
 }
 
-// parseNode парсит отдельную ноду TipTap и возвращает соответствующий элемент editor.
+// parseNode парсит отдельную ноду TipTap и возвращает соответствующий элемент edtypes.
 func parseNode(node TipTapNode) any {
 	switch node.Type {
 	case "paragraph":

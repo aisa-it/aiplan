@@ -3,7 +3,7 @@ package tiptap
 import (
 	"strings"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor/edtypes"
 )
 
 // getAttrString безопасно извлекает строковый атрибут из map.
@@ -92,15 +92,15 @@ func parseStyleAttr(style string) map[string]string {
 }
 
 // parseTextAlign конвертирует строковое значение выравнивания в TextAlign.
-func parseTextAlign(align string) editor.TextAlign {
+func parseTextAlign(align string) edtypes.TextAlign {
 	switch strings.TrimSpace(strings.ToLower(align)) {
 	case "left":
-		return editor.LeftAlign
+		return edtypes.LeftAlign
 	case "center":
-		return editor.CenterAlign
+		return edtypes.CenterAlign
 	case "right":
-		return editor.RightAlign
+		return edtypes.RightAlign
 	default:
-		return editor.LeftAlign
+		return edtypes.LeftAlign
 	}
 }
