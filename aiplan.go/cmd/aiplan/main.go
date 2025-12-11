@@ -190,12 +190,6 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("UUID migration completed successfully")
-
-		// VACUUM FULL для освобождения места на диске после миграции
-		if err := dao.VacuumFull(db); err != nil {
-			slog.Error("VACUUM FULL failed", "err", err)
-			os.Exit(1)
-		}
 	}
 
 	if err := CreateTriggers(db); err != nil {
