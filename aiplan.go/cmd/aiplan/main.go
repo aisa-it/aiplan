@@ -67,27 +67,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := gorm.Open(utils.NewPostgresUUIDDialector(postgres.Config{
+	// Для миграций используем PreferSimpleProtocol: true чтобы избежать ошибок с кешированными планами
+	// когда структура таблиц меняется (например, добавляются новые JSONB поля)
+	dbForMigration, err := gorm.Open(utils.NewPostgresUUIDDialector(postgres.Config{
 		DSN:                  cfg.DatabaseDSN,
-		PreferSimpleProtocol: false, // disables implicit prepared statement usage
+		PreferSimpleProtocol: true, // отключаем prepared statements для миграции
 	}), &gorm.Config{
 		TranslateError: !*noTranslateFlag,
 		Logger:         gormlogger.NewGormLogger(slog.Default(), time.Second*4, *paramQueries),
 	})
 	if err != nil {
-		slog.Error("Fail init DB connection", "err", err)
+		slog.Error("Fail init DB connection for migration", "err", err)
 		os.Exit(1)
 	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		slog.Error("Fail set settings to conn pool", "err", err)
-		os.Exit(1)
-	}
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetMaxIdleConns(50)
-	sqlDB.SetConnMaxLifetime(time.Hour)
-	sqlDB.SetConnMaxIdleTime(time.Minute * 15)
 
 	if !*noMigration {
 		// Migrate all UUID fields from text to uuid type in a single transaction
@@ -112,7 +104,7 @@ func main() {
 		)
 
 		// Filter columns that need migration (exclude uuid, bytea, non-existent)
-		columnsToMigrate, err := utils.FilterMigratableColumns(db, allColumns)
+		columnsToMigrate, err := utils.FilterMigratableColumns(dbForMigration, allColumns)
 		if err != nil {
 			slog.Error("Failed to filter migratable columns", "err", err)
 			os.Exit(1)
@@ -120,7 +112,7 @@ func main() {
 		slog.Info("Filtered migratable columns", "count", len(columnsToMigrate), "skipped", len(allColumns)-len(columnsToMigrate))
 
 		// Execute all migrations in a single transaction
-		err = db.Transaction(func(tx *gorm.DB) error {
+		err = dbForMigration.Transaction(func(tx *gorm.DB) error {
 			// Step 1: Drop all generated columns (they block type changes)
 			slog.Info("Dropping all generated columns")
 			if err := dao.DropAllGeneratedColumns(tx); err != nil {
@@ -190,7 +182,42 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("UUID migration completed successfully")
+
+		// Закрываем соединение для миграции
+		sqlDBMigration, err := dbForMigration.DB()
+		if err != nil {
+			slog.Error("Fail get SQL DB for migration", "err", err)
+			os.Exit(1)
+		}
+		if err := sqlDBMigration.Close(); err != nil {
+			slog.Error("Fail close migration DB connection", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("Migration database connection closed")
 	}
+
+	// Создаем основное подключение с prepared statements для production
+	db, err := gorm.Open(utils.NewPostgresUUIDDialector(postgres.Config{
+		DSN:                  cfg.DatabaseDSN,
+		PreferSimpleProtocol: false, // используем prepared statements для производительности
+	}), &gorm.Config{
+		TranslateError: !*noTranslateFlag,
+		Logger:         gormlogger.NewGormLogger(slog.Default(), time.Second*4, *paramQueries),
+	})
+	if err != nil {
+		slog.Error("Fail init DB connection", "err", err)
+		os.Exit(1)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		slog.Error("Fail set settings to conn pool", "err", err)
+		os.Exit(1)
+	}
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetMaxIdleConns(50)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxIdleTime(time.Minute * 15)
 
 	if err := CreateTriggers(db); err != nil {
 		slog.Error("Fail create DB triggers", "err", err)

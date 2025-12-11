@@ -38,7 +38,7 @@ func parseParagraph(node TipTapNode) *edtypes.Paragraph {
 		switch child.Type {
 		case "text":
 			p.Content = append(p.Content, parseText(child))
-		case "image":
+		case "image", "imageResize":
 			if img := parseImage(child); img != nil {
 				p.Content = append(p.Content, img)
 			}
@@ -49,6 +49,14 @@ func parseParagraph(node TipTapNode) *edtypes.Paragraph {
 		case "issueLinkMention":
 			if ilm := parseIssueLinkMention(child); ilm != nil {
 				p.Content = append(p.Content, ilm)
+			}
+		case "mention":
+			if m := parseMention(child); m != nil {
+				p.Content = append(p.Content, m)
+			}
+		case "hardBreak":
+			if hb := parseHardBreak(child); hb != nil {
+				p.Content = append(p.Content, hb)
 			}
 		default:
 			slog.Warn("Unknown paragraph child type", "type", child.Type)
@@ -107,8 +115,9 @@ func parseBlockquote(node TipTapNode) *edtypes.Quote {
 }
 
 // parseImage преобразует изображение TipTap в edtypes.Image.
+// Поддерживает как "image", так и "imageResize" типы.
 func parseImage(node TipTapNode) *edtypes.Image {
-	if node.Type != "image" {
+	if node.Type != "image" && node.Type != "imageResize" {
 		return nil
 	}
 
@@ -171,6 +180,27 @@ func parseIssueLinkMention(node TipTapNode) *edtypes.IssueLinkMention {
 		CurrentIssueId:    getAttrString(node.Attrs, "currentIssueId"),
 		OriginalUrl:       getAttrString(node.Attrs, "originalUrl"),
 	}
+}
+
+// parseMention преобразует mention TipTap в edtypes.Mention.
+func parseMention(node TipTapNode) *edtypes.Mention {
+	if node.Type != "mention" {
+		return nil
+	}
+
+	return &edtypes.Mention{
+		ID:    getAttrString(node.Attrs, "id"),
+		Label: getAttrString(node.Attrs, "label"),
+	}
+}
+
+// parseHardBreak преобразует hardBreak TipTap в edtypes.HardBreak.
+func parseHardBreak(node TipTapNode) *edtypes.HardBreak {
+	if node.Type != "hardBreak" {
+		return nil
+	}
+
+	return &edtypes.HardBreak{}
 }
 
 // parseSpoiler преобразует spoiler TipTap в edtypes.Spoiler.

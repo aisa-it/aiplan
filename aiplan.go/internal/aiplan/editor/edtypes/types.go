@@ -2,6 +2,7 @@ package edtypes
 
 import (
 	"bytes"
+	"database/sql/driver"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -28,6 +29,9 @@ var (
 // TipTapParser - функция для парсинга TipTap JSON, устанавливается из tiptap пакета
 var TipTapParser func(io.Reader) (*Document, error)
 
+// TipTapSerializer - функция для сериализации Document в TipTap JSON, устанавливается из tiptap пакета
+var TipTapSerializer func(*Document) ([]byte, error)
+
 type Document struct {
 	Elements []any
 }
@@ -47,6 +51,52 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 
 	d.Elements = doc.Elements
 	return nil
+}
+
+// MarshalJSON реализует кастомную сериализацию Document в TipTap JSON.
+// Автоматически вызывает зарегистрированный TipTapSerializer.
+func (d *Document) MarshalJSON() ([]byte, error) {
+	if TipTapSerializer == nil {
+		return nil, errors.New("TipTapSerializer not registered, import tiptap package to enable TipTap JSON serialization")
+	}
+
+	return TipTapSerializer(d)
+}
+
+// Value реализует интерфейс driver.Valuer для сохранения Document в PostgreSQL JSONB.
+// Использует существующий MarshalJSON который вызывает зарегистрированный TipTapSerializer.
+func (d Document) Value() (driver.Value, error) {
+	b, err := d.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// Scan реализует интерфейс sql.Scanner для чтения Document из PostgreSQL JSONB.
+// Использует существующий UnmarshalJSON который вызывает зарегистрированный TipTapParser.
+func (d *Document) Scan(value interface{}) error {
+	if value == nil {
+		*d = Document{Elements: make([]any, 0)}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	return d.UnmarshalJSON(bytes)
+}
+
+// GormDataType указывает GORM использовать тип JSONB для PostgreSQL колонок.
+func (Document) GormDataType() string {
+	return "jsonb"
 }
 
 type Paragraph struct {
@@ -199,4 +249,13 @@ type IssueLinkMention struct {
 	ProjectIdentifier string
 	CurrentIssueId    string
 	OriginalUrl       string
+}
+
+type Mention struct {
+	ID    string
+	Label string
+}
+
+type HardBreak struct {
+	// Пустая структура для представления переноса строки <br>
 }
