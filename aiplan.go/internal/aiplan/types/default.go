@@ -21,7 +21,7 @@ var boolFalse = true
 
 var DefaultViewProps ViewProps = ViewProps{
 	ShowEmptyGroups: false,
-	ShowSubIssues:   true,
+	HideSubIssues:   false,
 	ShowOnlyActive:  false,
 	AutoSave:        false,
 	IssueView:       "list",
