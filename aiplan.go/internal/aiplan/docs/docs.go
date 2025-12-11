@@ -15816,7 +15816,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/": {
+        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/": {
             "post": {
                 "security": [
                     {
@@ -17257,6 +17257,9 @@ const docTemplate = `{
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -18888,6 +18891,9 @@ const docTemplate = `{
                 "description_html": {
                     "type": "string"
                 },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
+                },
                 "description_stripped": {
                     "type": "string",
                     "x-nullable": true
@@ -19300,6 +19306,9 @@ const docTemplate = `{
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -20517,6 +20526,15 @@ const docTemplate = `{
                 }
             }
         },
+        "editor.Document": {
+            "type": "object",
+            "properties": {
+                "elements": {
+                    "type": "array",
+                    "items": {}
+                }
+            }
+        },
         "entity.JiraInfo": {
             "type": "object",
             "properties": {
@@ -21207,6 +21225,9 @@ const docTemplate = `{
                         "type": "boolean"
                     }
                 },
+                "hideSubIssues": {
+                    "type": "boolean"
+                },
                 "issueView": {
                     "type": "string",
                     "enum": [
@@ -21224,9 +21245,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "showOnlyActive": {
-                    "type": "boolean"
-                },
-                "showSubIssues": {
                     "type": "boolean"
                 }
             }

@@ -84,8 +84,8 @@ func (s Sprint) GetEntityType() string {
 	return actField.Sprint.Field.String()
 }
 
-func (s Sprint) GetWorkspaceId() string {
-	return s.WorkspaceId.String()
+func (s Sprint) GetWorkspaceId() uuid.UUID {
+	return s.WorkspaceId
 }
 
 func (s Sprint) GetSprintId() string {

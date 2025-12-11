@@ -1105,6 +1105,10 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 	return form, nil
 }
 
+type reqAnswer struct {
+	Val interface{} `json:"value,omitempty"`
+}
+
 //**RESPONSE**
 
 type respAnswers struct {

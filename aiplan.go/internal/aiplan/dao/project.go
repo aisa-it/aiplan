@@ -1422,8 +1422,8 @@ func (it IssueTemplate) GetProjectId() string {
 	return it.ProjectId.String()
 }
 
-func (it IssueTemplate) GetWorkspaceId() string {
-	return it.WorkspaceId.String()
+func (it IssueTemplate) GetWorkspaceId() uuid.UUID {
+	return it.WorkspaceId
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM (GORM). Применяется для определения имени таблицы, в которой хранятся данные модели.
