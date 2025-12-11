@@ -321,6 +321,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		tr.RegisterHandler(notifications.NewProjectNotification(ns))
 		tr.RegisterHandler(notifications.NewDocNotification(ns))
 		tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
+		tr.RegisterHandler(notifications.NewFormNotification(ns))
 	}
 
 	{ // register handler telegram activity
@@ -722,6 +723,10 @@ func StructToJSONMap(obj interface{}) map[string]interface{} {
 			}
 			if fieldValue.Type() == reflect.TypeOf(types.RedactorHTML{}) {
 				res[tagName] = fieldValue.Interface().(types.RedactorHTML)
+				continue
+			}
+			if fieldValue.Type() == reflect.TypeOf(types.FormAnswerNotify{}) {
+				res[tagName] = fieldValue.Interface().(types.FormAnswerNotify)
 				continue
 			}
 			if marshaler, ok := fieldValue.Interface().(json.Marshaler); ok {

@@ -103,9 +103,9 @@ func (wns *WebsocketNotificationService) CloseUserSessions(userId uuid.UUID) {
 	}
 }
 
-func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId string, data interface{}, countNotify int) error {
+func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UUID, data interface{}, countNotify int) error {
 	msg := WebsocketMsg{}
-	msg.Id = notifyId
+	msg.Id = notifyId.String()
 	msg.CountNotify = countNotify
 	msg.CreatedAt = time.Now().UTC()
 	userIdStr := userId.String()
@@ -143,6 +143,14 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId string,
 		msg.Detail = NotificationDetailResponse{
 			User:      v.Actor.ToLightDTO(),
 			Workspace: v.Workspace.ToLightDTO(),
+		}
+		msg.Data = v.ToLightDTO()
+	case dao.FormActivity:
+		msg.Type = "activity"
+		msg.Detail = NotificationDetailResponse{
+			User:      v.Actor.ToLightDTO(),
+			Form:      v.Form.ToLightDTO(),
+			Workspace: v.Form.Workspace.ToLightDTO(),
 		}
 		msg.Data = v.ToLightDTO()
 	case dao.EntityActivity:
@@ -197,9 +205,13 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId string,
 	case dao.UserNotifications:
 		msg.Type = v.Type
 		var project *dto.ProjectLight
-
+		var form *dto.FormLight
 		if v.Issue != nil {
 			project = v.Issue.Project.ToLightDTO()
+		}
+
+		if v.FormActivity != nil {
+			form = v.FormActivity.Form.ToLightDTO()
 		}
 		msg.Detail = NotificationDetailResponse{
 			User:         v.Author.ToLightDTO(),
@@ -207,6 +219,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId string,
 			Issue:        v.Issue.ToLightDTO(),
 			Project:      project,
 			Workspace:    v.Workspace.ToLightDTO(),
+			Form:         form,
 		}
 
 		msg.Data = NotificationResponseMessage{

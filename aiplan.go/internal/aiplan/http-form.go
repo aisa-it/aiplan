@@ -10,19 +10,17 @@
 package aiplan
 
 import (
-	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
 	"go/types"
-	"html"
-	"html/template"
 	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"github.com/gofrs/uuid"
@@ -601,20 +599,20 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		if err := tx.Model(&dao.FormAnswer{}).Create(&answer).Error; err != nil {
 			return err
 		}
-		//data := StructToJSONMap(answer)
-
-		//if user == nil {
-		//	actor = dao.User{}
-		//} else {
-		//	actor = *user
-		//}
-
-		// TODO добавить активность по ответам?
-		//return s.tracker.TrackActivity(tracker.FORM_ANSWER_SEND_ACTIVITY, data, nil, form.ID.String(), tracker.ENTITY_TYPE_FORM, nil, *user)
 		return nil
 
 	}); err != nil {
 		return EError(c, err)
+	}
+	if user == nil {
+		if err := s.db.Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	err = tracker.TrackActivity[dao.FormAnswer, dao.FormActivity](s.tracker, activities.EntityCreateActivity, nil, nil, answer, user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	if form.TargetProjectId.Valid {
@@ -623,6 +621,14 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 				slog.Error("Create answer issue", "formId", form.ID, "err", err)
 			}
 		}(&form, &answer, user)
+	}
+
+	if form.NotificationChannels.Email && !form.Author.Settings.EmailNotificationMute {
+		s.emailService.FormAnswerNotify(&form, &answer, user)
+	}
+
+	if form.NotificationChannels.Telegram && !form.Author.Settings.TgNotificationMute && form.Author.TelegramId != nil {
+		s.notificationsService.Tg.SendFormAnswer(*form.Author.TelegramId, form, &answer, answer.Responder)
 	}
 
 	result := respAnswers{
@@ -652,49 +658,10 @@ func (s *Services) createAnswerNoAuth(c echo.Context) error {
 	return s.createAnswerAuth(c)
 }
 
-const answerIssueTmpl = `{{if .User}}<p>Пользователь: {{.User.GetName}}, {{.User.Email}}</p>{{else}}<p>Анонимный пользователь</p>{{end}}<ol>{{- range .Answers -}}<li><p><span style="font-size: 14px"><strong>{{- .Label -}}</strong></span><br><span style="font-size: 14px">{{- getValString .Type .Val -}}</span></p></li>{{- end -}}</ol>`
-
 func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, user *dao.User) error {
-	t, err := template.New("AnswerIssue").Funcs(template.FuncMap{
-		"getValString": func(t string, val interface{}) template.HTML {
-			switch t {
-			case "checkbox":
-				if v := val.(bool); v {
-					return template.HTML("Да")
-				} else {
-					return template.HTML("Нет")
-				}
-			case "date":
-				//nolint:gosec // time.UnixMilli format output is safe
-				return template.HTML(time.UnixMilli(int64(val.(float64))).Format("02.01.2006"))
-			case "multiselect":
-				if values, ok := val.([]interface{}); ok {
-					var stringValues []string
-					for _, v := range values {
-						stringValues = append(stringValues, html.EscapeString(fmt.Sprint(v)))
-					}
-					//nolint:gosec // all values are escaped with html.EscapeString
-					return template.HTML(strings.Join(stringValues, "<br>"))
-				}
-				//nolint:gosec // value is escaped with html.EscapeString
-				return template.HTML(html.EscapeString(fmt.Sprint(val)))
-			}
-			//nolint:gosec // value is escaped with html.EscapeString
-			return template.HTML(html.EscapeString(fmt.Sprint(val)))
-		},
-	}).Parse(answerIssueTmpl)
-	if err != nil {
-		return err
-	}
 
-	buf := new(bytes.Buffer)
-	if err := t.Execute(buf, struct {
-		User    *dao.User
-		Answers types2.FormFieldsSlice
-	}{
-		User:    user,
-		Answers: answer.Fields,
-	}); err != nil {
+	res, err := business.GenBodyAnswer(answer, user)
+	if err != nil {
 		return err
 	}
 
@@ -714,7 +681,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		CreatedById:     systemUser.ID,
 		ProjectId:       form.TargetProjectId.UUID,
 		WorkspaceId:     form.WorkspaceId,
-		DescriptionHtml: buf.String(),
+		DescriptionHtml: res,
 		//DescriptionStripped: issue.DescriptionStripped,
 	}
 
@@ -999,16 +966,17 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 // ***** REQUEST *****
 
 type reqForm struct {
-	Title           string                 `json:"title,omitempty" validate:"required"`
-	Description     types2.RedactorHTML    `json:"description,omitempty"`
-	AuthRequire     bool                   `json:"auth_require,omitempty"`
-	EndDate         *types2.TargetDate     `json:"end_date,omitempty" extensions:"x-nullable"`
-	TargetProjectId *string                `json:"target_project_id" extensions:"x-nullable"`
-	Fields          types2.FormFieldsSlice `json:"fields,omitempty"`
+	Title                string                  `json:"title,omitempty" validate:"required"`
+	Description          types2.RedactorHTML     `json:"description,omitempty"`
+	AuthRequire          bool                    `json:"auth_require,omitempty"`
+	EndDate              *types2.TargetDate      `json:"end_date,omitempty" extensions:"x-nullable"`
+	TargetProjectId      *string                 `json:"target_project_id" extensions:"x-nullable"`
+	Fields               types2.FormFieldsSlice  `json:"fields,omitempty"`
+	NotificationChannels types2.FormAnswerNotify `json:"notification_channels,omitempty"`
 }
 
 func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao.Form, error) {
-	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id"}
+	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id", "notification_channels"}
 
 	if form == nil {
 		form = &dao.Form{}
@@ -1096,6 +1064,12 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 						form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 					} else {
 						return nil, fmt.Errorf("target_project_id")
+					}
+				case "notification_channels":
+					if channels, ok := value.(types2.FormAnswerNotify); ok {
+						form.NotificationChannels = channels
+					} else {
+						return nil, fmt.Errorf("notification_channels")
 					}
 				}
 			}

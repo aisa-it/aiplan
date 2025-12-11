@@ -913,6 +913,43 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, 
 	return false
 }
 
+// FormAnswerNotify type
+type FormAnswerNotify struct {
+	Email    bool `json:"email"`
+	Telegram bool `json:"telegram"`
+	App      bool `json:"app"`
+}
+
+func (fn FormAnswerNotify) Value() (driver.Value, error) {
+	b, err := json.Marshal(fn)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (fn *FormAnswerNotify) Scan(value interface{}) error {
+	if value == nil {
+		*fn = FormAnswerNotify{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, fn); err != nil {
+		return err
+	}
+	return nil
+}
+
 type JsonURL struct {
 	Url *url.URL `swaggertype:"string" format:"uri"`
 }
