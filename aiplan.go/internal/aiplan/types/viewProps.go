@@ -15,7 +15,7 @@ import (
 
 type ViewProps struct {
 	ShowEmptyGroups bool            `json:"showEmptyGroups"`
-	ShowSubIssues   bool            `json:"showSubIssues"`
+	HideSubIssues   bool            `json:"hideSubIssues"`
 	ShowOnlyActive  bool            `json:"showOnlyActive"`
 	AutoSave        bool            `json:"autoSave"`
 	IssueView       string          `json:"issueView" validate:"omitempty,oneof=list kanban calendar gantt_chart"`
