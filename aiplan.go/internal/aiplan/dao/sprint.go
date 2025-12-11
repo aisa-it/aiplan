@@ -167,6 +167,14 @@ func (s *Sprint) BeforeDelete(tx *gorm.DB) (err error) {
 	return nil
 }
 
+func (s *Sprint) GetIssuesIDs() []uuid.UUID {
+	ids := make([]uuid.UUID, len(s.Issues))
+	for i, issue := range s.Issues {
+		ids[i] = issue.ID
+	}
+	return ids
+}
+
 func (s *Sprint) ToLightDTO() *dto.SprintLight {
 	if s == nil {
 		return nil
