@@ -79,6 +79,12 @@ func parseParagraph(root *html.Node) *Paragraph {
 	var p Paragraph
 
 	for el := root.FirstChild; el != nil; el = el.NextSibling {
+		// Обработка <br> тегов для переноса строки
+		if el.Type == html.ElementNode && el.Data == "br" {
+			p.Content = append(p.Content, &HardBreak{})
+			continue
+		}
+
 		image := getImage(el)
 		if image != nil {
 			p.Content = append(p.Content, image)

@@ -71,7 +71,7 @@ type Issue struct {
 	DescriptionHtml     string          `json:"description_html" gorm:"default:<p></p>"`
 	DescriptionStripped *string         `json:"description_stripped" extensions:"x-nullable"`
 	DescriptionType     int             `json:"description_type" gorm:"default:0"`
-	DescriptionJSON     editor.Document `gorm:"type:jsonb"`
+	DescriptionJSON     editor.Document `json:"description_json" gorm:"type:jsonb"`
 
 	Tokens types.TsVector `json:"-" gorm:"index:tokens_gin,type:gin,where:deleted_at is not null;->:false"`
 

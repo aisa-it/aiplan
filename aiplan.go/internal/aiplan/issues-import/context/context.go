@@ -149,7 +149,7 @@ func NewImportContext(
 
 		ImportAuthor: user,
 
-		IgnoreAttachments: true, // For tests
+		//IgnoreAttachments: true, // For tests
 
 		ID: uuid.Must(uuid.NewV4()),
 
