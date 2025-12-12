@@ -44,9 +44,7 @@ var validSortFields = map[string]struct{}{
 
 func ParseSearchParams(c echo.Context) (*SearchParams, error) {
 	sp := &SearchParams{}
-	legacyShowSubIssues := true // TODO: remove after front fix
 	if err := echo.QueryParamsBinder(c).
-		Bool("show_sub_issues", &legacyShowSubIssues).
 		Bool("hide_sub_issues", &sp.HideSubIssues).
 		Bool("draft", &sp.Draft).
 		String("order_by", &sp.OrderByParam).
@@ -62,8 +60,6 @@ func ParseSearchParams(c echo.Context) (*SearchParams, error) {
 		BindError(); err != nil {
 		return nil, err
 	}
-
-	sp.HideSubIssues = !legacyShowSubIssues
 
 	if sp.OrderByParam == "" {
 		if sp.Filters.SearchQuery == "" {
