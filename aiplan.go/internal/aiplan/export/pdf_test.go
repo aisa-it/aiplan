@@ -425,3 +425,91 @@ func TestPDFExport_TipTapJSON(t *testing.T) {
 	// Валидировать результат
 	validatePDF(t, outputFile)
 }
+
+// TestPDFExport_HTMLWithBrTags тестирует переносы строк через <br/> в HTML
+func TestPDFExport_HTMLWithBrTags(t *testing.T) {
+	u, _ := url.Parse("http://localhost:9200")
+
+	// HTML с <br/> тегами (как из API) - точная копия из вашего примера
+	htmlContent := `<p>Необходимо узнать про возможность кастомизировать веб-интерфейс Minio:<br/> 1) Главный экран (авторизация) <br/> 2) Тема самой графаны (Значки, меню)<br/>   <span class="mention" data-type="mention" data-id="ivan.zakharov" data-label="ivan.zakharov@aisa.ru">@ivan.zakharov</span> приложит скриншоты тех компонентов, которые нужно поменять. <br/> После передачи фронтам\дизайнерам\итд ИМ комментариях нужно написать что можно поменять.<br/> После согласования поменять на нашу тему<br/>3) название самого "Minio" поменять на "Централизованное файловое хранилище" </p>`
+
+	issue := dao.Issue{
+		SequenceId: 501,
+		Project: &dao.Project{
+			Identifier: "ANICOMDEV",
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Author: &dao.User{
+			FirstName: "Иван",
+			LastName:  "Захаров",
+		},
+		State: &dao.State{
+			Name:  "Закрыто",
+			Color: "#26b5ce",
+		},
+		Name:            "Замена интерфейса Minio",
+		DescriptionHtml: htmlContent,
+	}
+
+	// Экспортировать в PDF
+	outputFile := "testdata/output/test_html_br_tags.pdf"
+	os.Remove(outputFile)
+	f, err := os.Create(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to create output file: %v", err)
+	}
+	defer f.Close()
+
+	err = IssueToFPDF(&issue, u, f)
+	if err != nil {
+		t.Fatalf("Failed to export PDF: %v", err)
+	}
+
+	// Валидировать результат
+	validatePDF(t, outputFile)
+}
+
+// TestPDFExport_HTMLWithBrTagsNoSpaces тестирует переносы строк БЕЗ пробелов после <br/>
+func TestPDFExport_HTMLWithBrTagsNoSpaces(t *testing.T) {
+	u, _ := url.Parse("http://localhost:9200")
+
+	// HTML БЕЗ пробелов после <br/>
+	htmlContent := `<p>Необходимо узнать про возможность кастомизировать веб-интерфейс Minio:<br/>1) Главный экран (авторизация)<br/>2) Тема самой графаны (Значки, меню)<br/>После передачи фронтам нужно написать что можно поменять.<br/>После согласования поменять на нашу тему<br/>3) название самого "Minio" поменять на "Централизованное файловое хранилище"</p>`
+
+	issue := dao.Issue{
+		SequenceId: 502,
+		Project: &dao.Project{
+			Identifier: "TEST",
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Author: &dao.User{
+			FirstName: "Тест",
+			LastName:  "Тестов",
+		},
+		State: &dao.State{
+			Name:  "Новая",
+			Color: "#26b5ce",
+		},
+		Name:            "Тест без пробелов после br",
+		DescriptionHtml: htmlContent,
+	}
+
+	// Экспортировать в PDF
+	outputFile := "testdata/output/test_html_br_no_spaces.pdf"
+	os.Remove(outputFile)
+	f, err := os.Create(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to create output file: %v", err)
+	}
+	defer f.Close()
+
+	err = IssueToFPDF(&issue, u, f)
+	if err != nil {
+		t.Fatalf("Failed to export PDF: %v", err)
+	}
+
+	// Валидировать результат
+	validatePDF(t, outputFile)
+}
