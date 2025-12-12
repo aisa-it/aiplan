@@ -852,7 +852,7 @@ type DocAttachment struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	// asset character varying IS_NULL:NO
 	AssetId uuid.UUID `json:"asset" gorm:"type:uuid"`
 	// created_by_id uuid IS_NULL:YES
@@ -890,7 +890,7 @@ type DocAttachmentExtendFields struct {
 // Возвращает:
 //   - string: идентификатор документа в виде строки.
 func (da DocAttachment) GetId() string {
-	return da.Id
+	return da.Id.String()
 }
 
 // Возвращает заголовок документа.
@@ -926,7 +926,7 @@ func (da *DocAttachment) ToLightDTO() *dto.Attachment {
 		return nil
 	}
 	return &dto.Attachment{
-		Id:        uuid.Must(uuid.FromString(da.Id)),
+		Id:        da.Id,
 		CreatedAt: da.CreatedAt,
 		Asset:     da.Asset.ToDTO(),
 	}

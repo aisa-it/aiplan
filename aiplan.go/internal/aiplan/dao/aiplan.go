@@ -49,7 +49,7 @@ var FileStorage filestorage.FileStorage
 
 type SessionsReset struct {
 	// id uuid IS_NULL:NO
-	Id string `json:"id"`
+	Id uuid.UUID `json:"id" gorm:"type:uuid"`
 	// user_id uuid IS_NULL:NO
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
@@ -72,7 +72,7 @@ func (SessionsReset) TableName() string { return "sessions_resets" }
 //   - error: ошибка, если при создании записи произошла ошибка.
 func ResetUserSessions(db *gorm.DB, user *User) error {
 	return db.Create(&SessionsReset{
-		Id:        GenID(),
+		Id:        GenUUID(),
 		UserId:    user.ID,
 		ResetedAt: time.Now(),
 	}).Error
