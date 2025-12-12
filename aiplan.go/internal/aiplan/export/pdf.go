@@ -17,8 +17,10 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "embed"
 
@@ -112,9 +114,19 @@ func IssueToFPDF(issue *dao.Issue, webURL *url.URL, out io.Writer, comments ...d
 	pdf.AddPage()
 	pdf.Bookmark("Описание", 0, -1)
 
-	doc, err := editor.ParseDocument(strings.NewReader(w.issue.DescriptionHtml))
-	if err != nil {
-		return err
+	// Использовать DescriptionJSON если он не пустой (содержит TipTap специальные типы),
+	// иначе парсить DescriptionHtml (для обратной совместимости)
+	var doc *editor.Document
+	if len(w.issue.DescriptionJSON.Elements) > 0 {
+		// Использовать TipTap JSON документ напрямую
+		doc = &w.issue.DescriptionJSON
+	} else {
+		// Fallback на HTML парсер
+		var err error
+		doc, err = editor.ParseDocument(strings.NewReader(w.issue.DescriptionHtml))
+		if err != nil {
+			return err
+		}
 	}
 
 	w.writeDescription(doc)
@@ -131,6 +143,7 @@ func IssueToFPDF(issue *dao.Issue, webURL *url.URL, out io.Writer, comments ...d
 func (w *pdfWriter) writeDescription(doc *editor.Document) error {
 	for _, rawElement := range doc.Elements {
 		switch el := rawElement.(type) {
+		// Значения (из HTML парсера)
 		case editor.Paragraph:
 			w.writeParagraph(el)
 		case editor.Quote:
@@ -163,6 +176,52 @@ func (w *pdfWriter) writeDescription(doc *editor.Document) error {
 			w.pdf.SetLeftMargin(10)
 		case editor.Table:
 			w.writeEditorTable(el)
+		case editor.Code:
+			w.writeCodeBlock(el)
+		case editor.InfoBlock:
+			w.writeInfoBlock(el)
+		case editor.Spoiler:
+			w.writeSpoiler(el)
+
+		// Указатели (из TipTap парсера)
+		case *editor.Paragraph:
+			w.writeParagraph(*el)
+		case *editor.Quote:
+			w.pdf.Ln(2)
+			y1 := w.pdf.GetY()
+			w.pdf.SetLeftMargin(13)
+			for _, p := range el.Content {
+				w.writeParagraph(p)
+			}
+			w.pdf.SetLeftMargin(10)
+
+			w.pdf.SetLineWidth(0.5)
+			w.pdf.SetDrawColor(74, 71, 82)
+			w.pdf.Line(11, y1, 11, w.pdf.GetY())
+			w.pdf.Ln(2)
+		case *editor.List:
+			w.pdf.SetLeftMargin(13)
+			for i, e := range el.Elements {
+				if el.Numbered {
+					w.write(fmt.Sprintf("%d.", i+1))
+				} else {
+					w.write("•")
+				}
+
+				for _, p := range e.Content {
+					w.pdf.SetX(17)
+					w.writeParagraph(p)
+				}
+			}
+			w.pdf.SetLeftMargin(10)
+		case *editor.Table:
+			w.writeEditorTable(*el)
+		case *editor.Code:
+			w.writeCodeBlock(*el)
+		case *editor.InfoBlock:
+			w.writeInfoBlock(*el)
+		case *editor.Spoiler:
+			w.writeSpoiler(*el)
 		}
 		w.resetMargins()
 	}
@@ -177,6 +236,14 @@ func (w *pdfWriter) writeParagraph(p editor.Paragraph) {
 			w.writeEditorText(tt)
 		case *editor.Image:
 			w.writeEditorImage(tt)
+		case *editor.HardBreak:
+			w.writeHardBreak()
+		case *editor.DateNode:
+			w.writeDateNode(tt)
+		case *editor.Mention:
+			w.writeMention(tt)
+		case *editor.IssueLinkMention:
+			w.writeIssueLinkMention(tt)
 		}
 	}
 	w.pdf.Ln(-1)
@@ -189,8 +256,17 @@ func (w *pdfWriter) writeEditorText(t editor.Text) float64 {
 	if t.BgColor != nil {
 		x := w.pdf.GetX()
 		w.pdf.SetX(x + w.pdf.GetCellMargin())
-		w.pdf.CellFormat(w.pdf.GetStringWidth(t.Content), s+0.1, "", "", 0, "L", true, 0, "")
-		w.pdf.SetX(x)
+
+		// Записать текст сразу с фоном
+		if t.URL != nil {
+			w.pdf.CellFormat(w.pdf.GetStringWidth(t.Content), s+0.1, t.Content, "", 0, "LM", true, 0, t.URL.String())
+		} else {
+			w.pdf.CellFormat(w.pdf.GetStringWidth(t.Content), s+0.1, t.Content, "", 0, "LM", true, 0, "")
+		}
+
+		// Сбросить фон (установить белый)
+		w.pdf.SetFillColor(255, 255, 255)
+		return w.pdf.GetStringWidth(t.Content)
 	}
 
 	if t.URL != nil {
@@ -262,10 +338,40 @@ func (w *pdfWriter) getEditorImageInfo(img *editor.Image) *fpdf.ImageInfoType {
 	info := w.pdf.GetImageInfo(img.Src.Path)
 	if info == nil {
 		u := img.Src
-		if img.Src.Host == "" {
+		if img.Src.Host == "" && img.Src.Scheme != "file" {
 			u = w.webURL.ResolveReference(u)
 		}
 
+		// Обработка file:// схемы для локальных файлов
+		if u.Scheme == "file" {
+			file, err := os.Open(u.Path)
+			if err != nil {
+				fmt.Println(err)
+				return nil
+			}
+			defer file.Close()
+
+			// Определить тип изображения по расширению
+			var imageType string
+			if strings.HasSuffix(strings.ToLower(u.Path), ".png") {
+				imageType = "png"
+			} else if strings.HasSuffix(strings.ToLower(u.Path), ".jpg") || strings.HasSuffix(strings.ToLower(u.Path), ".jpeg") {
+				imageType = "jpeg"
+			} else if strings.HasSuffix(strings.ToLower(u.Path), ".gif") {
+				imageType = "gif"
+			}
+
+			options := fpdf.ImageOptions{ImageType: imageType, ReadDpi: true}
+			if options.ImageType == "" {
+				w.pdf.ClearError()
+				return nil
+			}
+
+			info = w.pdf.RegisterImageOptionsReader(img.Src.Path, options, file)
+			return info
+		}
+
+		// Загрузка через HTTP/HTTPS
 		resp, err := http.Get(u.String())
 		if err != nil {
 			fmt.Println(err)
@@ -295,14 +401,33 @@ func (w *pdfWriter) writeEditorImage(img *editor.Image) {
 		u = w.webURL.ResolveReference(u)
 	}
 
-	w.getEditorImageInfo(img)
+	// Попытка загрузить информацию об изображении
+	info := w.getEditorImageInfo(img)
+	if info == nil {
+		// Изображение не удалось загрузить, пропускаем
+		return
+	}
 
+	// Изображения требуют новой строки
+	w.pdf.Ln(-1)
+
+	// Вычислить максимальную ширину для изображения
 	maxX, _ := w.pdf.GetPageSize()
-	left, _, _, _ := w.pdf.GetMargins()
-	maxWidth := maxX - left - w.pdf.GetX()
+	left, _, right, _ := w.pdf.GetMargins()
+	maxWidth := maxX - left - right
 
-	width := min(w.PxToUnit(img.Width), maxWidth)
-	w.pdf.ImageOptions(img.Src.Path, -1, -1, width, 0, true, fpdf.ImageOptions{ReadDpi: true}, 0, u.String())
+	// Использовать указанную ширину или подогнать под размер страницы
+	width := w.PxToUnit(img.Width)
+	if width <= 0 || width > maxWidth {
+		width = maxWidth
+	}
+
+	// Вставить изображение с явной позицией X (текущий X курсора)
+	x := w.pdf.GetX()
+	w.pdf.ImageOptions(img.Src.Path, x, -1, width, 0, true, fpdf.ImageOptions{ReadDpi: true}, 0, u.String())
+
+	// Перейти на новую строку после изображения
+	w.pdf.Ln(-1)
 }
 
 func (w *pdfWriter) writeEditorTable(table editor.Table) {
@@ -409,6 +534,25 @@ func (w *pdfWriter) SetHexFillColor(hex string) {
 }
 
 func (w *pdfWriter) getTableWidthUnits(t editor.Table) []float64 {
+	// Определить количество колонок
+	colCount := len(t.Rows[0])
+
+	l, _, r, _ := w.pdf.GetMargins()
+	pW, _ := w.pdf.GetPageSize()
+	width := pW - l - r
+
+	// Если ColWidth пустой или не задан (TipTap парсер не заполняет его),
+	// распределить ширину равномерно между всеми колонками
+	if len(t.ColWidth) == 0 || t.MinWidth == 0 {
+		equalWidth := width / float64(colCount)
+		res := make([]float64, colCount)
+		for i := range res {
+			res[i] = equalWidth
+		}
+		return res
+	}
+
+	// Логика для таблиц с заданными ширинами (из HTML парсера)
 	sum := 0
 	autoColCount := 0
 	for _, s := range t.ColWidth {
@@ -420,11 +564,7 @@ func (w *pdfWriter) getTableWidthUnits(t editor.Table) []float64 {
 
 	freeColSize := float64(t.MinWidth-sum) / float64(autoColCount)
 
-	l, _, r, _ := w.pdf.GetMargins()
-	pW, _ := w.pdf.GetPageSize()
-	width := pW - l - r
-
-	res := make([]float64, len(t.Rows[0]))
+	res := make([]float64, colCount)
 	for i, s := range t.ColWidth {
 		if s == 0 {
 			s = int(freeColSize)
@@ -437,4 +577,256 @@ func (w *pdfWriter) getTableWidthUnits(t editor.Table) []float64 {
 
 func (w *pdfWriter) resetMargins() {
 	w.pdf.SetMargins(w.defaultMargins.Left, w.defaultMargins.Top, w.defaultMargins.Right)
+}
+
+// formatDate форматирует дату из ISO в русский формат
+func formatDate(isoDate string) string {
+	t, err := time.Parse("2006-01-02", isoDate)
+	if err != nil {
+		return isoDate
+	}
+	return t.Format("02.01.2006")
+}
+
+// lightenColor создаёт более светлый оттенок цвета для фона
+func lightenColor(c editor.Color, percent float64) (r, g, b int) {
+	r = int(float64(c.R) + (255-float64(c.R))*percent)
+	g = int(float64(c.G) + (255-float64(c.G))*percent)
+	b = int(float64(c.B) + (255-float64(c.B))*percent)
+	return
+}
+
+// getMaxContentWidth возвращает максимальную ширину контента
+func (w *pdfWriter) getMaxContentWidth() float64 {
+	pageWidth, _ := w.pdf.GetPageSize()
+	leftMargin, _, rightMargin, _ := w.pdf.GetMargins()
+	return pageWidth - leftMargin - rightMargin
+}
+
+// writeHardBreak записывает явный перенос строки в PDF
+func (w *pdfWriter) writeHardBreak() {
+	w.pdf.Ln(-1)
+}
+
+// writeDateNode записывает дату внутри параграфа
+func (w *pdfWriter) writeDateNode(dn *editor.DateNode) {
+	// Добавить небольшой padding через пробелы
+	text := " " + formatDate(dn.Date) + " "
+
+	// Установить цвета
+	w.pdf.SetFillColor(204, 204, 204) // #cccccc фон
+	w.pdf.SetTextColor(0, 0, 0)       // Чёрный текст
+
+	// Использовать CellFormat для одновременной отрисовки текста И фона
+	_, fontSize := w.pdf.GetFontSize()
+	w.pdf.CellFormat(
+		w.pdf.GetStringWidth(text), // ширина = точная ширина текста
+		fontSize+0.1,               // высота
+		text,                       // текст для отображения
+		"",                         // без рамки
+		0,                          // ln=0 (продолжить на той же строке)
+		"C",                        // выравнивание по центру
+		true,                       // fill=true (использовать цвет фона)
+		0,                          // ссылка
+		"",                         // URL ссылки
+	)
+
+	// Сбросить цвета
+	w.pdf.SetFillColor(255, 255, 255)
+}
+
+// writeMention записывает упоминание пользователя
+func (w *pdfWriter) writeMention(m *editor.Mention) {
+	// Добавить небольшой padding через пробелы
+	text := " @" + m.Label + " "
+
+	// Установить цвета
+	w.pdf.SetFillColor(189, 189, 189) // #bdbdbd фон
+	w.pdf.SetTextColor(71, 74, 82)    // #474a52 текст
+
+	// Использовать CellFormat для одновременной отрисовки текста И фона
+	_, fontSize := w.pdf.GetFontSize()
+	w.pdf.CellFormat(
+		w.pdf.GetStringWidth(text), // ширина = точная ширина текста
+		fontSize+0.1,               // высота
+		text,                       // текст для отображения
+		"",                         // без рамки
+		0,                          // ln=0 (продолжить на той же строке)
+		"C",                        // выравнивание по центру
+		true,                       // fill=true (использовать цвет фона)
+		0,                          // ссылка
+		"",                         // URL ссылки
+	)
+
+	// Сбросить цвета
+	w.pdf.SetTextColor(0, 0, 0)
+	w.pdf.SetFillColor(255, 255, 255)
+}
+
+// writeIssueLinkMention записывает ссылку на задачу
+func (w *pdfWriter) writeIssueLinkMention(ilm *editor.IssueLinkMention) {
+	// Сформировать текст ссылки
+	text := ilm.ProjectIdentifier + "-" + ilm.Slug
+
+	// Установить синий цвет и подчёркивание
+	w.pdf.SetFont("Rubik", "U", 12) // U = underline
+	w.pdf.SetTextColor(0, 102, 204) // Синий #0066cc
+
+	// Определить URL
+	linkURL := ilm.OriginalUrl
+	if linkURL == "" {
+		// Построить URL если не указан
+		u := w.webURL.ResolveReference(&url.URL{Path: "/issues/" + text})
+		linkURL = u.String()
+	}
+
+	// Записать ссылку
+	w.write(text, linkURL)
+
+	// Восстановить стиль и цвет
+	w.pdf.SetFont("Rubik", "", 12)
+	w.pdf.SetTextColor(0, 0, 0)
+}
+
+// writeCodeBlock записывает блок кода в PDF
+func (w *pdfWriter) writeCodeBlock(code editor.Code) {
+	w.pdf.Ln(2)
+
+	// Установить меньший размер шрифта для кода
+	w.pdf.SetFont("Rubik", "", 10)
+
+	// Разбить код на строки
+	lines := strings.Split(code.Content, "\n")
+
+	maxWidth := w.getMaxContentWidth()
+	lineHeight := 4.0
+	paddingV := 2.0
+	paddingH := 2.0
+
+	// Вычислить высоту блока
+	blockHeight := float64(len(lines))*lineHeight + paddingV*2
+
+	x, y := w.pdf.GetXY()
+
+	// Нарисовать фон и рамку (цвет из TipTap конфигурации)
+	w.SetHexFillColor("#efeff6")
+	w.pdf.SetDrawColor(204, 204, 204)
+	w.pdf.SetLineWidth(0.3)
+	w.pdf.Rect(x, y, maxWidth, blockHeight, "FD") // F=fill, D=draw border
+
+	// Сместиться для padding
+	w.pdf.SetXY(x+paddingH, y+paddingV)
+
+	// Записать строки кода
+	for _, line := range lines {
+		w.pdf.SetX(x + paddingH)
+		w.write(cleanUnsupportedSymbols(line))
+		w.pdf.Ln(lineHeight)
+	}
+
+	// Восстановить позицию после блока
+	w.pdf.SetXY(x, y+blockHeight)
+
+	// Восстановить шрифт к стандартному
+	w.pdf.SetFont("Rubik", "", 12)
+	w.pdf.SetDrawColor(0, 0, 0) // Сброс цвета рамки
+
+	w.pdf.Ln(2)
+}
+
+// writeInfoBlock записывает информационный блок в PDF
+func (w *pdfWriter) writeInfoBlock(ib editor.InfoBlock) {
+	w.pdf.Ln(3)
+
+	startX, startY := w.pdf.GetXY()
+	maxWidth := w.getMaxContentWidth()
+
+	// Установить осветлённый фон
+	r, g, b := lightenColor(ib.Color, 0.85)
+	w.pdf.SetFillColor(r, g, b)
+
+	// Записать заголовок с иконкой
+	w.pdf.SetFont("Rubik", "B", 14)
+	w.pdf.SetTextColor(int(ib.Color.R), int(ib.Color.G), int(ib.Color.B))
+
+	// Записать заголовок на фоне
+	w.pdf.CellFormat(maxWidth, 7, "", "", 0, "L", true, 0, "")
+	w.pdf.SetXY(startX+2, startY+1)
+	w.write("[!]  " + cleanUnsupportedSymbols(ib.Title))
+	w.pdf.Ln(7)
+
+	// Установить отступ слева для содержимого
+	w.pdf.SetLeftMargin(startX + 8)
+	w.pdf.SetX(startX + 8)
+
+	// Записать содержимое
+	w.pdf.SetFont("Rubik", "", 12)
+	w.pdf.SetTextColor(0, 0, 0) // Чёрный цвет для содержимого
+	for _, p := range ib.Content {
+		w.writeParagraph(p)
+	}
+
+	endY := w.pdf.GetY()
+
+	// Нарисовать левую вертикальную линию
+	w.pdf.SetDrawColor(int(ib.Color.R), int(ib.Color.G), int(ib.Color.B))
+	w.pdf.SetLineWidth(2)
+	w.pdf.Line(startX, startY, startX, endY)
+
+	// Восстановить отступ
+	w.pdf.SetLeftMargin(startX)
+	w.pdf.SetDrawColor(0, 0, 0) // Сброс цвета линии
+
+	w.pdf.Ln(3)
+}
+
+// writeSpoiler записывает спойлер в PDF согласно стилям TipTap
+// ВАЖНО: Всегда показывает содержимое развёрнутым (игнорирует флаг Collapsed)
+func (w *pdfWriter) writeSpoiler(s editor.Spoiler) {
+	w.pdf.Ln(3)
+
+	startX, startY := w.pdf.GetXY()
+	maxWidth := w.getMaxContentWidth()
+
+	// Заголовок спойлера с фоном (border-radius: 6px в TipTap)
+	// padding-left: 10px = ~3.5mm
+	headerHeight := 7.0
+	headerPaddingLeft := 3.5
+
+	// Нарисовать фон заголовка
+	w.pdf.SetFillColor(int(s.BgColor.R), int(s.BgColor.G), int(s.BgColor.B))
+	w.pdf.Rect(startX, startY, maxWidth, headerHeight, "F")
+
+	// Записать стрелку и заголовок
+	w.pdf.SetXY(startX+headerPaddingLeft, startY+1.5)
+	w.pdf.SetFont("Rubik", "B", 12)
+	w.pdf.SetTextColor(int(s.Color.R), int(s.Color.G), int(s.Color.B))
+
+	// Стрелка > повернутая на 90 градусов (v) как индикатор раскрытого спойлера
+	indicator := ">"
+	w.write(indicator + " " + cleanUnsupportedSymbols(s.Title))
+
+	// Перейти после заголовка
+	w.pdf.SetXY(startX, startY+headerHeight)
+	w.pdf.Ln(1)
+
+	// Всегда записываем содержимое (игнорируем s.Collapsed)
+	// padding: 0px 8px 0px 20px = ~7mm слева (в TipTap)
+	contentLeftPadding := 7.0
+	w.pdf.SetLeftMargin(startX + contentLeftPadding)
+	w.pdf.SetX(startX + contentLeftPadding)
+
+	// Записать содержимое
+	w.pdf.SetFont("Rubik", "", 12)
+	w.pdf.SetTextColor(0, 0, 0) // Чёрный цвет для содержимого
+	for _, p := range s.Content {
+		w.writeParagraph(p)
+	}
+
+	// Восстановить отступ и стили
+	w.pdf.SetLeftMargin(startX)
+	w.pdf.SetTextColor(0, 0, 0)
+
+	// margin-bottom: 10px = ~3.5mm
+	w.pdf.Ln(3)
 }
