@@ -15,7 +15,7 @@ import (
 )
 
 type WorkspaceBackup struct {
-	ID          string    `gorm:"primaryKey" json:"id"`
+	ID          uuid.UUID `gorm:"primaryKey;type:uuid" json:"id"`
 	CreatedAt   time.Time `json:"created_at"`
 	CreatedBy   uuid.UUID `json:"created_by_id"`
 	WorkspaceId uuid.UUID `json:"workspace_id" gorm:"type:uuid"`

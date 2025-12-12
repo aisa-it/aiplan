@@ -341,7 +341,7 @@ func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMem
 				Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
 				DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": createdByID}),
 			}).Create(&ProjectMember{
-				ID:          GenID(),
+				ID:          GenUUID(),
 				CreatedAt:   time.Now(),
 				CreatedById: createdByID,
 				WorkspaceId: requestedMember.Workspace.ID,
@@ -441,15 +441,13 @@ func GetUserPrivilegesOverDoc(docId string, userId uuid.UUID, db *gorm.DB) (*Use
   d.id as "doc_id",
   wm.role as "workspace_role",
   d.created_by_id = ? as "is_author",
-  de.id is not null or wm.role >= d.editor_role as "is_editor",
-  dr.id is not null or wm.role >= d.reader_role as "is_reader",
-  dw.id is not null as "is_watcher"
+  (dar.id is not null and dar.edit is true) or wm.role >= d.editor_role as "is_editor",
+  dar.id is not null  or wm.role >= d.reader_role as "is_reader",
+  (dar.id is not null and dar.watch is true)  as "is_watcher"
 from docs d
-left join doc_editors de on d.id = de.doc_id and de.editor_id = ?
-left join doc_readers dr on d.id = dr.doc_id and dr.reader_id = ?
-left join doc_watchers dw on d.id = dw.doc_id and dw.watcher_id = ?
+left join doc_access_rules dar on d.id = dar.doc_id and dar.member_id = ?
 left join workspace_members wm on d.workspace_id = wm.workspace_id and wm.member_id = ?
-where d.id = ?`, userId, userId, userId, userId, userId, docId).First(&priv).Error; err != nil {
+where d.id = ?`, userId, userId, userId, docId).First(&priv).Error; err != nil {
 		return nil, err
 	}
 	return &priv, nil
