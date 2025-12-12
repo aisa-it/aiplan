@@ -847,7 +847,7 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 				requestedProjectMember.IsDefaultAssignee = false
 				var defaultAssignees []string
 				for _, assignee := range project.DefaultAssignees {
-					if assignee != requestedProjectMember.ID {
+					if assignee != requestedProjectMember.ID.String() {
 						defaultAssignees = append(defaultAssignees, assignee)
 					}
 				}
@@ -999,7 +999,7 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	projectMember.ID = dao.GenID()
+	projectMember.ID = dao.GenUUID()
 	projectMember.ProjectId = project.ID
 	projectMember.CreatedById = userID
 	projectMember.WorkspaceId = workspaceMember.WorkspaceId
@@ -1127,7 +1127,7 @@ func (s *Services) joinProjects(c echo.Context) error {
 
 		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		memberships = append(memberships, dao.ProjectMember{
-			ID:                              dao.GenID(),
+			ID:                              dao.GenUUID(),
 			ProjectId:                       uuid.Must(uuid.FromString(projectId)),
 			MemberId:                        user.ID,
 			Role:                            role,

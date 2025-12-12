@@ -545,10 +545,10 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormEmptyAnswers)
 	}
 
-	var uuid string
+	var uuidAttach string
 	for _, field := range resultAnswers {
 		if field.Type == "attachment" {
-			uuid = fmt.Sprint(field.Val)
+			uuidAttach = fmt.Sprint(field.Val)
 		}
 	}
 
@@ -581,11 +581,11 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		answer.SeqId = seqId
 		answer.FormDate = form.UpdatedAt
 
-		if len(uuid) > 0 {
+		if len(uuidAttach) > 0 {
 			var formAttachment dao.FormAttachment
 			if err := tx.Where("workspace_id = ?", form.WorkspaceId).
 				Where("form_id = ?", form.ID).
-				Where("id = ?", uuid).
+				Where("id = ?", uuidAttach).
 				First(&formAttachment).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
 					return apierrors.ErrFormAttachmentNotFound
@@ -593,7 +593,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 
 				return err
 			}
-			answer.AttachmentId = &formAttachment.Id
+			answer.AttachmentId = uuid.NullUUID{UUID: formAttachment.Id, Valid: true}
 		}
 
 		if err := tx.Model(&dao.FormAnswer{}).Create(&answer).Error; err != nil {
@@ -769,7 +769,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	formAttachment := dao.FormAttachment{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		CreatedById: userID,
@@ -1001,6 +1001,7 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 			form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 		}
 		form.Fields = rf.Fields
+		form.NotificationChannels = rf.NotificationChannels
 	} else {
 		for _, field := range allowedForm {
 			if value, ok := updFields[field]; ok {

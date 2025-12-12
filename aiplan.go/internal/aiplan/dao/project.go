@@ -281,7 +281,7 @@ func (project *Project) AfterCreate(tx *gorm.DB) error {
 
 	for _, admin := range workspaceAdmins {
 		member := ProjectMember{
-			ID:                              GenID(),
+			ID:                              GenUUID(),
 			ProjectId:                       project.ID,
 			Role:                            types.AdminRole,
 			WorkspaceAdmin:                  true,
@@ -469,7 +469,7 @@ func (Project) TableName() string {
 // Участники проектов
 type ProjectMember struct {
 	// id uuid NOT NULL,
-	ID string `gorm:"column:id;primaryKey;autoIncrement:true;unique" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;autoIncrement:true;unique;type:uuid" json:"id"`
 	// created_at timestamp with time zone NOT NULL,
 	CreatedAt time.Time `json:"created_at"`
 	// updated_at timestamp with time zone NOT NULL,
@@ -532,7 +532,7 @@ type EntityMemberExtendFields struct {
 }
 
 func (pm ProjectMember) GetId() string {
-	return pm.ID
+	return pm.ID.String()
 }
 
 func (pm ProjectMember) GetString() string {
@@ -563,7 +563,7 @@ func (pm *ProjectMember) ToLightDTO() *dto.ProjectMemberLight {
 		return nil
 	}
 	return &dto.ProjectMemberLight{
-		ID:                pm.ID,
+		ID:                pm.ID.String(),
 		Role:              pm.Role,
 		WorkspaceAdmin:    pm.WorkspaceAdmin,
 		IsDefaultAssignee: pm.IsDefaultAssignee,

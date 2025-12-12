@@ -28,9 +28,10 @@ type FormLight struct {
 
 type Form struct {
 	FormLight
-	Author        *UserLight      `json:"author_detail" extensions:"x-nullable"`
-	TargetProject *ProjectLight   `json:"target_project_detail,omitempty" extensions:"x-nullable"`
-	Workspace     *WorkspaceLight `json:"workspace_detail" extensions:"x-nullable"`
+	Author               *UserLight             `json:"author_detail" extensions:"x-nullable"`
+	TargetProject        *ProjectLight          `json:"target_project_detail,omitempty" extensions:"x-nullable"`
+	Workspace            *WorkspaceLight        `json:"workspace_detail" extensions:"x-nullable"`
+	NotificationChannels types.FormAnswerNotify `json:"notification_channels" extensions:"x-nullable"`
 }
 
 type FormAnswer struct {

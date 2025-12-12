@@ -1600,7 +1600,7 @@ type IssueProperty struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	// properties jsonb IS_NULL:NO
 	Properties map[string]interface{} `json:"properties" gorm:"serializer:json"`
 	// created_by_id uuid IS_NULL:YES
