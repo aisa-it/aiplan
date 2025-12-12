@@ -680,6 +680,11 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Model(&Issue{}).Where("parent_id = ? OR id = ?", issue.ID, issue.ID).Update("parent_id", nil).Error; err != nil {
 		return err
 	}
+
+	if err := tx.Where("workspace_id = ?", issue.WorkspaceId).Where("issue_id = ?", issue.ID).Delete(&SprintIssue{}).Error; err != nil {
+		return err
+	}
+
 	return tx.Model(&Issue{}).Where("id = ?", issue.ID).Update("state_id", nil).Error
 
 }
