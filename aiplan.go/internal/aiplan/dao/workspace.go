@@ -68,12 +68,12 @@ type Workspace struct {
 	IsFavorite            bool             `json:"is_favorite" gorm:"-"`
 }
 
-func (w Workspace) GetId() uuid.UUID {
-	return w.ID
+func (w Workspace) GetId() string {
+	return w.ID.String()
 }
 
 func (w Workspace) GetWorkspaceId() uuid.UUID {
-	return w.GetId()
+	return w.ID
 }
 
 func (w Workspace) GetString() string {
