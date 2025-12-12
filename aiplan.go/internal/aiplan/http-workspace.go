@@ -770,7 +770,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
 						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userID}),
 					}).Create(&dao.ProjectMember{
-						ID:                              dao.GenID(),
+						ID:                              dao.GenUUID(),
 						CreatedAt:                       time.Now(),
 						CreatedById:                     userID,
 						WorkspaceId:                     workspace.ID,
@@ -915,7 +915,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 	// One cannot remove role higher than his own role
 	if workspaceMember.Role < requestedMember.Role && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveHigherRoleUser)
-	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID != requestedMemberId {
+	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID.String() != requestedMemberId {
 		return EErrorDefined(c, apierrors.ErrDeleteSuperUser)
 	}
 	if workspace.OwnerId == requestedMember.MemberId {
@@ -1189,7 +1189,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			}
 
 			workspaceMember = dao.WorkspaceMember{
-				ID:                              dao.GenID(),
+				ID:                              dao.GenUUID(),
 				WorkspaceId:                     workspace.ID,
 				MemberId:                        user.ID,
 				Role:                            invite.Role,
@@ -1219,7 +1219,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 				for _, project := range projects {
 					projectMember := dao.ProjectMember{
-						ID:                              dao.GenID(),
+						ID:                              dao.GenUUID(),
 						CreatedAt:                       time.Now(),
 						CreatedById:                     userID,
 						WorkspaceId:                     workspace.ID,
@@ -1404,7 +1404,7 @@ func (s *Services) createWorkspace(c echo.Context) error {
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspaceMember := dao.WorkspaceMember{
-		ID:                              dao.GenID(),
+		ID:                              dao.GenUUID(),
 		WorkspaceId:                     workspace.ID,
 		MemberId:                        user.ID,
 		CreatedById:                     userID,
@@ -1783,7 +1783,7 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspaceMember := dao.WorkspaceMember{
-		ID:          dao.GenID(),
+		ID:          dao.GenUUID(),
 		WorkspaceId: workspace.ID,
 		MemberId:    integration.ID,
 		Role:        types.MemberRole,

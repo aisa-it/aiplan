@@ -680,6 +680,11 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Model(&Issue{}).Where("parent_id = ? OR id = ?", issue.ID, issue.ID).Update("parent_id", nil).Error; err != nil {
 		return err
 	}
+
+	if err := tx.Where("workspace_id = ?", issue.WorkspaceId).Where("issue_id = ?", issue.ID).Delete(&SprintIssue{}).Error; err != nil {
+		return err
+	}
+
 	return tx.Model(&Issue{}).Where("id = ?", issue.ID).Update("state_id", nil).Error
 
 }
@@ -1600,7 +1605,7 @@ type IssueProperty struct {
 	// updated_at timestamp with time zone IS_NULL:NO
 	UpdatedAt time.Time `json:"updated_at"`
 	// id uuid IS_NULL:NO
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	// properties jsonb IS_NULL:NO
 	Properties map[string]interface{} `json:"properties" gorm:"serializer:json"`
 	// created_by_id uuid IS_NULL:YES

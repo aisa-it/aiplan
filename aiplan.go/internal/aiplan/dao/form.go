@@ -103,10 +103,11 @@ func (f *Form) ToDTO() *dto.Form {
 	}
 
 	return &dto.Form{
-		FormLight:     *f.ToLightDTO(),
-		Author:        f.Author.ToLightDTO(),
-		TargetProject: f.TargetProject.ToLightDTO(),
-		Workspace:     f.Workspace.ToLightDTO(),
+		FormLight:            *f.ToLightDTO(),
+		Author:               f.Author.ToLightDTO(),
+		TargetProject:        f.TargetProject.ToLightDTO(),
+		Workspace:            f.Workspace.ToLightDTO(),
+		NotificationChannels: f.NotificationChannels,
 	}
 }
 
@@ -259,7 +260,7 @@ type FormAnswer struct {
 
 	Fields types.FormFieldsSlice `json:"fields" gorm:"type:jsonb"`
 
-	AttachmentId *string         `json:"attachment_id" extensions:"x-nullable"`
+	AttachmentId uuid.NullUUID   `json:"attachment_id" gorm:"type:uuid" extensions:"x-nullable"`
 	Attachment   *FormAttachment `json:"attachment_detail" gorm:"foreignKey:AttachmentId" extensions:"x-nullable"`
 }
 
@@ -478,7 +479,7 @@ type FormActivityExtendFields struct {
 //}
 
 type FormAttachment struct {
-	Id string `json:"id" gorm:"primaryKey"`
+	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	// created_at timestamp with time zone IS_NULL:NO
 	CreatedAt time.Time `json:"created_at"`
 	// updated_at timestamp with time zone IS_NULL:NO
@@ -519,7 +520,7 @@ func (FormAttachment) TableName() string { return "form_attachments" }
 // Возвращает:
 //   - string: идентификатор аттачмента.
 func (fa FormAttachment) GetId() string {
-	return fa.Id
+	return fa.Id.String()
 }
 
 // GetString возвращает имя файла, если связанный объект asset существует, иначе возвращает тип объекта.
@@ -561,7 +562,7 @@ func (fa *FormAttachment) ToDTO() *dto.Attachment {
 		return nil
 	}
 	return &dto.Attachment{
-		Id:        uuid.Must(uuid.FromString(fa.Id)),
+		Id:        fa.Id,
 		CreatedAt: fa.CreatedAt,
 		Asset:     fa.Asset.ToDTO(),
 	}

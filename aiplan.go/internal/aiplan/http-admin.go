@@ -497,7 +497,7 @@ func (s *Services) createUser(c echo.Context) error {
 
 		if req.WorkspaceId != "" {
 			return s.db.Create(&dao.WorkspaceMember{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				WorkspaceId: workspace.ID,
 				MemberId:    u.ID,
 				Role:        req.Role,
@@ -965,7 +965,7 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 			First(&member).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				member = dao.WorkspaceMember{
-					ID:          dao.GenID(),
+					ID:          dao.GenUUID(),
 					WorkspaceId: workspace.ID,
 					MemberId:    user.ID,
 					CreatedById: superUserID,
@@ -1002,7 +1002,7 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 					Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
 					DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": superUserID}),
 				}).Create(&dao.ProjectMember{
-					ID:                              dao.GenID(),
+					ID:                              dao.GenUUID(),
 					CreatedAt:                       time.Now(),
 					CreatedById:                     superUserID,
 					WorkspaceId:                     workspace.ID,
@@ -1173,7 +1173,7 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 			First(&member).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				member = dao.ProjectMember{
-					ID:          dao.GenID(),
+					ID:          dao.GenUUID(),
 					ProjectId:   uuid.Must(uuid.FromString(projectId)),
 					MemberId:    user.ID,
 					WorkspaceId: uuid.Must(uuid.FromString(workspaceId)),

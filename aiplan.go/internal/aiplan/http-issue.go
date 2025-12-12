@@ -281,7 +281,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 
 		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		docAttachment := dao.DocAttachment{
-			Id:          dao.GenID(),
+			Id:          dao.GenUUID(),
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			CreatedById: userID,

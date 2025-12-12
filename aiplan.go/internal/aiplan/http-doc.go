@@ -1550,7 +1550,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	docAttachment := dao.DocAttachment{
-		Id:          dao.GenID(),
+		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		CreatedById: userID,

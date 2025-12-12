@@ -249,7 +249,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 		if !dao.IsWorkspaceMember(context.DB, user.ID, targetWorkspaceUUID) {
 			context.WorkspaceMembers = append(context.WorkspaceMembers,
 				dao.WorkspaceMember{
-					ID:          dao.GenID(),
+					ID:          dao.GenUUID(),
 					Role:        10,
 					MemberId:    user.ID,
 					WorkspaceId: targetWorkspaceUUID,
@@ -258,7 +258,7 @@ func PrepareMembershipsStep(context *context.ImportContext) error {
 
 		context.ProjectMembers = append(context.ProjectMembers,
 			dao.ProjectMember{
-				ID:          dao.GenID(),
+				ID:          dao.GenUUID(),
 				Role:        10,
 				MemberId:    user.ID,
 				ProjectId:   context.Project.ID,

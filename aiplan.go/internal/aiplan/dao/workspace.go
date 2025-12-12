@@ -68,12 +68,12 @@ type Workspace struct {
 	IsFavorite            bool             `json:"is_favorite" gorm:"-"`
 }
 
-func (w Workspace) GetId() uuid.UUID {
-	return w.ID
+func (w Workspace) GetId() string {
+	return w.ID.String()
 }
 
 func (w Workspace) GetWorkspaceId() uuid.UUID {
-	return w.GetId()
+	return w.ID
 }
 
 func (w Workspace) GetString() string {
@@ -309,7 +309,7 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	for i := range sprint {
-		if err := tx.Delete(&sprint[i]).Error; err != nil {
+		if err := tx.Unscoped().Delete(&sprint[i]).Error; err != nil {
 			return err
 		}
 	}
@@ -337,7 +337,7 @@ func (w *Workspace) ChangeOwner(tx *gorm.DB, wm *WorkspaceMember) error {
 // Участник рабочего пространства
 type WorkspaceMember struct {
 	// id uuid NOT NULL,
-	ID string `gorm:"column:id;primaryKey" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	// created_at timestamp with time zone NOT NULL,
 	CreatedAt time.Time `json:"created_at"`
 	// updated_at timestamp with time zone NOT NULL,
@@ -373,7 +373,7 @@ type WorkspaceMember struct {
 }
 
 func (wm WorkspaceMember) GetId() string {
-	return wm.ID
+	return wm.ID.String()
 }
 
 func (wm WorkspaceMember) GetString() string {
@@ -394,7 +394,7 @@ func (wm *WorkspaceMember) ToLightDTO() *dto.WorkspaceMemberLight {
 	}
 
 	return &dto.WorkspaceMemberLight{
-		ID:              wm.ID,
+		ID:              wm.ID.String(),
 		Role:            wm.Role,
 		EditableByAdmin: wm.EditableByAdmin,
 		MemberId:        wm.MemberId,
@@ -430,7 +430,7 @@ func (wm *WorkspaceMember) AfterCreate(tx *gorm.DB) error {
 		members := make([]ProjectMember, len(projects))
 		for i, project := range projects {
 			members[i] = ProjectMember{
-				ID:             GenID(),
+				ID:             GenUUID(),
 				ProjectId:      project.ID,
 				Role:           types.AdminRole,
 				WorkspaceAdmin: true,
@@ -474,7 +474,7 @@ func (wm *WorkspaceMember) AfterUpdate(tx *gorm.DB) error {
 		members := make([]ProjectMember, len(projects))
 		for i, project := range projects {
 			members[i] = ProjectMember{
-				ID:             GenID(),
+				ID:             GenUUID(),
 				ProjectId:      project.ID,
 				Role:           types.AdminRole,
 				WorkspaceAdmin: true,
