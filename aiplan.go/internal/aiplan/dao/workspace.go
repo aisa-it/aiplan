@@ -309,7 +309,7 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	for i := range sprint {
-		if err := tx.Delete(&sprint[i]).Error; err != nil {
+		if err := tx.Unscoped().Delete(&sprint[i]).Error; err != nil {
 			return err
 		}
 	}

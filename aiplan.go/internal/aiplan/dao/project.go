@@ -398,6 +398,11 @@ func (project *Project) BeforeDelete(tx *gorm.DB) error {
 		Model(&WorkspaceActivity{}).
 		Update("new_identifier", nil)
 
+	tx.Where("workspace_id = ? ", project.WorkspaceId).
+		Where("target_project_id = ?", project.ID).
+		Model(&Form{}).
+		Update("target_project_id", nil)
+
 	tx.Where("project_id = ? ", project.ID).Delete(&ProjectActivity{})
 
 	tx.Where("new_identifier = ? ", project.ID).
