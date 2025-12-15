@@ -52,3 +52,18 @@ type FormAttachmentLight struct {
 	CreatedAt time.Time  `json:"created_at"`
 	Asset     *FileAsset `json:"asset"`
 }
+
+//**REQUEST**
+
+// RequestAnswer ответы на форму
+type RequestAnswer struct {
+	Val interface{} `json:"value,omitempty"`
+}
+
+//  **RESPONSE**
+
+// ResponseAnswers ответы на поля формы
+type ResponseAnswers struct {
+	Form   FormLight             `json:"form"`
+	Fields types.FormFieldsSlice `json:"fields"`
+}
