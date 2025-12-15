@@ -512,8 +512,8 @@ func (s *Services) getAnswer(c echo.Context) error {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param formSlug path string true "Slug формы"
-// @Param answer body []reqAnswer true "Данные ответа"
-// @Success 201 {object} respAnswers "Отправленный ответ"
+// @Param answer body []dto.RequestAnswer true "Данные ответа"
+// @Success 201 {object} dto.ResponseAnswers "Отправленный ответ"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка валидации ответа"
 // @Failure 403 {object} apierrors.DefinedError "Требуется аутентификация"
 // @Failure 404 {object} apierrors.DefinedError "Форма не найдена"
@@ -631,7 +631,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		s.notificationsService.Tg.SendFormAnswer(*form.Author.TelegramId, form, &answer, answer.Responder)
 	}
 
-	result := respAnswers{
+	result := dto.ResponseAnswers{
 		Form:   *form.ToLightDTO(),
 		Fields: resultAnswers,
 	}
@@ -647,8 +647,8 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param formSlug path string true "Slug формы"
-// @Param answer body []reqAnswer true "Данные ответа"
-// @Success 201 {object} respAnswers "Отправленный ответ"
+// @Param answer body []dto.RequestAnswer true "Данные ответа"
+// @Success 201 {object} dto.ResponseAnswers "Отправленный ответ"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка валидации ответа"
 // @Failure 403 {object} apierrors.DefinedError "Требуется аутентификация"
 // @Failure 404 {object} apierrors.DefinedError "Форма не найдена"
@@ -1078,15 +1078,4 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 	}
 
 	return form, nil
-}
-
-type reqAnswer struct {
-	Val interface{} `json:"value,omitempty"`
-}
-
-//**RESPONSE**
-
-type respAnswers struct {
-	Form   dto.FormLight          `json:"form"`
-	Fields types2.FormFieldsSlice `json:"fields"`
 }
