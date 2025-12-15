@@ -2489,7 +2489,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/aiplan.reqAnswer"
+                                "$ref": "#/definitions/dto.RequestAnswer"
                             }
                         }
                     }
@@ -2498,7 +2498,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Отправленный ответ",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.respAnswers"
+                            "$ref": "#/definitions/dto.ResponseAnswers"
                         }
                     },
                     "400": {
@@ -16760,7 +16760,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/aiplan.reqAnswer"
+                                "$ref": "#/definitions/dto.RequestAnswer"
                             }
                         }
                     }
@@ -16769,7 +16769,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Отправленный ответ",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.respAnswers"
+                            "$ref": "#/definitions/dto.ResponseAnswers"
                         }
                     },
                     "400": {
@@ -17257,6 +17257,9 @@ const docTemplate = `{
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -17873,12 +17876,6 @@ const docTemplate = `{
                 }
             }
         },
-        "aiplan.reqAnswer": {
-            "type": "object",
-            "properties": {
-                "value": {}
-            }
-        },
         "aiplan.reqForm": {
             "type": "object",
             "required": [
@@ -18026,20 +18023,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "aiplan.respAnswers": {
-            "type": "object",
-            "properties": {
-                "fields": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.FormFields"
-                    }
-                },
-                "form": {
-                    "$ref": "#/definitions/dto.FormLight"
                 }
             }
         },
@@ -18637,6 +18620,14 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "notification_channels": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FormAnswerNotify"
+                        }
+                    ],
+                    "x-nullable": true
+                },
                 "slug": {
                     "type": "string"
                 },
@@ -18890,6 +18881,9 @@ const docTemplate = `{
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -19303,6 +19297,9 @@ const docTemplate = `{
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -19815,6 +19812,26 @@ const docTemplate = `{
                 },
                 "tag_name": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.RequestAnswer": {
+            "type": "object",
+            "properties": {
+                "value": {}
+            }
+        },
+        "dto.ResponseAnswers": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FormFields"
+                    }
+                },
+                "form": {
+                    "$ref": "#/definitions/dto.FormLight"
                 }
             }
         },
@@ -20517,6 +20534,15 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "editor.Document": {
+            "type": "object",
+            "properties": {
+                "elements": {
+                    "type": "array",
+                    "items": {}
                 }
             }
         },
@@ -21224,6 +21250,9 @@ const docTemplate = `{
                         "type": "boolean"
                     }
                 },
+                "hideSubIssues": {
+                    "type": "boolean"
+                },
                 "issueView": {
                     "type": "string",
                     "enum": [
@@ -21241,9 +21270,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "showOnlyActive": {
-                    "type": "boolean"
-                },
-                "showSubIssues": {
                     "type": "boolean"
                 }
             }
