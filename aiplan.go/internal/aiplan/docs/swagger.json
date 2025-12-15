@@ -17250,9 +17250,6 @@
                 "description_html": {
                     "type": "string"
                 },
-                "description_json": {
-                    "$ref": "#/definitions/editor.Document"
-                },
                 "description_stripped": {
                     "type": "string",
                     "x-nullable": true
@@ -18632,14 +18629,6 @@
                 "id": {
                     "type": "string"
                 },
-                "notification_channels": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.FormAnswerNotify"
-                        }
-                    ],
-                    "x-nullable": true
-                },
                 "slug": {
                     "type": "string"
                 },
@@ -18893,9 +18882,6 @@
                 },
                 "description_html": {
                     "type": "string"
-                },
-                "description_json": {
-                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -19309,9 +19295,6 @@
                 },
                 "description_html": {
                     "type": "string"
-                },
-                "description_json": {
-                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -20529,15 +20512,6 @@
                 }
             }
         },
-        "editor.Document": {
-            "type": "object",
-            "properties": {
-                "elements": {
-                    "type": "array",
-                    "items": {}
-                }
-            }
-        },
         "entity.JiraInfo": {
             "type": "object",
             "properties": {
@@ -21242,9 +21216,6 @@
                         "type": "boolean"
                     }
                 },
-                "hideSubIssues": {
-                    "type": "boolean"
-                },
                 "issueView": {
                     "type": "string",
                     "enum": [
@@ -21262,6 +21233,9 @@
                     "type": "boolean"
                 },
                 "showOnlyActive": {
+                    "type": "boolean"
+                },
+                "showSubIssues": {
                     "type": "boolean"
                 }
             }
