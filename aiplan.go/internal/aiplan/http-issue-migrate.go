@@ -25,6 +25,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -78,7 +79,7 @@ func (s *Services) AddIssueMigrationServices(g *echo.Group) {
 // @Param delete_src query bool false "Удалить исходную задачу после миграции" default(false)
 // @Param create_entities query bool false "Создать не достающие label, state" default(false)
 // @Param data body NewIssueParam false "Идентификаторы связанных задач"
-// @Success 201 {object} NewIssueID "ID созданной задачи"
+// @Success 201 {object} dto.NewIssueID "ID созданной задачи"
 // @Failure 400 {object} map[string]interface{} "Некорректные параметры запроса или данные"
 // / @Failure 404 {object} apierrors.DefinedError "Целевой проект или исходная задача не найдены"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
@@ -556,7 +557,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		newId = idsMap[srcIssueUUId].String()
 	}
 
-	return c.JSON(http.StatusCreated, NewIssueID{Id: newId})
+	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: newId})
 }
 
 // migrateIssuesByLabel godoc
