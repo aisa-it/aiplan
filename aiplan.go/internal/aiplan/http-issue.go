@@ -464,7 +464,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		query = query.
 			Where("issues.workspace_id = ?", projectMember.WorkspaceId).
 			Where("issues.project_id = ?", projectMember.ProjectId)
-	} else if !user.IsSuperuser {
+	} else /* if !user.IsSuperuser */ {
 		query = query.
 			Where("issues.project_id in (?)", s.db.
 				Select("project_id").
