@@ -107,7 +107,3 @@ func (d *DayRequest) UnmarshalText(text []byte) error {
 	*d = DayRequest(t)
 	return nil
 }
-
-type NewIssueID struct {
-	Id string `json:"id"`
-}

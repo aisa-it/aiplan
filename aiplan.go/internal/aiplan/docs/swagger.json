@@ -1710,7 +1710,7 @@
                     "200": {
                         "description": "Пароль успешно изменен",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.PasswordResponse"
+                            "$ref": "#/definitions/dto.PasswordResponse"
                         }
                     },
                     "400": {
@@ -4122,7 +4122,7 @@
                     "200": {
                         "description": "Пароль успешно сброшен",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.PasswordResponse"
+                            "$ref": "#/definitions/dto.PasswordResponse"
                         }
                     },
                     "400": {
@@ -4187,7 +4187,7 @@
                     "200": {
                         "description": "Пароль успешно изменен",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.PasswordResponse"
+                            "$ref": "#/definitions/dto.PasswordResponse"
                         }
                     },
                     "400": {
@@ -4391,7 +4391,7 @@
                     "200": {
                         "description": "Детали последнего рабочего пространства и проекта",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.responseLastWorkspace"
+                            "$ref": "#/definitions/dto.LastWorkspaceResponse"
                         }
                     },
                     "500": {
@@ -5272,7 +5272,7 @@
                     "200": {
                         "description": "Количество непрочитанных уведомлений",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.NotificationIdResponse"
+                            "$ref": "#/definitions/dto.NotificationIdResponse"
                         }
                     },
                     "400": {
@@ -8896,7 +8896,7 @@
                     "201": {
                         "description": "ID созданной задачи",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.NewIssueID"
+                            "$ref": "#/definitions/dto.NewIssueID"
                         }
                     },
                     "400": {
@@ -9765,7 +9765,7 @@
                     "200": {
                         "description": "Статус доступности идентификатора",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.CheckProjectIdentifierAvailabilityResponse"
+                            "$ref": "#/definitions/dto.CheckProjectIdentifierAvailabilityResponse"
                         }
                     },
                     "400": {
@@ -9928,7 +9928,7 @@
                     "201": {
                         "description": "Сообщение об успешном подключении к проектам",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.JoinProjectsSuccessResponse"
+                            "$ref": "#/definitions/dto.JoinProjectsSuccessResponse"
                         }
                     },
                     "400": {
@@ -10655,7 +10655,7 @@
                     "201": {
                         "description": "ID созданной задачи",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.NewIssueID"
+                            "$ref": "#/definitions/dto.NewIssueID"
                         }
                     },
                     "400": {
@@ -11938,7 +11938,7 @@
                     "200": {
                         "description": "Описание успешно заблокировано",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.IssueLockResponse"
+                            "$ref": "#/definitions/dto.IssueLockResponse"
                         }
                     },
                     "400": {
@@ -11962,7 +11962,7 @@
                     "409": {
                         "description": "Описание заблокировано другим пользователем",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.IssueLockResponse"
+                            "$ref": "#/definitions/dto.IssueLockResponse"
                         }
                     },
                     "500": {
@@ -13383,7 +13383,7 @@
                     "200": {
                         "description": "Список подзадач и распределение состояний",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.ResponseSubIssueList"
+                            "$ref": "#/definitions/dto.ResponseSubIssueList"
                         }
                     },
                     "400": {
@@ -16982,25 +16982,6 @@
                 }
             }
         },
-        "aiplan.CheckProjectIdentifierAvailabilityResponse": {
-            "type": "object",
-            "properties": {
-                "exists": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "identifiers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "[\"PROJECT1\"",
-                        " \"PROJECT2\"]"
-                    ]
-                }
-            }
-        },
         "aiplan.CommitDTO": {
             "type": "object",
             "properties": {
@@ -17405,20 +17386,6 @@
                 }
             }
         },
-        "aiplan.IssueLockResponse": {
-            "type": "object",
-            "properties": {
-                "locked_by": {
-                    "$ref": "#/definitions/dto.UserLight"
-                },
-                "locked_until": {
-                    "type": "string"
-                },
-                "ok": {
-                    "type": "boolean"
-                }
-            }
-        },
         "aiplan.JiraInfoRequest": {
             "type": "object",
             "properties": {
@@ -17463,15 +17430,6 @@
                 }
             }
         },
-        "aiplan.JoinProjectsSuccessResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "example": "Projects joined successfully"
-                }
-            }
-        },
         "aiplan.LinkedIssuesIds": {
             "type": "object",
             "properties": {
@@ -17493,14 +17451,6 @@
                     "type": "string"
                 },
                 "password": {
-                    "type": "string"
-                }
-            }
-        },
-        "aiplan.NewIssueID": {
-            "type": "object",
-            "properties": {
-                "id": {
                     "type": "string"
                 }
             }
@@ -17535,14 +17485,6 @@
                 }
             }
         },
-        "aiplan.NotificationIdResponse": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                }
-            }
-        },
         "aiplan.NotificationViewRequest": {
             "type": "object",
             "properties": {
@@ -17570,17 +17512,6 @@
                 "new_password": {
                     "type": "string",
                     "minLength": 8
-                }
-            }
-        },
-        "aiplan.PasswordResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "integer"
                 }
             }
         },
@@ -17657,23 +17588,6 @@
                 "workspace": {
                     "description": "Slug workspace",
                     "type": "string"
-                }
-            }
-        },
-        "aiplan.ResponseSubIssueList": {
-            "type": "object",
-            "properties": {
-                "state_distribution": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "integer"
-                    }
-                },
-                "sub_issues": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.Issue"
-                    }
                 }
             }
         },
@@ -18018,13 +17932,6 @@
                 }
             }
         },
-        "aiplan.responseLastWorkspace": {
-            "type": "object",
-            "properties": {
-                "project_details": {},
-                "workspace_details": {}
-            }
-        },
         "aiplan.roleUpdRequest": {
             "type": "object",
             "required": [
@@ -18163,6 +18070,25 @@
                 },
                 "id": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.CheckProjectIdentifierAvailabilityResponse": {
+            "type": "object",
+            "properties": {
+                "exists": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "identifiers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "[\"PROJECT1\"",
+                        " \"PROJECT2\"]"
+                    ]
                 }
             }
         },
@@ -19189,6 +19115,20 @@
                 }
             }
         },
+        "dto.IssueLockResponse": {
+            "type": "object",
+            "properties": {
+                "locked_by": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "locked_until": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
         "dto.IssueSearchResult": {
             "type": "object",
             "properties": {
@@ -19434,6 +19374,15 @@
                 }
             }
         },
+        "dto.JoinProjectsSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Projects joined successfully"
+                }
+            }
+        },
         "dto.LabelLight": {
             "type": "object",
             "properties": {
@@ -19452,6 +19401,13 @@
                 "project": {
                     "type": "string"
                 }
+            }
+        },
+        "dto.LastWorkspaceResponse": {
+            "type": "object",
+            "properties": {
+                "project_details": {},
+                "workspace_details": {}
             }
         },
         "dto.ListGitRepositoriesResponse": {
@@ -19478,6 +19434,33 @@
                     }
                 },
                 "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.NewIssueID": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.NotificationIdResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.PasswordResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "integer"
                 }
             }
@@ -19824,6 +19807,23 @@
                 },
                 "form": {
                     "$ref": "#/definitions/dto.FormLight"
+                }
+            }
+        },
+        "dto.ResponseSubIssueList": {
+            "type": "object",
+            "properties": {
+                "state_distribution": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "sub_issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.Issue"
+                    }
                 }
             }
         },
