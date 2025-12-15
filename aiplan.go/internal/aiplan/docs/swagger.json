@@ -2481,7 +2481,7 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/aiplan.reqAnswer"
+                                "$ref": "#/definitions/dto.RequestAnswer"
                             }
                         }
                     }
@@ -2490,7 +2490,7 @@
                     "201": {
                         "description": "Отправленный ответ",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.respAnswers"
+                            "$ref": "#/definitions/dto.ResponseAnswers"
                         }
                     },
                     "400": {
@@ -16752,7 +16752,7 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/aiplan.reqAnswer"
+                                "$ref": "#/definitions/dto.RequestAnswer"
                             }
                         }
                     }
@@ -16761,7 +16761,7 @@
                     "201": {
                         "description": "Отправленный ответ",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.respAnswers"
+                            "$ref": "#/definitions/dto.ResponseAnswers"
                         }
                     },
                     "400": {
@@ -17249,6 +17249,9 @@
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -17865,12 +17868,6 @@
                 }
             }
         },
-        "aiplan.reqAnswer": {
-            "type": "object",
-            "properties": {
-                "value": {}
-            }
-        },
         "aiplan.reqForm": {
             "type": "object",
             "required": [
@@ -18018,20 +18015,6 @@
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "aiplan.respAnswers": {
-            "type": "object",
-            "properties": {
-                "fields": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.FormFields"
-                    }
-                },
-                "form": {
-                    "$ref": "#/definitions/dto.FormLight"
                 }
             }
         },
@@ -18629,6 +18612,14 @@
                 "id": {
                     "type": "string"
                 },
+                "notification_channels": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FormAnswerNotify"
+                        }
+                    ],
+                    "x-nullable": true
+                },
                 "slug": {
                     "type": "string"
                 },
@@ -18882,6 +18873,9 @@
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -19295,6 +19289,9 @@
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -19807,6 +19804,26 @@
                 },
                 "tag_name": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.RequestAnswer": {
+            "type": "object",
+            "properties": {
+                "value": {}
+            }
+        },
+        "dto.ResponseAnswers": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FormFields"
+                    }
+                },
+                "form": {
+                    "$ref": "#/definitions/dto.FormLight"
                 }
             }
         },
@@ -20509,6 +20526,15 @@
                 },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "editor.Document": {
+            "type": "object",
+            "properties": {
+                "elements": {
+                    "type": "array",
+                    "items": {}
                 }
             }
         },
@@ -21216,6 +21242,9 @@
                         "type": "boolean"
                     }
                 },
+                "hideSubIssues": {
+                    "type": "boolean"
+                },
                 "issueView": {
                     "type": "string",
                     "enum": [
@@ -21233,9 +21262,6 @@
                     "type": "boolean"
                 },
                 "showOnlyActive": {
-                    "type": "boolean"
-                },
-                "showSubIssues": {
                     "type": "boolean"
                 }
             }
