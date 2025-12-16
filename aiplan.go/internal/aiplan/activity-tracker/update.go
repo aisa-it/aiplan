@@ -669,8 +669,14 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 	}
 
 	var newParentId uuid.UUID
+	var oldParentId uuid.NullUUID
 
-	oldParentId := currentInstance[field].(uuid.NullUUID)
+	if v, exist := currentInstance[field]; exist {
+		switch val := v.(type) {
+		case uuid.NullUUID:
+			oldParentId = val
+		}
+	}
 
 	if v, exists := requestedData[field]; exists {
 		switch val := v.(type) {
