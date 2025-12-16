@@ -683,10 +683,10 @@ WHERE tc.constraint_type = 'FOREIGN KEY'
 	slog.Info("Found foreign key constraints to drop", "count", len(constraints))
 
 	// Увеличиваем lock_timeout и statement_timeout для длительных операций
-	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
 		slog.Warn("Failed to set lock_timeout", "err", err)
 	}
-	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
 		slog.Warn("Failed to set statement_timeout", "err", err)
 	}
 
@@ -759,10 +759,10 @@ WHERE table_schema = 'public'
 	slog.Info("Found generated columns to drop", "count", len(columns))
 
 	// Увеличиваем lock_timeout и statement_timeout для длительных операций
-	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
 		slog.Warn("Failed to set lock_timeout", "err", err)
 	}
-	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
 		slog.Warn("Failed to set statement_timeout", "err", err)
 	}
 
@@ -832,10 +832,10 @@ WHERE tc.constraint_type = 'CHECK'
 	slog.Info("Found check constraints to drop", "count", len(constraints))
 
 	// Увеличиваем lock_timeout и statement_timeout для длительных операций
-	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
 		slog.Warn("Failed to set lock_timeout", "err", err)
 	}
-	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
 		slog.Warn("Failed to set statement_timeout", "err", err)
 	}
 
