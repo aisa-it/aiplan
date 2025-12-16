@@ -1024,12 +1024,11 @@ type stateTarget struct {
 	Relation bool
 }
 
-func (st *stateTarget) getID() *string {
+func (st *stateTarget) getID() uuid.NullUUID {
 	if st.Relation {
-		idStr := st.Id.String()
-		return &idStr
+		return uuid.NullUUID{UUID: st.Id, Valid: true}
 	}
-	return nil
+	return uuid.NullUUID{}
 }
 
 func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao.Project) (IssueCheckResult, error) {
@@ -1544,7 +1543,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	return nil
 }
 
-func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[string]stateTarget) {
+func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[uuid.UUID]stateTarget) {
 	var srcStates, targetStates []dao.State
 	if err := tx.Where("project_id = ?", srcProject).
 		Find(&srcStates).Error; err != nil {
@@ -1554,7 +1553,7 @@ func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[st
 		Find(&targetStates).Error; err != nil {
 		return err, nil
 	}
-	result := make(map[string]stateTarget)
+	result := make(map[uuid.UUID]stateTarget)
 	strState := func(state dao.State) string {
 		return fmt.Sprintf("%s-%s-%s", state.Name, state.Group, state.Color)
 	}
@@ -1571,7 +1570,7 @@ func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[st
 				tmp.Relation = true
 			}
 		}
-		result[state.ID.String()] = tmp
+		result[state.ID] = tmp
 	}
 
 	return nil, result
@@ -1592,17 +1591,17 @@ func stateActivityUpdate(tx *gorm.DB, ids []string, srcProjectId, targetProjectI
 			return err
 		}
 		for i, activity := range activityState {
-			if activity.OldIdentifier != nil {
-				oldState := stateMap[*activity.OldIdentifier]
+			if activity.OldIdentifier.Valid {
+				oldState := stateMap[activity.OldIdentifier.UUID]
 				activityState[i].OldIdentifier = oldState.getID()
 			} else {
-				activityState[i].OldIdentifier = nil
+				activityState[i].OldIdentifier = uuid.NullUUID{}
 			}
-			if activity.NewIdentifier != nil {
-				newState := stateMap[*activity.NewIdentifier]
+			if activity.NewIdentifier.Valid {
+				newState := stateMap[activity.NewIdentifier.UUID]
 				activityState[i].NewIdentifier = newState.getID()
 			} else {
-				activityState[i].NewIdentifier = nil
+				activityState[i].NewIdentifier = uuid.NullUUID{}
 			}
 		}
 

@@ -2030,7 +2030,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 		// Post-update activity tracking
 		newLabelMap := StructToJSONMap(label)
 		newLabelMap["updateScope"] = "label"
-		newLabelMap["updateScopeId"] = labelId
+		newLabelMap["updateScopeId"] = label.ID
 
 		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
 		if err != nil {
@@ -2360,7 +2360,7 @@ func (s *Services) updateState(c echo.Context) error {
 	// Pre-update activity tracking
 	oldStateMap := StructToJSONMap(state)
 	oldStateMap["updateScope"] = "status"
-	oldStateMap["updateScopeId"] = stateId.String()
+	oldStateMap["updateScopeId"] = stateId
 	//TODO rate limit
 
 	var currentDefaultState dao.State
@@ -2421,7 +2421,7 @@ func (s *Services) updateState(c echo.Context) error {
 	newStateMap := StructToJSONMap(state)
 
 	newStateMap["updateScope"] = "status"
-	newStateMap["updateScopeId"] = stateId.String()
+	newStateMap["updateScopeId"] = stateId
 	if req.Default != nil && *req.Default == true {
 		newStateMap["default_activity_val"] = state.Name
 	}
@@ -2872,7 +2872,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 
 	oldTemplateMap := StructToJSONMap(template)
 	oldTemplateMap["updateScope"] = "template"
-	oldTemplateMap["updateScopeId"] = templateId
+	oldTemplateMap["updateScopeId"] = template.Id
 	// TODO rate limit
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
@@ -2902,7 +2902,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 		}
 		newTemplateMap := StructToJSONMap(template)
 		newTemplateMap["updateScope"] = "template"
-		newTemplateMap["updateScopeId"] = templateId
+		newTemplateMap["updateScopeId"] = template.Id
 
 		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newTemplateMap, oldTemplateMap, project, user)
 		if err != nil {

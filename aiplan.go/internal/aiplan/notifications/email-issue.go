@@ -406,17 +406,16 @@ func (ia *issueActivity) AddActivity(activity dao.IssueActivity) bool {
 
 	ia.activities = append(ia.activities, activity)
 
-	if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier != nil {
+	if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier.Valid {
 		if activity.Verb == "created" || activity.Verb == "updated" {
 			//TODO
-			commentUUID := uuid.FromStringOrNil(*activity.NewIdentifier)
 			var arr []dao.IssueActivity
-			if v, ok := ia.commentActivityMap[commentUUID]; !ok {
+			if v, ok := ia.commentActivityMap[activity.NewIdentifier.UUID]; !ok {
 				arr = append(arr, activity)
 			} else {
 				arr = append(v, activity)
 			}
-			ia.commentActivityMap[commentUUID] = arr
+			ia.commentActivityMap[activity.NewIdentifier.UUID] = arr
 		}
 	}
 	return true
@@ -519,7 +518,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 				return "", "", err
 			}
 			var oldProject dao.Project
-			if err := tx.Where("id = ?", *activity.OldIdentifier).First(&oldProject).Error; err != nil {
+			if err := tx.Where("id = ?", activity.OldIdentifier.UUID).First(&oldProject).Error; err != nil {
 				return "", "", err
 			}
 
