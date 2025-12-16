@@ -713,6 +713,14 @@ func StructToJSONMap(obj interface{}) map[string]interface{} {
 					fieldValue = fieldValue.Elem()
 				}
 			}
+			if fieldValue.Type() == reflect.TypeOf(uuid.UUID{}) {
+				res[tagName] = fieldValue.Interface().(uuid.UUID)
+				continue
+			}
+			if fieldValue.Type() == reflect.TypeOf(uuid.NullUUID{}) {
+				res[tagName] = fieldValue.Interface().(uuid.NullUUID)
+				continue
+			}
 			if fieldValue.Type() == reflect.TypeOf(time.Time{}) {
 				res[tagName] = fieldValue.Interface().(time.Time)
 				continue

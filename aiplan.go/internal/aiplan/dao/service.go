@@ -37,7 +37,7 @@ type Activity interface {
 }
 
 type IDaoAct interface {
-	GetId() string
+	GetId() uuid.UUID
 	GetString() string
 }
 
@@ -45,10 +45,10 @@ type ActivityI interface {
 	SkipPreload() bool
 	GetField() string
 	GetEntity() string
-	GetNewIdentifier() string
-	GetOldIdentifier() string
+	GetNewIdentifier() uuid.NullUUID
+	GetOldIdentifier() uuid.NullUUID
 	GetVerb() string
-	GetId() string
+	GetId() uuid.UUID
 	//SetAffectedUser(user *User)
 	//BuildActivity(entity E, tmpl TemplateActivity) (A, error)
 }
@@ -71,20 +71,20 @@ type FullTable interface {
 // TemplateActivity
 // -migration
 type TemplateActivity struct {
-	IdActivity string
+	IdActivity uuid.UUID
 	Verb       string
 	Field      *string
 	OldValue   *string
 	NewValue   string
 	Comment    string
 
-	NewIdentifier *string
-	OldIdentifier *string
+	NewIdentifier uuid.NullUUID
+	OldIdentifier uuid.NullUUID
 	Actor         *User
 }
 
 // Создает новую активность шаблона.
-func NewTemplateActivity(verb string, field actField.ActivityField, oldVal *string, newVal string, newId, oldId *string, actor *User, valToComment string) TemplateActivity {
+func NewTemplateActivity(verb string, field actField.ActivityField, oldVal *string, newVal string, newId, oldId uuid.NullUUID, actor *User, valToComment string) TemplateActivity {
 	var comment string
 	switch verb {
 	case actField.VerbUpdated:
@@ -96,7 +96,7 @@ func NewTemplateActivity(verb string, field actField.ActivityField, oldVal *stri
 	}
 
 	return TemplateActivity{
-		IdActivity:    GenID(),
+		IdActivity:    GenUUID(),
 		Verb:          verb,
 		Field:         utils.ToPtr(field.String()),
 		OldValue:      oldVal,
@@ -109,17 +109,15 @@ func NewTemplateActivity(verb string, field actField.ActivityField, oldVal *stri
 }
 
 func (a *TemplateActivity) BuildWorkspaceActivity(entity WorkspaceEntityI) WorkspaceActivity {
-	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
-	workspaceId := entity.GetWorkspaceId()
 	return WorkspaceActivity{
-		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
+		Id:            a.IdActivity,
 		Verb:          a.Verb,
 		Field:         a.Field,
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		WorkspaceId:   workspaceId,
-		ActorId:       actorId,
+		WorkspaceId:   entity.GetWorkspaceId(),
+		ActorId:       uuid.NullUUID{UUID: a.Actor.ID, Valid: true},
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,
@@ -128,19 +126,16 @@ func (a *TemplateActivity) BuildWorkspaceActivity(entity WorkspaceEntityI) Works
 }
 
 func (a *TemplateActivity) BuildProjectActivity(entity ProjectEntityI) ProjectActivity {
-	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
-	projectId := uuid.Must(uuid.FromString(entity.GetProjectId()))
-	workspaceId := entity.GetWorkspaceId()
 	return ProjectActivity{
-		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
+		Id:            a.IdActivity,
 		Verb:          a.Verb,
 		Field:         a.Field,
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		WorkspaceId:   workspaceId,
-		ProjectId:     projectId,
-		ActorId:       actorId,
+		WorkspaceId:   entity.GetWorkspaceId(),
+		ProjectId:     entity.GetProjectId(),
+		ActorId:       uuid.NullUUID{UUID: a.Actor.ID, Valid: true},
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,
@@ -149,20 +144,16 @@ func (a *TemplateActivity) BuildProjectActivity(entity ProjectEntityI) ProjectAc
 }
 
 func (a *TemplateActivity) BuildSprintActivity(entity SprintEntityI) SprintActivity {
-	id := uuid.Must(uuid.FromString(a.IdActivity))
-	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
-	workspaceId := entity.GetWorkspaceId()
-	sprintId := uuid.Must(uuid.FromString(entity.GetSprintId()))
 	return SprintActivity{
-		Id:            id,
+		Id:            a.IdActivity,
 		Verb:          a.Verb,
 		Field:         a.Field,
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		WorkspaceId:   workspaceId,
-		SprintId:      sprintId,
-		ActorId:       actorId,
+		WorkspaceId:   entity.GetWorkspaceId(),
+		SprintId:      entity.GetSprintId(),
+		ActorId:       uuid.NullUUID{UUID: a.Actor.ID, Valid: true},
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,
@@ -171,21 +162,17 @@ func (a *TemplateActivity) BuildSprintActivity(entity SprintEntityI) SprintActiv
 }
 
 func (a *TemplateActivity) BuildIssueActivity(entity IssueEntityI) IssueActivity {
-	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
-	projectId := uuid.Must(uuid.FromString(entity.GetProjectId()))
-	workspaceId := entity.GetWorkspaceId()
-	issueId := uuid.Must(uuid.FromString(entity.GetIssueId()))
 	return IssueActivity{
-		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
+		Id:            a.IdActivity,
 		Verb:          a.Verb,
 		Field:         a.Field,
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		WorkspaceId:   workspaceId,
-		ProjectId:     projectId,
-		IssueId:       issueId,
-		ActorId:       actorId,
+		WorkspaceId:   entity.GetWorkspaceId(),
+		ProjectId:     entity.GetProjectId(),
+		IssueId:       entity.GetIssueId(),
+		ActorId:       uuid.NullUUID{UUID: a.Actor.ID, Valid: true},
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,
@@ -194,19 +181,16 @@ func (a *TemplateActivity) BuildIssueActivity(entity IssueEntityI) IssueActivity
 }
 
 func (a *TemplateActivity) BuildFormActivity(entity FormEntityI) FormActivity {
-	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
-	workspaceId := entity.GetWorkspaceId()
-	formId := entity.GetFormId()
 	return FormActivity{
-		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
+		Id:            a.IdActivity,
 		Verb:          a.Verb,
 		Field:         a.Field,
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		WorkspaceId:   workspaceId,
-		FormId:        formId,
-		ActorId:       actorId,
+		WorkspaceId:   entity.GetWorkspaceId(),
+		FormId:        entity.GetFormId(),
+		ActorId:       uuid.NullUUID{UUID: a.Actor.ID, Valid: true},
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,
@@ -215,19 +199,16 @@ func (a *TemplateActivity) BuildFormActivity(entity FormEntityI) FormActivity {
 }
 
 func (a *TemplateActivity) BuildDocActivity(entity DocEntityI) DocActivity {
-	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
-	workspaceId := entity.GetWorkspaceId()
-	docId := uuid.Must(uuid.FromString(entity.GetDocId()))
 	return DocActivity{
-		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
+		Id:            a.IdActivity,
 		Verb:          a.Verb,
 		Field:         a.Field,
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		WorkspaceId:   workspaceId,
-		DocId:         docId,
-		ActorId:       actorId,
+		WorkspaceId:   entity.GetWorkspaceId(),
+		DocId:         entity.GetDocId(),
+		ActorId:       uuid.NullUUID{UUID: a.Actor.ID, Valid: true},
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,
@@ -236,15 +217,14 @@ func (a *TemplateActivity) BuildDocActivity(entity DocEntityI) DocActivity {
 }
 
 func (a *TemplateActivity) BuildRootActivity(entity interface{}) RootActivity {
-	actorId := uuid.NullUUID{UUID: a.Actor.ID, Valid: true}
 	return RootActivity{
-		Id:            uuid.Must(uuid.FromString(a.IdActivity)),
+		Id:            a.IdActivity,
 		Verb:          a.Verb,
 		Field:         a.Field,
 		OldValue:      a.OldValue,
 		NewValue:      a.NewValue,
 		Comment:       a.Comment,
-		ActorId:       actorId,
+		ActorId:       uuid.NullUUID{UUID: a.Actor.ID, Valid: true},
 		NewIdentifier: a.NewIdentifier,
 		OldIdentifier: a.OldIdentifier,
 		Notified:      false,
@@ -273,8 +253,8 @@ type FullActivity struct {
 	SprintId    uuid.NullUUID
 	//AffectedUserId *string
 
-	NewIdentifier *string
-	OldIdentifier *string
+	NewIdentifier uuid.NullUUID
+	OldIdentifier uuid.NullUUID
 	Notified      bool `gorm:"-"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" `
@@ -401,7 +381,7 @@ func (e FullActivity) SkipPreload() bool {
 		return true
 	}
 
-	if e.NewIdentifier == nil && e.OldIdentifier == nil {
+	if !e.NewIdentifier.Valid && !e.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -412,16 +392,16 @@ func (e FullActivity) GetField() string {
 	return pointerToStr(e.Field)
 }
 
-func (e FullActivity) GetNewIdentifier() string {
-	return pointerToStr(e.NewIdentifier)
+func (e FullActivity) GetNewIdentifier() uuid.NullUUID {
+	return e.NewIdentifier
 }
 
-func (e FullActivity) GetOldIdentifier() string {
-	return pointerToStr(e.OldIdentifier)
+func (e FullActivity) GetOldIdentifier() uuid.NullUUID {
+	return e.OldIdentifier
 }
 
-func (e FullActivity) GetId() string {
-	return e.Id.String()
+func (e FullActivity) GetId() uuid.UUID {
+	return e.Id
 }
 
 func (e *FullActivity) GetUrl() *string {

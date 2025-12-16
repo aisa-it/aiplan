@@ -230,7 +230,8 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	workspace.ID = id
 	workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspace.Name = strings.TrimSpace(workspace.Name)
-	var newMemberOwnerId, newMemberOwnerEmail string
+	var newMemberOwnerId uuid.UUID
+	var newMemberOwnerEmail string
 	err := c.Validate(workspace)
 	if err != nil {
 		return EError(c, err)
@@ -250,7 +251,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			}
 			return EError(c, err)
 		}
-		newMemberOwnerId = member.MemberId.String()
+		newMemberOwnerId = member.MemberId
 		newMemberOwnerEmail = member.Member.Email
 	}
 
