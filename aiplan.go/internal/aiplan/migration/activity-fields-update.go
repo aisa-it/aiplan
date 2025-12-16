@@ -6,6 +6,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -63,7 +64,7 @@ func activityFieldUpdate(db *gorm.DB) {
 func updateInBatches[T dao.ActivityI](db *gorm.DB, oldValue, newValue, actionName string) {
 	var activities []T
 	if err := db.Where("field = ?", oldValue).FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-		result := tx.Model(new(T)).Where("id IN ?", utils.SliceToSlice(&activities, func(t *T) string {
+		result := tx.Model(new(T)).Where("id IN ?", utils.SliceToSlice(&activities, func(t *T) uuid.UUID {
 			return (*t).GetId()
 		})).Update("field", newValue)
 		if result.Error != nil {

@@ -94,8 +94,8 @@ type User struct {
 	SearchFilters []SearchFilter `json:"-" gorm:"constraint:OnDelete:CASCADE;many2many:user_search_filters"`
 }
 
-func (u User) GetId() string {
-	return u.ID.String()
+func (u User) GetId() uuid.UUID {
+	return u.ID
 }
 
 func (u User) GetString() string {
@@ -357,7 +357,7 @@ type UserNotifications struct {
 	EntityActivityId uuid.NullUUID   `json:"entity_activity,omitempty"`
 	EntityActivity   *EntityActivity `json:"entity_activity_detail,omitempty" gorm:"foreignKey:EntityActivityId" extensions:"x-nullable"`
 
-	CommentId *uuid.UUID    `json:"comment_id,omitempty"`
+	CommentId uuid.NullUUID `json:"comment_id,omitempty" gorm:"type:uuid"`
 	Comment   *IssueComment `json:"comment,omitempty" gorm:"foreignKey:CommentId" extensions:"x-nullable"`
 
 	WorkspaceId uuid.NullUUID `json:"workspace_id,omitempty" gorm:"type:uuid"`
@@ -402,6 +402,17 @@ func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
 	if un == nil {
 		return nil
 	}
+
+	var commentId, workspaceId *string
+
+	if un.CommentId.Valid {
+		commentId = utils.ToPtr(un.CommentId.UUID.String())
+	}
+
+	if un.WorkspaceId.Valid {
+		workspaceId = utils.ToPtr(un.WorkspaceId.UUID.String())
+	}
+
 	return &dto.UserNotificationsLight{
 		ID:               un.ID.String(),
 		UserId:           un.UserId.String(),
@@ -411,8 +422,8 @@ func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
 		Msg:              un.Msg,
 		AuthorId:         un.AuthorId,
 		EntityActivityId: un.EntityActivityId,
-		CommentId:        convertUUIDToStringPtr(un.CommentId),
-		WorkspaceId:      convertNullUUIDToStringPtr(un.WorkspaceId),
+		CommentId:        commentId,
+		WorkspaceId:      workspaceId,
 		IssueId:          un.IssueId,
 	}
 }
@@ -470,24 +481,6 @@ func (un *UserNotifications) AfterFind(tx *gorm.DB) (err error) {
 
 	Filter *SearchFilter `json:"filter" gorm:"foreignKey:FilterId"`
 }*/
-
-// convertUUIDToStringPtr преобразует *uuid.UUID в *string.
-// Если входной указатель nil, возвращает nil.
-func convertUUIDToStringPtr(uuidPtr *uuid.UUID) *string {
-	if uuidPtr == nil {
-		return nil
-	}
-	str := uuidPtr.String()
-	return &str
-}
-
-func convertNullUUIDToStringPtr(nullUuid uuid.NullUUID) *string {
-	if !nullUuid.Valid {
-		return nil
-	}
-	str := nullUuid.UUID.String()
-	return &str
-}
 
 func GetUsers(db *gorm.DB) []User {
 	var res []User

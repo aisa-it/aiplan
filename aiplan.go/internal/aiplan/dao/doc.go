@@ -139,8 +139,8 @@ type DocExtendFields struct {
 }
 
 // Возвращает идентификатор документа в виде строки.
-func (d Doc) GetId() string {
-	return d.ID.String()
+func (d Doc) GetId() uuid.UUID {
+	return d.ID
 }
 
 // Возвращает заголовок документа.
@@ -157,8 +157,8 @@ func (d Doc) GetWorkspaceId() uuid.UUID {
 	return d.WorkspaceId
 }
 
-func (d Doc) GetDocId() string {
-	return d.GetId()
+func (d Doc) GetDocId() uuid.UUID {
+	return d.ID
 }
 
 // Функция AfterFind выполняется после успешного поиска записи в базе данных.  Она выполняет дополнительные операции, такие как обновление информации о URL,  получение итоговых данных о реакции на комментарии, и другие необходимые действия после извлечения данных из базы.
@@ -459,8 +459,8 @@ type DocCommentExtendFields struct {
 }
 
 // Возвращает идентификатор документа в виде строки.
-func (dc DocComment) GetId() string {
-	return dc.Id.String()
+func (dc DocComment) GetId() uuid.UUID {
+	return dc.Id
 }
 
 // Возвращает заголовок документа.
@@ -477,8 +477,8 @@ func (dc DocComment) GetWorkspaceId() uuid.UUID {
 	return dc.WorkspaceId
 }
 
-func (dc DocComment) GetDocId() string {
-	return dc.DocId.String()
+func (dc DocComment) GetDocId() uuid.UUID {
+	return dc.DocId
 }
 
 // Выполняет дополнительные операции после успешного поиска записи в базе данных. В частности, обновляет информацию об URL, получает итоги реакции на комментарии и другие необходимые действия после извлечения данных из базы.
@@ -626,7 +626,7 @@ func (DocCommentReaction) TableName() string { return "doc_comment_reactions" }
 
 type DocEntityI interface {
 	WorkspaceEntityI
-	GetDocId() string
+	GetDocId() uuid.UUID
 }
 
 type DocActivity struct {
@@ -650,9 +650,9 @@ type DocActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:doc_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -706,7 +706,7 @@ func (da DocActivity) SkipPreload() bool {
 		return true
 	}
 
-	if da.NewIdentifier == nil && da.OldIdentifier == nil {
+	if !da.NewIdentifier.Valid && !da.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -722,18 +722,17 @@ func (da DocActivity) GetVerb() string {
 }
 
 // Добавляет новый идентификатор к объекту Doc. Используется для уникальной идентификации документа в базе данных.
-func (da DocActivity) GetNewIdentifier() string {
-	return pointerToStr(da.NewIdentifier)
+func (da DocActivity) GetNewIdentifier() uuid.NullUUID {
+	return da.NewIdentifier
 }
 
 // Возвращает старый идентификатор Doc, если он существует.  Используется для отслеживания изменений идентификаторов Doc при репликации или других операциях.
-func (da DocActivity) GetOldIdentifier() string {
-	return pointerToStr(da.OldIdentifier)
-
+func (da DocActivity) GetOldIdentifier() uuid.NullUUID {
+	return da.OldIdentifier
 }
 
-func (da DocActivity) GetId() string {
-	return da.Id.String()
+func (da DocActivity) GetId() uuid.UUID {
+	return da.Id
 }
 
 // Преобразует Doc в структуру dto.EntityActivityLight для упрощения передачи данных в API.
@@ -889,8 +888,8 @@ type DocAttachmentExtendFields struct {
 //
 // Возвращает:
 //   - string: идентификатор документа в виде строки.
-func (da DocAttachment) GetId() string {
-	return da.Id.String()
+func (da DocAttachment) GetId() uuid.UUID {
+	return da.Id
 }
 
 // Возвращает заголовок документа.
@@ -910,8 +909,8 @@ func (da DocAttachment) GetWorkspaceId() uuid.UUID {
 	return da.WorkspaceId
 }
 
-func (da DocAttachment) GetDocId() string {
-	return da.DocId.String()
+func (da DocAttachment) GetDocId() uuid.UUID {
+	return da.DocId
 }
 
 // Преобразует структуру Doc в структуру dto.Attachment для удобства передачи данных в API.

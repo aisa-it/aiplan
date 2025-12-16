@@ -148,8 +148,8 @@ type BlockingIssueExtendFields struct {
 //
 // Возвращает:
 //   - string: строка, представляющая собой идентификатор Issue.
-func (i Issue) GetId() string {
-	return i.ID.String()
+func (i Issue) GetId() uuid.UUID {
+	return i.ID
 }
 
 // GetString возвращает строку из идентификатора Issue.
@@ -178,12 +178,12 @@ func (i Issue) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
-func (i Issue) GetProjectId() string {
-	return i.ProjectId.String()
+func (i Issue) GetProjectId() uuid.UUID {
+	return i.ProjectId
 }
 
-func (i Issue) GetIssueId() string {
-	return i.GetId()
+func (i Issue) GetIssueId() uuid.UUID {
+	return i.ID
 }
 
 // ToSeaarchLightDTO преобразует Issue в формат, оптимизированный для поиска.  Он извлекает необходимые поля и преобразует их в структуру dto.SearchLightweightResponse для более эффективного поиска по базе данных.
@@ -956,8 +956,8 @@ type IssueLinkExtendFields struct {
 	OldLink *IssueLink `json:"-" gorm:"-" field:"link" extensions:"x-nullable"`
 }
 
-func (i IssueLink) GetId() string {
-	return i.Id.String()
+func (i IssueLink) GetId() uuid.UUID {
+	return i.Id
 }
 
 func (i IssueLink) GetString() string {
@@ -972,12 +972,12 @@ func (i IssueLink) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
-func (i IssueLink) GetProjectId() string {
-	return i.ProjectId.String()
+func (i IssueLink) GetProjectId() uuid.UUID {
+	return i.ProjectId
 }
 
-func (i IssueLink) GetIssueId() string {
-	return i.IssueId.String()
+func (i IssueLink) GetIssueId() uuid.UUID {
+	return i.IssueId
 }
 
 func (il *IssueLink) BeforeDelete(tx *gorm.DB) error {
@@ -1063,8 +1063,8 @@ type IssueAttachmentExtendFields struct {
 	OldIssueAttachment *IssueAttachment `json:"-" gorm:"-" field:"attachment::issue" extensions:"x-nullable"`
 }
 
-func (ia IssueAttachment) GetId() string {
-	return ia.Id.String()
+func (ia IssueAttachment) GetId() uuid.UUID {
+	return ia.Id
 }
 
 func (ia IssueAttachment) GetString() string {
@@ -1082,12 +1082,12 @@ func (i IssueAttachment) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
-func (i IssueAttachment) GetProjectId() string {
-	return i.ProjectId.String()
+func (i IssueAttachment) GetProjectId() uuid.UUID {
+	return i.ProjectId
 }
 
-func (i IssueAttachment) GetIssueId() string {
-	return i.IssueId.String()
+func (i IssueAttachment) GetIssueId() uuid.UUID {
+	return i.IssueId
 }
 
 func (attachment *IssueAttachment) AfterFind(tx *gorm.DB) error {
@@ -1386,8 +1386,8 @@ type IssueCommentExtendFields struct {
 	NewIssueComment *IssueComment `json:"-" gorm:"-" field:"comment::issue" extensions:"x-nullable"`
 }
 
-func (i IssueComment) GetId() string {
-	return i.Id.String()
+func (i IssueComment) GetId() uuid.UUID {
+	return i.Id
 }
 
 func (i IssueComment) GetString() string {
@@ -1402,12 +1402,12 @@ func (i IssueComment) GetWorkspaceId() uuid.UUID {
 	return i.WorkspaceId
 }
 
-func (i IssueComment) GetProjectId() string {
-	return i.ProjectId.String()
+func (i IssueComment) GetProjectId() uuid.UUID {
+	return i.ProjectId
 }
 
-func (i IssueComment) GetIssueId() string {
-	return i.IssueId.String()
+func (i IssueComment) GetIssueId() uuid.UUID {
+	return i.IssueId
 }
 
 // ToLightDTO преобразует объект IssueComment в структуру IssueCommentLight для упрощения передачи данных в клиентский код.
@@ -1780,9 +1780,9 @@ type IssueActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:issue_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -1818,7 +1818,7 @@ type IssueActivityExtendFields struct {
 
 type IssueEntityI interface {
 	ProjectEntityI
-	GetIssueId() string
+	GetIssueId() uuid.UUID
 }
 
 func (IssueActivity) TableName() string { return "issue_activities" }
@@ -1851,7 +1851,7 @@ func (ia IssueActivity) SkipPreload() bool {
 		return true
 	}
 
-	if ia.NewIdentifier == nil && ia.OldIdentifier == nil {
+	if !ia.NewIdentifier.Valid && !ia.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -1865,15 +1865,15 @@ func (ia IssueActivity) GetVerb() string {
 	return ia.Verb
 }
 
-func (ia IssueActivity) GetNewIdentifier() string {
-	return pointerToStr(ia.NewIdentifier)
+func (ia IssueActivity) GetNewIdentifier() uuid.NullUUID {
+	return ia.NewIdentifier
 }
-func (ia IssueActivity) GetOldIdentifier() string {
-	return pointerToStr(ia.OldIdentifier)
+func (ia IssueActivity) GetOldIdentifier() uuid.NullUUID {
+	return ia.OldIdentifier
 }
 
-func (ia IssueActivity) GetId() string {
-	return ia.Id.String()
+func (ia IssueActivity) GetId() uuid.UUID {
+	return ia.Id
 }
 
 func (ia IssueActivity) GetUrl() *string {

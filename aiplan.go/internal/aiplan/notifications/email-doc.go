@@ -135,9 +135,9 @@ type docCommentAuthor struct {
 type docActivity struct {
 	doc                 *dao.Doc
 	activities          []dao.DocActivity
-	users               map[string]docMember         //map[user.Email]
-	commentActivityMap  map[string][]dao.DocActivity // map[commentId]
-	commentActivityUser map[string]docCommentAuthor  //map[user.Email]
+	users               map[string]docMember            //map[user.Email]
+	commentActivityMap  map[uuid.UUID][]dao.DocActivity // map[commentId]
+	commentActivityUser map[string]docCommentAuthor     //map[user.Email]
 }
 
 func (da *docActivity) getMails(tx *gorm.DB) []mail {
@@ -223,7 +223,7 @@ func (ia *docActivity) Finalization(tx *gorm.DB) error {
 }
 
 func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
-	var commentIds []string
+	var commentIds []uuid.UUID
 	for commentId, _ := range ia.commentActivityMap {
 		commentIds = append(commentIds, commentId)
 	}
@@ -249,10 +249,10 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 			if ca, exist := ia.commentActivityUser[authorComment.Email]; !exist {
 				ia.commentActivityUser[authorComment.Email] = docCommentAuthor{
 					User:       authorComment,
-					activities: ia.commentActivityMap[docComment.Id.String()],
+					activities: ia.commentActivityMap[docComment.Id],
 				}
 			} else {
-				ca.activities = append(ca.activities, ia.commentActivityMap[docComment.Id.String()]...)
+				ca.activities = append(ca.activities, ia.commentActivityMap[docComment.Id]...)
 				ia.commentActivityUser[authorComment.Email] = ca
 			}
 		}
@@ -296,7 +296,7 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 		doc:                 doc,
 		activities:          make([]dao.DocActivity, 0),
 		users:               make(map[string]docMember),
-		commentActivityMap:  make(map[string][]dao.DocActivity),
+		commentActivityMap:  make(map[uuid.UUID][]dao.DocActivity),
 		commentActivityUser: make(map[string]docCommentAuthor),
 	}
 
@@ -357,16 +357,16 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 
 	ia.activities = append(ia.activities, activity)
 
-	if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier != nil {
+	if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier.Valid {
 		if activity.Verb == "created" || activity.Verb == "updated" {
 			//TODO
 			var arr []dao.DocActivity
-			if v, ok := ia.commentActivityMap[*activity.NewIdentifier]; !ok {
+			if v, ok := ia.commentActivityMap[activity.NewIdentifier.UUID]; !ok {
 				arr = append(arr, activity)
 			} else {
 				arr = append(v, activity)
 			}
-			ia.commentActivityMap[*activity.NewIdentifier] = arr
+			ia.commentActivityMap[activity.NewIdentifier.UUID] = arr
 		}
 	}
 	return true
@@ -630,13 +630,13 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 		if err := tx.Where("name = ?", "doc_activity_new").First(&template).Error; err != nil {
 			return ""
 		}
-		var docId string
-		if act.NewIdentifier != nil {
-			docId = *act.NewIdentifier
+		var docId uuid.UUID
+		if act.NewIdentifier.Valid {
+			docId = act.NewIdentifier.UUID
 		}
 
-		if act.OldIdentifier != nil {
-			docId = *act.OldIdentifier
+		if act.OldIdentifier.Valid {
+			docId = act.OldIdentifier.UUID
 		}
 
 		var newDoc dao.Doc
@@ -653,7 +653,8 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 		if act.NewDoc == nil {
 			act.NewDoc = &newDoc
 		}
-		var description, oldVal string
+		var description string
+		var oldVal uuid.UUID
 
 		if act.Verb != actField.VerbRemoved {
 			description = replaceTablesToText(replaceImageToText(act.NewDoc.Content.Body))
@@ -662,8 +663,8 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 			description = template.ReplaceTxtToSvg(description)
 		}
 
-		if act.OldIdentifier != nil {
-			oldVal = *act.OldIdentifier
+		if act.OldIdentifier.Valid {
+			oldVal = act.OldIdentifier.UUID
 		}
 
 		var buf bytes.Buffer
@@ -682,7 +683,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 			newDoc.ParentDoc,
 			act.CreatedAt.In((*time.Location)(&user.UserTimezone)),
 			description,
-			oldVal,
+			oldVal.String(),
 		}); err != nil {
 			return ""
 		}
