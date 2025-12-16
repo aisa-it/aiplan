@@ -266,7 +266,7 @@ func entityProjectLeadUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 		if err != nil {
 			return nil, err
 		}
-		newId = uuid.NullUUID{UUID: id, Valid: true}
+		oldId = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
 	return entityFieldUpdate[E, A](actField.ProjectLead.Field, newId, oldId, tracker, requestedData, currentInstance, entity, actor)
@@ -633,7 +633,7 @@ func entityStateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 		if err != nil {
 			return nil, err
 		}
-		newId = uuid.NullUUID{UUID: id, Valid: true}
+		oldId = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
 	return entityFieldUpdate[E, A](actField.Status.Field, newId, oldId, tracker, requestedData, currentInstance, entity, actor)
