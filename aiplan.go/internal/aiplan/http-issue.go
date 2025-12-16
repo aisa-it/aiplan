@@ -1585,7 +1585,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	oldSubIssuesData := make([]map[string]interface{}, len(subIssues))
 	for i, issue := range subIssues {
 		oldSubIssuesData[i] = StructToJSONMap(issue)
-		oldSubIssuesData[i]["parent"] = nil
+		oldSubIssuesData[i]["parent"] = uuid.Nil
 	}
 
 	id, err := uuid.FromString(parentIssue.ID.String())
@@ -1611,7 +1611,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	newSubIssuesData := make([]map[string]interface{}, len(subIssues))
 	for i := range subIssues {
 		newSubIssuesData[i] = make(map[string]interface{})
-		newSubIssuesData[i]["parent"] = parentId.UUID.String()
+		newSubIssuesData[i]["parent"] = parentId.UUID
 	}
 
 	// Activity tracking
@@ -2245,10 +2245,10 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 		return EError(c, err)
 	}
 	newMap := StructToJSONMap(oldLink)
-	newMap["updateScopeId"] = linkId
+	newMap["updateScopeId"] = oldLink.Id
 
 	oldMap["updateScope"] = "link"
-	oldMap["updateScopeId"] = linkId
+	oldMap["updateScopeId"] = oldLink.Id
 
 	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, oldLink, &user)
 	if err != nil {
@@ -2838,11 +2838,11 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 	}
 
 	newMap := StructToJSONMap(commentOld)
-	newMap["updateScopeId"] = commentId
+	newMap["updateScopeId"] = commentOld.Id
 	newMap["field_log"] = actField.Comment.Field
 
 	oldMap["updateScope"] = "comment"
-	oldMap["updateScopeId"] = commentId
+	oldMap["updateScopeId"] = commentOld.Id
 	//if err := s.tracker.TrackActivity(tracker.COMMENT_UPDATED_ACTIVITY, newMap, oldMap, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, commentOld.Project, user); err != nil {
 	//	return EError(c, err)
 	//}

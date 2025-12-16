@@ -233,12 +233,12 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 		for _, activity := range wa.activities {
 
 			if activity.NewDoc != nil || activity.OldDoc != nil {
-				var docId string
+				var docId uuid.UUID
 				if activity.OldDoc != nil {
-					docId = *activity.OldIdentifier
+					docId = activity.OldIdentifier.UUID
 				}
 				if activity.NewDoc != nil {
-					docId = *activity.NewIdentifier
+					docId = activity.NewIdentifier.UUID
 				}
 
 				var doc dao.Doc
