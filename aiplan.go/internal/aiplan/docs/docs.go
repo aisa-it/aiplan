@@ -15816,7 +15816,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/": {
+        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/": {
             "post": {
                 "security": [
                     {
@@ -17490,6 +17490,13 @@ const docTemplate = `{
                 "target_date": {
                     "type": "string",
                     "x-nullable": true
+                },
+                "watcher_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "x-nullable": true
                 }
             }
         },
@@ -18444,7 +18451,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "new_identifier": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "new_value": {
@@ -18454,7 +18465,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "old_identifier": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "old_value": {
