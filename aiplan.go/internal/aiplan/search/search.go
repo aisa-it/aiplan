@@ -1,23 +1,20 @@
-package aiplan
+// Package search содержит логику поиска задач.
+// Позволяет использовать поиск из разных мест приложения (HTTP handlers, MCP tools и др.)
+package search
 
 import (
 	"log/slog"
 	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
-type SearchGroupSize struct {
-	Count int
-	Key   string
-}
-
-func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.Sprint, searchParams *types.SearchParams) ([]SearchGroupSize, error) {
+// GetIssuesGroups возвращает группы задач с количеством в каждой группе
+func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.Sprint, searchParams *types.SearchParams) ([]types.SearchGroupSize, error) {
 	query := db.Session(&gorm.Session{})
 
 	// Определение запроса для фильтрации по проектам
@@ -155,19 +152,20 @@ func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.
 		}
 	}
 
-	var count []SearchGroupSize
+	var count []types.SearchGroupSize
 	if err := query.Scan(&count).Error; err != nil {
 		return nil, err
 	}
 	return count, nil
 }
 
+// FetchIssuesByGroups выполняет поиск задач по группам и вызывает callback для каждой группы
 func FetchIssuesByGroups(
-	groupSize []SearchGroupSize,
-	db *gorm.DB, // Clean session cause gorm reset not working
+	db *gorm.DB,
+	groupSize []types.SearchGroupSize,
 	groupSelectQuery *gorm.DB,
 	searchParams *types.SearchParams,
-	iterFunc func(group IssuesGroupResponse) error,
+	iterFunc func(group types.IssuesGroupResponse) error,
 ) (int, error) {
 	totalCount := 0
 
@@ -272,7 +270,7 @@ func FetchIssuesByGroups(
 		}
 
 		if group.Count == 0 {
-			if err := iterFunc(IssuesGroupResponse{
+			if err := iterFunc(types.IssuesGroupResponse{
 				Entity: entity,
 				Count:  group.Count,
 			}); err != nil {
@@ -291,7 +289,7 @@ func FetchIssuesByGroups(
 		}
 
 		if len(issues) == 0 {
-			slog.Error("Empty serach result for not empty group", "groupBy", searchParams.GroupByParam, "groupKey", group.Key, "groupCount", group.Count)
+			slog.Error("Empty search result for not empty group", "groupBy", searchParams.GroupByParam, "groupKey", group.Key, "groupCount", group.Count)
 			continue
 		}
 
@@ -304,10 +302,10 @@ func FetchIssuesByGroups(
 			entity = issues[0].Project.ToLightDTO()
 		}
 
-		if err := iterFunc(IssuesGroupResponse{
+		if err := iterFunc(types.IssuesGroupResponse{
 			Entity: entity,
 			Count:  group.Count,
-			Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) *dto.IssueWithCount { return i.ToDTO() }),
+			Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) any { return i.ToDTO() }),
 		}); err != nil {
 			return 0, err
 		}
@@ -315,6 +313,7 @@ func FetchIssuesByGroups(
 	return totalCount, nil
 }
 
+// FetchParentsDetails загружает детали родительских задач
 func FetchParentsDetails(db *gorm.DB, issues []dao.IssueWithCount) error {
 	var parentIds []uuid.NullUUID
 	for _, issue := range issues {
