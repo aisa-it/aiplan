@@ -14,6 +14,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/gofrs/uuid"
 )
 
 // entityUpdateActivity Обновляет существующую сущность и генерирует запись в журнале активности.
@@ -60,9 +61,9 @@ func entityCreateActivity[E dao.Entity, A dao.Activity](
 		return nil, ErrStack.TrackErrorStack(fmt.Errorf("entity does not implement IEntity[A]"))
 	}
 
-	newIdentifier := strToPointer(entityI.GetId())
-	if id, ok := requestedData["updateScopeId"].(string); ok {
-		newIdentifier = &id
+	newIdentifier := entityI.GetId()
+	if id, ok := requestedData["updateScopeId"].(uuid.UUID); ok {
+		newIdentifier = id
 	}
 
 	if e, ok := requestedData["entityParent"].(E); ok {
@@ -82,14 +83,14 @@ func entityCreateActivity[E dao.Entity, A dao.Activity](
 	//	field = fmt.Sprintf("%s_%s", scope, field)
 	//}
 	templateActivity := dao.TemplateActivity{
-		IdActivity:    dao.GenID(),
+		IdActivity:    dao.GenUUID(),
 		Verb:          verb,
 		Field:         strToPointer(entityI.GetEntityType()),
 		OldValue:      nil,
 		NewValue:      newV,
 		Comment:       fmt.Sprintf("%s %s new %s: %s", actor.Email, verb, entityI.GetEntityType(), newV),
-		NewIdentifier: newIdentifier,
-		OldIdentifier: nil,
+		NewIdentifier: uuid.NullUUID{UUID: newIdentifier, Valid: true},
+		OldIdentifier: uuid.NullUUID{},
 		Actor:         &actor,
 	}
 
@@ -119,13 +120,13 @@ func entityDeleteActivity[E dao.Entity, A dao.Activity](
 	}
 
 	templateActivity := dao.TemplateActivity{
-		IdActivity:    dao.GenID(),
+		IdActivity:    dao.GenUUID(),
 		Verb:          actField.VerbDeleted,
 		Field:         strToPointer(entityI.GetEntityType()),
 		OldValue:      strToPointer(oldVal),
 		Comment:       fmt.Sprintf("%s deleted %s: %s", actor.Email, entityI.GetEntityType(), oldVal),
-		NewIdentifier: nil,
-		OldIdentifier: nil,
+		NewIdentifier: uuid.NullUUID{},
+		OldIdentifier: uuid.NullUUID{},
 		Actor:         &actor,
 	}
 
@@ -159,9 +160,9 @@ func entityAddActivity[E dao.Entity, A dao.Activity](
 		return nil, ErrStack.TrackErrorStack(fmt.Errorf("entity does not implement IEntity[A]"))
 	}
 
-	newIdentifier := strToPointer(entityI.GetId())
-	if id, ok := requestedData["updateScopeId"].(string); ok {
-		newIdentifier = &id
+	newIdentifier := entityI.GetId()
+	if id, ok := requestedData["updateScopeId"].(uuid.UUID); ok {
+		newIdentifier = id
 	}
 
 	if e, ok := requestedData["entityParent"].(E); ok {
@@ -182,14 +183,14 @@ func entityAddActivity[E dao.Entity, A dao.Activity](
 	}
 
 	templateActivity := dao.TemplateActivity{
-		IdActivity:    dao.GenID(),
+		IdActivity:    dao.GenUUID(),
 		Verb:          actField.VerbAdded,
 		Field:         strToPointer(key),
 		OldValue:      nil,
 		NewValue:      newV,
 		Comment:       fmt.Sprintf("%s added %s: %s", actor.Email, key, newV),
-		NewIdentifier: newIdentifier,
-		OldIdentifier: nil,
+		NewIdentifier: uuid.NullUUID{UUID: newIdentifier, Valid: true},
+		OldIdentifier: uuid.NullUUID{},
 		Actor:         &actor,
 	}
 
@@ -222,9 +223,9 @@ func entityRemoveActivity[E dao.Entity, A dao.Activity](
 		return nil, ErrStack.TrackErrorStack(fmt.Errorf("entity does not implement IEntity[A]"))
 	}
 
-	oldIdentifier := strToPointer(entityI.GetId())
-	if id, ok := requestedData["updateScopeId"].(string); ok {
-		oldIdentifier = &id
+	oldIdentifier := entityI.GetId()
+	if id, ok := requestedData["updateScopeId"].(uuid.UUID); ok {
+		oldIdentifier = id
 	}
 
 	if e, ok := requestedData["entityParent"].(E); ok {
@@ -245,13 +246,13 @@ func entityRemoveActivity[E dao.Entity, A dao.Activity](
 	}
 
 	templateActivity := dao.TemplateActivity{
-		IdActivity:    dao.GenID(),
+		IdActivity:    dao.GenUUID(),
 		Verb:          actField.VerbRemoved,
 		Field:         strToPointer(key),
 		OldValue:      &oldV,
 		Comment:       fmt.Sprintf("%s remove %s: %s", actor.Email, key, oldV),
-		NewIdentifier: nil,
-		OldIdentifier: oldIdentifier,
+		NewIdentifier: uuid.NullUUID{},
+		OldIdentifier: uuid.NullUUID{UUID: oldIdentifier, Valid: true},
 		Actor:         &actor,
 	}
 
@@ -294,16 +295,16 @@ func entityMoveActivity[E dao.Entity, A dao.Activity](
 		key = v.(string)
 	}
 
-	newId := "<nil>"
-	oldId := "<nil>"
+	newId := uuid.NullUUID{}
+	oldId := uuid.NullUUID{}
 	var newVal, oldVal string
 
 	if v, ok := requestedData[key]; ok {
-		newId = v.(string)
+		newId = uuid.NullUUID{UUID: v.(uuid.UUID), Valid: true}
 	}
 
 	if v, ok := currentInstance[key]; ok {
-		oldId = v.(string)
+		oldId = uuid.NullUUID{UUID: v.(uuid.UUID), Valid: true} // todo проверить
 	}
 
 	if v, ok := requestedData["parent_title"]; ok {
@@ -331,14 +332,14 @@ func entityMoveActivity[E dao.Entity, A dao.Activity](
 	}
 
 	templateActivity := dao.TemplateActivity{
-		IdActivity:    dao.GenID(),
+		IdActivity:    dao.GenUUID(),
 		Verb:          verb,
 		Field:         strToPointer(entityTo),
 		NewValue:      newVal,
 		OldValue:      &oldVal,
 		Comment:       fmt.Sprintf("%s move %s: from %s[%s] to %s[%s]", actor.Email, entityI.GetEntityType(), oldVal, entityFrom, newVal, entityTo),
-		NewIdentifier: strToPointer(newId),
-		OldIdentifier: strToPointer(oldId),
+		NewIdentifier: newId,
+		OldIdentifier: oldId,
 		Actor:         &actor,
 	}
 

@@ -94,8 +94,8 @@ type ProjectWithCount struct {
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 }
 
-func (p Project) GetId() string {
-	return p.ID.String()
+func (p Project) GetId() uuid.UUID {
+	return p.ID
 }
 
 func (p Project) GetString() string {
@@ -106,8 +106,8 @@ func (p Project) GetEntityType() string {
 	return actField.Project.Field.String()
 }
 
-func (p Project) GetProjectId() string {
-	return p.GetId()
+func (p Project) GetProjectId() uuid.UUID {
+	return p.ID
 }
 
 func (p Project) GetWorkspaceId() uuid.UUID {
@@ -536,8 +536,8 @@ type EntityMemberExtendFields struct {
 	OldMember *User `json:"-" gorm:"-" field:"member" extensions:"x-nullable"`
 }
 
-func (pm ProjectMember) GetId() string {
-	return pm.ID.String()
+func (pm ProjectMember) GetId() uuid.UUID {
+	return pm.ID
 }
 
 func (pm ProjectMember) GetString() string {
@@ -548,8 +548,8 @@ func (pm ProjectMember) GetEntityType() string {
 	return actField.Member.Field.String()
 }
 
-func (pm ProjectMember) GetProjectId() string {
-	return pm.ProjectId.String()
+func (pm ProjectMember) GetProjectId() uuid.UUID {
+	return pm.ProjectId
 }
 
 func (pm ProjectMember) GetWorkspaceId() uuid.UUID {
@@ -900,7 +900,6 @@ type ImportedProject struct {
 }
 
 // Шильдик
-// Шильдик
 type Label struct {
 	// id uuid NOT NULL,
 	ID uuid.UUID `gorm:"column:id;primaryKey" json:"id"`
@@ -947,8 +946,8 @@ func (Label) TableName() string {
 //
 // Возвращает:
 //   - string: строка, представляющая собой идентификатор Issue.
-func (l Label) GetId() string {
-	return l.ID.String()
+func (l Label) GetId() uuid.UUID {
+	return l.ID
 }
 
 // GetString возвращает строку из идентификатора Issue.
@@ -977,8 +976,8 @@ func (l Label) GetWorkspaceId() uuid.UUID {
 	return l.WorkspaceId
 }
 
-func (l Label) GetProjectId() string {
-	return l.ProjectId.String()
+func (l Label) GetProjectId() uuid.UUID {
+	return l.ProjectId
 }
 
 // ToLightDTO преобразует объект IssueComment в структуру dto.IssueCommentLight для упрощения передачи данных в клиентский код.
@@ -1115,8 +1114,8 @@ type StateExtendFields struct {
 	OldState *State `json:"-" gorm:"-" field:"status" extensions:"x-nullable"`
 }
 
-func (s State) GetId() string {
-	return s.ID.String()
+func (s State) GetId() uuid.UUID {
+	return s.ID
 }
 
 func (s State) GetString() string {
@@ -1131,8 +1130,8 @@ func (s State) GetWorkspaceId() uuid.UUID {
 	return s.WorkspaceId
 }
 
-func (s State) GetProjectId() string {
-	return s.ProjectId.String()
+func (s State) GetProjectId() uuid.UUID {
+	return s.ProjectId
 }
 
 func (s *State) BeforeDelete(tx *gorm.DB) error {
@@ -1162,7 +1161,7 @@ func (s *State) BeforeDelete(tx *gorm.DB) error {
 
 type ProjectEntityI interface {
 	WorkspaceEntityI
-	GetProjectId() string
+	GetProjectId() uuid.UUID
 }
 
 type ProjectActivity struct {
@@ -1187,9 +1186,9 @@ type ProjectActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -1247,7 +1246,7 @@ func (pa ProjectActivity) SkipPreload() bool {
 		return true
 	}
 
-	if pa.NewIdentifier == nil && pa.OldIdentifier == nil {
+	if !pa.NewIdentifier.Valid && !pa.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -1261,17 +1260,17 @@ func (pa ProjectActivity) GetVerb() string {
 	return pa.Verb
 }
 
-func (pa ProjectActivity) GetNewIdentifier() string {
-	return pointerToStr(pa.NewIdentifier)
+func (pa ProjectActivity) GetNewIdentifier() uuid.NullUUID {
+	return pa.NewIdentifier
 }
 
-func (pa ProjectActivity) GetOldIdentifier() string {
-	return pointerToStr(pa.OldIdentifier)
+func (pa ProjectActivity) GetOldIdentifier() uuid.NullUUID {
+	return pa.OldIdentifier
 
 }
 
-func (pa ProjectActivity) GetId() string {
-	return pa.Id.String()
+func (pa ProjectActivity) GetId() uuid.UUID {
+	return pa.Id
 }
 
 func (activity *ProjectActivity) ToLightDTO() *dto.EntityActivityLight {
@@ -1411,8 +1410,8 @@ type IssueTemplate struct {
 	UpdatedBy *User
 }
 
-func (it IssueTemplate) GetId() string {
-	return it.Id.String()
+func (it IssueTemplate) GetId() uuid.UUID {
+	return it.Id
 }
 
 func (it IssueTemplate) GetString() string {
@@ -1423,12 +1422,12 @@ func (it IssueTemplate) GetEntityType() string {
 	return actField.Template.Field.String()
 }
 
-func (it IssueTemplate) GetProjectId() string {
-	return it.ProjectId.String()
+func (it IssueTemplate) GetProjectId() uuid.UUID {
+	return it.ProjectId
 }
 
-func (it IssueTemplate) GetWorkspaceId() string {
-	return it.WorkspaceId.String()
+func (it IssueTemplate) GetWorkspaceId() uuid.UUID {
+	return it.WorkspaceId
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM (GORM). Применяется для определения имени таблицы, в которой хранятся данные модели.

@@ -235,9 +235,8 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			}
 
 			if a.Field != nil && *a.Field == actField.Comment.Field.String() && a.Verb != "deleted" {
-				if a.NewIdentifier != nil {
-					commentUUID := uuid.Must(uuid.FromString(*a.NewIdentifier))
-					notification.CommentId = &commentUUID
+				if a.NewIdentifier.Valid {
+					notification.CommentId = uuid.NullUUID{UUID: a.NewIdentifier.UUID, Valid: true}
 				}
 			}
 
@@ -286,7 +285,7 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 		ID:          dao.GenUUID(),
 		UserId:      userId,
 		Type:        "comment",
-		CommentId:   &comment.Id,
+		CommentId:   uuid.NullUUID{UUID: comment.Id, Valid: true},
 		Comment:     &comment,
 		WorkspaceId: uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true},
 		IssueId:     uuid.NullUUID{UUID: comment.IssueId, Valid: comment.IssueId != uuid.Nil},

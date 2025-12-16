@@ -123,11 +123,11 @@ func (n *ProjectNotification) Handle(activity dao.ActivityI) error {
 		}
 	}
 	if a.Field != nil && *a.Field == "issue" && a.Verb != "deleted" {
-		var issueId string
-		if a.NewIdentifier != nil {
-			issueId = *a.NewIdentifier
-		} else if a.OldIdentifier != nil {
-			issueId = *a.OldIdentifier
+		var issueId uuid.UUID
+		if a.NewIdentifier.Valid {
+			issueId = a.NewIdentifier.UUID
+		} else if a.OldIdentifier.Valid {
+			issueId = a.OldIdentifier.UUID
 		} else {
 			return nil
 		}
