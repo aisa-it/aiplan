@@ -1438,14 +1438,14 @@ func (s *Services) createWorkspace(c echo.Context) error {
 // @Tags Workspace
 // @Produce json
 // @Security ApiKeyAuth
-// @Success 200 {object} responseLastWorkspace "Детали последнего рабочего пространства и проекта"
+// @Success 200 {object} dto.LastWorkspaceResponse "Детали последнего рабочего пространства и проекта"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/users/last-visited-workspace [get]
 func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 	user := *c.(AuthContext).User
 
 	if !user.LastWorkspaceId.Valid {
-		return c.JSON(http.StatusOK, responseLastWorkspace{
+		return c.JSON(http.StatusOK, dto.LastWorkspaceResponse{
 			WorkspaceDetails: make([]interface{}, 0),
 			ProjectDetails:   struct{}{},
 		})
@@ -1467,7 +1467,7 @@ func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, responseLastWorkspace{
+	return c.JSON(http.StatusOK, dto.LastWorkspaceResponse{
 		WorkspaceDetails: workspace.ToLightDTO(),
 		ProjectDetails:   utils.SliceToSlice(&projectMember, func(pm *dao.ProjectMember) dto.ProjectMember { return *pm.ToDTO() }),
 	})
@@ -1920,11 +1920,6 @@ func (s *Services) getWorkspaceTariff(c echo.Context) error {
 }
 
 // ******* RESPONSE *******
-
-type responseLastWorkspace struct {
-	WorkspaceDetails interface{} `json:"workspace_details"`
-	ProjectDetails   interface{} `json:"project_details"`
-}
 
 //***** REQUEST ******
 

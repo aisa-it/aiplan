@@ -464,7 +464,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		query = query.
 			Where("issues.workspace_id = ?", projectMember.WorkspaceId).
 			Where("issues.project_id = ?", projectMember.ProjectId)
-	} else if !user.IsSuperuser {
+	} else /* if !user.IsSuperuser */ {
 		query = query.
 			Where("issues.project_id in (?)", s.db.
 				Select("project_id").
@@ -1465,7 +1465,7 @@ func (s *Services) deleteIssue(c echo.Context) error {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
-// @Success 200 {object} ResponseSubIssueList "Список подзадач и распределение состояний"
+// @Success 200 {object} dto.ResponseSubIssueList "Список подзадач и распределение состояний"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -1510,7 +1510,7 @@ func (s *Services) getSubIssueList(c echo.Context) error {
 		stateDistribution[issue.State.Group] = stateDistribution[issue.State.Group] + 1
 	}
 
-	resp := ResponseSubIssueList{
+	resp := dto.ResponseSubIssueList{
 		SubIssues:         utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.Issue { return *i.ToDTO() }),
 		StateDistribution: stateDistribution,
 	}
@@ -3542,11 +3542,11 @@ func (s *Services) getIssuePdf(c echo.Context) error {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
-// @Success 200 {object} IssueLockResponse "Описание успешно заблокировано"
+// @Success 200 {object} dto.IssueLockResponse "Описание успешно заблокировано"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
-// @Failure 409 {object} IssueLockResponse "Описание заблокировано другим пользователем"
+// @Failure 409 {object} dto.IssueLockResponse "Описание заблокировано другим пользователем"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/description-lock [post]
 func (s *Services) issueDescriptionLock(c echo.Context) error {
@@ -3573,7 +3573,7 @@ func (s *Services) issueDescriptionLock(c echo.Context) error {
 					return EError(c, err)
 				}
 
-				return c.JSON(http.StatusOK, IssueLockResponse{
+				return c.JSON(http.StatusOK, dto.IssueLockResponse{
 					Locked:      true,
 					LockedUntil: lock.LockedUntil,
 				})
@@ -3581,7 +3581,7 @@ func (s *Services) issueDescriptionLock(c echo.Context) error {
 			return EError(c, err)
 		}
 		// Lock exist
-		return c.JSON(http.StatusConflict, IssueLockResponse{
+		return c.JSON(http.StatusConflict, dto.IssueLockResponse{
 			Locked:      false,
 			LockedBy:    lock.User.ToLightDTO(),
 			LockedUntil: lock.LockedUntil,
@@ -3680,17 +3680,6 @@ type SubIssuesIds struct {
 type IssueLinkRequest struct {
 	Url   string `json:"url"`
 	Title string `json:"title"`
-}
-
-type ResponseSubIssueList struct {
-	SubIssues         []dto.Issue    `json:"sub_issues"`
-	StateDistribution map[string]int `json:"state_distribution"`
-}
-
-type IssueLockResponse struct {
-	Locked      bool           `json:"ok"`
-	LockedBy    *dto.UserLight `json:"locked_by,omitempty"`
-	LockedUntil time.Time      `json:"locked_until"`
 }
 
 type IssuesGroupedResponse struct {

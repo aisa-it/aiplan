@@ -788,7 +788,7 @@ func (s *Services) forgotPassword(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body PasswordRequest true "Новые данные пароля"
-// @Success 200 {object} PasswordResponse "Пароль успешно изменен"
+// @Success 200 {object} dto.PasswordResponse "Пароль успешно изменен"
 // @Failure 400 {object} apierrors.DefinedError "Пароли не совпадают или некорректные данные"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -837,7 +837,7 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	response := PasswordResponse{
+	response := dto.PasswordResponse{
 		Status:  http.StatusOK,
 		Message: "Password updated successfully",
 	}
@@ -992,7 +992,7 @@ func (s *Services) confirmEmail(c echo.Context) error {
 // @Param uidb64 path string true "ID пользователя в формате base64"
 // @Param token path string true "Токен для сброса пароля"
 // @Param data body PasswordRequest true "Новые данные пароля"
-// @Success 200 {object} PasswordResponse "Пароль успешно сброшен"
+// @Success 200 {object} dto.PasswordResponse "Пароль успешно сброшен"
 // @Failure 400 {object} apierrors.DefinedError "Пароли не совпадают или некорректные данные"
 // @Failure 401 {object} apierrors.DefinedError "Невалидный токен сброса пароля"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -1043,7 +1043,7 @@ func (s *Services) resetPassword(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	response := PasswordResponse{
+	response := dto.PasswordResponse{
 		Status:  http.StatusOK,
 		Message: "Password updated successfully",
 	}
@@ -1147,7 +1147,7 @@ func (s *Services) signOutEverywhere(c echo.Context) error {
 // @Produce json
 // @Param uidb64 path string true "ID пользователя в формате base64"
 // @Param data body PasswordRequest true "Новые данные пароля"
-// @Success 200 {object} PasswordResponse "Пароль успешно изменен"
+// @Success 200 {object} dto.PasswordResponse "Пароль успешно изменен"
 // @Failure 400 {object} apierrors.DefinedError "Пароли не совпадают или некорректные данные"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -1194,7 +1194,7 @@ func (s *Services) resetUserPassword(c echo.Context) error {
 	}
 	s.notificationsService.Ws.CloseUserSessions(user.ID)
 
-	response := PasswordResponse{
+	response := dto.PasswordResponse{
 		Status:  http.StatusOK,
 		Message: "Password updated successfully",
 	}
@@ -1755,7 +1755,7 @@ func (s *Services) deleteMyNotifications(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body NotificationViewRequest true "Список идентификаторов уведомлений для пометки как прочитанные"
-// @Success 200 {object} NotificationIdResponse "Количество непрочитанных уведомлений"
+// @Success 200 {object} dto.NotificationIdResponse "Количество непрочитанных уведомлений"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные идентификаторы уведомлений"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -1800,7 +1800,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, NotificationIdResponse{count})
+	return c.JSON(http.StatusOK, dto.NotificationIdResponse{count})
 }
 
 // updateUserTutorial godoc
@@ -2315,19 +2315,9 @@ type EmailVerifyRequest struct {
 	Code     string `json:"code" validate:"required"`
 }
 
-// PasswordResponse представляет структуру данных для успешного ответа регистрации пользователя
-type PasswordResponse struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
-}
-
 type NotificationViewRequest struct {
 	Ids       []string `json:"ids,omitempty"`
 	ViewedAll bool     `json:"viewed_all,omitempty"`
-}
-
-type NotificationIdResponse struct {
-	Count int `json:"count"`
 }
 
 func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilter, []string, error) {
