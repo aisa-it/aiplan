@@ -244,9 +244,9 @@ type EntityActivity struct {
 	DocId uuid.NullUUID `json:"doc_id" gorm:"type:uuid" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -422,7 +422,7 @@ func (activity *EntityActivity) AfterFind(tx *gorm.DB) error {
 // Проверяет, нужно ли пропустить предварительную загрузку связанных данных. Возвращает true, если предварительная загрузка не требуется, иначе false.
 func (ea EntityActivity) SkipPreload() bool {
 
-	if ea.NewIdentifier == nil && ea.OldIdentifier == nil {
+	if !ea.NewIdentifier.Valid && !ea.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -442,8 +442,8 @@ func (ea EntityActivity) GetVerb() string {
 }
 
 // Возвращает новый идентификатор, связанный с полем 'NewIdentifier' объекта EntityActivity.  Используется для получения уникального идентификатора, сгенерированного при создании или обновлении сущности.
-func (ea EntityActivity) GetNewIdentifier() string {
-	return pointerToStr(ea.NewIdentifier)
+func (ea EntityActivity) GetNewIdentifier() uuid.NullUUID {
+	return ea.NewIdentifier
 }
 
 // GetOldIdentifier возвращает старый идентификатор сущности, используя префикс 'Old' для имени поля.
@@ -453,8 +453,8 @@ func (ea EntityActivity) GetNewIdentifier() string {
 //
 // Возвращает:
 //   - string: старый идентификатор сущности, или пустая строка, если он не найден или не может быть получен.
-func (ea EntityActivity) GetOldIdentifier() string {
-	return pointerToStr(ea.OldIdentifier)
+func (ea EntityActivity) GetOldIdentifier() uuid.NullUUID {
+	return ea.OldIdentifier
 }
 
 // entityActivityAfterFind выполняет дополнительные действия после поиска записи в базе данных.  Она обновляет поля, которые могут быть изменены в процессе поиска, такие как идентификаторы пользователей.
@@ -504,7 +504,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 	newID := aI.GetNewIdentifier()
 	oldID := aI.GetOldIdentifier()
 	verb := aI.GetVerb()
-	if newID == "" && oldID == "" {
+	if !newID.Valid && !oldID.Valid {
 		return nil
 	}
 
@@ -546,7 +546,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 
 			fieldName := structField.Name
 
-			if newID != "" && strings.HasPrefix(fieldName, "New") {
+			if newID.Valid && strings.HasPrefix(fieldName, "New") {
 				ptr := reflect.New(structField.Type.Elem()) // *T
 				err := tx.Where("id = ?", newID).First(ptr.Interface()).Error
 				if err == nil {
@@ -554,12 +554,12 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				} else if err != gorm.ErrRecordNotFound {
 					continue
 				} else {
-					slog.Debug("ERR EntityActivityAfterFind", "field", fieldName, "fieldTag", fieldTag, "fieldType", fmt.Sprintf("%T", ptr.Interface()), "id", newID, "activityId", aI.GetId(), "error", err.Error())
+					slog.Debug("ERR EntityActivityAfterFind", "field", fieldName, "fieldTag", fieldTag, "fieldType", fmt.Sprintf("%T", ptr.Interface()), "id", newID, "activityId", aI.GetId().String(), "error", err.Error())
 					continue
 				}
 			}
 
-			if oldID != "" && strings.HasPrefix(fieldName, "Old") {
+			if oldID.Valid && strings.HasPrefix(fieldName, "Old") {
 				ptr := reflect.New(structField.Type.Elem()) // *T
 				err := tx.Where("id = ?", oldID).First(ptr.Interface()).Error
 				if err == nil {
@@ -567,7 +567,7 @@ func EntityActivityAfterFind[A Activity](activity *A, tx *gorm.DB) error {
 				} else if err != gorm.ErrRecordNotFound {
 					continue
 				} else {
-					slog.Debug("ERR EntityActivityAfterFind", "field", fieldName, "fieldTag", fieldTag, "fieldType", fmt.Sprintf("%T", ptr.Interface()), "id", oldID, "activityId", aI.GetId(), "error", err.Error())
+					slog.Debug("ERR EntityActivityAfterFind", "field", fieldName, "fieldTag", fieldTag, "fieldType", fmt.Sprintf("%T", ptr.Interface()), "id", oldID, "activityId", aI.GetId().String(), "error", err.Error())
 					continue
 				}
 			}
@@ -661,9 +661,9 @@ type RootActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -705,7 +705,7 @@ func (ra RootActivity) SkipPreload() bool {
 		return true
 	}
 
-	if ra.NewIdentifier == nil && ra.OldIdentifier == nil {
+	if !ra.NewIdentifier.Valid && !ra.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -719,14 +719,14 @@ func (ra RootActivity) GetVerb() string {
 	return ra.Verb
 }
 
-func (ra RootActivity) GetNewIdentifier() string {
-	return pointerToStr(ra.NewIdentifier)
+func (ra RootActivity) GetNewIdentifier() uuid.NullUUID {
+	return ra.NewIdentifier
 }
 
-func (ra RootActivity) GetOldIdentifier() string {
-	return pointerToStr(ra.OldIdentifier)
+func (ra RootActivity) GetOldIdentifier() uuid.NullUUID {
+	return ra.OldIdentifier
 }
 
-func (ra RootActivity) GetId() string {
-	return ra.Id.String()
+func (ra RootActivity) GetId() uuid.UUID {
+	return ra.Id
 }
