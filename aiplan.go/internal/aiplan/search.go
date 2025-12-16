@@ -204,7 +204,7 @@ func FetchIssuesByGroups(
 			q = q.Where("state_id in (select id from states where concat(name, color, \"group\") = ?)", group.Key)
 			if group.Count == 0 {
 				var state dao.State
-				if err := db.Where("id::text = ?", group.Key).First(&state).Error; err != nil {
+				if err := db.Where("states.name || states.color || states.group = ?", group.Key).First(&state).Error; err != nil {
 					return 0, err
 				}
 				entity = state.ToLightDTO()
