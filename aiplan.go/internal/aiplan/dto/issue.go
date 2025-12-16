@@ -146,3 +146,18 @@ type IssueSearchResult struct {
 	Limit  int              `json:"limit"`
 	Issues []IssueWithCount `json:"issues"`
 }
+
+type ResponseSubIssueList struct {
+	SubIssues         []Issue        `json:"sub_issues"`
+	StateDistribution map[string]int `json:"state_distribution"`
+}
+
+type IssueLockResponse struct {
+	Locked      bool       `json:"ok"`
+	LockedBy    *UserLight `json:"locked_by,omitempty"`
+	LockedUntil time.Time  `json:"locked_until"`
+}
+
+type NewIssueID struct {
+	Id string `json:"id"`
+}

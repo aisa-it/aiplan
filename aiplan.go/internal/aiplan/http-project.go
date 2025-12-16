@@ -590,7 +590,7 @@ func (s *Services) getProjectActivityList(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param name query string true "Идентификатор проекта"
-// @Success 200 {object} CheckProjectIdentifierAvailabilityResponse "Статус доступности идентификатора"
+// @Success 200 {object} dto.CheckProjectIdentifierAvailabilityResponse "Статус доступности идентификатора"
 // @Failure 400 {object} apierrors.DefinedError "Идентификатор проекта обязателен"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/project-identifiers [get]
@@ -611,7 +611,7 @@ func (s *Services) checkProjectIdentifierAvailability(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	response := CheckProjectIdentifierAvailabilityResponse{
+	response := dto.CheckProjectIdentifierAvailabilityResponse{
 		Exists:      len(identifiers),
 		Identifiers: identifiers,
 	}
@@ -1090,7 +1090,7 @@ func (s *Services) updateMyNotifications(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projects body JoinProjectsRequest true "ID проектов для подключения"
-// @Success 201 {object} JoinProjectsSuccessResponse "Сообщение об успешном подключении к проектам"
+// @Success 201 {object} dto.JoinProjectsSuccessResponse "Сообщение об успешном подключении к проектам"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка при подключении к проектам"
 // @Failure 403 {object} apierrors.DefinedError "Попытка подключиться к закрытому проекту"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -1148,7 +1148,7 @@ func (s *Services) joinProjects(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusCreated, JoinProjectsSuccessResponse{Message: "Projects joined successfully"})
+	return c.JSON(http.StatusCreated, dto.JoinProjectsSuccessResponse{Message: "Projects joined successfully"})
 }
 
 // ############# Views methods ###################
@@ -1599,7 +1599,7 @@ type IssueCreateRequest struct {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issue body IssueCreateRequest true "Данные задачи"
-// @Success 201 {object} NewIssueID "ID созданной задачи"
+// @Success 201 {object} dto.NewIssueID "ID созданной задачи"
 // @Failure 400 {object} apierrors.DefinedError "Неверные данные задачи"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/ [post]
@@ -1838,7 +1838,7 @@ func (s *Services) createIssue(c echo.Context) error {
 
 	}
 
-	return c.JSON(http.StatusCreated, NewIssueID{Id: issueNew.ID.String()})
+	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID.String()})
 }
 
 // ############# Labels methods ###################
@@ -2669,17 +2669,6 @@ func (s *Services) getRulesLog(c echo.Context) error {
 // JoinProjectsRequest описывает структуру запроса для подключения к проектам.
 type JoinProjectsRequest struct {
 	ProjectIDs []string `json:"project_ids" example:"[\"project1\", \"project2\"]"`
-}
-
-// JoinProjectsSuccessResponse описывает структуру успешного ответа.
-type JoinProjectsSuccessResponse struct {
-	Message string `json:"message" example:"Projects joined successfully"`
-}
-
-// CheckProjectIdentifierAvailabilityResponse описывает структуру успешного ответа.
-type CheckProjectIdentifierAvailabilityResponse struct {
-	Exists      int      `json:"exists" example:"1"`
-	Identifiers []string `json:"identifiers" example:"[\"PROJECT1\", \"PROJECT2\"]"`
 }
 
 // AddProjectToFavoritesRequest описывает структуру запроса для метода addProjectToFavorites.

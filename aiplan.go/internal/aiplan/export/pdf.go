@@ -230,20 +230,31 @@ func (w *pdfWriter) writeDescription(doc *editor.Document) error {
 }
 
 func (w *pdfWriter) writeParagraph(p editor.Paragraph) {
+	afterHardBreak := false
 	for _, t := range p.Content {
 		switch tt := t.(type) {
 		case editor.Text:
+			// Обрезать начальные пробелы после HardBreak для правильного выравнивания
+			if afterHardBreak {
+				tt.Content = strings.TrimLeft(tt.Content, " \t")
+				afterHardBreak = false
+			}
 			w.writeEditorText(tt)
 		case *editor.Image:
 			w.writeEditorImage(tt)
+			afterHardBreak = false
 		case *editor.HardBreak:
 			w.writeHardBreak()
+			afterHardBreak = true
 		case *editor.DateNode:
 			w.writeDateNode(tt)
+			afterHardBreak = false
 		case *editor.Mention:
 			w.writeMention(tt)
+			afterHardBreak = false
 		case *editor.IssueLinkMention:
 			w.writeIssueLinkMention(tt)
+			afterHardBreak = false
 		}
 	}
 	w.pdf.Ln(-1)
@@ -606,6 +617,9 @@ func (w *pdfWriter) getMaxContentWidth() float64 {
 // writeHardBreak записывает явный перенос строки в PDF
 func (w *pdfWriter) writeHardBreak() {
 	w.pdf.Ln(-1)
+	// Сбросить X на левый margin после переноса строки
+	leftMargin, _, _, _ := w.pdf.GetMargins()
+	w.pdf.SetX(leftMargin)
 }
 
 // writeDateNode записывает дату внутри параграфа
@@ -692,8 +706,8 @@ func (w *pdfWriter) writeIssueLinkMention(ilm *editor.IssueLinkMention) {
 func (w *pdfWriter) writeCodeBlock(code editor.Code) {
 	w.pdf.Ln(2)
 
-	// Установить меньший размер шрифта для кода
-	w.pdf.SetFont("Rubik", "", 10)
+	// Установить моноширный шрифт для кода
+	w.pdf.SetFont("Courier", "", 9)
 
 	// Разбить код на строки
 	lines := strings.Split(code.Content, "\n")
