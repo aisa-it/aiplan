@@ -665,7 +665,7 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 // @Failure 400 {object} apierrors.DefinedError "Ошибка при установке настроек просмотра"
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/ [post]
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/ [post]
 func (s *Services) updateSprintView(c echo.Context) error {
 	user := *c.(SprintContext).User
 	sprint := c.(SprintContext).Sprint
