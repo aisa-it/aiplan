@@ -13,7 +13,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 
@@ -21,6 +20,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 )
 
@@ -55,12 +55,12 @@ func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFu
 	}
 }
 
-func NewSPACacheMiddleware(indexPath string) func(echo.HandlerFunc) echo.HandlerFunc {
+func NewSPACacheMiddleware(config middleware.StaticConfig) func(echo.HandlerFunc) echo.HandlerFunc {
 	formatRegexp := regexp.MustCompile(`\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)`)
 
 	indexHasher := md5.New()
 
-	indexF, err := os.Open(indexPath)
+	indexF, err := config.Filesystem.Open("index.html")
 	if err != nil {
 		slog.Error("Open SPA index file, cache disabled", "err", err)
 	} else {

@@ -461,19 +461,28 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	authGroup.GET("conf/:room/", s.redirectToJitsiConf)
 
 	// Front handler
-	if cfg.FrontFilesPath != "" {
+	if cfg.FrontFilesPath != "" || utils.CheckEmbedSPA(frontFS) {
+		config := middleware.StaticConfig{
+			Index: "index.html",
+			Root:  "spa/",
+			HTML5: true,
+			Skipper: func(c echo.Context) bool {
+				return strings.Contains(c.Path(), "api") ||
+					strings.Contains(c.Path(), "tus") ||
+					strings.Contains(c.Path(), "swagger")
+			},
+			Filesystem: http.FS(frontFS),
+		}
+
+		if !utils.CheckEmbedSPA(frontFS) {
+			config.Root = "."
+			config.Filesystem = http.Dir(cfg.FrontFilesPath)
+		}
+
 		slog.Info("Start front routing")
 		e.Use(
-			NewSPACacheMiddleware(filepath.Join(cfg.FrontFilesPath, "index.html")),
-			middleware.StaticWithConfig(middleware.StaticConfig{
-				Root:  cfg.FrontFilesPath,
-				HTML5: true,
-				Skipper: func(c echo.Context) bool {
-					return strings.Contains(c.Path(), "api") ||
-						strings.Contains(c.Path(), "tus") ||
-						strings.Contains(c.Path(), "swagger")
-				},
-			}),
+			NewSPACacheMiddleware(config),
+			middleware.StaticWithConfig(config),
 		)
 
 		uHttp, _ := url.Parse(fmt.Sprintf("http://%s", cfg.AWSEndpoint))
