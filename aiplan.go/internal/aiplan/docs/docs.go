@@ -1718,7 +1718,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Пароль успешно изменен",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.PasswordResponse"
+                            "$ref": "#/definitions/dto.PasswordResponse"
                         }
                     },
                     "400": {
@@ -2489,7 +2489,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/aiplan.reqAnswer"
+                                "$ref": "#/definitions/dto.RequestAnswer"
                             }
                         }
                     }
@@ -2498,7 +2498,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Отправленный ответ",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.respAnswers"
+                            "$ref": "#/definitions/dto.ResponseAnswers"
                         }
                     },
                     "400": {
@@ -4130,7 +4130,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Пароль успешно сброшен",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.PasswordResponse"
+                            "$ref": "#/definitions/dto.PasswordResponse"
                         }
                     },
                     "400": {
@@ -4195,7 +4195,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Пароль успешно изменен",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.PasswordResponse"
+                            "$ref": "#/definitions/dto.PasswordResponse"
                         }
                     },
                     "400": {
@@ -4399,7 +4399,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Детали последнего рабочего пространства и проекта",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.responseLastWorkspace"
+                            "$ref": "#/definitions/dto.LastWorkspaceResponse"
                         }
                     },
                     "500": {
@@ -5280,7 +5280,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Количество непрочитанных уведомлений",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.NotificationIdResponse"
+                            "$ref": "#/definitions/dto.NotificationIdResponse"
                         }
                     },
                     "400": {
@@ -8904,7 +8904,7 @@ const docTemplate = `{
                     "201": {
                         "description": "ID созданной задачи",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.NewIssueID"
+                            "$ref": "#/definitions/dto.NewIssueID"
                         }
                     },
                     "400": {
@@ -9773,7 +9773,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Статус доступности идентификатора",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.CheckProjectIdentifierAvailabilityResponse"
+                            "$ref": "#/definitions/dto.CheckProjectIdentifierAvailabilityResponse"
                         }
                     },
                     "400": {
@@ -9936,7 +9936,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Сообщение об успешном подключении к проектам",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.JoinProjectsSuccessResponse"
+                            "$ref": "#/definitions/dto.JoinProjectsSuccessResponse"
                         }
                     },
                     "400": {
@@ -10663,7 +10663,7 @@ const docTemplate = `{
                     "201": {
                         "description": "ID созданной задачи",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.NewIssueID"
+                            "$ref": "#/definitions/dto.NewIssueID"
                         }
                     },
                     "400": {
@@ -11946,7 +11946,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Описание успешно заблокировано",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.IssueLockResponse"
+                            "$ref": "#/definitions/dto.IssueLockResponse"
                         }
                     },
                     "400": {
@@ -11970,7 +11970,7 @@ const docTemplate = `{
                     "409": {
                         "description": "Описание заблокировано другим пользователем",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.IssueLockResponse"
+                            "$ref": "#/definitions/dto.IssueLockResponse"
                         }
                     },
                     "500": {
@@ -13391,7 +13391,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Список подзадач и распределение состояний",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.ResponseSubIssueList"
+                            "$ref": "#/definitions/dto.ResponseSubIssueList"
                         }
                     },
                     "400": {
@@ -15816,7 +15816,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/": {
+        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/": {
             "post": {
                 "security": [
                     {
@@ -16760,7 +16760,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/aiplan.reqAnswer"
+                                "$ref": "#/definitions/dto.RequestAnswer"
                             }
                         }
                     }
@@ -16769,7 +16769,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Отправленный ответ",
                         "schema": {
-                            "$ref": "#/definitions/aiplan.respAnswers"
+                            "$ref": "#/definitions/dto.ResponseAnswers"
                         }
                     },
                     "400": {
@@ -16987,25 +16987,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/aiplan.BranchDTO"
                     }
-                }
-            }
-        },
-        "aiplan.CheckProjectIdentifierAvailabilityResponse": {
-            "type": "object",
-            "properties": {
-                "exists": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "identifiers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "[\"PROJECT1\"",
-                        " \"PROJECT2\"]"
-                    ]
                 }
             }
         },
@@ -17258,6 +17239,9 @@ const docTemplate = `{
                 "description_html": {
                     "type": "string"
                 },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
+                },
                 "description_stripped": {
                     "type": "string",
                     "x-nullable": true
@@ -17410,20 +17394,6 @@ const docTemplate = `{
                 }
             }
         },
-        "aiplan.IssueLockResponse": {
-            "type": "object",
-            "properties": {
-                "locked_by": {
-                    "$ref": "#/definitions/dto.UserLight"
-                },
-                "locked_until": {
-                    "type": "string"
-                },
-                "ok": {
-                    "type": "boolean"
-                }
-            }
-        },
         "aiplan.JiraInfoRequest": {
             "type": "object",
             "properties": {
@@ -17468,15 +17438,6 @@ const docTemplate = `{
                 }
             }
         },
-        "aiplan.JoinProjectsSuccessResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "example": "Projects joined successfully"
-                }
-            }
-        },
         "aiplan.LinkedIssuesIds": {
             "type": "object",
             "properties": {
@@ -17498,14 +17459,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "password": {
-                    "type": "string"
-                }
-            }
-        },
-        "aiplan.NewIssueID": {
-            "type": "object",
-            "properties": {
-                "id": {
                     "type": "string"
                 }
             }
@@ -17537,14 +17490,13 @@ const docTemplate = `{
                 "target_date": {
                     "type": "string",
                     "x-nullable": true
-                }
-            }
-        },
-        "aiplan.NotificationIdResponse": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
+                },
+                "watcher_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "x-nullable": true
                 }
             }
         },
@@ -17575,17 +17527,6 @@ const docTemplate = `{
                 "new_password": {
                     "type": "string",
                     "minLength": 8
-                }
-            }
-        },
-        "aiplan.PasswordResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "integer"
                 }
             }
         },
@@ -17662,23 +17603,6 @@ const docTemplate = `{
                 "workspace": {
                     "description": "Slug workspace",
                     "type": "string"
-                }
-            }
-        },
-        "aiplan.ResponseSubIssueList": {
-            "type": "object",
-            "properties": {
-                "state_distribution": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "integer"
-                    }
-                },
-                "sub_issues": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.Issue"
-                    }
                 }
             }
         },
@@ -17873,12 +17797,6 @@ const docTemplate = `{
                 }
             }
         },
-        "aiplan.reqAnswer": {
-            "type": "object",
-            "properties": {
-                "value": {}
-            }
-        },
         "aiplan.reqForm": {
             "type": "object",
             "required": [
@@ -18029,27 +17947,6 @@ const docTemplate = `{
                 }
             }
         },
-        "aiplan.respAnswers": {
-            "type": "object",
-            "properties": {
-                "fields": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.FormFields"
-                    }
-                },
-                "form": {
-                    "$ref": "#/definitions/dto.FormLight"
-                }
-            }
-        },
-        "aiplan.responseLastWorkspace": {
-            "type": "object",
-            "properties": {
-                "project_details": {},
-                "workspace_details": {}
-            }
-        },
         "aiplan.roleUpdRequest": {
             "type": "object",
             "required": [
@@ -18188,6 +18085,25 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.CheckProjectIdentifierAvailabilityResponse": {
+            "type": "object",
+            "properties": {
+                "exists": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "identifiers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "[\"PROJECT1\"",
+                        " \"PROJECT2\"]"
+                    ]
                 }
             }
         },
@@ -18535,7 +18451,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "new_identifier": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "new_value": {
@@ -18545,7 +18465,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "old_identifier": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "old_value": {
@@ -18636,6 +18560,14 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "notification_channels": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FormAnswerNotify"
+                        }
+                    ],
+                    "x-nullable": true
                 },
                 "slug": {
                     "type": "string"
@@ -18890,6 +18822,9 @@ const docTemplate = `{
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -19203,6 +19138,20 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.IssueLockResponse": {
+            "type": "object",
+            "properties": {
+                "locked_by": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "locked_until": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
         "dto.IssueSearchResult": {
             "type": "object",
             "properties": {
@@ -19303,6 +19252,9 @@ const docTemplate = `{
                 },
                 "description_html": {
                     "type": "string"
+                },
+                "description_json": {
+                    "$ref": "#/definitions/editor.Document"
                 },
                 "description_stripped": {
                     "type": "string",
@@ -19445,6 +19397,15 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.JoinProjectsSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Projects joined successfully"
+                }
+            }
+        },
         "dto.LabelLight": {
             "type": "object",
             "properties": {
@@ -19463,6 +19424,13 @@ const docTemplate = `{
                 "project": {
                     "type": "string"
                 }
+            }
+        },
+        "dto.LastWorkspaceResponse": {
+            "type": "object",
+            "properties": {
+                "project_details": {},
+                "workspace_details": {}
             }
         },
         "dto.ListGitRepositoriesResponse": {
@@ -19489,6 +19457,33 @@ const docTemplate = `{
                     }
                 },
                 "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.NewIssueID": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.NotificationIdResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.PasswordResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "integer"
                 }
             }
@@ -19815,6 +19810,43 @@ const docTemplate = `{
                 },
                 "tag_name": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.RequestAnswer": {
+            "type": "object",
+            "properties": {
+                "value": {}
+            }
+        },
+        "dto.ResponseAnswers": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FormFields"
+                    }
+                },
+                "form": {
+                    "$ref": "#/definitions/dto.FormLight"
+                }
+            }
+        },
+        "dto.ResponseSubIssueList": {
+            "type": "object",
+            "properties": {
+                "state_distribution": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "sub_issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.Issue"
+                    }
                 }
             }
         },
@@ -20517,6 +20549,15 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "editor.Document": {
+            "type": "object",
+            "properties": {
+                "elements": {
+                    "type": "array",
+                    "items": {}
                 }
             }
         },
@@ -21224,6 +21265,9 @@ const docTemplate = `{
                         "type": "boolean"
                     }
                 },
+                "hideSubIssues": {
+                    "type": "boolean"
+                },
                 "issueView": {
                     "type": "string",
                     "enum": [
@@ -21241,9 +21285,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "showOnlyActive": {
-                    "type": "boolean"
-                },
-                "showSubIssues": {
                     "type": "boolean"
                 }
             }

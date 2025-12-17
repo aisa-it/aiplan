@@ -113,3 +113,12 @@ type SearchFilterFull struct {
 	AuthorID uuid.UUID  `json:"author_id"`
 	Author   *UserLight `json:"author_detail"  extensions:"x-nullable"`
 }
+
+type PasswordResponse struct {
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+}
+
+type NotificationIdResponse struct {
+	Count int `json:"count"`
+}

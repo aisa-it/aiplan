@@ -590,7 +590,7 @@ func (s *Services) getProjectActivityList(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param name query string true "Идентификатор проекта"
-// @Success 200 {object} CheckProjectIdentifierAvailabilityResponse "Статус доступности идентификатора"
+// @Success 200 {object} dto.CheckProjectIdentifierAvailabilityResponse "Статус доступности идентификатора"
 // @Failure 400 {object} apierrors.DefinedError "Идентификатор проекта обязателен"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/project-identifiers [get]
@@ -611,7 +611,7 @@ func (s *Services) checkProjectIdentifierAvailability(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	response := CheckProjectIdentifierAvailabilityResponse{
+	response := dto.CheckProjectIdentifierAvailabilityResponse{
 		Exists:      len(identifiers),
 		Identifiers: identifiers,
 	}
@@ -1090,7 +1090,7 @@ func (s *Services) updateMyNotifications(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projects body JoinProjectsRequest true "ID проектов для подключения"
-// @Success 201 {object} JoinProjectsSuccessResponse "Сообщение об успешном подключении к проектам"
+// @Success 201 {object} dto.JoinProjectsSuccessResponse "Сообщение об успешном подключении к проектам"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка при подключении к проектам"
 // @Failure 403 {object} apierrors.DefinedError "Попытка подключиться к закрытому проекту"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -1148,7 +1148,7 @@ func (s *Services) joinProjects(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusCreated, JoinProjectsSuccessResponse{Message: "Projects joined successfully"})
+	return c.JSON(http.StatusCreated, dto.JoinProjectsSuccessResponse{Message: "Projects joined successfully"})
 }
 
 // ############# Views methods ###################
@@ -1599,7 +1599,7 @@ type IssueCreateRequest struct {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issue body IssueCreateRequest true "Данные задачи"
-// @Success 201 {object} NewIssueID "ID созданной задачи"
+// @Success 201 {object} dto.NewIssueID "ID созданной задачи"
 // @Failure 400 {object} apierrors.DefinedError "Неверные данные задачи"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/ [post]
@@ -1838,7 +1838,7 @@ func (s *Services) createIssue(c echo.Context) error {
 
 	}
 
-	return c.JSON(http.StatusCreated, NewIssueID{Id: issueNew.ID.String()})
+	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID.String()})
 }
 
 // ############# Labels methods ###################
@@ -2030,7 +2030,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 		// Post-update activity tracking
 		newLabelMap := StructToJSONMap(label)
 		newLabelMap["updateScope"] = "label"
-		newLabelMap["updateScopeId"] = labelId
+		newLabelMap["updateScopeId"] = label.ID
 
 		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
 		if err != nil {
@@ -2360,7 +2360,7 @@ func (s *Services) updateState(c echo.Context) error {
 	// Pre-update activity tracking
 	oldStateMap := StructToJSONMap(state)
 	oldStateMap["updateScope"] = "status"
-	oldStateMap["updateScopeId"] = stateId.String()
+	oldStateMap["updateScopeId"] = stateId
 	//TODO rate limit
 
 	var currentDefaultState dao.State
@@ -2421,7 +2421,7 @@ func (s *Services) updateState(c echo.Context) error {
 	newStateMap := StructToJSONMap(state)
 
 	newStateMap["updateScope"] = "status"
-	newStateMap["updateScopeId"] = stateId.String()
+	newStateMap["updateScopeId"] = stateId
 	if req.Default != nil && *req.Default == true {
 		newStateMap["default_activity_val"] = state.Name
 	}
@@ -2671,17 +2671,6 @@ type JoinProjectsRequest struct {
 	ProjectIDs []string `json:"project_ids" example:"[\"project1\", \"project2\"]"`
 }
 
-// JoinProjectsSuccessResponse описывает структуру успешного ответа.
-type JoinProjectsSuccessResponse struct {
-	Message string `json:"message" example:"Projects joined successfully"`
-}
-
-// CheckProjectIdentifierAvailabilityResponse описывает структуру успешного ответа.
-type CheckProjectIdentifierAvailabilityResponse struct {
-	Exists      int      `json:"exists" example:"1"`
-	Identifiers []string `json:"identifiers" example:"[\"PROJECT1\", \"PROJECT2\"]"`
-}
-
 // AddProjectToFavoritesRequest описывает структуру запроса для метода addProjectToFavorites.
 type AddProjectToFavoritesRequest struct {
 	ProjectID string `json:"project" example:"project123" validate:"required"`
@@ -2872,7 +2861,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 
 	oldTemplateMap := StructToJSONMap(template)
 	oldTemplateMap["updateScope"] = "template"
-	oldTemplateMap["updateScopeId"] = templateId
+	oldTemplateMap["updateScopeId"] = template.Id
 	// TODO rate limit
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
@@ -2902,7 +2891,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 		}
 		newTemplateMap := StructToJSONMap(template)
 		newTemplateMap["updateScope"] = "template"
-		newTemplateMap["updateScopeId"] = templateId
+		newTemplateMap["updateScopeId"] = template.Id
 
 		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newTemplateMap, oldTemplateMap, project, user)
 		if err != nil {

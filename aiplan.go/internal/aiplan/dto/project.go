@@ -139,3 +139,12 @@ type IssueTemplate struct {
 	WorkspaceId uuid.UUID `json:"workspace_id"`
 	ProjectId   uuid.UUID `json:"project_id"`
 }
+
+type JoinProjectsSuccessResponse struct {
+	Message string `json:"message" example:"Projects joined successfully"`
+}
+
+type CheckProjectIdentifierAvailabilityResponse struct {
+	Exists      int      `json:"exists" example:"1"`
+	Identifiers []string `json:"identifiers" example:"[\"PROJECT1\", \"PROJECT2\"]"`
+}
