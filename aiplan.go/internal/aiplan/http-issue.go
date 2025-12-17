@@ -334,9 +334,9 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 
 		query := s.db.
 			Joins("Parent").
-			Joins("Workspace").
+			//Joins("Workspace").
 			Joins("State").
-			Joins("Project").
+			//Joins("Project").
 			Preload("Sprints").
 			Preload("Assignees").
 			Preload("Watchers").
@@ -373,6 +373,9 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 		} else {
 			return EErrorDefined(c, apierrors.ErrIssueNotFound)
 		}
+
+		issue.Project = &project
+		issue.Workspace = project.Workspace
 
 		// Fetch Author details
 		if err := issue.Author.AfterFind(s.db); err != nil {
@@ -449,9 +452,9 @@ func (s *Services) getIssueList(c echo.Context) error {
 
 	var query *gorm.DB
 	if searchParams.LightSearch {
-		query = s.db.Preload("Author").Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Watchers").Preload("Labels")
+		query = s.db.Preload("Author").Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Watchers").Preload("Labels").Set("userId", user.ID)
 	} else {
-		query = s.db.Preload(clause.Associations)
+		query = s.db.Preload(clause.Associations).Set("userId", user.ID)
 	}
 
 	// Add membership info to project details on global search
