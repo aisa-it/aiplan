@@ -28,11 +28,12 @@ const (
 
 type Aiplan struct{}
 
-func (m *Aiplan) GoBuildEnv(source *dagger.Directory) *dagger.Container {
+func (m *Aiplan) GoBuildEnv(source *dagger.Directory, spa *dagger.Directory) *dagger.Container {
 	goCache := dag.CacheVolume("go")
 	return dag.Container().
 		From(goVersion).
 		WithDirectory("/src", source.Directory("aiplan.go/")).
+		WithDirectory("/src/internal/aiplan/spa", spa).
 		WithWorkdir("/src").
 		WithEnvVariable("GOOS", "linux").
 		WithMountedCache("/go/pkg/mod", goCache).
@@ -55,7 +56,7 @@ func (m *Aiplan) FrontBuildEnv(version string, source *dagger.Directory) *dagger
 		WithExec([]string{"yarn", "build"})
 }
 
-func (m *Aiplan) BackEnv(platform dagger.Platform, appBin *dagger.File, schema *dagger.File, docs *dagger.Directory, spa *dagger.Directory) *dagger.Container {
+func (m *Aiplan) BackEnv(platform dagger.Platform, appBin *dagger.File, schema *dagger.File, docs *dagger.Directory) *dagger.Container {
 	return dag.Container(dagger.ContainerOpts{
 		Platform: platform,
 	}).
@@ -66,8 +67,6 @@ func (m *Aiplan) BackEnv(platform dagger.Platform, appBin *dagger.File, schema *
 		WithWorkdir("/app").
 		WithFile("/app/app", appBin).
 		WithDirectory("/app/aiplan-help", docs).
-		WithDirectory("/app/spa", spa).
-		WithEnvVariable("FRONT_PATH", "/app/spa").
 		WithEntrypoint([]string{"/app/app"})
 }
 
@@ -89,20 +88,19 @@ func (m *Aiplan) Build(version string, source *dagger.Directory) []*dagger.Conta
 		},
 	}
 
+	front := m.FrontBuildEnv(version, source.Directory("aiplan-front/"))
+
 	var images []*dagger.Container
 	for _, buildParam := range buildMatrix {
-		builder := m.GoBuildEnv(source).
+		builder := m.GoBuildEnv(source, front.Directory("/src/dist/pwa")).
 			WithEnvVariable("GOARCH", buildParam.Arch).
-			WithExec([]string{"go", "build", "-o", buildParam.BinName, "-ldflags", fmt.Sprintf("-s -w -X main.version=%s", version), "cmd/aiplan/main.go"})
-
-		front := m.FrontBuildEnv(version, source.Directory("aiplan-front/"))
+			WithExec([]string{"go", "build", "-o", buildParam.BinName, "-ldflags", fmt.Sprintf("-s -w -X main.version=%s", version), "-tags", "embedSPA", "cmd/aiplan/main.go"})
 
 		image := m.BackEnv(
 			buildParam.Platform,
 			builder.File(buildParam.BinName),
 			builder.File("/src/schema.sql"),
 			source.Directory("aiplan-help/"),
-			front.Directory("/src/dist/pwa"),
 		).
 			WithLabel("org.opencontainers.image.source", "https://github.com/aisa-it/aiplan").
 			WithLabel("org.opencontainers.image.licenses", "MPL-2.0").
