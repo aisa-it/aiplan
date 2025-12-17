@@ -1287,11 +1287,11 @@ func (s *Services) updateDocComment(c echo.Context) error {
 		return EError(c, err)
 	}
 	newMap := StructToJSONMap(comment)
-	newMap["updateScopeId"] = commentId
+	newMap["updateScopeId"] = comment.Id
 	newMap["field_log"] = actField.Comment.Field
 
 	oldMap["updateScope"] = "comment"
-	oldMap["updateScopeId"] = commentId
+	oldMap["updateScopeId"] = comment.Id
 	err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, *comment, &user)
 	if err != nil {
 		errStack.GetError(c, err)
@@ -2208,7 +2208,7 @@ func createDocActivity(track *tracker.ActivitiesTracker,
 			if fromDoc {
 				currentInstance["entity"] = *changes.FromDoc
 				currentInstance["parent_title"] = changes.FromDoc.Title
-				currentInstance["parent_doc_id"] = changes.FromDoc.ID.String()
+				currentInstance["parent_doc_id"] = changes.FromDoc.ID
 			} else {
 				currentInstance["parent_title"] = doc.Workspace.Name
 			}
@@ -2218,7 +2218,7 @@ func createDocActivity(track *tracker.ActivitiesTracker,
 			if toDoc {
 				requestedData["entity"] = *changes.ToDoc
 				requestedData["parent_title"] = changes.ToDoc.Title
-				requestedData["parent_doc_id"] = changes.ToDoc.ID.String()
+				requestedData["parent_doc_id"] = changes.ToDoc.ID
 			} else {
 				requestedData["parent_title"] = doc.Workspace.Name
 			}

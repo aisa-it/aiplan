@@ -355,7 +355,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 			Where("id in (?)", req.IssuesAdd).
 			Where("id not in (?)",
 				tx.
-					Select("issue_id::text").
+					Select("issue_id").
 					Where("workspace_id", workspace.ID).
 					Where("sprint_id = ?", sprint.Id).
 					Model(&dao.SprintIssue{})).
@@ -432,7 +432,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		data := map[string]interface{}{
 			"issue_key":           "sprint",
 			"sprint_activity_val": sprint.Name,
-			"updateScopeId":       sprint.Id.String(),
+			"updateScopeId":       sprint.Id,
 		}
 
 		for _, id := range changes.AddIds {
@@ -536,7 +536,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 			Where("member_id in (?)", req.MembersAdd).
 			Where("member_id not in (?)",
 				tx.
-					Select("watcher_id::text").
+					Select("watcher_id").
 					Where("workspace_id", workspace.ID).
 					Where("sprint_id = ?", sprint.Id).
 					Model(&dao.SprintWatcher{})).
@@ -665,7 +665,7 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 // @Failure 400 {object} apierrors.DefinedError "Ошибка при установке настроек просмотра"
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/ [post]
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/ [post]
 func (s *Services) updateSprintView(c echo.Context) error {
 	user := *c.(SprintContext).User
 	sprint := c.(SprintContext).Sprint

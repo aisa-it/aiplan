@@ -12,6 +12,7 @@ import (
 	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 )
 
 // entityFieldUpdate Обновляет значение поля сущности, либо добавляет/удаляет сущности из списка.  Обрабатывает как отдельные обновления, так и массовые изменения нескольких сущностей.
@@ -31,8 +32,8 @@ import (
 //   - error: Ошибка, если произошла ошибка при обновлении.
 func entityFieldUpdate[E dao.Entity, A dao.Activity](
 	field actField.ActivityField,
-	newIdentifier *string,
-	oldIdentifier *string,
+	newIdentifier uuid.NullUUID,
+	oldIdentifier uuid.NullUUID,
 	tracker *ActivitiesTracker,
 	requestedData map[string]interface{},
 	currentInstance map[string]interface{},
@@ -84,18 +85,18 @@ func entityFieldUpdate[E dao.Entity, A dao.Activity](
 		valToComment = "None"
 	}
 
-	if id, ok := requestedData["updateScopeId"].(string); ok {
-		newIdentifier = &id
+	if id, ok := requestedData["updateScopeId"].(uuid.UUID); ok {
+		newIdentifier = uuid.NullUUID{UUID: id, Valid: true}
 	}
-	if id, ok := requestedData[fmt.Sprintf("%s_updateScopeId", field)].(string); ok {
-		newIdentifier = &id
+	if id, ok := requestedData[fmt.Sprintf("%s_updateScopeId", field)].(uuid.UUID); ok {
+		newIdentifier = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
-	if id, ok := currentInstance["updateScopeId"].(string); ok {
-		oldIdentifier = &id
+	if id, ok := currentInstance["updateScopeId"].(uuid.UUID); ok {
+		oldIdentifier = uuid.NullUUID{UUID: id, Valid: true}
 	}
-	if id, ok := currentInstance[fmt.Sprintf("%s_updateScopeId", field)].(string); ok {
-		oldIdentifier = &id
+	if id, ok := currentInstance[fmt.Sprintf("%s_updateScopeId", field)].(uuid.UUID); ok {
+		oldIdentifier = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
 	if scope, ok := currentInstance["updateScope"]; ok {
@@ -178,9 +179,9 @@ func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 	for _, id := range changes.DelIds {
 
-		oldV := entityMap[id.String()].GetString()
-		oldId := id.String()
-		templateActivity := dao.NewTemplateActivity(actField.VerbRemoved, act.Field, &oldV, "", nil, &oldId, &actor, oldV)
+		oldV := entityMap[id].GetString()
+		oldId := id
+		templateActivity := dao.NewTemplateActivity(actField.VerbRemoved, act.Field, &oldV, "", uuid.NullUUID{}, uuid.NullUUID{UUID: oldId, Valid: true}, &actor, oldV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -191,9 +192,9 @@ func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 	for _, id := range changes.AddIds {
 
-		newV := entityMap[id.String()].GetString()
-		newId := id.String()
-		templateActivity := dao.NewTemplateActivity(actField.VerbAdded, act.Field, nil, newV, &newId, nil, &actor, newV)
+		newV := entityMap[id].GetString()
+		newId := id
+		templateActivity := dao.NewTemplateActivity(actField.VerbAdded, act.Field, nil, newV, uuid.NullUUID{UUID: newId, Valid: true}, uuid.NullUUID{}, &actor, newV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -238,8 +239,8 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 		Find(&involvedEntities).Error; err != nil {
 		return result, ErrStack.TrackErrorStack(err)
 	}
-	iEntityMap := make(map[string]dao.IDaoAct)
-	entityMap := make(map[string]E)
+	iEntityMap := make(map[uuid.UUID]dao.IDaoAct)
+	entityMap := make(map[uuid.UUID]E)
 	for _, e := range involvedEntities {
 		if v, ok := any(e).(dao.IDaoAct); ok {
 			iEntityMap[v.GetId()] = v
@@ -257,18 +258,18 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 	if fieldLog, ok := requestedData[fmt.Sprintf("field_log_source")]; ok {
 		sourceField = fieldLog.(actField.ActivityField)
 	}
-	if fieldLog, ok := requestedData[fmt.Sprintf("field_log_target")]; ok {
+	if fieldLog, ok := currentInstance[fmt.Sprintf("field_log_target")]; ok {
 		targetField = fieldLog.(actField.ActivityField)
 	}
 
 	for _, id := range changes.DelIds {
-		oldEntity := entityMap[id.String()]
-		oldIEntity := iEntityMap[id.String()]
+		oldEntity := entityMap[id]
+		oldIEntity := iEntityMap[id]
 
 		oldV := oldIEntity.GetString()
 
-		oldId := id.String()
-		templateActivity := dao.NewTemplateActivity(actField.VerbUpdated, sourceField, &oldV, "", nil, &oldId, &actor, oldV)
+		oldId := id
+		templateActivity := dao.NewTemplateActivity(actField.VerbUpdated, sourceField, &oldV, "", uuid.NullUUID{}, uuid.NullUUID{UUID: oldId, Valid: true}, &actor, oldV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -278,7 +279,7 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 		oldVTarget := ie.GetString()
 		idE := ie.GetId()
-		templateActivity = dao.NewTemplateActivity(actField.VerbUpdated, targetField, &oldVTarget, "", nil, &idE, &actor, oldVTarget)
+		templateActivity = dao.NewTemplateActivity(actField.VerbUpdated, targetField, &oldVTarget, "", uuid.NullUUID{}, uuid.NullUUID{UUID: idE, Valid: true}, &actor, oldVTarget)
 		if act, err := CreateActivity[E, A](oldEntity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -288,13 +289,13 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 	}
 
 	for _, id := range changes.AddIds {
-		newEntity := entityMap[id.String()]
-		newIEntity := iEntityMap[id.String()]
+		newEntity := entityMap[id]
+		newIEntity := iEntityMap[id]
 
 		newV := newIEntity.GetString()
 
-		newId := id.String()
-		templateActivity := dao.NewTemplateActivity(actField.VerbUpdated, sourceField, nil, newV, &newId, nil, &actor, newV)
+		newId := id
+		templateActivity := dao.NewTemplateActivity(actField.VerbUpdated, sourceField, nil, newV, uuid.NullUUID{UUID: newId, Valid: true}, uuid.NullUUID{}, &actor, newV)
 		if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue
@@ -304,7 +305,7 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 
 		newV = ie.GetString()
 		idE := ie.GetId()
-		templateActivity = dao.NewTemplateActivity(actField.VerbUpdated, targetField, nil, newV, &idE, nil, &actor, newV)
+		templateActivity = dao.NewTemplateActivity(actField.VerbUpdated, targetField, nil, newV, uuid.NullUUID{UUID: idE, Valid: true}, uuid.NullUUID{}, &actor, newV)
 		if act, err := CreateActivity[E, A](newEntity, templateActivity); err != nil {
 			ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
 			continue

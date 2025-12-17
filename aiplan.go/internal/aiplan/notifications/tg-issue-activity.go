@@ -228,11 +228,11 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 			case actField.Linked.Field:
 				var targetIssue dao.Issue
 
-				if activity.OldIdentifier == nil && activity.NewIdentifier != nil {
+				if !activity.OldIdentifier.Valid && activity.NewIdentifier.Valid {
 					msg.Text = act.Title("добавил(-а) связь к ")
 					targetIssue = *activity.NewIssueLinked
 				}
-				if activity.NewIdentifier == nil && activity.OldIdentifier != nil {
+				if !activity.NewIdentifier.Valid && activity.OldIdentifier.Valid {
 					msg.Text = act.Title("убрал(-а) связь из")
 					targetIssue = *activity.OldIssueLinked
 				}

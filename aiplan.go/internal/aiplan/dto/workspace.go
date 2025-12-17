@@ -67,3 +67,8 @@ type WorkspaceFavorites struct {
 	WorkspaceId uuid.UUID  `json:"workspace_id"`
 	Workspace   *Workspace `json:"workspace_detail,omitempty" extensions:"x-nullable"`
 }
+
+type LastWorkspaceResponse struct {
+	WorkspaceDetails interface{} `json:"workspace_details"`
+	ProjectDetails   interface{} `json:"project_details"`
+}
