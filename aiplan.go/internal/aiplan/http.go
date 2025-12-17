@@ -45,6 +45,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -311,6 +312,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 		cronManager.Stop()
 		es.Stop()
+		ns.Tg.Stop()
 		os.Exit(0)
 	}()
 
@@ -325,10 +327,11 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	{ // register handler telegram activity
-		tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
-		tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
-		tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))
-		tr.RegisterHandler(notifications.NewTgNotifyWorkspace(ns.Tg))
+		tr.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyWorkspace(ns.Tg))
 	}
 
 	// Global middlewares

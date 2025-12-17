@@ -12,6 +12,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	"gorm.io/gorm/clause"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -25,7 +26,7 @@ const maxRetryAttempts = 3
 // NotificationProcessor is responsible for processing notifications
 type NotificationProcessor struct {
 	db               *gorm.DB
-	telegramService  *TelegramService
+	telegramService  *tg.TgService
 	emailService     *EmailService
 	websocketService *WebsocketNotificationService
 }
@@ -48,7 +49,7 @@ func CreateNotificationSender(notification *dao.DeferredNotifications) (INotifyS
 	return res, nil
 }
 
-func NewNotificationProcessor(db *gorm.DB, telegramService *TelegramService, emailService *EmailService, websocketService *WebsocketNotificationService) *NotificationProcessor {
+func NewNotificationProcessor(db *gorm.DB, telegramService *tg.TgService, emailService *EmailService, websocketService *WebsocketNotificationService) *NotificationProcessor {
 	return &NotificationProcessor{
 		db:               db,
 		telegramService:  telegramService,
@@ -137,7 +138,7 @@ func (np *NotificationProcessor) handleNotification(notification *dao.DeferredNo
 }
 
 func (np *NotificationProcessor) sendToTelegram(notification *dao.DeferredNotifications, sender INotifySend) bool {
-	if np.telegramService.disabled {
+	if np.telegramService.Disabled {
 		return false
 	}
 	if !notification.User.CanReceiveNotifications() && !notification.User.Settings.TgNotificationMute {
