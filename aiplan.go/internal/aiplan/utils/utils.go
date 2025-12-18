@@ -285,6 +285,6 @@ func FormatDateToSqlNullTime(dateStr string) sql.NullTime {
 }
 
 func CheckEmbedSPA(fs embed.FS) bool {
-	d, err := fs.ReadFile("pwa/index.html")
+	d, err := fs.ReadFile("spa/index.html")
 	return len(d) > 0 && err == nil
 }
