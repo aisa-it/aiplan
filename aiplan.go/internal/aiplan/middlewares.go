@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -60,7 +61,7 @@ func NewSPACacheMiddleware(config middleware.StaticConfig) func(echo.HandlerFunc
 
 	indexHasher := md5.New()
 
-	indexF, err := config.Filesystem.Open("index.html")
+	indexF, err := config.Filesystem.Open(filepath.Join(config.Root, "index.html"))
 	if err != nil {
 		slog.Error("Open SPA index file, cache disabled", "err", err)
 	} else {
