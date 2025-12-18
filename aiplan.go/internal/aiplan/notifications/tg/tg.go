@@ -26,13 +26,11 @@ type TgService struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+}
 
-	//logger      *zap.Logger
-	//commands    *commands.Registry
-	//dispatcher  *events.Dispatcher
-	//subscribers *subscribers.Manager
-	//config      *Config
-	//middleware  []Middleware
+type TgMsg struct {
+	title string
+	body  string
 }
 
 func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl *business.Business) *TgService {
@@ -43,7 +41,7 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 
 	opts := []bot.Option{
 		bot.WithDefaultHandler(func(ctx context.Context, bot *bot.Bot, update *models.Update) {}),
-		bot.WithMiddlewares(TelegramAuthMiddleware(db)),
+		//bot.WithMiddlewares(TelegramAuthMiddleware(db)),
 	}
 
 	b, err := bot.New(
@@ -68,7 +66,8 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 		cancel:   cancel,
 	}
 
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, serv.startHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, serv.getUserMiddleware()(serv.startHandler))
+	b.RegisterHandlerMatchFunc(isReplyMessage, serv.getUserMiddleware()(serv.commentActivityHandler))
 
 	go serv.Start()
 
@@ -98,6 +97,40 @@ func (t *TgService) GetBotLink() string {
 		return ""
 	}
 	return "https://t.me/" + fmt.Sprint(t.bot.ID())
+}
+
+func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
+	msg := tgMsg.title
+	if msg == "" {
+		return 0, fmt.Errorf("empty message")
+	}
+
+	if tgMsg.body != "" {
+		msg += "\n" + tgMsg.body
+	}
+
+	smp := bot.SendMessageParams{
+		ChatID:    tgId,
+		Text:      msg,
+		ParseMode: models.ParseModeMarkdown,
+		LinkPreviewOptions: &models.LinkPreviewOptions{
+			IsDisabled: bot.True(),
+		},
+	}
+
+	message, err := t.bot.SendMessage(t.ctx, &smp)
+	if err != nil {
+		return 0, fmt.Errorf("send message error: %w", err)
+	}
+
+	return int64(message.ID), nil
+}
+
+func isReplyMessage(update *models.Update) bool {
+	if update.Message.ReplyToMessage == nil {
+		return false
+	}
+	return true
 }
 
 func (t *TgService) SendMessage(tgId int64, format string, anyStr []string) bool {

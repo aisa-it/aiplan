@@ -494,7 +494,7 @@ func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[uuid.UUID]use
 	} else {
 		for rows.Next() {
 			var res struct {
-				Id           string
+				Id           uuid.UUID
 				TelegramId   int64
 				UserTimezone types.TimeZone
 				Settings     types.UserSettings
@@ -504,8 +504,7 @@ func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[uuid.UUID]use
 				break
 			}
 			if res.TelegramId != 0 && !res.Settings.TgNotificationMute {
-				userId := uuid.FromStringOrNil(res.Id)
-				userTgId[userId] = userTg{
+				userTgId[res.Id] = userTg{
 					id:  res.TelegramId,
 					loc: res.UserTimezone,
 				}

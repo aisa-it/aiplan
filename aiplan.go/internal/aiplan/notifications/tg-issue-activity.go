@@ -66,62 +66,62 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 
 		switch activity.Verb {
 		case "created":
-			if activity.Field == nil { // todo move to project
-				msg.Text = act.Title("создал(-a)")
+			//if activity.Field == nil { // todo move to project
+			//	msg.Text = act.Title("создал(-a)")
+			//
+			//	if activity.Issue.Parent != nil {
+			//		parentURL := activity.Issue.Parent.URL.String()
+			//		msg.Text += Stelegramf("*%s*: [%s](%s)\n",
+			//			fieldsTranslation["parent"],
+			//			activity.Issue.Parent.String(),
+			//			parentURL,
+			//		)
+			//	}
+			//
+			//	if activity.Issue.Priority != nil {
+			//		msg.Text += Stelegramf("*%s*: %s\n",
+			//			fieldsTranslation["priority"],
+			//			priorityTranslation[*activity.Issue.Priority],
+			//		)
+			//	}
+			//
+			//	if activity.Issue.Assignees != nil && len(*activity.Issue.Assignees) > 0 {
+			//		assignees := []string{}
+			//		for _, assignee := range *activity.Issue.Assignees {
+			//			if assignee.LastName == "" {
+			//				assignees = append(assignees, Stelegramf("%s", assignee.Email))
+			//			} else {
+			//				assignees = append(assignees, Stelegramf("%s %s", assignee.FirstName, assignee.LastName))
+			//			}
+			//		}
+			//		msg.Text += fmt.Sprintf("Исполнители: *%s*", strings.Join(assignees, "*, *"))
+			//	}
+			//} else {
+			switch actField.ActivityField(*activity.Field) {
+			//case actField.Comment.Field:
+			//	if activity.NewIssueComment == nil {
+			//		return
+			//	}
+			//	msg.Text = act.Title("прокомментировал(-a)")
+			//	msg.Text += Stelegramf("```\n%s```",
+			//		HtmlToTg(activity.NewIssueComment.CommentHtml.Body),
+			//	)
 
-				if activity.Issue.Parent != nil {
-					parentURL := activity.Issue.Parent.URL.String()
-					msg.Text += Stelegramf("*%s*: [%s](%s)\n",
-						fieldsTranslation["parent"],
-						activity.Issue.Parent.String(),
-						parentURL,
-					)
-				}
-
-				if activity.Issue.Priority != nil {
-					msg.Text += Stelegramf("*%s*: %s\n",
-						fieldsTranslation["priority"],
-						priorityTranslation[*activity.Issue.Priority],
-					)
-				}
-
-				if activity.Issue.Assignees != nil && len(*activity.Issue.Assignees) > 0 {
-					assignees := []string{}
-					for _, assignee := range *activity.Issue.Assignees {
-						if assignee.LastName == "" {
-							assignees = append(assignees, Stelegramf("%s", assignee.Email))
-						} else {
-							assignees = append(assignees, Stelegramf("%s %s", assignee.FirstName, assignee.LastName))
-						}
-					}
-					msg.Text += fmt.Sprintf("Исполнители: *%s*", strings.Join(assignees, "*, *"))
-				}
-			} else {
-				switch actField.ActivityField(*activity.Field) {
-				case actField.Comment.Field:
-					if activity.NewIssueComment == nil {
-						return
-					}
-					msg.Text = act.Title("прокомментировал(-a)")
-					msg.Text += Stelegramf("```\n%s```",
-						HtmlToTg(activity.NewIssueComment.CommentHtml.Body),
-					)
-
-				case actField.Link.Field:
-					msg.Text = act.Title("добавил(-a) ссылку в")
-					msg.Text += Stelegramf("[%s](%s)",
-						activity.NewLink.Title,
-						activity.NewLink.Url,
-					)
-				case actField.Attachment.Field:
-					msg.Text = act.Title("добавил(-a) вложение в")
-				case actField.Linked.Field:
-					msg.Text = act.Title("добавил(-a) связь к задаче")
-					msg.Text += Stelegramf("%s",
-						activity.NewValue,
-					)
-				}
+			//case actField.Link.Field:
+			//	msg.Text = act.Title("добавил(-a) ссылку в")
+			//	msg.Text += Stelegramf("[%s](%s)",
+			//		activity.NewLink.Title,
+			//		activity.NewLink.Url,
+			//	)
+			//case actField.Attachment.Field:
+			//	msg.Text = act.Title("добавил(-a) вложение в")
+			//case actField.Linked.Field:
+			//	msg.Text = act.Title("добавил(-a) связь к задаче")
+			//	msg.Text += Stelegramf("%s",
+			//		activity.NewValue,
+			//	)
 			}
+			//}
 		case "added":
 			switch actField.ActivityField(*activity.Field) {
 			case actField.Label.Field:
@@ -136,18 +136,18 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					activity.NewSubIssue.FullIssueName(),
 					activity.NewSubIssue.URL,
 				)
-			case actField.Assignees.Field:
-				msg.Text = act.Title("добавил(-a) нового исполнителя в")
-				msg.Text += Stelegramf("%s %s",
-					activity.NewAssignee.FirstName,
-					activity.NewAssignee.LastName,
-				)
-			case actField.Watchers.Field:
-				msg.Text = act.Title("добавил(-a) нового наблюдателя в")
-				msg.Text += Stelegramf("%s %s",
-					activity.NewWatcher.FirstName,
-					activity.NewWatcher.LastName,
-				)
+				//case actField.Assignees.Field:
+				//	msg.Text = act.Title("добавил(-a) нового исполнителя в")
+				//	msg.Text += Stelegramf("%s %s",
+				//		activity.NewAssignee.FirstName,
+				//		activity.NewAssignee.LastName,
+				//	)
+				//case actField.Watchers.Field:
+				//	msg.Text = act.Title("добавил(-a) нового наблюдателя в")
+				//	msg.Text += Stelegramf("%s %s",
+				//		activity.NewWatcher.FirstName,
+				//		activity.NewWatcher.LastName,
+				//	)
 			}
 
 		case "removed":
@@ -164,84 +164,84 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 					activity.OldSubIssue.FullIssueName(),
 					activity.OldSubIssue.URL,
 				)
-			case actField.Assignees.Field:
-				msg.Text = act.Title("убрал(-а) исполнителя из")
-				msg.Text += Stelegramf("%s %s",
-					activity.OldAssignee.FirstName,
-					activity.OldAssignee.LastName,
-				)
-			case actField.Watchers.Field:
-				msg.Text = act.Title("убрал(-а) наблюдателя из")
-				msg.Text += Stelegramf("%s %s",
-					activity.OldWatcher.FirstName,
-					activity.OldWatcher.LastName,
-				)
+				//case actField.Assignees.Field:
+				//	msg.Text = act.Title("убрал(-а) исполнителя из")
+				//	msg.Text += Stelegramf("%s %s",
+				//		activity.OldAssignee.FirstName,
+				//		activity.OldAssignee.LastName,
+				//	)
+				//case actField.Watchers.Field:
+				//	msg.Text = act.Title("убрал(-а) наблюдателя из")
+				//	msg.Text += Stelegramf("%s %s",
+				//		activity.OldWatcher.FirstName,
+				//		activity.OldWatcher.LastName,
+				//	)
 			}
 
 		case "updated":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Description.Field:
-				msg.Text = act.Title("изменил(-а) описание")
-				msg.Text += Stelegramf("```\n%s```",
-					HtmlToTg(activity.NewValue),
-				)
-			case actField.Comment.Field:
-				msg.Text = act.Title("изменил(-a) комментарий")
-				msg.Text += Stelegramf("```\n%s```",
-					HtmlToTg(activity.NewIssueComment.CommentHtml.Body),
-				)
-			case actField.Link.Field:
-				var old string
-				if activity.OldValue != nil {
-					old = *activity.OldValue
-				}
-				msg.Text = act.Title("изменил(-a) ссылку")
-				msg.Text += Stelegramf("~%s~ [%s](%s)",
-					old,
-					activity.NewLink.Title,
-					activity.NewLink.Url,
-				)
-			case actField.LinkTitle.Field:
-				var old string
-				if activity.OldValue != nil {
-					old = *activity.OldValue
-				}
-				msg.Text = act.Title("изменил(-a) название ссылки")
-				msg.Text += Stelegramf("~%s~ [%s](%s)",
-					old,
-					activity.NewLink.Title,
-					activity.NewLink.Url,
-				)
+			//case actField.Description.Field:
+			//	msg.Text = act.Title("изменил(-а) описание")
+			//	msg.Text += Stelegramf("```\n%s```",
+			//		HtmlToTg(activity.NewValue),
+			//	)
+			//case actField.Comment.Field:
+			//	msg.Text = act.Title("изменил(-a) комментарий")
+			//	msg.Text += Stelegramf("```\n%s```",
+			//		HtmlToTg(activity.NewIssueComment.CommentHtml.Body),
+			//	)
+			//case actField.Link.Field:
+			//	var old string
+			//	if activity.OldValue != nil {
+			//		old = *activity.OldValue
+			//	}
+			//	msg.Text = act.Title("изменил(-a) ссылку")
+			//	msg.Text += Stelegramf("~%s~ [%s](%s)",
+			//		old,
+			//		activity.NewLink.Title,
+			//		activity.NewLink.Url,
+			//	)
+			//case actField.LinkTitle.Field:
+			//	var old string
+			//	if activity.OldValue != nil {
+			//		old = *activity.OldValue
+			//	}
+			//	msg.Text = act.Title("изменил(-a) название ссылки")
+			//	msg.Text += Stelegramf("~%s~ [%s](%s)",
+			//		old,
+			//		activity.NewLink.Title,
+			//		activity.NewLink.Url,
+			//	)
+			//
+			//case actField.LinkUrl.Field:
+			//	var old string
+			//	if activity.OldValue != nil {
+			//		old = *activity.OldValue
+			//	}
+			//	msg.Text = act.Title("изменил(-a) url ссылки")
+			//	msg.Text += Stelegramf("~%s~ [%s](%s)",
+			//		old,
+			//		activity.NewLink.Url,
+			//		activity.NewLink.Url,
+			//	)
 
-			case actField.LinkUrl.Field:
-				var old string
-				if activity.OldValue != nil {
-					old = *activity.OldValue
-				}
-				msg.Text = act.Title("изменил(-a) url ссылки")
-				msg.Text += Stelegramf("~%s~ [%s](%s)",
-					old,
-					activity.NewLink.Url,
-					activity.NewLink.Url,
-				)
-
-			case actField.Linked.Field:
-				var targetIssue dao.Issue
-
-				if !activity.OldIdentifier.Valid && activity.NewIdentifier.Valid {
-					msg.Text = act.Title("добавил(-а) связь к ")
-					targetIssue = *activity.NewIssueLinked
-				}
-				if !activity.NewIdentifier.Valid && activity.OldIdentifier.Valid {
-					msg.Text = act.Title("убрал(-а) связь из")
-					targetIssue = *activity.OldIssueLinked
-				}
-				targetIssue.Project = activity.Issue.Project
-
-				msg.Text += Stelegramf("*Задача*: [%s](%s)",
-					targetIssue.FullIssueName(),
-					targetIssue.URL,
-				)
+			//case actField.Linked.Field:
+			//	var targetIssue dao.Issue
+			//
+			//	if !activity.OldIdentifier.Valid && activity.NewIdentifier.Valid {
+			//		msg.Text = act.Title("добавил(-а) связь к ")
+			//		targetIssue = *activity.NewIssueLinked
+			//	}
+			//	if !activity.NewIdentifier.Valid && activity.OldIdentifier.Valid {
+			//		msg.Text = act.Title("убрал(-а) связь из")
+			//		targetIssue = *activity.OldIssueLinked
+			//	}
+			//	targetIssue.Project = activity.Issue.Project
+			//
+			//	msg.Text += Stelegramf("*Задача*: [%s](%s)",
+			//		targetIssue.FullIssueName(),
+			//		targetIssue.URL,
+			//	)
 
 			case actField.TargetDate.Field:
 				oldValue := ""
@@ -369,23 +369,23 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 			}
 		case "deleted":
 			switch actField.ActivityField(*activity.Field) {
-			case "issue": // todo move to project
-				msg.Text = Stelegramf("*%s %s* удалил(-a) %s",
-					activity.Actor.FirstName,
-					activity.Actor.LastName,
-					activity.Issue.FullIssueName(),
-				)
-			case actField.Link.Field:
-				msg.Text = act.Title("удалил(-a) ссылку из")
-			case actField.Attachment.Field:
-				msg.Text = act.Title("удалил(-a) вложение из")
-			case actField.Comment.Field:
-				msg.Text = act.Title("удалил(-a) комментарий из")
-			case actField.Linked.Field:
-				msg.Text = act.Title("удалил(-a) связь из")
-				msg.Text += Stelegramf("%s",
-					fmt.Sprint(*activity.OldValue),
-				)
+			//case "issue": // todo move to project
+			//	msg.Text = Stelegramf("*%s %s* удалил(-a) %s",
+			//		activity.Actor.FirstName,
+			//		activity.Actor.LastName,
+			//		activity.Issue.FullIssueName(),
+			//	)
+			//case actField.Link.Field:
+			//	msg.Text = act.Title("удалил(-a) ссылку из")
+			//case actField.Attachment.Field:
+			//	msg.Text = act.Title("удалил(-a) вложение из")
+			//case actField.Comment.Field:
+			//	msg.Text = act.Title("удалил(-a) комментарий из")
+			//case actField.Linked.Field:
+			//	msg.Text = act.Title("удалил(-a) связь из")
+			//	msg.Text += Stelegramf("%s",
+			//		fmt.Sprint(*activity.OldValue),
+			//	)
 			}
 
 		case "move":
