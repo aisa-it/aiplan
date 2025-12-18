@@ -187,8 +187,8 @@ func (m *Aiplan) Export(
 		Export(ctx, imageName, dagger.ContainerExportOpts{PlatformVariants: images})
 }
 
-func (m *Aiplan) BuildLocal(ctx context.Context, name string, source *dagger.Directory) (string, error) {
-	return m.Export(ctx, m.Build("v0.1.0", source), name)
+func (m *Aiplan) BuildLocal(ctx context.Context, source *dagger.Directory) []*dagger.Container {
+	return m.Build("v0.1.0", source)
 }
 
 func (m *Aiplan) BuildApp(ctx context.Context, version string, source *dagger.Directory,
