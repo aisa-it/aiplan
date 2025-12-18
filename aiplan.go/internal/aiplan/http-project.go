@@ -1828,14 +1828,13 @@ func (s *Services) createIssue(c echo.Context) error {
 		data := make(map[string]interface{})
 		oldData := make(map[string]interface{})
 
-		oldData["parent"] = nil
-		data["parent"] = issueNew.ParentId.UUID.String()
+		oldData["parent"] = uuid.NullUUID{}
+		data["parent"] = issueNew.ParentId.UUID
 
 		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityUpdatedActivity, data, oldData, issueNew, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-
 	}
 
 	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID.String()})
@@ -3085,7 +3084,7 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 		"logo": oldLogoId,
 	}
 	newMap := map[string]interface{}{
-		"logo": uuid.NullUUID{}.UUID.String(),
+		"logo": uuid.Nil.String(),
 	}
 
 	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)

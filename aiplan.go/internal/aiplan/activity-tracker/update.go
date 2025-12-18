@@ -675,6 +675,8 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 		switch val := v.(type) {
 		case uuid.NullUUID:
 			oldParentId = val
+		case uuid.UUID:
+			oldParentId = uuid.NullUUID{UUID: val, Valid: true}
 		}
 	}
 
