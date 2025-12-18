@@ -972,7 +972,7 @@ type reqForm struct {
 	EndDate              *types2.TargetDate      `json:"end_date,omitempty" extensions:"x-nullable"`
 	TargetProjectId      *string                 `json:"target_project_id" extensions:"x-nullable"`
 	Fields               types2.FormFieldsSlice  `json:"fields,omitempty"`
-	NotificationChannels types2.FormAnswerNotify `json:"notification_channels,omitempty"`
+	NotificationChannels types2.FormAnswerNotify `json:"notification_channels"`
 }
 
 func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao.Form, error) {

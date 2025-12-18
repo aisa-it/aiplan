@@ -169,8 +169,7 @@ func (u *User) ToDTO() *dto.User {
 		AttachmentsAllow:  nil,
 	}
 	if u.LastWorkspaceId.Valid {
-		workspaceIdStr := u.LastWorkspaceId.UUID.String()
-		userDto.LastWorkspaceId = &workspaceIdStr
+		userDto.LastWorkspaceId = utils.ToPtr(u.LastWorkspaceId.UUID.String())
 	}
 	if u.LastWorkspace != nil {
 		userDto.LastWorkspaceSlug = &u.LastWorkspace.Slug

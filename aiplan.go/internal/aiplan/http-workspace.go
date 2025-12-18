@@ -415,7 +415,7 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 		"logo": oldLogoId,
 	}
 	newMap := map[string]interface{}{
-		"logo": uuid.NullUUID{}.UUID.String(),
+		"logo": uuid.Nil.String(),
 	}
 
 	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
