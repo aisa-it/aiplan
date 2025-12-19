@@ -51,6 +51,9 @@ func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
 	if strings.HasSuffix(c.Path(), "/issues/search/") && c.Request().Method == http.MethodPost {
 		return workspaceMember.Role > types.GuestRole, nil
 	}
+	if strings.HasSuffix(c.Path(), "/sprint-view/") && c.Request().Method == http.MethodPost {
+		return workspaceMember.Role > types.GuestRole, nil
+	}
 
 	return false, nil
 }
