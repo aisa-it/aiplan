@@ -103,8 +103,7 @@ func (s *Sprint) AfterFind(tx *gorm.DB) error {
 			} else {
 				return err
 			}
-		}
-		if sprintView != nil {
+		} else {
 			s.View = sprintView.ViewProps
 		}
 	}
