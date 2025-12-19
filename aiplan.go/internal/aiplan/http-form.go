@@ -824,7 +824,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 // @Router /api/auth/forms/{formSlug}/form-attachments/{attachmentId} [delete]
 func (s *Services) deleteFormAttachment(c echo.Context) error {
 	workspaceId := c.(AnswerFormContext).Form.WorkspaceId
-	formId := c.(AnswerFormContext).Form.ID.String()
+	formId := c.(AnswerFormContext).Form.ID
 	isAdmin := c.(AnswerFormContext).IsAdminWorkspace
 	userId := c.(AnswerFormContext).User.ID
 

@@ -189,7 +189,7 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 			// If issue author
 			return true, nil
 		} else {
-			return issueContext.Issue.IsAssignee(issueContext.User.ID.String()), nil
+			return issueContext.Issue.IsAssignee(issueContext.User.ID), nil
 		}
 	}
 

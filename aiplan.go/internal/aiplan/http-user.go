@@ -652,7 +652,7 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp := tables[user.ID.String()]
+	resp := tables[user.ID]
 	if resp == nil {
 		return c.JSON(http.StatusOK, struct{}{})
 	}
@@ -690,7 +690,8 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 	}
 
 	// If email provided
-	if _, err := uuid.FromString(userId); err != nil {
+	userUUID, err := uuid.FromString(userId)
+	if err != nil {
 		if err := s.db.Select("id").Where("email = ?", userId).Model(&dao.User{}).Find(&userId).Error; err != nil {
 			return EError(c, err)
 		}
@@ -725,7 +726,7 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp := tables[userId]
+	resp := tables[userUUID]
 	if resp == nil {
 		return c.JSON(http.StatusOK, struct{}{})
 	}
@@ -1649,7 +1650,7 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 	res := make([]notifications.NotificationResponse, 0, len(*temp))
 	for _, notify := range *temp {
 		tmp := notifications.NotificationResponse{
-			Id:        notify.ID.String(),
+			Id:        notify.ID,
 			Type:      notify.Type,
 			Viewed:    &notify.Viewed,
 			CreatedAt: notify.CreatedAt.UTC(),

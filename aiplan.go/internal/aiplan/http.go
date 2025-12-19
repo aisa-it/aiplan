@@ -899,9 +899,9 @@ func imageThumbnail(r io.Reader, contentType string) (io.Reader, int, string, er
 	return buf, buf.Len(), dataType, err
 }
 
-func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[string]types.ActivityTable, error) {
+func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[uuid.UUID]types.ActivityTable, error) {
 	var activities []struct {
-		ActorId string
+		ActorId uuid.UUID
 		Day     time.Time
 		Cnt     int
 	}
@@ -916,7 +916,7 @@ func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[str
 		return nil, err
 	}
 
-	resp := make(map[string]types.ActivityTable)
+	resp := make(map[uuid.UUID]types.ActivityTable)
 	for _, activity := range activities {
 		m, ok := resp[activity.ActorId]
 		if !ok {

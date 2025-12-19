@@ -91,11 +91,11 @@ func onlyReadMethod(c echo.Context) bool {
 	}
 }
 
-func hasReadAccess(userID uuid.UUID, role int, doc *dao.Doc, readers, editors, watchers map[string]struct{}) bool {
+func hasReadAccess(userID uuid.UUID, role int, doc *dao.Doc, readers, editors, watchers map[uuid.UUID]struct{}) bool {
 	if role >= doc.ReaderRole || role >= doc.EditorRole {
 		return true
 	}
-	userIDStr := userID.String()
+	userIDStr := userID
 	if _, ok := readers[userIDStr]; ok {
 		return true
 	}
@@ -108,11 +108,11 @@ func hasReadAccess(userID uuid.UUID, role int, doc *dao.Doc, readers, editors, w
 	return false
 }
 
-func hasEditAccess(userID uuid.UUID, role int, doc *dao.Doc, editors map[string]struct{}) bool {
+func hasEditAccess(userID uuid.UUID, role int, doc *dao.Doc, editors map[uuid.UUID]struct{}) bool {
 	if role >= doc.EditorRole {
 		return true
 	}
-	if _, ok := editors[userID.String()]; ok {
+	if _, ok := editors[userID]; ok {
 		return true
 	}
 	return false

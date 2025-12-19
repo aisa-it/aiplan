@@ -61,7 +61,7 @@ func (e *emailNotifyDoc) Process() {
 
 		sorter := docActivitySorter{
 			skipActivities: make([]dao.DocActivity, 0),
-			Docs:           make(map[string]docActivity),
+			Docs:           make(map[uuid.UUID]docActivity),
 		}
 
 		for i := range activities {
@@ -110,7 +110,7 @@ func (e *emailNotifyDoc) Process() {
 
 type docActivitySorter struct {
 	skipActivities []dao.DocActivity
-	Docs           map[string]docActivity //map[docId]
+	Docs           map[uuid.UUID]docActivity //map[docId]
 }
 
 type docMember struct {
@@ -161,7 +161,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 		for _, activity := range da.activities {
 			var authorNotify, memberNotify bool
 			memberNotify = member.DocMemberSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
-			if activity.Doc.CreatedById.String() == member.User.ID.String() {
+			if activity.Doc.CreatedById == member.User.ID {
 				authorNotify = member.DocAuthorSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
 			}
 			if (member.DocAuthor && authorNotify) || (!member.DocAuthor && memberNotify) {
@@ -258,9 +258,9 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 		}
 	}
 
-	var ids []string
+	var ids []uuid.UUID
 	for _, author := range ia.commentActivityUser {
-		ids = append(ids, author.User.ID.String())
+		ids = append(ids, author.User.ID)
 	}
 
 	var members []dao.WorkspaceMember
@@ -300,12 +300,12 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 		commentActivityUser: make(map[string]docCommentAuthor),
 	}
 
-	checkId := func(users *[]dao.User, id string) bool {
+	checkId := func(users *[]dao.User, id uuid.UUID) bool {
 		if users == nil {
 			return false
 		}
 		for _, user := range *users {
-			if user.ID.String() == id {
+			if user.ID == id {
 				return true
 			}
 		}
@@ -322,16 +322,16 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 			continue
 		}
 		isAuthor := member.MemberId == doc.Author.ID
-		isWatcher := checkId(doc.Watchers, member.MemberId.String())
-		isEditor := checkId(doc.Editors, member.MemberId.String())
-		isReader := checkId(doc.Readers, member.MemberId.String())
+		isWatcher := checkId(doc.Watchers, member.MemberId)
+		isEditor := checkId(doc.Editors, member.MemberId)
+		isReader := checkId(doc.Readers, member.MemberId)
 		var isAuthorNewDoc, isWatcherNewDoc, isEditorNewDoc, isReaderNewDoc bool
 		if newDoc != nil {
 			newDoc.SetUrl()
 			isAuthorNewDoc = member.MemberId == doc.Author.ID
-			isWatcherNewDoc = checkId(newDoc.Watchers, member.MemberId.String())
-			isEditorNewDoc = checkId(newDoc.Editors, member.MemberId.String())
-			isReaderNewDoc = checkId(newDoc.Readers, member.MemberId.String())
+			isWatcherNewDoc = checkId(newDoc.Watchers, member.MemberId)
+			isEditorNewDoc = checkId(newDoc.Editors, member.MemberId)
+			isReaderNewDoc = checkId(newDoc.Readers, member.MemberId)
 		}
 
 		if isReader || isEditor || isAuthor || isWatcher || isAuthorNewDoc || isWatcherNewDoc || isEditorNewDoc || isReaderNewDoc {
@@ -385,20 +385,20 @@ func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
 		}
 	}
 	if activity.DocId != uuid.Nil { //
-		if v, ok := as.Docs[activity.DocId.String()]; !ok {
+		if v, ok := as.Docs[activity.DocId]; !ok {
 			activity.Doc.Workspace = activity.Workspace
 			da := newDocActivity(tx, activity.Doc, newDocCreate)
 			if da != nil {
 				if !da.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Docs[activity.DocId.String()] = *da
+				as.Docs[activity.DocId] = *da
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Docs[activity.DocId.String()] = v
+			as.Docs[activity.DocId] = v
 		}
 	}
 	return
@@ -407,8 +407,8 @@ func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
 func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUser *dao.User, doc *dao.Doc) (string, string, error) {
 	result := ""
 	//
-	actorsChangesMap := make(map[string]map[string]dao.DocActivity)
-	actorsMap := make(map[string]dao.User)
+	actorsChangesMap := make(map[uuid.UUID]map[string]dao.DocActivity)
+	actorsMap := make(map[uuid.UUID]dao.User)
 	commentCount := 0
 	for _, activity := range activities {
 		// doc deletion
@@ -488,7 +488,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			continue
 		}
 
-		changesMap, ok := actorsChangesMap[activity.ActorId.UUID.String()]
+		changesMap, ok := actorsChangesMap[activity.ActorId.UUID]
 		if !ok {
 			changesMap = make(map[string]dao.DocActivity)
 		}
@@ -509,8 +509,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		}
 
 		changesMap[field] = activity
-		actorsMap[activity.ActorId.UUID.String()] = *activity.Actor
-		actorsChangesMap[activity.ActorId.UUID.String()] = changesMap
+		actorsMap[activity.ActorId.UUID] = *activity.Actor
+		actorsChangesMap[activity.ActorId.UUID] = changesMap
 	}
 
 	var template dao.Template
@@ -523,8 +523,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 	var attachments []dao.DocAttachment
 	if err := tx.
 		Joins("Asset").
-		Where("doc_attachments.workspace_id = ?", activities[0].WorkspaceId.String()).
-		Where("doc_attachments.doc_id = ?", activities[0].DocId.String()).
+		Where("doc_attachments.workspace_id = ?", activities[0].WorkspaceId).
+		Where("doc_attachments.doc_id = ?", activities[0].DocId).
 		Order("doc_attachments.created_at").
 		Find(&attachments).Error; err != nil {
 		return "", "", err

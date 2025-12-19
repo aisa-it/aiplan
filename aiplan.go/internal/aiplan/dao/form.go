@@ -76,21 +76,17 @@ func (f *Form) ToLightDTO() *dto.FormLight {
 	}
 	f.SetUrl()
 	ff := &dto.FormLight{
-		ID:          f.ID.String(),
-		Slug:        f.Slug,
-		Title:       f.Title,
-		Description: f.Description,
-		AuthRequire: f.AuthRequire,
-		EndDate:     f.EndDate,
-		WorkspaceId: f.WorkspaceId.String(),
-		Fields:      f.Fields,
-		Active:      f.Active,
-		Url:         types.JsonURL{f.URL},
-	}
-
-	if f.TargetProjectId.Valid {
-		targetProjectIdStr := f.TargetProjectId.UUID.String()
-		ff.TargetProjectId = &targetProjectIdStr
+		ID:              f.ID,
+		Slug:            f.Slug,
+		Title:           f.Title,
+		Description:     f.Description,
+		AuthRequire:     f.AuthRequire,
+		EndDate:         f.EndDate,
+		TargetProjectId: f.TargetProjectId,
+		WorkspaceId:     f.WorkspaceId,
+		Fields:          f.Fields,
+		Active:          f.Active,
+		Url:             types.JsonURL{f.URL},
 	}
 
 	return ff
@@ -302,7 +298,7 @@ func (fa *FormAnswer) ToDTO() *dto.FormAnswer {
 		return nil
 	}
 	return &dto.FormAnswer{
-		ID:         fa.ID.String(),
+		ID:         fa.ID,
 		SeqId:      fa.SeqId,
 		CreatedAt:  fa.CreatedAt,
 		Responder:  fa.Responder.ToLightDTO(),
