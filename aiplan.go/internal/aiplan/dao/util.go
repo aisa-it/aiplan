@@ -171,10 +171,10 @@ func GetMentionedUsers(db *gorm.DB, text types.RedactorHTML) ([]User, error) {
 	return users, err
 }
 
-func ExtractProjectMemberIDs(members []ProjectMember) []string {
-	ids := make([]string, len(members))
+func ExtractProjectMemberIDs(members []ProjectMember) []uuid.UUID {
+	ids := make([]uuid.UUID, len(members))
 	for i, member := range members {
-		ids[i] = member.MemberId.String()
+		ids[i] = member.MemberId
 	}
 	return ids
 }
@@ -213,12 +213,12 @@ func GetUserNeighbors(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []
 
 func GetUserFromProjectMember(members []User, ids []interface{}) []User {
 	var users []User
-	idsMap := make(map[string]struct{})
+	idsMap := make(map[uuid.UUID]struct{})
 	for _, id := range ids {
-		idsMap[id.(string)] = struct{}{}
+		idsMap[id.(uuid.UUID)] = struct{}{}
 	}
 	for _, member := range members {
-		if _, ok := idsMap[member.ID.String()]; ok {
+		if _, ok := idsMap[member.ID]; ok {
 			users = append(users, member)
 		}
 	}

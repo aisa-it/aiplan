@@ -17,7 +17,7 @@ import (
 type SearchLightweightResponse struct {
 	ID uuid.UUID `json:"id"`
 
-	WorkspaceId string          `json:"workspace"`
+	WorkspaceId uuid.UUID       `json:"workspace"`
 	Workspace   *WorkspaceLight `json:"workspace_detail"`
 
 	ProjectId  uuid.UUID     `json:"project"`

@@ -45,7 +45,7 @@ type WorkspaceWithCount struct {
 }
 
 type WorkspaceMemberLight struct {
-	ID              string     `json:"id"`
+	ID              uuid.UUID  `json:"id"`
 	Role            int        `json:"role"`
 	EditableByAdmin bool       `json:"editable_by_admin"`
 	MemberId        uuid.UUID  `json:"member_id"`

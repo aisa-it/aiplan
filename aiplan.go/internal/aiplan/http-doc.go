@@ -374,7 +374,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 	if hasRecentFieldUpdate[dao.DocActivity](
 		s.db.Where("doc_id = ?", doc.ID),
-		user.ID.String(),
+		user.ID,
 		utils.SliceToSlice(&fields, func(t *string) string { return actField.ReqFieldMapping(*t) })...,
 	) {
 		return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
@@ -408,18 +408,18 @@ func (s *Services) updateDoc(c echo.Context) error {
 			workspaceUUID := workspace.ID
 			userUUID := user.ID
 
-			memberAccess := make(map[string]dao.DocAccessRules)
+			memberAccess := make(map[uuid.UUID]dao.DocAccessRules)
 
-			newIdsSet := make(map[string]bool)
-			updateIdsSet := make(map[string]bool)
-			deleteIdsSet := make(map[string]bool)
+			newIdsSet := make(map[uuid.UUID]bool)
+			updateIdsSet := make(map[uuid.UUID]bool)
+			deleteIdsSet := make(map[uuid.UUID]bool)
 
-			oldRoleAccess := utils.SliceToMap(&doc.AccessRules, func(r *dao.DocAccessRules) string { return r.MemberId.String() })
+			oldRoleAccess := utils.SliceToMap(&doc.AccessRules, func(r *dao.DocAccessRules) uuid.UUID { return r.MemberId })
 
-			newMemberAccess := func(id string) dao.DocAccessRules {
+			newMemberAccess := func(id uuid.UUID) dao.DocAccessRules {
 				return dao.DocAccessRules{
 					Id:          dao.GenUUID(),
-					MemberId:    uuid.Must(uuid.FromString(id)),
+					MemberId:    id,
 					CreatedById: userUUID,
 					DocId:       doc.ID,
 					UpdatedById: uuid.NullUUID{},
@@ -432,7 +432,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 				}
 			}
 
-			updateMember := func(id string, editor, watcher *bool) {
+			updateMember := func(id uuid.UUID, editor, watcher *bool) {
 				if v, exists := oldRoleAccess[id]; exists {
 					if editor != nil {
 						v.Edit = *editor
@@ -553,7 +553,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 				for id := range updateIdsSet {
 					accessRule := memberAccess[id]
 					if err := tx.Model(&dao.DocAccessRules{}).
-						Where("doc_id = ?", doc.ID, id).
+						Where("doc_id = ?", doc.ID).
 						Where("member_id = ?", id).
 						Updates(map[string]interface{}{
 							"edit":          accessRule.Edit,
@@ -566,7 +566,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 			}
 
 			if len(deleteIdsSet) > 0 {
-				deleteIds := make([]string, 0, len(deleteIdsSet))
+				deleteIds := make([]uuid.UUID, 0, len(deleteIdsSet))
 				for id := range deleteIdsSet {
 					deleteIds = append(deleteIds, id)
 				}
@@ -592,17 +592,17 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 	newDocMap := StructToJSONMap(newDoc)
 	if watcherListOk {
-		newDocMap["watchers_list"] = utils.SliceToSlice(&newDoc.WatcherIDs, func(t *string) interface{} {
+		newDocMap["watchers_list"] = utils.SliceToSlice(&newDoc.WatcherIDs, func(t *uuid.UUID) interface{} {
 			return *t
 		})
 	}
 	if editorListOk {
-		newDocMap["editors_list"] = utils.SliceToSlice(&newDoc.EditorsIDs, func(t *string) interface{} {
+		newDocMap["editors_list"] = utils.SliceToSlice(&newDoc.EditorsIDs, func(t *uuid.UUID) interface{} {
 			return *t
 		})
 	}
 	if readerListOk {
-		newDocMap["readers_list"] = utils.SliceToSlice(&newDoc.ReaderIDs, func(t *string) interface{} {
+		newDocMap["readers_list"] = utils.SliceToSlice(&newDoc.ReaderIDs, func(t *uuid.UUID) interface{} {
 			return *t
 		})
 	}
@@ -614,9 +614,9 @@ func (s *Services) updateDoc(c echo.Context) error {
 	return c.JSON(http.StatusOK, newDoc.ToDTO())
 }
 
-func calculateChanges(newIds, oldIds []string) (added []string, removed []string) {
-	newSet := make(map[string]bool)
-	oldSet := make(map[string]bool)
+func calculateChanges(newIds, oldIds []uuid.UUID) (added []uuid.UUID, removed []uuid.UUID) {
+	newSet := make(map[uuid.UUID]bool)
+	oldSet := make(map[uuid.UUID]bool)
 
 	for _, id := range newIds {
 		newSet[id] = true
@@ -723,7 +723,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 	user := c.(DocContext).User
 
 	var groupChanges docChanges
-	changes := make(map[string]docMove)
+	changes := make(map[uuid.UUID]docMove)
 
 	var req DocMoveParams
 	if err := c.Bind(&req); err != nil {
@@ -733,15 +733,15 @@ func (s *Services) moveDoc(c echo.Context) error {
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		var currentGroup, newGroup []dao.Doc
 		var newParent dao.Doc
-		if err := buildGroupQuery(tx, doc.WorkspaceId.String(), doc.ParentDocID).
+		if err := buildGroupQuery(tx, doc.WorkspaceId, doc.ParentDocID).
 			Preload("ParentDoc").
 			Preload("Workspace").
 			Find(&currentGroup).Error; err != nil {
 			return err
 		}
 
-		sortOnly := (!doc.ParentDocID.Valid && req.ParentId == nil) ||
-			(doc.ParentDocID.Valid && req.ParentId != nil && doc.ParentDocID.UUID.String() == *req.ParentId)
+		sortOnly := (!doc.ParentDocID.Valid && !req.ParentId.Valid) ||
+			(doc.ParentDocID.Valid && req.ParentId.Valid && doc.ParentDocID == req.ParentId)
 
 		if sortOnly {
 			if err := groupChanges.reorderDocs(&currentGroup, ActionSort, &doc, req.PreviousId, req.NextId, changes); err != nil {
@@ -753,7 +753,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 				groupChanges.FromDoc = d
 			}
 
-			if req.ParentId != nil {
+			if req.ParentId.Valid {
 				if err := tx.
 					Where("workspace_id = ?", doc.WorkspaceId).
 					Where("id = ?", req.ParentId).
@@ -761,12 +761,12 @@ func (s *Services) moveDoc(c echo.Context) error {
 					First(&newParent).Error; err != nil {
 					return err
 				}
-				if slices.Contains(newParent.Breadcrumbs, doc.ID.String()) {
+				if slices.Contains(newParent.Breadcrumbs, doc.ID) {
 					return apierrors.ErrDocMoveIntoOwnChild
 				}
 			}
 
-			if err := buildGroupQuery(tx, doc.WorkspaceId.String(), parseNullableUUID(req.ParentId)).
+			if err := buildGroupQuery(tx, doc.WorkspaceId, req.ParentId).
 				Preload("ParentDoc").
 				Preload("Workspace").
 				Find(&newGroup).Error; err != nil {
@@ -774,7 +774,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 			}
 			var parent *dao.Doc
 			if len(newGroup) == 0 {
-				if req.ParentId != nil {
+				if req.ParentId.Valid {
 					if err := tx.
 						Where("workspace_id = ?", doc.WorkspaceId).
 						Where("id = ?", req.ParentId).
@@ -788,9 +788,9 @@ func (s *Services) moveDoc(c echo.Context) error {
 
 			groupChanges.ToDoc = parent
 
-			doc.ParentDocID = parseNullableUUID(req.ParentId)
+			doc.ParentDocID = req.ParentId
 
-			if err := groupChanges.reorderDocs(&currentGroup, ActionDelete, &doc, nil, nil, changes); err != nil {
+			if err := groupChanges.reorderDocs(&currentGroup, ActionDelete, &doc, uuid.NullUUID{}, uuid.NullUUID{}, changes); err != nil {
 				return err
 			}
 
@@ -811,16 +811,14 @@ func (s *Services) moveDoc(c echo.Context) error {
 	}
 
 	for _, docTmp := range allDocs {
-		if v, ok := changes[docTmp.ID.String()]; ok {
+		if v, ok := changes[docTmp.ID]; ok {
 			newDocMap := make(map[string]interface{})
 			oldDocMap := make(map[string]interface{})
 			newDocMap["doc_sort"] = v.NewSecId
 			oldDocMap["doc_sort"] = v.OldSecId
 
 			if v.ActionDoc {
-				if req.ParentId == nil {
-					docTmp.ParentDoc = nil
-				}
+				docTmp.ParentDocID = req.ParentId
 
 				switch v.Type {
 				case ActionAdd, ActionDelete:
@@ -854,7 +852,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func buildGroupQuery(db *gorm.DB, workspaceID string, parent uuid.NullUUID) *gorm.DB {
+func buildGroupQuery(db *gorm.DB, workspaceID uuid.UUID, parent uuid.NullUUID) *gorm.DB {
 	query := db.Where("workspace_id = ?", workspaceID)
 	if parent.Valid {
 		query = query.Where("parent_doc_id = ?", parent.UUID)
@@ -864,13 +862,6 @@ func buildGroupQuery(db *gorm.DB, workspaceID string, parent uuid.NullUUID) *gor
 	return query.Order("seq_id ASC")
 }
 
-func parseNullableUUID(id *string) uuid.NullUUID {
-	if id == nil {
-		return uuid.NullUUID{}
-	}
-	return uuid.NullUUID{UUID: uuid.FromStringOrNil(*id), Valid: true}
-}
-
 func mergeDocGroups(sortOnly bool, current, new []dao.Doc) []dao.Doc {
 	if sortOnly {
 		return current
@@ -878,12 +869,12 @@ func mergeDocGroups(sortOnly bool, current, new []dao.Doc) []dao.Doc {
 	return append(current, new...)
 }
 
-func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, currentDoc *dao.Doc, prevId, nextId *string, changes map[string]docMove) error {
-	indexMap := make(map[string]int)
+func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, currentDoc *dao.Doc, prevId, nextId uuid.NullUUID, changes map[uuid.UUID]docMove) error {
+	indexMap := make(map[uuid.UUID]int)
 	currentIdx := -1
 
 	for i, d := range *docs {
-		indexMap[d.ID.String()] = i
+		indexMap[d.ID] = i
 		if d.ID == currentDoc.ID {
 			currentIdx = i
 		}
@@ -905,10 +896,10 @@ func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, current
 
 		if currentIdx != -1 {
 			*docs = append((*docs)[:currentIdx], (*docs)[currentIdx+1:]...)
-			delete(indexMap, currentDoc.ID.String())
+			delete(indexMap, currentDoc.ID)
 
 			for i, d := range *docs {
-				indexMap[d.ID.String()] = i
+				indexMap[d.ID] = i
 				if d.ID == currentDoc.ID {
 					currentIdx = i
 				}
@@ -925,14 +916,14 @@ func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, current
 			*docs = append(*docs, *currentDoc)
 		case prevExists && nextExists:
 			docInsertAt(docs, prevIdx+1, *currentDoc)
-		case prevId == nil && nextId == nil:
+		case !prevId.Valid && !nextId.Valid:
 			docInsertAt(docs, 0, *currentDoc)
 		}
 
 	}
 
 	for i, v := range *docs {
-		actDoc := v.ID.String() == currentDoc.ID.String()
+		actDoc := v.ID == currentDoc.ID
 		if !actDoc && v.SeqId == i {
 			continue
 		}
@@ -944,18 +935,18 @@ func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, current
 			ActionDoc: actDoc,
 		}
 
-		changes[v.ID.String()] = tmp
+		changes[v.ID] = tmp
 		(*docs)[i].SeqId = i
 	}
 
 	return nil
 }
 
-func getDocIndex(m map[string]int, id *string) (int, bool) {
-	if id == nil {
+func getDocIndex(m map[uuid.UUID]int, id uuid.NullUUID) (int, bool) {
+	if !id.Valid {
 		return -1, false
 	}
-	i, ok := m[*id]
+	i, ok := m[id.UUID]
 	return i, ok
 }
 
@@ -1189,7 +1180,7 @@ func (s *Services) getDocComment(c echo.Context) error {
 		Joins("OriginalComment.Actor").
 		Preload("Reactions").
 		Where("doc_comments.workspace_id = ?", workspace.ID).
-		Where("doc_comments.doc_id = ?", docId.String()).
+		Where("doc_comments.doc_id = ?", docId).
 		Where("doc_comments.id = ?", commentId)
 
 	var comment dao.DocComment
@@ -1327,7 +1318,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 
 	var comment dao.DocComment
 	if err := s.db.Where("workspace_id = ?", workspace.ID).
-		Where("doc_id = ?", doc.ID.String()).
+		Where("doc_id = ?", doc.ID).
 		Where("id = ?", commentId).
 		Preload("Attachments").
 		First(&comment).Error; err != nil {
@@ -1610,7 +1601,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/doc-attachments/{attachmentId} [delete]
 func (s *Services) deleteDocAttachment(c echo.Context) error {
 	workspace := c.(DocContext).Workspace
-	docId := c.(DocContext).Doc.ID.String()
+	docId := c.(DocContext).Doc.ID
 	user := c.(DocContext).User
 	attachmentId := c.Param("attachmentId")
 
@@ -1670,7 +1661,7 @@ func (s *Services) addDocToFavorites(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
-	doc, err := dao.GetDoc(s.db, workspace.ID.String(), req.DocID, workspaceMember)
+	doc, err := dao.GetDoc(s.db, workspace.ID, req.DocID, workspaceMember)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return EErrorDefined(c, apierrors.ErrDocNotFound)
@@ -1795,7 +1786,7 @@ func (s *Services) removeDocFromFavorites(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/activities/ [get]
 func (s *Services) getDocActivityList(c echo.Context) error {
-	docId := c.(DocContext).Doc.ID.String()
+	docId := c.(DocContext).Doc.ID
 	workspaceId := c.(DocContext).Workspace.ID
 
 	offset := 0
@@ -2004,24 +1995,24 @@ type DocRequest struct {
 	ReaderRole  int                `json:"reader_role,omitempty" example:"5"`
 	SeqId       int                `json:"seq_id,omitempty"`
 	Draft       bool               `json:"draft,omitempty" example:"false"`
-	EditorList  []string           `json:"editor_list,omitempty"`
-	ReaderList  []string           `json:"reader_list,omitempty"`
-	WatcherList []string           `json:"watcher_list,omitempty"`
+	EditorList  []uuid.UUID        `json:"editor_list,omitempty"`
+	ReaderList  []uuid.UUID        `json:"reader_list,omitempty"`
+	WatcherList []uuid.UUID        `json:"watcher_list,omitempty"`
 }
 
 type DocCommentRequest struct {
 	CommentHtml    types.RedactorHTML `json:"comment_html" swaggertype:"string" example:"<p>HTML-контент</p>"`
-	ReplyToComment *string            `json:"reply_to_comment_id,omitempty"`
+	ReplyToComment uuid.NullUUID      `json:"reply_to_comment_id,omitempty"`
 }
 
 type DocMoveParams struct {
-	ParentId   *string `json:"parent_id,omitempty"`
-	PreviousId *string `json:"previous_id,omitempty"`
-	NextId     *string `json:"next_id,omitempty"`
+	ParentId   uuid.NullUUID `json:"parent_id,omitempty"`
+	PreviousId uuid.NullUUID `json:"previous_id,omitempty"`
+	NextId     uuid.NullUUID `json:"next_id,omitempty"`
 }
 
 type AddDocToFavoritesRequest struct {
-	DocID string `json:"doc" validate:"required"`
+	DocID uuid.UUID `json:"doc" validate:"required"`
 }
 
 func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
@@ -2113,14 +2104,7 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 	if err := c.Validate(&req); err != nil {
 		return nil, nil, err
 	}
-	var replyId uuid.NullUUID
-	if req.ReplyToComment != nil {
-		fromString, err := uuid.FromString(*req.ReplyToComment)
-		if err != nil {
-			return nil, nil, err
-		}
-		replyId = uuid.NullUUID{UUID: fromString, Valid: true}
-	}
+
 	if comment == nil {
 		userID := uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
 		commentCreate := &dao.DocComment{
@@ -2132,7 +2116,7 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 			ActorId:          userID,
 			Actor:            c.(DocContext).User,
 			CommentHtml:      req.CommentHtml,
-			ReplyToCommentId: replyId,
+			ReplyToCommentId: req.ReplyToComment,
 			CommentType:      1,
 			Attachments:      make([]dao.FileAsset, 0),
 		}

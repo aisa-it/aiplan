@@ -58,7 +58,7 @@ func (e *emailNotifyWorkspace) Process() {
 
 		sorter := workspaceActivitySorter{
 			skipActivities: make([]dao.WorkspaceActivity, 0),
-			Workspace:      make(map[string]workspaceActivity),
+			Workspace:      make(map[uuid.UUID]workspaceActivity),
 		}
 		for i := range activities {
 			sorter.sortEntity(e.service.db, activities[i])
@@ -110,7 +110,7 @@ type workspaceMember struct {
 
 type workspaceActivitySorter struct {
 	skipActivities []dao.WorkspaceActivity
-	Workspace      map[string]workspaceActivity //map[workspaceId]
+	Workspace      map[uuid.UUID]workspaceActivity //map[workspaceId]
 }
 
 type workspaceActivity struct {
@@ -122,19 +122,19 @@ type workspaceActivity struct {
 
 func (as *workspaceActivitySorter) sortEntity(tx *gorm.DB, activity dao.WorkspaceActivity) {
 	if activity.WorkspaceId != uuid.Nil { // TODO check it
-		if v, ok := as.Workspace[activity.WorkspaceId.String()]; !ok {
+		if v, ok := as.Workspace[activity.WorkspaceId]; !ok {
 			wa := newWorkspaceActivity(tx, activity.Workspace)
 			if wa != nil {
 				if !wa.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Workspace[activity.WorkspaceId.String()] = *wa
+				as.Workspace[activity.WorkspaceId] = *wa
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Workspace[activity.WorkspaceId.String()] = v
+			as.Workspace[activity.WorkspaceId] = v
 		}
 	}
 	return
@@ -158,13 +158,13 @@ func newWorkspaceActivity(tx *gorm.DB, workspace *dao.Workspace) *workspaceActiv
 		return nil
 	}
 
-	memberMap := utils.SliceToMap(&res.AllMember, func(v *dao.WorkspaceMember) string {
-		return v.MemberId.String()
+	memberMap := utils.SliceToMap(&res.AllMember, func(v *dao.WorkspaceMember) uuid.UUID {
+		return v.MemberId
 	})
 
 	{ //add Leader
-		if owner, ok := memberMap[workspace.OwnerId.String()]; ok && owner.Member != nil {
-			res.users[memberMap[workspace.OwnerId.String()].Member.Email] = workspaceMember{
+		if owner, ok := memberMap[workspace.OwnerId]; ok && owner.Member != nil {
+			res.users[memberMap[workspace.OwnerId].Member.Email] = workspaceMember{
 				User:                    *owner.Member,
 				WorkspaceOwner:          true,
 				WorkspaceRole:           owner.Role,
@@ -250,12 +250,12 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 					Where("docs.id = ?", docId).First(&doc).Error; err != nil {
 					continue
 				}
-				isWatcher := slices.Contains(doc.WatcherIDs, member.User.ID.String())
-				isReader := slices.Contains(doc.ReaderIDs, member.User.ID.String())
-				isEditor := slices.Contains(doc.EditorsIDs, member.User.ID.String())
+				isWatcher := slices.Contains(doc.WatcherIDs, member.User.ID)
+				isReader := slices.Contains(doc.ReaderIDs, member.User.ID)
+				isEditor := slices.Contains(doc.EditorsIDs, member.User.ID)
 
-				if isWatcher || isReader || isEditor || doc.CreatedById.String() == member.User.ID.String() {
-					if doc.CreatedById.String() == member.User.ID.String() {
+				if isWatcher || isReader || isEditor || doc.CreatedById == member.User.ID {
+					if doc.CreatedById == member.User.ID {
 						if member.WorkspaceAuthorSettings.IsNotify(activity.Field, "workspace", activity.Verb, member.WorkspaceRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
@@ -270,7 +270,7 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 				continue
 			}
 			if activity.Field != nil && *activity.Field == actField.Doc.Field.String() && activity.Verb == actField.VerbDeleted {
-				if activity.ActorId.UUID.String() == member.User.ID.String() {
+				if activity.ActorId.UUID == member.User.ID {
 					sendActivities = append(sendActivities, activity)
 					continue
 				}

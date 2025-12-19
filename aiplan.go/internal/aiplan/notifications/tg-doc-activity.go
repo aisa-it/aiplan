@@ -225,16 +225,16 @@ func getUserTgIdDocActivity(tx *gorm.DB, activity interface{}) []userTg {
 
 	doc := act.Doc
 
-	authorId := doc.CreatedById.String()
+	authorId := doc.CreatedById
 	readerIds := doc.ReaderIDs
 	editorsIds := doc.EditorsIDs
 	watcherIds := doc.WatcherIDs
 
-	userIds := append(append(append([]string{authorId}, editorsIds...), readerIds...), watcherIds...)
+	userIds := append(append(append([]uuid.UUID{authorId}, editorsIds...), readerIds...), watcherIds...)
 
 	var workspaceMembers []dao.WorkspaceMember
 	if err := tx.Joins("Member").
-		Where("workspace_id = ?", act.WorkspaceId.String()).
+		Where("workspace_id = ?", act.WorkspaceId).
 		Where("workspace_members.member_id IN (?)", userIds).Find(&workspaceMembers).Error; err != nil {
 		return []userTg{}
 	}

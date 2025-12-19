@@ -391,7 +391,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
-	oldLogoId := workspace.LogoId.UUID.String()
+	oldLogoId := workspace.LogoId.UUID
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -412,7 +412,7 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 
 	//Трекинг активности
 	oldMap := map[string]interface{}{
-		"logo": oldLogoId,
+		"logo": oldLogoId.String(),
 	}
 	newMap := map[string]interface{}{
 		"logo": uuid.Nil.String(),
@@ -454,7 +454,7 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 		return err
 	}
 	// Cancel jira imports
-	if err := s.importService.CancelWorkspaceImports(workspace.ID.String()); err != nil {
+	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
 		return EError(c, err)
 	}
 
@@ -916,7 +916,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 	// One cannot remove role higher than his own role
 	if workspaceMember.Role < requestedMember.Role && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveHigherRoleUser)
-	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID.String() != requestedMemberId {
+	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID != requestedMember.ID {
 		return EErrorDefined(c, apierrors.ErrDeleteSuperUser)
 	}
 	if workspace.OwnerId == requestedMember.MemberId {
@@ -1183,9 +1183,9 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 				}
 			}
 			var existingMember dao.WorkspaceMember
-			userIdStr := user.ID.String()
+			userUUID := user.ID
 			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-			if err := tx.Where("member_id = ? AND workspace_id = ?", userIdStr, workspace.ID).First(&existingMember).Error; err == nil {
+			if err := tx.Where("member_id = ? AND workspace_id = ?", userUUID, workspace.ID).First(&existingMember).Error; err == nil {
 				return apierrors.ErrInviteMemberExist
 			}
 
@@ -1238,7 +1238,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 					}
 					if err := tx.Clauses(clause.OnConflict{
 						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
-						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userIdStr}),
+						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userUUID}),
 					}).Create(&projectMember).Error; err != nil {
 						return err
 					}
@@ -1580,15 +1580,15 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	result := make(map[string][]dto.StateLight)
+	result := make(map[uuid.UUID][]dto.StateLight)
 	hash := sha256.New()
 	for _, state := range states {
-		arr, ok := result[state.ProjectId.String()]
+		arr, ok := result[state.ProjectId]
 		if !ok {
 			arr = make([]dto.StateLight, 0)
 		}
 		arr = append(arr, *state.ToLightDTO())
-		result[state.ProjectId.String()] = arr
+		result[state.ProjectId] = arr
 		hash.Write(state.Hash)
 	}
 	c.Response().Header().Add("ETag", hex.EncodeToString(hash.Sum(nil)))
@@ -1716,7 +1716,7 @@ func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
 func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 	user := *c.(AuthContext).User
 	workspaceID := c.Param("workspaceID")
-	userIdStr := user.ID.String()
+	userIdStr := user.ID
 	workspace, err := dao.GetWorkspaceByID(s.db, workspaceID, user.ID)
 
 	if err != nil {
@@ -1749,7 +1749,7 @@ func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 func (s *Services) getIntegrationList(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 
-	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID.String()))
+	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID))
 }
 
 // addIntegrationToWorkspace godoc

@@ -52,16 +52,16 @@ type Doc struct {
 
 	InlineAttachments []FileAsset `json:"doc_inline_attachments" gorm:"foreignKey:DocId"`
 
-	ChildDocs   []string `json:"-" gorm:"-"`
-	Breadcrumbs []string `json:"-" gorm:"-"`
+	ChildDocs   []uuid.UUID `json:"-" gorm:"-"`
+	Breadcrumbs []uuid.UUID `json:"-" gorm:"-"`
 
 	Editors  *[]User `json:"editor_details,omitempty" gorm:"-"`
 	Readers  *[]User `json:"reader_details,omitempty" gorm:"-"`
 	Watchers *[]User `json:"watcher_details,omitempty" gorm:"-"`
 
-	EditorsIDs []string `json:"editors" gorm:"-"`
-	ReaderIDs  []string `json:"readers" gorm:"-"`
-	WatcherIDs []string `json:"watchers" gorm:"-"`
+	EditorsIDs []uuid.UUID `json:"editors" gorm:"-"`
+	ReaderIDs  []uuid.UUID `json:"readers" gorm:"-"`
+	WatcherIDs []uuid.UUID `json:"watchers" gorm:"-"`
 
 	AccessRules []DocAccessRules `json:"-" gorm:"foreignKey:DocId"`
 
@@ -73,9 +73,9 @@ type Doc struct {
 }
 
 func (d *Doc) PopulateAccessFields() {
-	d.EditorsIDs = []string{}
-	d.ReaderIDs = []string{}
-	d.WatcherIDs = []string{}
+	d.EditorsIDs = []uuid.UUID{}
+	d.ReaderIDs = []uuid.UUID{}
+	d.WatcherIDs = []uuid.UUID{}
 	editorUsers := make([]User, 0)
 	readerUsers := make([]User, 0)
 	watcherUsers := make([]User, 0)
@@ -88,25 +88,25 @@ func (d *Doc) PopulateAccessFields() {
 		return
 	}
 
-	editors := make([]string, 0)
-	readers := make([]string, 0)
-	watchers := make([]string, 0)
+	editors := make([]uuid.UUID, 0)
+	readers := make([]uuid.UUID, 0)
+	watchers := make([]uuid.UUID, 0)
 
 	for _, access := range d.AccessRules {
 		if access.Edit {
-			editors = append(editors, access.MemberId.String())
+			editors = append(editors, access.MemberId)
 			if access.Member != nil {
 				editorUsers = append(editorUsers, *access.Member)
 			}
 		} else {
-			readers = append(readers, access.MemberId.String())
+			readers = append(readers, access.MemberId)
 			if access.Member != nil {
 				readerUsers = append(readerUsers, *access.Member)
 			}
 		}
 
 		if access.Watch {
-			watchers = append(watchers, access.MemberId.String())
+			watchers = append(watchers, access.MemberId)
 			if access.Member != nil {
 				watcherUsers = append(watcherUsers, *access.Member)
 			}
@@ -210,7 +210,7 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 
 	if _, ok := tx.Get("breadcrumbs"); ok {
 		if d.ParentDocID.Valid {
-			var breadcrumbs []string
+			var breadcrumbs []uuid.UUID
 
 			err := tx.Raw(`
     WITH RECURSIVE breadcrumbs AS (
@@ -310,13 +310,13 @@ func (d *Doc) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	var commentId []string
+	var commentIds []uuid.UUID
 
 	for _, comment := range comments {
-		commentId = append(commentId, comment.Id.String())
+		commentIds = append(commentIds, comment.Id)
 	}
 
-	if err := tx.Where("comment_id in ?", commentId).Delete(&DocCommentReaction{}).Error; err != nil {
+	if err := tx.Where("comment_id in ?", commentIds).Delete(&DocCommentReaction{}).Error; err != nil {
 		return err
 	}
 
@@ -361,18 +361,12 @@ func (d *Doc) ToDTO() *dto.Doc {
 		return nil
 	}
 
-	var parentId *string
-	if d.ParentDocID.Valid {
-		id := d.ParentDocID.UUID.String()
-		parentId = &id
-	}
-
 	docDTO := dto.Doc{
 		DocLight:          *d.ToLightDTO(),
 		CreatedAt:         d.CreatedAt,
 		UpdateAt:          d.UpdatedAt,
 		Content:           d.Content,
-		ParentDoc:         parentId,
+		ParentDoc:         d.ParentDocID,
 		InlineAttachments: utils.SliceToSlice(&d.InlineAttachments, func(f *FileAsset) dto.FileAsset { return *f.ToDTO() }),
 		Breadcrumbs:       d.Breadcrumbs,
 		Author:            d.Author.ToLightDTO(),
@@ -400,7 +394,7 @@ func (d *Doc) ToLightDTO() *dto.DocLight {
 	}
 	d.SetUrl()
 	return &dto.DocLight{
-		Id:           d.ID.String(),
+		Id:           d.ID,
 		Title:        d.Title,
 		HasChildDocs: len(d.ChildDocs) > 0,
 		Draft:        &d.Draft,
@@ -541,7 +535,7 @@ func (dc *DocComment) ToLightDTO() *dto.DocCommentLight {
 	}
 
 	return &dto.DocCommentLight{
-		Id:              dc.Id.String(),
+		Id:              dc.Id,
 		CommentStripped: dc.CommentStripped,
 		CommentHtml:     dc.CommentHtml,
 		URL:             types.JsonURL{dc.URL},
@@ -554,17 +548,12 @@ func (dc *DocComment) ToDTO() *dto.DocComment {
 		return nil
 	}
 
-	var updatedById *uuid.UUID
-	if dc.UpdatedById.Valid {
-		updatedById = &dc.UpdatedById.UUID
-	}
-
 	comment := dto.DocComment{
 		DocCommentLight: *dc.ToLightDTO(),
 		CreatedAt:       dc.CreatedAt,
 		UpdatedAt:       dc.UpdatedAt,
 
-		UpdatedById: updatedById,
+		UpdatedById: dc.UpdatedById,
 		Actor:       dc.Actor.ToLightDTO(),
 
 		CommentType:     dc.CommentType,
@@ -616,7 +605,7 @@ func (dcr *DocCommentReaction) ToDTO() *dto.CommentReaction {
 		CreatedAt: dcr.CreatedAt,
 		UpdatedAt: dcr.UpdatedAt,
 		CommentId: dcr.CommentId,
-		UserId:    dcr.UserId.String(),
+		UserId:    dcr.UserId,
 		Reaction:  dcr.Reaction,
 	}
 }
@@ -839,7 +828,7 @@ func (da *DocActivity) ToHistoryLightDTO() *dto.HistoryBodyLight {
 	}
 
 	return &dto.HistoryBodyLight{
-		Id:       da.Id.String(),
+		Id:       da.Id,
 		CratedAt: da.CreatedAt,
 		Author:   da.Actor.ToLightDTO(),
 	}
@@ -1075,7 +1064,7 @@ func (df *DocFavorites) ToDTO() *dto.DocFavorites {
 //
 // Возвращает:
 //   - Doc: документ, соответствующий указанному ID, или ошибка, если документ не найден или произошла другая ошибка при работе с базой данных.
-func GetDoc(db *gorm.DB, workspaceId, docId string, workspaceMember WorkspaceMember) (Doc, error) {
+func GetDoc(db *gorm.DB, workspaceId, docId uuid.UUID, workspaceMember WorkspaceMember) (Doc, error) {
 	d := Doc{}
 	return d, db.Set("member_id", workspaceMember.MemberId).
 		Set("member_role", workspaceMember.Role).
@@ -1110,7 +1099,7 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 
 	doc.ReaderIDs = getUniqueDocMemberIDs(doc.WatcherIDs, doc.ReaderIDs, doc.EditorsIDs)
 
-	userMap := utils.SliceToMap(&users, func(u *User) string { return u.ID.String() })
+	userMap := utils.SliceToMap(&users, func(u *User) uuid.UUID { return u.ID })
 	var newAccessRules []DocAccessRules
 	for id, u := range userMap {
 		newAccessRules = append(newAccessRules, DocAccessRules{
@@ -1130,20 +1119,20 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 		return err
 	}
 
-	doc.Editors = utils.ToPtr(utils.SliceToSlice(&doc.EditorsIDs, func(s *string) User { return userMap[*s] }))
-	doc.Watchers = utils.ToPtr(utils.SliceToSlice(&doc.WatcherIDs, func(s *string) User { return userMap[*s] }))
-	doc.Readers = utils.ToPtr(utils.SliceToSlice(&doc.ReaderIDs, func(s *string) User { return userMap[*s] }))
+	doc.Editors = utils.ToPtr(utils.SliceToSlice(&doc.EditorsIDs, func(s *uuid.UUID) User { return userMap[*s] }))
+	doc.Watchers = utils.ToPtr(utils.SliceToSlice(&doc.WatcherIDs, func(s *uuid.UUID) User { return userMap[*s] }))
+	doc.Readers = utils.ToPtr(utils.SliceToSlice(&doc.ReaderIDs, func(s *uuid.UUID) User { return userMap[*s] }))
 
 	return nil
 }
 
-func getUniqueDocMemberIDs(watcherIDs, readerIDs, editorIDs []string) []string {
-	editorSet := make(map[string]bool)
+func getUniqueDocMemberIDs(watcherIDs, readerIDs, editorIDs []uuid.UUID) []uuid.UUID {
+	editorSet := make(map[uuid.UUID]bool)
 	for _, id := range editorIDs {
 		editorSet[id] = true
 	}
 
-	filteredWatchers := make([]string, 0)
+	filteredWatchers := make([]uuid.UUID, 0)
 	for _, id := range watcherIDs {
 		if !editorSet[id] {
 			filteredWatchers = append(filteredWatchers, id)

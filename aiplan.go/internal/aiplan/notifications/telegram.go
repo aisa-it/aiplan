@@ -481,7 +481,7 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[uuid.UUID]userTg {
 	return userTgId
 }
 
-func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[uuid.UUID]userTg {
+func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId uuid.UUID) map[uuid.UUID]userTg {
 	userTgId := make(map[uuid.UUID]userTg)
 	rows, err := tx.Select("users.id, users.telegram_id").
 		Model(dao.ProjectMember{}).
