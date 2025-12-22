@@ -20,9 +20,10 @@ type Doc struct {
 	Author    *UserLight `json:"author,omitempty"`
 	UpdateBy  *UserLight `json:"update_by,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
-	UpdateAt  time.Time  `json:"update_at,omitempty"`
+	UpdateAt  time.Time  `json:"update_at"`
 
-	Content types.RedactorHTML `json:"content" swaggertype:"string"`
+	Content    types.RedactorHTML `json:"content" swaggertype:"string"`
+	LLMContent bool               `json:"llm_content"`
 
 	ParentDoc *string `json:"parent_doc,omitempty"`
 

@@ -41,6 +41,7 @@ type Doc struct {
 
 	Title       string             `json:"title" validate:"required,max=150"`
 	Content     types.RedactorHTML `json:"description"`
+	LLMContent  bool               `gorm:"index;default:false"`
 	EditorRole  int                `json:"editor_role" gorm:"default:10"`
 	ReaderRole  int                `json:"reader_role" gorm:"default:5"`
 	WorkspaceId uuid.UUID          `json:"workspace" gorm:"type:uuid;index"`
@@ -372,6 +373,7 @@ func (d *Doc) ToDTO() *dto.Doc {
 		CreatedAt:         d.CreatedAt,
 		UpdateAt:          d.UpdatedAt,
 		Content:           d.Content,
+		LLMContent:        d.LLMContent,
 		ParentDoc:         parentId,
 		InlineAttachments: utils.SliceToSlice(&d.InlineAttachments, func(f *FileAsset) dto.FileAsset { return *f.ToDTO() }),
 		Breadcrumbs:       d.Breadcrumbs,
