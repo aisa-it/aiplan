@@ -17369,7 +17369,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "parent_detail": {
                     "allOf": [
@@ -17432,7 +17432,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "url": {
@@ -18354,7 +18358,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "parent_doc": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "reader_ids": {
                     "type": "array",
@@ -18451,7 +18455,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by_id": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "url": {
                     "type": "string"
@@ -18683,7 +18687,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "target_project_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "title": {
@@ -18781,7 +18789,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "target_project_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "title": {
@@ -18968,7 +18980,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "parent_detail": {
                     "allOf": [
@@ -19031,7 +19043,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "url": {
@@ -19099,7 +19115,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "actor_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "comment_attachments": {
@@ -19158,7 +19178,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by_id": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "url": {
                     "type": "string"
@@ -19428,7 +19448,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "parent_detail": {
                     "allOf": [
@@ -19494,7 +19514,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "url": {
@@ -20568,7 +20592,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "last_workspace_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "last_workspace_slug": {
