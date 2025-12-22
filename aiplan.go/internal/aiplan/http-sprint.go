@@ -45,7 +45,7 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if val, err := uuid.FromString(sprintId); err != nil {
 			query = query.Where("sprints.sequence_id = ?", sprintId)
 		} else {
-			query = query.Where("sprints.id = ?", val.String())
+			query = query.Where("sprints.id = ?", val)
 		}
 
 		if err := query.First(&sprint).Error; err != nil {
@@ -327,7 +327,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	sprint := c.(SprintContext).Sprint
 	user := c.(SprintContext).User
 
-	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID.String() })
+	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID })
 
 	workspaceUUID := workspace.ID
 	userUUID := user.ID
@@ -407,7 +407,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newIssuesIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID.String() })
+	newIssuesIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID })
 	reqData := map[string]interface{}{
 		"issue_list": newIssuesIds,
 	}

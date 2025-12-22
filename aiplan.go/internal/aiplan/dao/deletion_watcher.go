@@ -4,12 +4,14 @@ package dao
 import (
 	"sync"
 	"time"
+
+	"github.com/gofrs/uuid"
 )
 
 // DeletionWatcher
 // -migration
 type DeletionWatcher struct {
-	txs map[string]struct{} // Maybe add transaction object for rollback
+	txs map[uuid.UUID]struct{} // Maybe add transaction object for rollback
 	mu  sync.RWMutex
 }
 
@@ -21,7 +23,7 @@ type DeletionWatcher struct {
 // Принимает:
 //   - Нет.
 func NewDeletionWatcher() *DeletionWatcher {
-	return &DeletionWatcher{txs: make(map[string]struct{})}
+	return &DeletionWatcher{txs: make(map[uuid.UUID]struct{})}
 }
 
 // StartDeletion запускает процесс удаления с указанным идентификатором.  Добавляет идентификатор в список текущих операций удаления для отслеживания.
@@ -31,14 +33,14 @@ func NewDeletionWatcher() *DeletionWatcher {
 //
 // Возвращает:
 //   - Нет (nil).
-func (w *DeletionWatcher) StartDeletion(id string) {
+func (w *DeletionWatcher) StartDeletion(id uuid.UUID) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.txs[id] = struct{}{}
 }
 
 // FinishDeletion завершает операцию удаления с указанным идентификатором.  Удаляет идентификатор из списка текущих операций удаления, отслеживаемых DeletionWatcher.  Это сигнализирует о завершении процесса удаления для данного объекта. Функция не возвращает значения.
-func (w *DeletionWatcher) FinishDeletion(id string) {
+func (w *DeletionWatcher) FinishDeletion(id uuid.UUID) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	delete(w.txs, id)
@@ -51,7 +53,7 @@ func (w *DeletionWatcher) FinishDeletion(id string) {
 //
 // Возвращает:
 //   - bool: true, если объект в процессе удаления, false в противном случае.
-func (w *DeletionWatcher) IsDeleting(id string) bool {
+func (w *DeletionWatcher) IsDeleting(id uuid.UUID) bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	_, ok := w.txs[id]
@@ -63,10 +65,10 @@ func (w *DeletionWatcher) IsDeleting(id string) bool {
 //
 // Возвращаемые значения:
 //   - []string: Слайс строк, содержащий идентификаторы объектов, находящихся в процессе удаления.
-func (w *DeletionWatcher) RunningDeletions() []string {
+func (w *DeletionWatcher) RunningDeletions() []uuid.UUID {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
-	res := make([]string, len(w.txs))
+	res := make([]uuid.UUID, len(w.txs))
 	i := 0
 	for id := range w.txs {
 		res[i] = id
@@ -76,7 +78,7 @@ func (w *DeletionWatcher) RunningDeletions() []string {
 }
 
 // :
-func (w *DeletionWatcher) WaitAll(ids []string) {
+func (w *DeletionWatcher) WaitAll(ids []uuid.UUID) {
 	for {
 		count := 0
 		for _, id := range ids {

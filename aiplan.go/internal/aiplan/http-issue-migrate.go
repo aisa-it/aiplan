@@ -52,11 +52,11 @@ var (
 )
 
 type ErrClause struct {
-	Error           string     `json:"error"`
-	SrcIssueId      *uuid.UUID `json:"src_issue_id,omitempty"`
-	IssueSequenceId int        `json:"issue_sequence_id,omitempty"`
-	Type            string     `json:"type,omitempty"`
-	Entities        []string   `json:"entities,omitempty"`
+	Error           string      `json:"error"`
+	SrcIssueId      *uuid.UUID  `json:"src_issue_id,omitempty"`
+	IssueSequenceId int         `json:"issue_sequence_id,omitempty"`
+	Type            string      `json:"type,omitempty"`
+	Entities        []uuid.UUID `json:"entities,omitempty"`
 }
 
 func (s *Services) AddIssueMigrationServices(g *echo.Group) {
@@ -109,8 +109,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	var labelIds []uuid.UUID
-	var stateIds []string
-	stateMap := make(map[string]dao.State)
+	var stateIds []uuid.UUID
+	stateMap := make(map[uuid.UUID]dao.State)
 
 	var targetProject, srcProject dao.Project
 
@@ -175,7 +175,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 		if v, ok := param.AssignersIds.GetValue(); ok {
 			if v == nil {
-				srcIssue.AssigneeIDs = []string{}
+				srcIssue.AssigneeIDs = []uuid.UUID{}
 			} else {
 				srcIssue.AssigneeIDs = *v
 			}
@@ -183,7 +183,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 		if v, ok := param.WatchersIds.GetValue(); ok {
 			if v == nil {
-				srcIssue.WatcherIDs = []string{}
+				srcIssue.WatcherIDs = []uuid.UUID{}
 			} else {
 				srcIssue.WatcherIDs = *v
 			}
@@ -237,13 +237,13 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	idsCommentMap := make(map[uuid.UUID]uuid.UUID)
 	linkedIds := make(map[string]struct{})
 	var srcIssueUUId uuid.UUID
-	var familyIds, newFamilyIds []string
+	var familyIds, newFamilyIds []uuid.UUID
 	preparedIssues := make([]IssueCheckResult, len(srcIssues))
 
 	// Checks
 	{
 		var errors []ErrClause
-		if _, exist := dao.IsProjectMember(s.db, user.ID, uuid.Must(uuid.FromString(targetProjectId))); !exist {
+		if _, exist := dao.IsProjectMember(s.db, user.ID, targetProject.ID); !exist {
 			errors = append(errors, ErrClause{
 				Error: ErrUserNotAProjectMember,
 			})
@@ -255,7 +255,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 				return EError(c, err)
 			}
 			if deleteSrc {
-				srcIssues[i].ProjectId = uuid.Must(uuid.FromString(targetProjectId))
+				srcIssues[i].ProjectId = targetProject.ID
 				srcIssues[i].Project = &targetProject
 				srcIssues[i].StateId = result.TargetState.ID
 				if result.TargetState.ID != uuid.Nil {
@@ -266,8 +266,8 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			preparedIssues[i] = result
 			srcIssueUUId = result.SrcIssue.ID
 			idsMap[result.SrcIssue.ID] = result.TargetId
-			familyIds = append(familyIds, result.SrcIssue.ID.String())
-			newFamilyIds = append(newFamilyIds, result.TargetId.String())
+			familyIds = append(familyIds, result.SrcIssue.ID)
+			newFamilyIds = append(newFamilyIds, result.TargetId)
 		}
 
 		if !deleteSrc {
@@ -280,7 +280,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					newId2, okId2 := idsMap[id]
 
 					if okId2 {
-						key := linkedIdToStringKey(newId1.String(), newId2.String())
+						key := linkedIdToStringKey(newId1, newId2)
 						linkedIds[key] = struct{}{}
 					}
 				}
@@ -303,9 +303,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					stateIds = append(stateIds, errClause.Entities...)
 				case "label":
 					for _, entity := range errClause.Entities {
-						if uuid, err := uuid.FromString(entity); err == nil {
-							labelIds = append(labelIds, uuid)
-						}
+						labelIds = append(labelIds, entity)
 					}
 				default:
 					newErr = append(newErr, errClause)
@@ -378,7 +376,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 					ProjectId:   targetProject.ID,
 				}
 
-				stateMap[st.ID.String()] = st
+				stateMap[st.ID] = st
 				if err := updateStatesGroup(tx, &st, "create"); err != nil {
 				}
 				idsMap[state.ID] = id
@@ -443,13 +441,13 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 				if stateCreated && srcIssues[i].StateId == uuid.Nil {
 					id := srcIssues[i].State.ID
-					stateTmp := stateMap[idsMap[id].String()]
+					stateTmp := stateMap[idsMap[id]]
 					srcIssues[i].State = &stateTmp
 					srcIssues[i].StateId = stateTmp.ID
 				}
 			}
 
-			err := stateActivityUpdate(tx, familyIds, srcIssue.ProjectId.String(), targetProjectId)
+			err := stateActivityUpdate(tx, familyIds, srcIssue.ProjectId, targetProject.ID)
 			if err != nil {
 				return err
 			}
@@ -515,9 +513,9 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		})
 	}
 
-	var newId string
+	var newId uuid.UUID
 	if deleteSrc {
-		newId = srcIssueId
+		newId = srcIssue.ID
 		for _, issue := range srcIssues {
 			requestMap := make(map[string]interface{})
 			currentMap := make(map[string]interface{})
@@ -562,7 +560,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 				errStack.GetError(c, err)
 			}
 		}
-		newId = idsMap[srcIssueUUId].String()
+		newId = idsMap[srcIssueUUId]
 	}
 
 	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: newId})
@@ -607,8 +605,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	var labelIds []uuid.UUID
-	var stateIds []string
-	stateMap := make(map[string]dao.State)
+	var stateIds []uuid.UUID
+	stateMap := make(map[uuid.UUID]dao.State)
 
 	var targetProject, srcProject dao.Project
 	if err := s.db.Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
@@ -674,13 +672,13 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	idsCommentMap := make(map[uuid.UUID]uuid.UUID)
 	linkedIds := make(map[string]struct{})
 
-	var targetIds, newTargetIds []string
+	var targetIds, newTargetIds []uuid.UUID
 	preparedIssues := make([]IssueCheckResult, len(srcIssues))
 
 	// Checks
 	{
 		var errors []ErrClause
-		if _, exist := dao.IsProjectMember(s.db, user.ID, uuid.Must(uuid.FromString(targetProjectId))); !exist {
+		if _, exist := dao.IsProjectMember(s.db, user.ID, targetProject.ID); !exist {
 			errors = append(errors, ErrClause{
 				Error: ErrUserNotAProjectMember,
 			})
@@ -692,7 +690,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 				return EError(c, err)
 			}
 			if deleteSrc {
-				srcIssues[i].ProjectId = uuid.Must(uuid.FromString(targetProjectId))
+				srcIssues[i].ProjectId = targetProject.ID
 				srcIssues[i].Project = &targetProject
 				srcIssues[i].StateId = result.TargetState.ID
 				if result.TargetState.ID != uuid.Nil {
@@ -702,8 +700,8 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			errors = append(errors, result.Errors...)
 			preparedIssues[i] = result
 			idsMap[result.SrcIssue.ID] = result.TargetId
-			targetIds = append(targetIds, result.SrcIssue.ID.String())
-			newTargetIds = append(newTargetIds, result.TargetId.String())
+			targetIds = append(targetIds, result.SrcIssue.ID)
+			newTargetIds = append(newTargetIds, result.TargetId)
 		}
 
 		if !deleteSrc {
@@ -716,7 +714,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					newId2, okId2 := idsMap[id]
 
 					if okId2 {
-						key := linkedIdToStringKey(newId1.String(), newId2.String())
+						key := linkedIdToStringKey(newId1, newId2)
 						linkedIds[key] = struct{}{}
 					}
 				}
@@ -739,9 +737,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					stateIds = append(stateIds, errClause.Entities...)
 				case "label":
 					for _, entity := range errClause.Entities {
-						if uuid, err := uuid.FromString(entity); err == nil {
-							labelIds = append(labelIds, uuid)
-						}
+						labelIds = append(labelIds, entity)
 					}
 				default:
 					newErr = append(newErr, errClause)
@@ -814,7 +810,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 					ProjectId:   targetProject.ID,
 				}
 
-				stateMap[st.ID.String()] = st
+				stateMap[st.ID] = st
 				if err := updateStatesGroup(tx, &st, "create"); err != nil {
 				}
 				idsMap[state.ID] = id
@@ -881,13 +877,13 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 
 				if stateCreated && srcIssues[i].StateId == uuid.Nil {
 					id := srcIssues[i].State.ID
-					stateTmp := stateMap[idsMap[id].String()]
+					stateTmp := stateMap[idsMap[id]]
 					srcIssues[i].State = &stateTmp
 					srcIssues[i].StateId = stateTmp.ID
 				}
 			}
 
-			err := stateActivityUpdate(tx, targetIds, srcProject.ID.String(), targetProjectId)
+			err := stateActivityUpdate(tx, targetIds, srcProject.ID, targetProject.ID)
 			if err != nil {
 				return err
 			}
@@ -952,18 +948,6 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			},
 		})
 	}
-
-	//errorActivity := map[string]interface{}{
-	//  "errors": []ErrClause{
-	//    {
-	//      Error: ErrOther,
-	//      Type:  "Activity",
-	//    },
-	//  },
-	//}
-	//if errorActivity != nil {
-	//  return c.JSON(http.StatusBadRequest, errorActivity)
-	//}
 
 	if deleteSrc {
 		for _, issue := range srcIssues {
@@ -1055,7 +1039,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 				SrcIssueId:      &srcIssue.ID,
 				IssueSequenceId: srcIssue.SequenceId,
 				Type:            "user",
-				Entities:        []string{srcIssue.CreatedById.String()},
+				Entities:        []uuid.UUID{srcIssue.CreatedById},
 			})
 		}
 
@@ -1074,8 +1058,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 		}
 
 		for _, assigneeId := range srcIssue.AssigneeIDs {
-			assigneeUUID, _ := uuid.FromString(assigneeId)
-			role, exist := dao.IsProjectMember(s.db, assigneeUUID, targetProject.ID)
+			role, exist := dao.IsProjectMember(s.db, assigneeId, targetProject.ID)
 			if !exist {
 				assigneeErr.Entities = append(assigneeErr.Entities, assigneeId)
 			}
@@ -1105,8 +1088,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 			IssueSequenceId: srcIssue.SequenceId,
 		}
 		for _, watcherId := range srcIssue.WatcherIDs {
-			watcherUUID, _ := uuid.FromString(watcherId)
-			role, exist := dao.IsProjectMember(s.db, watcherUUID, targetProject.ID)
+			role, exist := dao.IsProjectMember(s.db, watcherId, targetProject.ID)
 			if !exist {
 				watcherErr.Entities = append(watcherErr.Entities, watcherId)
 			}
@@ -1136,7 +1118,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 					SrcIssueId:      &srcIssue.ID,
 					IssueSequenceId: srcIssue.SequenceId,
 					Type:            "state",
-					Entities:        []string{srcIssue.State.ID.String()},
+					Entities:        []uuid.UUID{srcIssue.State.ID},
 				})
 			} else {
 				return res, err
@@ -1161,7 +1143,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 				Where("project_id = ?", targetProject.ID).
 				First(&targetLabel).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
-					labelsError.Entities = append(labelsError.Entities, label.ID.String())
+					labelsError.Entities = append(labelsError.Entities, label.ID)
 				} else {
 					return res, err
 				}
@@ -1178,9 +1160,9 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap map[uuid.UUID]uuid.UUID, single bool) error {
 	srcIssue := issue.SrcIssue
-	var familyIds []string
+	var familyIds []uuid.UUID
 	for key := range idsMap {
-		familyIds = append(familyIds, key.String())
+		familyIds = append(familyIds, key)
 	}
 
 	if issue.Migrate {
@@ -1199,10 +1181,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range issue.TargetProject.DefaultAssignees {
-			assigneeUUID := uuid.FromStringOrNil(assignee)
 			newAssignees = append(newAssignees, dao.IssueAssignee{
 				Id:          dao.GenUUID(),
-				AssigneeId:  assigneeUUID,
+				AssigneeId:  assignee,
 				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
@@ -1228,10 +1209,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range issue.TargetProject.DefaultWatchers {
-			watcherUUID := uuid.FromStringOrNil(watcher)
 			newWatchers = append(newWatchers, dao.IssueWatcher{
 				Id:          dao.GenUUID(),
-				WatcherId:   watcherUUID,
+				WatcherId:   watcher,
 				IssueId:     srcIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
@@ -1311,7 +1291,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 
 	// Rules-log
 	{
-		if err := tx.Where("issue_id = ?", issue.SrcIssue.ID.String()).Delete(&dao.RulesLog{}).Error; err != nil {
+		if err := tx.Where("issue_id = ?", issue.SrcIssue.ID).Delete(&dao.RulesLog{}).Error; err != nil {
 			return err
 		}
 	}
@@ -1355,7 +1335,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	tx.Exec("SET session_replication_role = 'origin'")
 
 	// Add assignees
-	var assigneesList []string
+	var assigneesList []uuid.UUID
 	if len(srcIssue.AssigneeIDs) > 0 {
 		assigneesList = srcIssue.AssigneeIDs
 	} else if len(issue.TargetProject.DefaultAssignees) > 0 {
@@ -1365,10 +1345,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	if len(assigneesList) > 0 {
 		var newAssignees []dao.IssueAssignee
 		for _, assignee := range assigneesList {
-			assigneeUUID := uuid.FromStringOrNil(assignee)
 			newAssignees = append(newAssignees, dao.IssueAssignee{
 				Id:          dao.GenUUID(),
-				AssigneeId:  assigneeUUID,
+				AssigneeId:  assignee,
 				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
@@ -1382,7 +1361,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	}
 
 	// Add watchers
-	var watchersList []string
+	var watchersList []uuid.UUID
 	if len(srcIssue.WatcherIDs) > 0 {
 		watchersList = srcIssue.WatcherIDs
 	} else if len(issue.TargetProject.DefaultWatchers) > 0 {
@@ -1391,10 +1370,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	if len(watchersList) > 0 {
 		var newWatchers []dao.IssueWatcher
 		for _, watcher := range watchersList {
-			watcherUUID := uuid.FromStringOrNil(watcher)
 			newWatchers = append(newWatchers, dao.IssueWatcher{
 				Id:          dao.GenUUID(),
-				WatcherId:   watcherUUID,
+				WatcherId:   watcher,
 				IssueId:     targetIssue.ID,
 				ProjectId:   issue.TargetProject.ID,
 				WorkspaceId: srcIssue.WorkspaceId,
@@ -1552,7 +1530,7 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	return nil
 }
 
-func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[uuid.UUID]stateTarget) {
+func stateRelation(tx *gorm.DB, srcProject, targetProject uuid.UUID) (error, map[uuid.UUID]stateTarget) {
 	var srcStates, targetStates []dao.State
 	if err := tx.Where("project_id = ?", srcProject).
 		Find(&srcStates).Error; err != nil {
@@ -1585,7 +1563,7 @@ func stateRelation(tx *gorm.DB, srcProject, targetProject string) (error, map[uu
 	return nil, result
 }
 
-func stateActivityUpdate(tx *gorm.DB, ids []string, srcProjectId, targetProjectId string) error {
+func stateActivityUpdate(tx *gorm.DB, ids []uuid.UUID, srcProjectId, targetProjectId uuid.UUID) error {
 	{
 		var activityState []dao.EntityActivity
 		if err := tx.
@@ -1625,10 +1603,10 @@ func stateActivityUpdate(tx *gorm.DB, ids []string, srcProjectId, targetProjectI
 	return nil
 }
 
-func linkedIdToStringKey(s1, s2 string) string {
-	if s1 < s2 {
+func linkedIdToStringKey(s1, s2 uuid.UUID) string {
+	if s1.String() < s2.String() {
 		return fmt.Sprintf("%s %s", s1, s2)
-	} else if s1 > s2 {
+	} else if s1.String() > s2.String() {
 		return fmt.Sprintf("%s %s", s2, s1)
 	} else {
 		return ""
@@ -1637,10 +1615,10 @@ func linkedIdToStringKey(s1, s2 string) string {
 
 // NewIssueParam изменяемы поля при копировании одиночной задачи
 type NewIssueParam struct {
-	Priority     types.JSONField[string]   `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
-	TargetDate   types.JSONField[string]   `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
-	AssignersIds types.JSONField[[]string] `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
-	WatchersIds  types.JSONField[[]string] `json:"watcher_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
+	Priority     types.JSONField[string]      `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
+	TargetDate   types.JSONField[string]      `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	AssignersIds types.JSONField[[]uuid.UUID] `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
+	WatchersIds  types.JSONField[[]uuid.UUID] `json:"watcher_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
 
 	StateId types.JSONField[uuid.UUID] `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
 }

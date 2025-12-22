@@ -68,7 +68,7 @@ func (e *emailNotifyIssue) Process() {
 
 		sorter := issueActivitySorter{
 			skipActivities: make([]dao.IssueActivity, 0),
-			Issues:         make(map[string]issueActivity),
+			Issues:         make(map[uuid.UUID]issueActivity),
 		}
 
 		for i := range activities {
@@ -117,7 +117,7 @@ func (e *emailNotifyIssue) Process() {
 
 type issueActivitySorter struct {
 	skipActivities []dao.IssueActivity
-	Issues         map[string]issueActivity //map[issueId]
+	Issues         map[uuid.UUID]issueActivity //map[issueId]
 }
 
 type issueMember struct {
@@ -164,7 +164,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
 			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
-			if activity.Issue.CreatedById.String() == member.User.ID.String() {
+			if activity.Issue.CreatedById == member.User.ID {
 				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
 			}
 			if (member.IssueAuthor && authorNotify) || (!member.IssueAuthor && memberNotify) {
@@ -265,13 +265,13 @@ func (ia *issueActivity) getCommentNotify(tx *gorm.DB) error {
 }
 
 func (ia *issueActivity) getNotifySettings(tx *gorm.DB) error {
-	var userIds []string
+	userIds := make([]uuid.UUID, 0, len(ia.users))
 	for _, member := range ia.users {
-		userIds = append(userIds, member.User.ID.String())
+		userIds = append(userIds, member.User.ID)
 	}
 
 	for _, author := range ia.commentActivityUser {
-		userIds = append(userIds, author.User.ID.String())
+		userIds = append(userIds, author.User.ID)
 
 	}
 
@@ -423,19 +423,19 @@ func (ia *issueActivity) AddActivity(activity dao.IssueActivity) bool {
 
 func (as *issueActivitySorter) sortEntity(activity dao.IssueActivity) {
 	if activity.IssueId != uuid.Nil { // TODO check it
-		if v, ok := as.Issues[activity.IssueId.String()]; !ok {
+		if v, ok := as.Issues[activity.IssueId]; !ok {
 			ia := newIssueActivity(activity.Issue)
 			if ia != nil {
 				if !ia.AddActivity(activity) {
 					as.skipActivities = append(as.skipActivities, activity)
 				}
-				as.Issues[activity.IssueId.String()] = *ia
+				as.Issues[activity.IssueId] = *ia
 			}
 		} else {
 			if !v.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Issues[activity.IssueId.String()] = v
+			as.Issues[activity.IssueId] = v
 		}
 	}
 	return
@@ -444,8 +444,8 @@ func (as *issueActivitySorter) sortEntity(activity dao.IssueActivity) {
 func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targetUser *dao.User) (string, string, error) {
 	result := ""
 
-	actorsChangesMap := make(map[string]map[string]dao.IssueActivity)
-	actorsMap := make(map[string]dao.User)
+	actorsChangesMap := make(map[uuid.UUID]map[string]dao.IssueActivity)
+	actorsMap := make(map[uuid.UUID]dao.User)
 	commentCount := 0
 	for _, activity := range activities {
 		// issue deletion
@@ -601,7 +601,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			continue
 		}
 
-		changesMap, ok := actorsChangesMap[activity.ActorId.UUID.String()]
+		changesMap, ok := actorsChangesMap[activity.ActorId.UUID]
 		if !ok {
 			changesMap = make(map[string]dao.IssueActivity)
 		}
@@ -649,8 +649,8 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		}
 
 		changesMap[field] = activity
-		actorsMap[activity.ActorId.UUID.String()] = *activity.Actor
-		actorsChangesMap[activity.ActorId.UUID.String()] = changesMap
+		actorsMap[activity.ActorId.UUID] = *activity.Actor
+		actorsChangesMap[activity.ActorId.UUID] = changesMap
 	}
 
 	var template dao.Template

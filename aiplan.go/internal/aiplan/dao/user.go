@@ -165,13 +165,11 @@ func (u *User) ToDTO() *dto.User {
 		ViewProps:         u.ViewProps,
 		Settings:          u.Settings,
 		Tutorial:          u.Tutorial,
+		LastWorkspaceId:   u.LastWorkspaceId,
 		NotificationCount: 0,
 		AttachmentsAllow:  nil,
 	}
-	if u.LastWorkspaceId.Valid {
-		workspaceIdStr := u.LastWorkspaceId.UUID.String()
-		userDto.LastWorkspaceId = &workspaceIdStr
-	}
+
 	if u.LastWorkspace != nil {
 		userDto.LastWorkspaceSlug = &u.LastWorkspace.Slug
 	}
@@ -302,7 +300,7 @@ func (sf *SearchFilter) ToLightDTO() *dto.SearchFilterLight {
 	}
 	sf.SetUrl()
 	return &dto.SearchFilterLight{
-		ID:          sf.ID.String(),
+		ID:          sf.ID,
 		Name:        sf.Name,
 		Description: sf.Description,
 		Public:      sf.Public,
@@ -402,28 +400,17 @@ func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
 	if un == nil {
 		return nil
 	}
-
-	var commentId, workspaceId *string
-
-	if un.CommentId.Valid {
-		commentId = utils.ToPtr(un.CommentId.UUID.String())
-	}
-
-	if un.WorkspaceId.Valid {
-		workspaceId = utils.ToPtr(un.WorkspaceId.UUID.String())
-	}
-
 	return &dto.UserNotificationsLight{
-		ID:               un.ID.String(),
-		UserId:           un.UserId.String(),
+		ID:               un.ID,
+		UserId:           un.UserId,
 		Type:             un.Type,
 		Viewed:           un.Viewed,
 		Title:            un.Title,
 		Msg:              un.Msg,
 		AuthorId:         un.AuthorId,
 		EntityActivityId: un.EntityActivityId,
-		CommentId:        commentId,
-		WorkspaceId:      workspaceId,
+		CommentId:        un.CommentId,
+		WorkspaceId:      un.WorkspaceId,
 		IssueId:          un.IssueId,
 	}
 }

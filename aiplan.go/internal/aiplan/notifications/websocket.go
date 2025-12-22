@@ -40,13 +40,13 @@ type Mention struct {
 }
 
 type WebsocketNotificationService struct {
-	sessions map[string]map[uuid.UUID]*websocket.Conn
+	sessions map[uuid.UUID]map[uuid.UUID]*websocket.Conn
 	mutex    sync.RWMutex
 }
 
 func NewWebsocketNotificationService() *WebsocketNotificationService {
 	return &WebsocketNotificationService{
-		sessions: make(map[string]map[uuid.UUID]*websocket.Conn),
+		sessions: make(map[uuid.UUID]map[uuid.UUID]*websocket.Conn),
 	}
 }
 
@@ -62,18 +62,17 @@ func (wns *WebsocketNotificationService) Handle(userId uuid.UUID, w http.Respons
 	defer c.CloseNow()
 
 	conId := uuid.Must(uuid.NewV4())
-	userIdStr := userId.String()
 
 	wns.mutex.Lock()
-	cons, ok := wns.sessions[userIdStr]
+	cons, ok := wns.sessions[userId]
 	if !ok {
 		cons = make(map[uuid.UUID]*websocket.Conn)
 	}
 	cons[conId] = c
-	wns.sessions[userIdStr] = cons
+	wns.sessions[userId] = cons
 	wns.mutex.Unlock()
 
-	go wns.pingLoop(userIdStr, conId, c)
+	go wns.pingLoop(userId, conId, c)
 
 	// Start read until close
 	ctx := context.Background()
@@ -81,9 +80,9 @@ func (wns *WebsocketNotificationService) Handle(userId uuid.UUID, w http.Respons
 	<-ctx.Done()
 
 	wns.mutex.Lock()
-	delete(wns.sessions[userIdStr], conId)
-	if len(wns.sessions[userIdStr]) == 0 {
-		delete(wns.sessions, userIdStr)
+	delete(wns.sessions[userId], conId)
+	if len(wns.sessions[userId]) == 0 {
+		delete(wns.sessions, userId)
 	}
 	wns.mutex.Unlock()
 
@@ -93,8 +92,7 @@ func (wns *WebsocketNotificationService) Handle(userId uuid.UUID, w http.Respons
 func (wns *WebsocketNotificationService) CloseUserSessions(userId uuid.UUID) {
 	wns.mutex.Lock()
 	defer wns.mutex.Unlock()
-	userIdStr := userId.String()
-	cons, ok := wns.sessions[userIdStr]
+	cons, ok := wns.sessions[userId]
 	if !ok {
 		return
 	}
@@ -105,7 +103,7 @@ func (wns *WebsocketNotificationService) CloseUserSessions(userId uuid.UUID) {
 
 func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UUID, data interface{}, countNotify int) error {
 	msg := WebsocketMsg{}
-	msg.Id = notifyId.String()
+	msg.Id = notifyId
 	msg.CountNotify = countNotify
 	msg.CreatedAt = time.Now().UTC()
 	userIdStr := userId.String()
@@ -232,7 +230,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 	}
 
 	wns.mutex.RLock()
-	cons, ok := wns.sessions[userIdStr]
+	cons, ok := wns.sessions[userId]
 	wns.mutex.RUnlock()
 	if !ok {
 		return nil
@@ -247,7 +245,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 	return nil
 }
 
-func (wns *WebsocketNotificationService) pingLoop(userId string, sessionId uuid.UUID, conn *websocket.Conn) {
+func (wns *WebsocketNotificationService) pingLoop(userId uuid.UUID, sessionId uuid.UUID, conn *websocket.Conn) {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 

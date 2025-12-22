@@ -55,25 +55,25 @@ type User struct {
 	Settings  types.UserSettings `json:"settings"`
 	Tutorial  int                `json:"tutorial"`
 
-	LastWorkspaceId   *string `json:"last_workspace_id"  extensions:"x-nullable"`
-	LastWorkspaceSlug *string `json:"last_workspace_slug"  extensions:"x-nullable"`
-	NotificationCount int     `json:"notification_count,omitempty"`
-	AttachmentsAllow  *bool   `json:"attachments_allow,omitempty"  extensions:"x-nullable"`
+	LastWorkspaceId   uuid.NullUUID `json:"last_workspace_id"  extensions:"x-nullable"`
+	LastWorkspaceSlug *string       `json:"last_workspace_slug"  extensions:"x-nullable"`
+	NotificationCount int           `json:"notification_count,omitempty"`
+	AttachmentsAllow  *bool         `json:"attachments_allow,omitempty"  extensions:"x-nullable"`
 }
 
 type UserNotificationsLight struct {
-	ID     string `json:"id"`
-	UserId string `json:"user_id"`
-	Type   string `json:"type"`
-	Viewed bool   `json:"viewed"`
+	ID     uuid.UUID `json:"id"`
+	UserId uuid.UUID `json:"user_id"`
+	Type   string    `json:"type"`
+	Viewed bool      `json:"viewed"`
 
 	Title    string        `json:"title,omitempty"`
 	Msg      string        `json:"msg,omitempty"`
 	AuthorId uuid.NullUUID `json:"author_id"  extensions:"x-nullable" swaggertype:"string"`
 
 	EntityActivityId uuid.NullUUID `json:"entity_activity,omitempty"  extensions:"x-nullable"`
-	CommentId        *string       `json:"comment_id,omitempty"  extensions:"x-nullable"`
-	WorkspaceId      *string       `json:"workspace_id,omitempty"  extensions:"x-nullable"`
+	CommentId        uuid.NullUUID `json:"comment_id,omitempty"  extensions:"x-nullable"`
+	WorkspaceId      uuid.NullUUID `json:"workspace_id,omitempty"  extensions:"x-nullable"`
 	IssueId          uuid.NullUUID `json:"issue_id,omitempty"  extensions:"x-nullable" swaggertype:"string"`
 }
 
@@ -99,7 +99,7 @@ type UserFeedback struct {
 // searchFilter
 
 type SearchFilterLight struct {
-	ID          string                  `json:"id"`
+	ID          uuid.UUID               `json:"id"`
 	Name        string                  `json:"name"`
 	Description string                  `json:"description"`
 	Public      bool                    `json:"public"`

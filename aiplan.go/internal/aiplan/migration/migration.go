@@ -26,6 +26,7 @@ func New(db *gorm.DB) *Migration {
 			NewMigrateDocUpdateId(db),
 			NewMigrateDocAccessRule(db),
 			NewMigrateActivityFieldsUpdate(db),
+			NewMigrateActivityTargetDateUpdate(db),
 		},
 	}
 }
