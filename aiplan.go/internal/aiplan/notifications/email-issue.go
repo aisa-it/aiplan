@@ -265,7 +265,7 @@ func (ia *issueActivity) getCommentNotify(tx *gorm.DB) error {
 }
 
 func (ia *issueActivity) getNotifySettings(tx *gorm.DB) error {
-	var userIds []uuid.UUID
+	userIds := make([]uuid.UUID, 0, len(ia.users))
 	for _, member := range ia.users {
 		userIds = append(userIds, member.User.ID)
 	}

@@ -1667,7 +1667,7 @@ func (s *Services) createIssue(c echo.Context) error {
 			userIds := issue.WatchersList
 			userIds = append(userIds, issue.AssigneesList...)
 
-			if err := notifications.CreateDeadlineNotification(tx, &issueNew, &dateStr, &userIds); err != nil {
+			if err := notifications.CreateDeadlineNotification(tx, &issueNew, &dateStr, userIds); err != nil {
 				return err
 			}
 		}

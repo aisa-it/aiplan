@@ -1342,11 +1342,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 			if targetDateOk || assigneesOk || watchersOk {
 				assigneeIds := &issue.AssigneeIDs
 				watcherIds := &issue.WatcherIDs
-				var notifyUserIds *[]uuid.UUID
+				var notifyUserIds []uuid.UUID
 
 				if targetDateOk {
-					notifyUserIds = &issue.AssigneeIDs
-					*notifyUserIds = append(*notifyUserIds, issue.WatcherIDs...)
+					notifyUserIds = issue.AssigneeIDs
+					notifyUserIds = append(notifyUserIds, issue.WatcherIDs...)
 				}
 
 				if assigneesOk || watchersOk {
@@ -1356,28 +1356,28 @@ func (s *Services) updateIssue(c echo.Context) error {
 					}
 
 					if assigneesOk {
-						notifyUserIds = &[]uuid.UUID{}
+						notifyUserIds = []uuid.UUID{}
 						for _, v := range assignees {
 							if str, ok := v.(uuid.UUID); ok {
-								*notifyUserIds = append(*notifyUserIds, str)
+								notifyUserIds = append(notifyUserIds, str)
 							}
 						}
-						*notifyUserIds = append(*notifyUserIds, *watcherIds...)
+						notifyUserIds = append(notifyUserIds, *watcherIds...)
 					}
 					if watchersOk {
-						notifyUserIds = &[]uuid.UUID{}
+						notifyUserIds = []uuid.UUID{}
 
 						for _, v := range watchers {
 							if str, ok := v.(uuid.UUID); ok {
-								*notifyUserIds = append(*notifyUserIds, str)
+								notifyUserIds = append(notifyUserIds, str)
 							}
 						}
-						*notifyUserIds = append(*notifyUserIds, *assigneeIds...)
+						notifyUserIds = append(notifyUserIds, *assigneeIds...)
 					}
 
 					targetDate = &dateStr
 				}
-				*notifyUserIds = append(*notifyUserIds, issue.Author.ID)
+				notifyUserIds = append(notifyUserIds, issue.Author.ID)
 
 				err := notifications.CreateDeadlineNotification(tx, &issue, targetDate, notifyUserIds)
 				if err != nil {

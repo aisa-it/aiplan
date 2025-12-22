@@ -310,10 +310,9 @@ func (d *Doc) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	var commentIds []uuid.UUID
-
-	for _, comment := range comments {
-		commentIds = append(commentIds, comment.Id)
+	commentIds := make([]uuid.UUID, len(comments))
+	for i := range comments {
+		commentIds[i] = comments[i].Id
 	}
 
 	if err := tx.Where("comment_id in ?", commentIds).Delete(&DocCommentReaction{}).Error; err != nil {
@@ -1100,7 +1099,7 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 	doc.ReaderIDs = getUniqueDocMemberIDs(doc.WatcherIDs, doc.ReaderIDs, doc.EditorsIDs)
 
 	userMap := utils.SliceToMap(&users, func(u *User) uuid.UUID { return u.ID })
-	var newAccessRules []DocAccessRules
+	newAccessRules := make([]DocAccessRules, 0, len(userMap))
 	for id, u := range userMap {
 		newAccessRules = append(newAccessRules, DocAccessRules{
 			Id: GenUUID(),
@@ -1127,12 +1126,12 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 }
 
 func getUniqueDocMemberIDs(watcherIDs, readerIDs, editorIDs []uuid.UUID) []uuid.UUID {
-	editorSet := make(map[uuid.UUID]bool)
+	editorSet := make(map[uuid.UUID]bool, len(editorIDs))
 	for _, id := range editorIDs {
 		editorSet[id] = true
 	}
 
-	filteredWatchers := make([]uuid.UUID, 0)
+	filteredWatchers := make([]uuid.UUID, 0, len(watcherIDs))
 	for _, id := range watcherIDs {
 		if !editorSet[id] {
 			filteredWatchers = append(filteredWatchers, id)
