@@ -65,6 +65,7 @@ func NewMCPServer(db *gorm.DB, bl *business.Business) echo.HandlerFunc {
 	srv.AddTools(tools.GetIssuesTools(db, bl)...)
 	srv.AddTools(tools.GetProjectsTools(db, bl)...)
 	srv.AddTools(tools.GetWorkspacesTools(db, bl)...)
+	srv.AddTools(tools.GetDocsTools(db, bl)...)
 
 	srv.AddResources(resources.GetUsersResources(db)...)
 
