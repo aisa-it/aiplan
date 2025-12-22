@@ -47,6 +47,7 @@ require (
 	github.com/tus/tusd/v2 v2.8.0
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
+	gorm.io/driver/sqlite v1.6.0
 )
 
 require (
@@ -89,6 +90,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
+	github.com/mattn/go-sqlite3 v1.14.28 // indirect
 	github.com/minio/crc64nvme v1.1.0 // indirect
 	github.com/olekukonko/errors v1.1.0 // indirect
 	github.com/olekukonko/ll v0.0.9 // indirect

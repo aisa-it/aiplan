@@ -14,7 +14,6 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
-	"gorm.io/gorm"
 )
 
 const (
@@ -112,49 +111,4 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	defer r.Close()
 
 	return c.Stream(http.StatusOK, asset.ContentType, r)
-}
-
-func (s *Services) redirectToMinioFileLegacy(c echo.Context) error {
-	name := c.Param("fileName")
-
-	query := s.db.
-		Select("id", "content_type")
-
-	if uuid, err := uuid.FromString(name); err == nil {
-		query = query.Where("id = ?", uuid)
-	} else {
-		query = query.Where("name = ?", name)
-	}
-
-	var fileAsset dao.FileAsset
-	if err := query.First(&fileAsset).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return c.NoContent(http.StatusNotFound)
-		}
-		return EError(c, err)
-	}
-
-	stats, err := s.storage.GetFileInfo(fileAsset.Id)
-	if err != nil {
-		errResponse := minio.ToErrorResponse(err)
-		if errResponse.Code == "NoSuchKey" {
-			return c.NoContent(http.StatusNotFound)
-		}
-		return EError(c, err)
-	}
-
-	ifNoneMatchHeader := c.Request().Header.Get("If-None-Match")
-	if ifNoneMatchHeader == stats.ETag {
-		return c.NoContent(http.StatusNotModified)
-	}
-
-	c.Response().Header().Set("ETag", stats.ETag)
-
-	r, err := s.storage.LoadReader(fileAsset.Id)
-	if err != nil {
-		return EError(c, err)
-	}
-	defer r.Close()
-
-	return c.Stream(http.StatusOK, fileAsset.ContentType, r)
 }
