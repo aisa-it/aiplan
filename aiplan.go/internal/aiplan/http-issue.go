@@ -349,6 +349,8 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 			Where("issues.project_id = ?", project.ID)
 
 		var issue dao.Issue
+		issue.Project = &project
+		issue.Workspace = project.Workspace
 		issue.FullLoad = true
 		if _, err := uuid.FromString(issueIdOrSeq); err == nil {
 			// uuid id of issue
@@ -373,9 +375,6 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 		} else {
 			return EErrorDefined(c, apierrors.ErrIssueNotFound)
 		}
-
-		issue.Project = &project
-		issue.Workspace = project.Workspace
 
 		// Fetch Author details
 		if err := issue.Author.AfterFind(s.db); err != nil {
