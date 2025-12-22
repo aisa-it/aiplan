@@ -231,7 +231,7 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	// delete projects
-	var runningIds []string
+	var runningIds []uuid.UUID
 	if err := tx.Model(&Project{}).Select("id").Unscoped().Where("id in (?)", deletingProjects.RunningDeletions()).Find(&runningIds).Error; err != nil {
 		return err
 	}
@@ -394,7 +394,7 @@ func (wm *WorkspaceMember) ToLightDTO() *dto.WorkspaceMemberLight {
 	}
 
 	return &dto.WorkspaceMemberLight{
-		ID:              wm.ID.String(),
+		ID:              wm.ID,
 		Role:            wm.Role,
 		EditableByAdmin: wm.EditableByAdmin,
 		MemberId:        wm.MemberId,

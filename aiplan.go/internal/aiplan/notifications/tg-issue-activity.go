@@ -449,9 +449,9 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 
 	if act.NewIssueComment != nil && act.NewIssueComment.ReplyToCommentId.Valid {
 		if err := tx.Preload("Actor").
-			Where("workspace_id = ? ", act.WorkspaceId.String()).
-			Where("project_id = ?", act.ProjectId.String()).
-			Where("issue_id = ?", act.IssueId.String()).
+			Where("workspace_id = ? ", act.WorkspaceId).
+			Where("project_id = ?", act.ProjectId).
+			Where("issue_id = ?", act.IssueId).
 			Where("id = ?", act.NewIssueComment.ReplyToCommentId.UUID).
 			First(&act.NewIssueComment.OriginalComment).Error; err == nil {
 			if act.NewIssueComment.OriginalComment.Actor.TelegramId != nil &&
@@ -467,7 +467,7 @@ func getUserTgIdIssueActivity(tx *gorm.DB, activity interface{}) []userTg {
 
 	resMap := make(map[uuid.UUID]userTg)
 
-	maps.Copy(resMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId.String()))
+	maps.Copy(resMap, GetUserTgIgDefaultWatchers(tx, act.ProjectId))
 	maps.Copy(resMap, issueUserTgId)
 
 	userIds := make([]uuid.UUID, 0, len(resMap))

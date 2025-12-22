@@ -74,23 +74,6 @@ func entityReadersUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 }
 
 func issueLinkedUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	uuidToStr := func(t *interface{}) interface{} {
-		if v, ok := (*t).(uuid.UUID); ok {
-			return v.String()
-		}
-		return nil
-	}
-
-	r := requestedData[actField.Linked.Req]
-	if rSlice, ok := r.([]interface{}); ok {
-		requestedData[actField.Linked.Req] = utils.SliceToSlice(&rSlice, uuidToStr)
-	}
-
-	c := currentInstance[actField.Linked.Req]
-	if cSlice, ok := c.([]interface{}); ok {
-		currentInstance[actField.Linked.Req] = utils.SliceToSlice(&cSlice, uuidToStr)
-	}
-
 	requestedData["field_log"] = actField.Linked.Field
 
 	return updateEntityRelationsLog[E, A, dao.Issue](actField.Linked.Field, actField.Linked.Req, tracker, requestedData, currentInstance, entity, actor)
@@ -101,7 +84,7 @@ func issueBlocksListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrac
 	if cSlice, ok := c.([]interface{}); ok {
 		currentInstance[actField.Blocks.Req] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
 			if v, ok := (*t).(map[string]interface{}); ok {
-				return v["block"].(uuid.UUID).String()
+				return v["block"].(uuid.UUID)
 			}
 			return nil
 		})
@@ -130,7 +113,7 @@ func issueBlockersListUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 	if cSlice, ok := c.([]interface{}); ok {
 		currentInstance[actField.Blocking.Req] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
 			if v, ok := (*t).(map[string]interface{}); ok {
-				return v["blocked_by"].(uuid.UUID).String()
+				return v["blocked_by"].(uuid.UUID)
 			}
 			return nil
 		})
@@ -675,6 +658,8 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 		switch val := v.(type) {
 		case uuid.NullUUID:
 			oldParentId = val
+		case uuid.UUID:
+			oldParentId = uuid.NullUUID{UUID: val, Valid: true}
 		}
 	}
 

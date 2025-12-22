@@ -847,9 +847,9 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		if requestedProjectMember.Role == types.GuestRole {
 			if requestedProjectMember.IsDefaultAssignee {
 				requestedProjectMember.IsDefaultAssignee = false
-				var defaultAssignees []string
+				var defaultAssignees []uuid.UUID
 				for _, assignee := range project.DefaultAssignees {
-					if assignee != requestedProjectMember.ID.String() {
+					if assignee != requestedProjectMember.ID {
 						defaultAssignees = append(defaultAssignees, assignee)
 					}
 				}
@@ -1272,9 +1272,9 @@ func (s *Services) addProjectToFavorites(c echo.Context) error {
 
 	projectID := req.ProjectID
 
-	userIdStr := user.ID.String()
+	userId := user.ID
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	project, err := dao.GetProject(s.db, workspace.Slug, userIdStr, projectID)
+	project, err := dao.GetProject(s.db, workspace.Slug, userId, projectID)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -1314,14 +1314,14 @@ func (s *Services) removeProjectFromFavorites(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	projectId := c.Param("projectId")
 
-	userIdStr := user.ID.String()
-	project, err := dao.GetProject(s.db, workspace.Slug, userIdStr, projectId)
+	userId := user.ID
+	project, err := dao.GetProject(s.db, workspace.Slug, userId, projectId)
 	if err != nil {
 		return EError(c, err)
 	}
 
 	if err := s.db.Where("project_id = ?", project.ID).
-		Where("user_id = ?", userIdStr).
+		Where("user_id = ?", userId).
 		Where("workspace_id = ?", project.Workspace.ID).
 		Delete(&dao.ProjectFavorites{}).Error; err != nil {
 		return EError(c, err)
@@ -1583,11 +1583,11 @@ func (s *Services) deleteProjectEstimate(c echo.Context) error {
 type IssueCreateRequest struct {
 	dto.Issue
 
-	BlockersList  []string `json:"blockers_list"`
-	AssigneesList []string `json:"assignees_list"`
-	WatchersList  []string `json:"watchers_list"`
-	LabelsList    []string `json:"labels_list"`
-	BlocksList    []string `json:"blocks_list"`
+	BlockersList  []uuid.UUID `json:"blockers_list"`
+	AssigneesList []uuid.UUID `json:"assignees_list"`
+	WatchersList  []uuid.UUID `json:"watchers_list"`
+	LabelsList    []uuid.UUID `json:"labels_list"`
+	BlocksList    []uuid.UUID `json:"blocks_list"`
 }
 
 // createIssue godoc
@@ -1636,14 +1636,6 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueNameEmpty)
 	}
 
-	var parentId uuid.NullUUID
-	if issue.ParentId != nil {
-		if u, err := uuid.FromString(*issue.ParentId); err == nil {
-			parentId.UUID = u
-			parentId.Valid = true
-		}
-	}
-
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	issueNew := dao.Issue{
 		ID:                  dao.GenUUID(),
@@ -1654,7 +1646,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		CompletedAt:         issue.CompletedAt,
 		SequenceId:          issue.SequenceId,
 		CreatedById:         user.ID,
-		ParentId:            parentId,
+		ParentId:            issue.ParentId,
 		ProjectId:           project.ID,
 		StateId:             issue.StateId,
 		UpdatedById:         uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -1677,7 +1669,7 @@ func (s *Services) createIssue(c echo.Context) error {
 			userIds := issue.WatchersList
 			userIds = append(userIds, issue.AssigneesList...)
 
-			if err := notifications.CreateDeadlineNotification(tx, &issueNew, &dateStr, &userIds); err != nil {
+			if err := notifications.CreateDeadlineNotification(tx, &issueNew, &dateStr, userIds); err != nil {
 				return err
 			}
 		}
@@ -1737,10 +1729,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			issue.AssigneesList = utils.SetToSlice(utils.SliceToSet(issue.AssigneesList))
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range issue.AssigneesList {
-				assigneeUUID := uuid.FromStringOrNil(assignee)
 				newAssignees = append(newAssignees, dao.IssueAssignee{
 					Id:          dao.GenUUID(),
-					AssigneeId:  assigneeUUID,
+					AssigneeId:  assignee,
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
@@ -1758,10 +1749,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			issue.WatchersList = utils.SetToSlice(utils.SliceToSet(issue.WatchersList))
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range issue.WatchersList {
-				watcherUUID := uuid.FromStringOrNil(watcher)
 				newWatchers = append(newWatchers, dao.IssueWatcher{
 					Id:          dao.GenUUID(),
-					WatcherId:   watcherUUID,
+					WatcherId:   watcher,
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
@@ -1830,17 +1820,16 @@ func (s *Services) createIssue(c echo.Context) error {
 		data := make(map[string]interface{})
 		oldData := make(map[string]interface{})
 
-		oldData["parent"] = nil
-		data["parent"] = issueNew.ParentId.UUID.String()
+		oldData["parent"] = uuid.NullUUID{}
+		data["parent"] = issueNew.ParentId.UUID
 
 		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityUpdatedActivity, data, oldData, issueNew, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-
 	}
 
-	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID.String()})
+	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID})
 }
 
 // ############# Labels methods ###################
@@ -3063,7 +3052,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 func (s *Services) deleteProjectLogo(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-	oldLogoId := project.LogoId.UUID.String()
+	oldLogoId := project.LogoId.UUID
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -3084,10 +3073,10 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 
 	//Трекинг активности
 	oldMap := map[string]interface{}{
-		"logo": oldLogoId,
+		"logo": oldLogoId.String(),
 	}
 	newMap := map[string]interface{}{
-		"logo": uuid.NullUUID{}.UUID.String(),
+		"logo": uuid.Nil.String(),
 	}
 
 	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)

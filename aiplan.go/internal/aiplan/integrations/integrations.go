@@ -111,7 +111,7 @@ func NewIntegrationService(g *echo.Group, db *gorm.DB, tS *notifications.Telegra
 	return &IntegrationsService{db: db, integrations: integrations}
 }
 
-func (is *IntegrationsService) GetIntegrations(workspaceId string) []Integration {
+func (is *IntegrationsService) GetIntegrations(workspaceId uuid.UUID) []Integration {
 	integrations := make([]Integration, len(is.integrations))
 	for i, integration := range is.integrations {
 		integrations[i] = integration.GetInfo()
