@@ -258,7 +258,7 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 		}
 	}
 
-	var ids []uuid.UUID
+	ids := make([]uuid.UUID, 0, len(ia.commentActivityUser))
 	for _, author := range ia.commentActivityUser {
 		ids = append(ids, author.User.ID)
 	}

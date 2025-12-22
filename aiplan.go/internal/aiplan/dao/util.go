@@ -212,8 +212,8 @@ func GetUserNeighbors(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []
 }
 
 func GetUserFromProjectMember(members []User, ids []interface{}) []User {
-	var users []User
-	idsMap := make(map[uuid.UUID]struct{})
+	users := make([]User, 0, len(members))
+	idsMap := make(map[uuid.UUID]struct{}, len(ids))
 	for _, id := range ids {
 		idsMap[id.(uuid.UUID)] = struct{}{}
 	}

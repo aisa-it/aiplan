@@ -428,9 +428,9 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	}
 
 	if issue.Assignees != nil && len(*issue.Assignees) > 0 {
-		var ids []uuid.UUID
-		for _, assignee := range *issue.Assignees {
-			ids = append(ids, assignee.ID)
+		ids := make([]uuid.UUID, len(*issue.Assignees))
+		for i, assignee := range *issue.Assignees {
+			ids[i] = assignee.ID
 		}
 		issue.AssigneeIDs = ids
 	} else {
@@ -438,9 +438,9 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	}
 
 	if issue.Watchers != nil && len(*issue.Watchers) > 0 {
-		var ids []uuid.UUID
-		for _, watcher := range *issue.Watchers {
-			ids = append(ids, watcher.ID)
+		ids := make([]uuid.UUID, len(*issue.Watchers))
+		for i, watcher := range *issue.Watchers {
+			ids[i] = watcher.ID
 		}
 		issue.WatcherIDs = ids
 	} else {
@@ -448,9 +448,9 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	}
 
 	if issue.Labels != nil && len(*issue.Labels) > 0 {
-		var ids []uuid.UUID
-		for _, label := range *issue.Labels {
-			ids = append(ids, label.ID)
+		ids := make([]uuid.UUID, len(*issue.Labels))
+		for i, label := range *issue.Labels {
+			ids[i] = label.ID
 		}
 		issue.LabelIDs = ids
 	} else {

@@ -615,8 +615,8 @@ func (s *Services) updateDoc(c echo.Context) error {
 }
 
 func calculateChanges(newIds, oldIds []uuid.UUID) (added []uuid.UUID, removed []uuid.UUID) {
-	newSet := make(map[uuid.UUID]bool)
-	oldSet := make(map[uuid.UUID]bool)
+	newSet := make(map[uuid.UUID]bool, len(newIds))
+	oldSet := make(map[uuid.UUID]bool, len(oldIds))
 
 	for _, id := range newIds {
 		newSet[id] = true
@@ -870,7 +870,7 @@ func mergeDocGroups(sortOnly bool, current, new []dao.Doc) []dao.Doc {
 }
 
 func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, currentDoc *dao.Doc, prevId, nextId uuid.NullUUID, changes map[uuid.UUID]docMove) error {
-	indexMap := make(map[uuid.UUID]int)
+	indexMap := make(map[uuid.UUID]int, len(*docs))
 	currentIdx := -1
 
 	for i, d := range *docs {
