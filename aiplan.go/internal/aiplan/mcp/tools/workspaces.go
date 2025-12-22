@@ -1,6 +1,9 @@
 package tools
 
 import (
+	"context"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -27,18 +30,18 @@ var workspacesTools = []Tool{
 	},
 }
 
-func GetWorkspacesTools(db *gorm.DB) []server.ServerTool {
+func GetWorkspacesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
 	var result []server.ServerTool
 	for _, t := range workspacesTools {
 		result = append(result, server.ServerTool{
 			Tool:    t.Tool,
-			Handler: WrapTool(db, t.Handler),
+			Handler: WrapTool(db, bl, t.Handler),
 		})
 	}
 	return result
 }
 
-func getUserWorkspaces(db *gorm.DB, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getUserWorkspaces(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	// Получаем параметры пагинации

@@ -1,12 +1,15 @@
 package tools
 
 import (
-	"fmt"
+	"context"
 	"net/url"
 	"path/filepath"
 	"strings"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
@@ -105,20 +108,19 @@ var issuesTools = []Tool{
 	},
 }
 
-func GetIssuesTools(db *gorm.DB) []server.ServerTool {
+func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
 	var resources []server.ServerTool
 	for _, t := range issuesTools {
 		resources = append(resources, server.ServerTool{
 			Tool:    t.Tool,
-			Handler: WrapTool(db, t.Handler),
+			Handler: WrapTool(db, bl, t.Handler),
 		})
 	}
 	return resources
 }
 
-func getIssue(db *gorm.DB, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	issueIdOrSeq := request.GetArguments()["id"].(string)
-	fmt.Println(issueIdOrSeq)
 
 	query := db.
 		Joins("Parent").
@@ -137,9 +139,9 @@ func getIssue(db *gorm.DB, user *dao.User, request mcp.CallToolRequest) (*mcp.Ca
 
 	var issue dao.Issue
 	issue.FullLoad = true
-	if _, err := uuid.FromString(issueIdOrSeq); err == nil {
+	if id, err := uuid.FromString(issueIdOrSeq); err == nil {
 		// uuid id of issue
-		query = query.Where("issues.id = ?", issueIdOrSeq)
+		query = query.Where("issues.id = ?", id)
 	} else {
 		var params []string
 		if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
@@ -147,9 +149,9 @@ func getIssue(db *gorm.DB, user *dao.User, request mcp.CallToolRequest) (*mcp.Ca
 		} else {
 			params = strings.Split(issueIdOrSeq, "-")
 		}
-		fmt.Println(params)
+
 		if len(params) != 3 {
-			return mcp.NewToolResultError("номер задачи не соответствует формату"), nil
+			return logger.Error(apierrors.ErrIssueNotFound, "некорректный формат задачи"), nil
 		}
 
 		// sequence id of issue
@@ -159,23 +161,23 @@ func getIssue(db *gorm.DB, user *dao.User, request mcp.CallToolRequest) (*mcp.Ca
 	if err := query.
 		First(&issue).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return mcp.NewToolResultError("задача не найдена"), nil
+			return logger.Error(apierrors.ErrIssueNotFound), nil
 		}
-		return mcp.NewToolResultError("internal error"), nil
+		return logger.Error(err), nil
 	}
 
 	// Fetch Author details
 	if err := issue.Author.AfterFind(db); err != nil {
-		return mcp.NewToolResultError("internal error"), nil
+		return logger.Error(err), nil
 	}
 
 	return mcp.NewToolResultJSON(issue.ToDTO())
 }
 
-func searchIssues(db *gorm.DB, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	searchParams, err := types.ParseSearchParamsMCP(request.GetArguments())
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("ошибка парсинга параметров: %v", err)), nil
+		return logger.Error(err), nil
 	}
 
 	// Выполняем поиск (глобальный поиск, пустой ProjectMember)
@@ -189,7 +191,7 @@ func searchIssues(db *gorm.DB, user *dao.User, request mcp.CallToolRequest) (*mc
 		nil, // без streaming
 	)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("ошибка поиска: %v", err)), nil
+		return logger.Error(err), nil
 	}
 
 	return mcp.NewToolResultJSON(result)
