@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
@@ -31,6 +32,14 @@ type TgService struct {
 type TgMsg struct {
 	title string
 	body  string
+
+	replace map[string]any
+}
+
+func NewTgMsg() TgMsg {
+	return TgMsg{
+		replace: make(map[string]any),
+	}
 }
 
 func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl *business.Business) *TgService {
@@ -100,13 +109,9 @@ func (t *TgService) GetBotLink() string {
 }
 
 func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
-	msg := tgMsg.title
+	msg := strings.Join([]string{tgMsg.title, tgMsg.body}, "\n")
 	if msg == "" {
-		return 0, fmt.Errorf("empty message")
-	}
-
-	if tgMsg.body != "" {
-		msg += "\n" + tgMsg.body
+		return 0, fmt.Errorf("message is empty")
 	}
 
 	smp := bot.SendMessageParams{
