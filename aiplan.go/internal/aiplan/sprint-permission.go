@@ -37,6 +37,11 @@ func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
 		return true, nil
 	}
 
+	// Allow Workspace Admin
+	if sprintContext.WorkspaceMember.Role == types.AdminRole {
+		return true, nil
+	}
+
 	if sprintContext.User.IsSuperuser {
 		return true, nil
 	}
