@@ -3096,6 +3096,40 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 	return c.JSON(http.StatusOK, project.ToDTO())
 }
 
+// @id getProjectStats
+// @Summary Проекты: получение статистики проекта
+// @Description Возвращает агрегированную статистику проекта: счётчики задач, распределение по статусам,
+// приоритетам и группам статусов, информацию о просроченных задачах.
+// По умолчанию включены все опциональные секции (исполнители, метки, спринты, временная динамика).
+// Для отключения секции передайте соответствующий параметр со значением false.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта (UUID)"
+// @Param include_assignee_stats query bool false "Включить статистику по исполнителям, топ-50 (по умолчанию true)"
+// @Param include_label_stats query bool false "Включить статистику по меткам, топ-50 (по умолчанию true)"
+// @Param include_sprint_stats query bool false "Включить статистику по спринтам, последние 50 (по умолчанию true)"
+// @Param include_timeline query bool false "Включить временную статистику за 12 месяцев (по умолчанию true)"
+// @Success 200 {object} dto.ProjectStats "Агрегированная статистика проекта"
+// @Failure 400 {object} apierrors.DefinedError "Некорректный запрос"
+// @Failure 403 {object} apierrors.DefinedError "Нет доступа к проекту"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/stats/ [get]
+func (s *Services) getProjectStats(c echo.Context) error {
+	project := c.(ProjectContext).Project
+
+	opts := dto.ProjectStatsRequest{}
+	if err := opts.FromHTTPQuery(c); err != nil {
+		return EError(c, err)
+	}
+	stats, err := s.business.GetProjectStats(project.ID, opts)
+	if err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, stats)
+}
+
 /*
 // ############# Issue properties methods ###################
 
