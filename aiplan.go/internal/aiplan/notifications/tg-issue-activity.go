@@ -8,7 +8,6 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
@@ -124,18 +123,18 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 			//}
 		case "added":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Label.Field:
-				msg.Text = act.Title("добавил(-a) тег в")
-				msg.Text += Stelegramf("%s",
-					activity.NewLabel.Name,
-				)
+			//case actField.Label.Field:
+			//	msg.Text = act.Title("добавил(-a) тег в")
+			//	msg.Text += Stelegramf("%s",
+			//		activity.NewLabel.Name,
+			//	)
 			case actField.SubIssue.Field:
-				activity.NewSubIssue.Project = activity.Issue.Project
-				msg.Text = act.Title("изменил(-a)")
-				msg.Text += Stelegramf("*Подзадача*: [%s](%s)",
-					activity.NewSubIssue.FullIssueName(),
-					activity.NewSubIssue.URL,
-				)
+				//activity.NewSubIssue.Project = activity.Issue.Project
+				//msg.Text = act.Title("изменил(-a)")
+				//msg.Text += Stelegramf("*Подзадача*: [%s](%s)",
+				//	activity.NewSubIssue.FullIssueName(),
+				//	activity.NewSubIssue.URL,
+				//)
 				//case actField.Assignees.Field:
 				//	msg.Text = act.Title("добавил(-a) нового исполнителя в")
 				//	msg.Text += Stelegramf("%s %s",
@@ -152,30 +151,30 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 
 		case "removed":
 			switch actField.ActivityField(*activity.Field) {
-			case actField.Label.Field:
-				msg.Text = act.Title("убрал(-a) тег из")
-				msg.Text += Stelegramf("%s",
-					activity.OldLabel.Name,
-				)
-			case actField.SubIssue.Field:
-				activity.OldSubIssue.Project = activity.Issue.Project
-				msg.Text = act.Title("изменил(-a)")
-				msg.Text += Stelegramf("*Подзадача*: ~[%s](%s)~",
-					activity.OldSubIssue.FullIssueName(),
-					activity.OldSubIssue.URL,
-				)
-				//case actField.Assignees.Field:
-				//	msg.Text = act.Title("убрал(-а) исполнителя из")
-				//	msg.Text += Stelegramf("%s %s",
-				//		activity.OldAssignee.FirstName,
-				//		activity.OldAssignee.LastName,
-				//	)
-				//case actField.Watchers.Field:
-				//	msg.Text = act.Title("убрал(-а) наблюдателя из")
-				//	msg.Text += Stelegramf("%s %s",
-				//		activity.OldWatcher.FirstName,
-				//		activity.OldWatcher.LastName,
-				//	)
+			//case actField.Label.Field:
+			//	msg.Text = act.Title("убрал(-a) тег из")
+			//	msg.Text += Stelegramf("%s",
+			//		activity.OldLabel.Name,
+			//	)
+			//case actField.SubIssue.Field:
+			//activity.OldSubIssue.Project = activity.Issue.Project
+			//msg.Text = act.Title("изменил(-a)")
+			//msg.Text += Stelegramf("*Подзадача*: ~[%s](%s)~",
+			//	activity.OldSubIssue.FullIssueName(),
+			//	activity.OldSubIssue.URL,
+			//)
+			//case actField.Assignees.Field:
+			//	msg.Text = act.Title("убрал(-а) исполнителя из")
+			//	msg.Text += Stelegramf("%s %s",
+			//		activity.OldAssignee.FirstName,
+			//		activity.OldAssignee.LastName,
+			//	)
+			//case actField.Watchers.Field:
+			//	msg.Text = act.Title("убрал(-а) наблюдателя из")
+			//	msg.Text += Stelegramf("%s %s",
+			//		activity.OldWatcher.FirstName,
+			//		activity.OldWatcher.LastName,
+			//	)
 			}
 
 		case "updated":
@@ -244,128 +243,130 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 			//	)
 
 			case actField.TargetDate.Field:
-				oldValue := ""
-				newValue := activity.NewValue
-				if activity.OldValue != nil && *activity.OldValue != "<nil>" {
-					oldValue = *activity.OldValue
-				}
-
-				act.newValTime = utils.FormatDateToSqlNullTime(newValue)
-				act.oldValTime = utils.FormatDateToSqlNullTime(oldValue)
-
-				if newValue == "<nil>" {
-					newValue = ""
-				} else if act.newValTime.Valid {
-					newValue = "$$$$TargetDateTimeZ$$$$new$$$$"
-				}
-
-				if act.oldValTime.Valid {
-					oldValue = "$$$$TargetDateTimeZ$$$$old$$$$"
-				}
-
-				if oldValue != "" {
-					msg.Text = act.Title("изменил(-a)")
-					msg.Text += Stelegramf("*%s*: ~%s~ %s",
-						fieldsTranslation[*activity.Field],
-						oldValue,
-						newValue,
-					)
-				} else {
-					msg.Text = act.Title("изменил(-a)")
-					msg.Text += Stelegramf("*%s*: %s",
-						fieldsTranslation[*activity.Field],
-						newValue,
-					)
-				}
+				//oldValue := ""
+				//newValue := activity.NewValue
+				//if activity.OldValue != nil && *activity.OldValue != "<nil>" {
+				//	oldValue = *activity.OldValue
+				//}
+				//
+				//act.newValTime = utils.FormatDateToSqlNullTime(newValue)
+				//act.oldValTime = utils.FormatDateToSqlNullTime(oldValue)
+				//
+				//if newValue == "<nil>" {
+				//	newValue = ""
+				//} else if act.newValTime.Valid {
+				//	newValue = "$$$$TargetDateTimeZ$$$$new$$$$"
+				//}
+				//
+				//if act.oldValTime.Valid {
+				//	oldValue = "$$$$TargetDateTimeZ$$$$old$$$$"
+				//}
+				//
+				//if oldValue != "" {
+				//	msg.Text = act.Title("изменил(-a)")
+				//	msg.Text += Stelegramf("*%s*: ~%s~ %s",
+				//		fieldsTranslation[*activity.Field],
+				//		oldValue,
+				//		newValue,
+				//	)
+				//} else {
+				//	msg.Text = act.Title("изменил(-a)")
+				//	msg.Text += Stelegramf("*%s*: %s",
+				//		fieldsTranslation[*activity.Field],
+				//		newValue,
+				//	)
+				//}
 
 			case actField.Parent.Field:
-				msg.Text = act.Title("изменил(-a)")
-				var newName, newUrl, oldName, oldUrl string
-				if activity.NewParentIssue != nil {
-					activity.NewParentIssue.SetUrl()
-					activity.NewParentIssue.Workspace = activity.Issue.Workspace
-					activity.NewParentIssue.Project = activity.Issue.Project
-
-					newName = activity.NewParentIssue.FullIssueName()
-					newUrl = activity.NewParentIssue.URL.String()
-				}
-
-				if activity.OldParentIssue != nil {
-					activity.OldParentIssue.SetUrl()
-					activity.OldParentIssue.Workspace = activity.Issue.Workspace
-					activity.OldParentIssue.Project = activity.Issue.Project
-
-					oldName = activity.OldParentIssue.FullIssueName()
-					oldUrl = activity.OldParentIssue.URL.String()
-				}
-
-				if newName != "" && oldName != "" {
-					msg.Text += Stelegramf("*Родитель*: ~[%s](%s)~ [%s](%s)",
-						oldName, oldUrl,
-						newName, newUrl,
-					)
-				}
-				if newName == "" && oldName != "" {
-					msg.Text += Stelegramf("*Родитель*: ~[%s](%s)~ ",
-						oldName, oldUrl,
-					)
-				}
-				if newName != "" && oldName == "" {
-					msg.Text += Stelegramf("*Родитель*: [%s](%s)",
-						newName, newUrl,
-					)
-				}
+				//msg.Text = act.Title("изменил(-a)")
+				//
+				//var newName, newUrl, oldName, oldUrl string
+				//
+				//if activity.NewParentIssue != nil {
+				//	activity.NewParentIssue.SetUrl()
+				//	activity.NewParentIssue.Workspace = activity.Issue.Workspace
+				//	activity.NewParentIssue.Project = activity.Issue.Project
+				//
+				//	newName = activity.NewParentIssue.FullIssueName()
+				//	newUrl = activity.NewParentIssue.URL.String()
+				//}
+				//
+				//if activity.OldParentIssue != nil {
+				//	activity.OldParentIssue.SetUrl()
+				//	activity.OldParentIssue.Workspace = activity.Issue.Workspace
+				//	activity.OldParentIssue.Project = activity.Issue.Project
+				//
+				//	oldName = activity.OldParentIssue.FullIssueName()
+				//	oldUrl = activity.OldParentIssue.URL.String()
+				//}
+				//
+				//if newName != "" && oldName != "" {
+				//	msg.Text += Stelegramf("*Родитель*: ~[%s](%s)~ [%s](%s)",
+				//		oldName, oldUrl,
+				//		newName, newUrl,
+				//	)
+				//}
+				//if newName == "" && oldName != "" {
+				//	msg.Text += Stelegramf("*Родитель*: ~[%s](%s)~ ",
+				//		oldName, oldUrl,
+				//	)
+				//}
+				//if newName != "" && oldName == "" {
+				//	msg.Text += Stelegramf("*Родитель*: [%s](%s)",
+				//		newName, newUrl,
+				//	)
+				//}
 
 				//}
 
 			default:
-				oldValue := ""
-				newValue := activity.NewValue
-				if activity.OldValue != nil && *activity.OldValue != "<nil>" {
-					oldValue = *activity.OldValue
-				}
-
-				if oldValue == "<p></p>" {
-					oldValue = ""
-				}
-
-				if activity.Field != nil {
-					if actField.ActivityField(*activity.Field) == actField.Priority.Field {
-						oldValue = translateMap(priorityTranslation, activity.OldValue)
-						newValue = translateMap(priorityTranslation, &activity.NewValue)
-						if newValue == "" {
-							newValue = priorityTranslation["<nil>"]
-						}
-						oldValue = capitalizeFirst(oldValue)
-						newValue = capitalizeFirst(newValue)
-
-					} else if actField.ActivityField(*activity.Field) == actField.StartDate.Field ||
-						actField.ActivityField(*activity.Field) == actField.CompletedAt.Field {
-						newT, err := FormatDate(newValue, "02.01.2006 15:04 MST", nil)
-						oldValue, _ = FormatDate(oldValue, "02.01.2006 15:04 MST", nil)
-						if newValue == "<nil>" {
-							newValue = ""
-						}
-						if err == nil {
-							newValue = newT
-						}
-					}
-				}
-
-				if oldValue != "" {
-					msg.Text = act.Title("изменил(-a)")
-					msg.Text += Stelegramf("*%s*: ~%s~ %s",
-						fieldsTranslation[*activity.Field],
-						oldValue,
-						newValue,
-					)
-				} else {
-					msg.Text = act.Title("изменил(-a)")
-					msg.Text += Stelegramf("*%s*: %s",
-						fieldsTranslation[*activity.Field],
-						newValue,
-					)
-				}
+				//oldValue := ""
+				//newValue := activity.NewValue
+				//if activity.OldValue != nil && *activity.OldValue != "<nil>" {
+				//	oldValue = *activity.OldValue
+				//}
+				//
+				//if oldValue == "<p></p>" {
+				//	oldValue = ""
+				//}
+				//
+				//if activity.Field != nil {
+				//	if actField.ActivityField(*activity.Field) == actField.Priority.Field {
+				//		oldValue = translateMap(priorityTranslation, activity.OldValue)
+				//		newValue = translateMap(priorityTranslation, &activity.NewValue)
+				//		if newValue == "" {
+				//			newValue = priorityTranslation["<nil>"]
+				//		}
+				//		oldValue = capitalizeFirst(oldValue)
+				//		newValue = capitalizeFirst(newValue)
+				//
+				//	} else if actField.ActivityField(*activity.Field) == actField.StartDate.Field ||
+				//		actField.ActivityField(*activity.Field) == actField.CompletedAt.Field {
+				//		newT, err := FormatDate(newValue, "02.01.2006 15:04 MST", nil)
+				//		oldValue, _ = FormatDate(oldValue, "02.01.2006 15:04 MST", nil)
+				//		if newValue == "<nil>" {
+				//			newValue = ""
+				//		}
+				//		if err == nil {
+				//			newValue = newT
+				//		}
+				//	}
+				//}
+				//
+				//if oldValue != "" {
+				//	msg.Text = act.Title("изменил(-a)")
+				//	msg.Text += Stelegramf("*%s*: ~%s~ %s",
+				//		fieldsTranslation[*activity.Field],
+				//		oldValue,
+				//		newValue,
+				//	)
+				//} else {
+				//	msg.Text = act.Title("изменил(-a)")
+				//	msg.Text += Stelegramf("*%s*: %s",
+				//		fieldsTranslation[*activity.Field],
+				//		newValue,
+				//	)
+				//}
 			}
 		case "deleted":
 			switch actField.ActivityField(*activity.Field) {
@@ -389,11 +390,11 @@ func (tni *TgNotifyIssue) LogActivity(activity dao.IssueActivity) {
 			}
 
 		case "move":
-			msg.Text = act.Title("перенес(-лa)")
-			msg.Text += Stelegramf("из ~%s~ в %s ",
-				fmt.Sprint(*activity.OldValue),
-				activity.NewValue,
-			)
+			//msg.Text = act.Title("перенес(-лa)")
+			//msg.Text += Stelegramf("из ~%s~ в %s ",
+			//	fmt.Sprint(*activity.OldValue),
+			//	activity.NewValue,
+			//)
 
 		case "copied":
 			msg.Text = act.Title("создал(-a) копию")

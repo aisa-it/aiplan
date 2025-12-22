@@ -11,7 +11,6 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/gofrs/uuid"
-	"gorm.io/gorm"
 )
 
 type userTg struct {
@@ -86,7 +85,7 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 
 	if userCtx.User == nil {
 		t.Send(update.Message.Chat.ID, TgMsg{
-			title: "Пользователь не найден, зарегистрируйте tgId\n/start",
+			title: "Telegram ID не связан с пользователем, добавьте в профиль\n/start",
 		})
 		return
 	}
@@ -149,69 +148,4 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 
 	return
 
-}
-
-func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[uuid.UUID]userTg {
-	userTgId := make(map[uuid.UUID]userTg)
-	rows, err := tx.Select("users.id, users.telegram_id").
-		Model(dao.ProjectMember{}).
-		Joins("JOIN users on users.id = project_members.member_id").
-		Where("project_id = ?", projectId).
-		Where("is_default_watcher = true").
-		Rows()
-	if err != nil {
-		slog.Error("Fetch default watchers for activity", "err", err)
-	} else {
-		for rows.Next() {
-			var res struct {
-				Id           uuid.UUID
-				TelegramId   int64
-				UserTimezone types.TimeZone
-				Settings     types.UserSettings
-			}
-			if err := tx.ScanRows(rows, &res); err != nil {
-				slog.Error("Scan default watchers row", "err", err)
-				break
-			}
-			if res.TelegramId != 0 && !res.Settings.TgNotificationMute {
-				userTgId[res.Id] = userTg{
-					id:  res.TelegramId,
-					loc: res.UserTimezone,
-				}
-			}
-		}
-		rows.Close()
-	}
-	return userTgId
-}
-
-func getUserTgIdFromIssue(issue *dao.Issue) map[uuid.UUID]userTg {
-
-	userTgId := make(map[uuid.UUID]userTg)
-	if u, ok := getUserTg(*issue.Author); ok {
-		userTgId[issue.Author.ID] = u
-	}
-
-	if issue.Assignees != nil {
-		for _, assignee := range *issue.Assignees {
-			if _, ok := userTgId[assignee.ID]; ok {
-				continue
-			}
-			if u, ok := getUserTg(assignee); ok {
-				userTgId[assignee.ID] = u
-			}
-		}
-	}
-
-	if issue.Watchers != nil {
-		for _, watcher := range *issue.Watchers {
-			if _, ok := userTgId[watcher.ID]; ok {
-				continue
-			}
-			if u, ok := getUserTg(watcher); ok {
-				userTgId[watcher.ID] = u
-			}
-		}
-	}
-	return userTgId
 }
