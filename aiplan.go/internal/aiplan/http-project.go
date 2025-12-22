@@ -180,6 +180,8 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectAdminGroup.PATCH("/templates/:templateId/", s.updateIssueTemplate)
 	projectAdminGroup.DELETE("/templates/:templateId/", s.deleteIssueTemplate)
 
+	projectGroup.GET("/stats/", s.getProjectStats)
+
 	/* Not in use
 	projectGroup.GET("/issue-properties/", s.issuePropertiesList)
 	projectGroup.POST("/issue-properties/", s.issuePropertyCreateOrUpdate)
