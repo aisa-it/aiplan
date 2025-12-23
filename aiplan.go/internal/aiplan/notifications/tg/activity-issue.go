@@ -9,6 +9,8 @@ import (
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/go-telegram/bot"
+	"github.com/gofrs/uuid"
+	"gorm.io/gorm"
 )
 
 type funcIssueMsgFormat func(act *dao.IssueActivity, af actField.ActivityField) TgMsg
@@ -35,8 +37,30 @@ var (
 	}
 )
 
-func (t *TgService) preloadIssueActivity(act *dao.IssueActivity) error {
-	if err := t.db.Unscoped().
+func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNotification {
+	notify := ActivityTgNotification{}
+
+	if err := preloadIssueActivity(tx, act.IssueId, act.Issue); err != nil {
+		slog.Error("Get ProjectActivity", "activityId", act.Id, "err", err)
+		return nil
+	}
+
+	msg, err := formatIssueActivity(act)
+	if err != nil {
+		return nil
+	}
+
+	notify.Message = msg
+	notify.Users = getUserTgIdIssueActivity(tx, act)
+	notify.TableName = act.TableName()
+	notify.EntityID = act.Id
+	notify.AuthorTgID = act.ActivitySender.SenderTg
+
+	return &notify
+}
+
+func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) error {
+	if err := tx.Unscoped().
 		Joins("Author").
 		Joins("Workspace").
 		Joins("Project").
@@ -44,16 +68,15 @@ func (t *TgService) preloadIssueActivity(act *dao.IssueActivity) error {
 		Preload("Assignees").
 		Preload("Watchers").
 		Preload("Parent.Project").
-		Where("issues.id = ?", act.IssueId).
-		First(&act.Issue).Error; err != nil {
-		slog.Error("Get issue for activity", "activityId", act.Id, "err", err)
+		Where("issues.id = ?", id).
+		First(&issue).Error; err != nil {
 		return fmt.Errorf("preloadIssueActivity: %v", err)
 	}
 
 	return nil
 }
 
-func (t *TgService) msgt(act *dao.IssueActivity) (TgMsg, error) {
+func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
 	var res TgMsg
 
 	if act.Field == nil {
@@ -63,7 +86,6 @@ func (t *TgService) msgt(act *dao.IssueActivity) (TgMsg, error) {
 	af := actField.ActivityField(*act.Field)
 	if f, ok := issueMap[af]; ok {
 		res = f(act, af)
-
 	} else {
 		res = issueDefault(act, af)
 	}

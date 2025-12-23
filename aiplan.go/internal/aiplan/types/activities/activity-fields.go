@@ -124,6 +124,7 @@ const (
 	VerbDeleted = "deleted"
 	VerbCreated = "created"
 	VerbMove    = "move"
+	VerbCopied  = "copied"
 )
 
 func (a ActivityField) String() string {

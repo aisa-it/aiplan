@@ -23,31 +23,26 @@ func NewTelegramNotification(service *TgService) *TelegramNotification {
 	}
 }
 
+type ActivityTgNotification struct {
+	Message    TgMsg
+	Users      []userTg
+	TableName  string
+	EntityID   uuid.UUID
+	AuthorTgID int64
+}
+
 func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 	if t.Disabled {
 		return nil
 	}
-	var ms TgMsg
-	var users []userTg
 
-	var activityTable string
-	var activityID uuid.UUID
-	var activityAuthorTg int64
+	var notify *ActivityTgNotification
 
 	switch a := activity.(type) {
 	case dao.IssueActivity:
-		if err := t.preloadIssueActivity(&a); err != nil {
-			return err
-		}
-		ms, _ = t.msgt(&a)
-		users = getUserTgIdIssueActivity(t.db, &a)
-		activityTable = a.TableName()
-		activityID = a.Id
-		activityAuthorTg = a.ActivitySender.SenderTg
-
+		notify = notifyFromIssueActivity(t.db, &a)
 	case dao.ProjectActivity:
-		fmt.Println("ProjectActivity", a.Comment)
-
+		notify = notifyFromProjectActivity(t.db, &a)
 	case dao.DocActivity:
 		fmt.Println("DocActivity", a.Comment)
 
@@ -71,27 +66,34 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 		return nil
 	}
 
+	if notify == nil {
+		return nil
+	}
+
 	go func() {
 		var msgIds []int64
-		for _, u := range users {
-			if activityAuthorTg == u.id {
+
+		for _, u := range notify.Users {
+			if notify.AuthorTgID == u.id {
 				continue
 			}
 
-			if id, err := t.Send(u.id, msgReplace(u, &ms)); err != nil {
+			if id, err := t.Send(u.id, msgReplace(u, notify.Message)); err != nil {
 				slog.Debug("tg send message", "error", err.Error())
 				continue
 			} else {
 				msgIds = append(msgIds, id)
 			}
 		}
-
-		if err := t.db.Table(activityTable).
-			Where("id = ?", activityID).
-			Select("telegram_msg_ids").
-			Update("telegram_msg_ids", pq.Int64Array(msgIds)).Error; err != nil {
-			slog.Error("Update activity tg msg ids", "err", err)
+		if len(msgIds) > 0 {
+			if err := t.db.Table(notify.TableName).
+				Where("id = ?", notify.EntityID).
+				Select("telegram_msg_ids").
+				Update("telegram_msg_ids", pq.Int64Array(msgIds)).Error; err != nil {
+				slog.Error("Update activity tg msg ids", "err", err)
+			}
 		}
+
 	}()
 
 	return nil
