@@ -20,7 +20,7 @@ type ProjectLight struct {
 	Public        bool          `json:"public"`
 	Identifier    string        `json:"identifier"`
 	ProjectLeadId uuid.UUID     `json:"project_lead"`
-	WorkspaceId   string        `json:"workspace"`
+	WorkspaceId   uuid.UUID     `json:"workspace"`
 	Emoji         int32         `json:"emoji,string"`
 	CoverImage    *string       `json:"cover_image" extensions:"x-nullable"`
 	LogoId        uuid.NullUUID `json:"logo"  extensions:"x-nullable" swaggertype:"string"`
@@ -29,8 +29,8 @@ type ProjectLight struct {
 
 	CurrentUserMembership *ProjectMemberLight `json:"current_user_membership,omitempty"  extensions:"x-nullable"`
 
-	DefaultAssignees []string `json:"default_assignees"`
-	DefaultWatchers  []string `json:"default_watchers"`
+	DefaultAssignees []uuid.UUID `json:"default_assignees"`
+	DefaultWatchers  []uuid.UUID `json:"default_watchers"`
 
 	DefaultAssigneesDetails []ProjectMemberLight `json:"default_assignees_details"`
 	DefaultWatchersDetails  []ProjectMemberLight `json:"default_watchers_details"`
@@ -52,14 +52,14 @@ type Project struct {
 }
 
 type ProjectMemberLight struct {
-	ID   string `json:"id"`
-	Role int    `json:"role"`
+	ID   uuid.UUID `json:"id"`
+	Role int       `json:"role"`
 
 	WorkspaceAdmin    bool `json:"workspace_admin"`
 	IsDefaultAssignee bool `json:"is_default_assignee"`
 	IsDefaultWatcher  bool `json:"is_default_watcher"`
 
-	MemberId string     `json:"member_id"`
+	MemberId uuid.UUID  `json:"member_id"`
 	Member   *UserLight `json:"member,omitempty" extensions:"x-nullable"`
 
 	ProjectId uuid.UUID     `json:"project_id"`
@@ -108,7 +108,7 @@ type EstimatePoint struct {
 }
 
 type RulesLog struct {
-	Id        string    `json:"id"`
+	Id        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 
 	Project   *ProjectLight   `json:"project_detail"`

@@ -56,10 +56,10 @@ type Project struct {
 	Public     bool           `json:"public"`
 	Identifier string         `json:"identifier" gorm:"uniqueIndex:project_identifier_idx,priority:2,where:deleted_at is NULL" validate:"identifier"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	CreatedById      uuid.UUID `json:"created_by" gorm:"type:uuid"`
-	DefaultAssignees []string  `json:"default_assignees" gorm:"-"`
-	DefaultWatchers  []string  `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
-	ProjectLeadId    uuid.UUID `json:"project_lead" gorm:"type:uuid"`
+	CreatedById      uuid.UUID   `json:"created_by" gorm:"type:uuid"`
+	DefaultAssignees []uuid.UUID `json:"default_assignees" gorm:"-"`
+	DefaultWatchers  []uuid.UUID `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
+	ProjectLeadId    uuid.UUID   `json:"project_lead" gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	WorkspaceId uuid.UUID     `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
@@ -134,7 +134,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		Public:                  project.Public,
 		Identifier:              project.Identifier,
 		ProjectLeadId:           project.ProjectLeadId,
-		WorkspaceId:             project.WorkspaceId.String(),
+		WorkspaceId:             project.WorkspaceId,
 		Emoji:                   project.Emoji,
 		LogoId:                  project.LogoId,
 		CoverImage:              project.CoverImage,
@@ -380,12 +380,12 @@ func (project *Project) SetUrl() {
 // Возвращает:
 //   - error: ошибка, если произошла ошибка при обновлении статуса участника проекта или удалении связанных данных.
 func (project *Project) BeforeDelete(tx *gorm.DB) error {
-	if deletingProjects.IsDeleting(project.ID.String()) {
+	if deletingProjects.IsDeleting(project.ID) {
 		return nil
 	}
 
-	deletingProjects.StartDeletion(project.ID.String())
-	defer deletingProjects.FinishDeletion(project.ID.String())
+	deletingProjects.StartDeletion(project.ID)
+	defer deletingProjects.FinishDeletion(project.ID)
 
 	if err := tx.
 		Where("project_activity_id in (?)", tx.Select("id").Where("project_id = ?", project.ID).
@@ -568,12 +568,12 @@ func (pm *ProjectMember) ToLightDTO() *dto.ProjectMemberLight {
 		return nil
 	}
 	return &dto.ProjectMemberLight{
-		ID:                pm.ID.String(),
+		ID:                pm.ID,
 		Role:              pm.Role,
 		WorkspaceAdmin:    pm.WorkspaceAdmin,
 		IsDefaultAssignee: pm.IsDefaultAssignee,
 		IsDefaultWatcher:  pm.IsDefaultWatcher,
-		MemberId:          pm.MemberId.String(),
+		MemberId:          pm.MemberId,
 		Member:            pm.Member.ToLightDTO(),
 		ProjectId:         pm.ProjectId,
 		Project:           pm.Project.ToLightDTO(),
@@ -695,7 +695,7 @@ func (pf *ProjectFavorites) ToDTO() *dto.ProjectFavorites {
 //
 // Возвращает:
 //   - *gorom.DB: экземпляр базы данных GORM для дальнейшей обработки результатов.
-func AllProjects(db *gorm.DB, user string) *gorm.DB {
+func AllProjects(db *gorm.DB, user uuid.UUID) *gorm.DB {
 	projectMembers := db.Model(&ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id")
 	isFavorite := db.Raw("EXISTS(SELECT 1 FROM project_favorites WHERE project_favorites.project_id = projects.id AND user_id = ?)", user)
 
@@ -713,7 +713,7 @@ func AllProjects(db *gorm.DB, user string) *gorm.DB {
 //
 // Возвращает:
 //   - Project: объект проекта, либо ошибка, если проект не найден или произошла ошибка при выполнении запроса.
-func GetProject(db *gorm.DB, slug string, user string, prj string) (Project, error) {
+func GetProject(db *gorm.DB, slug string, user uuid.UUID, prj string) (Project, error) {
 	p := Project{}
 	return p, db.Where("workspace_id in (?)", db.Model(&Workspace{}).Select("id").Where("slug = ?", slug)).
 		Where("id in (?) or public = true", db.Table("project_members").Select("project_id").Where("member_id = ?", user)).
@@ -736,7 +736,7 @@ func GetProject(db *gorm.DB, slug string, user string, prj string) (Project, err
 // Возвращает:
 //   - []Project: список проектов.
 //   - error: ошибка, если произошла ошибка при выполнении запроса.
-func GetProjects(db *gorm.DB, slug string, user string) ([]Project, error) {
+func GetProjects(db *gorm.DB, slug string, user uuid.UUID) ([]Project, error) {
 	var ret []Project
 
 	err := AllProjects(db, user).
@@ -760,7 +760,7 @@ func GetProjects(db *gorm.DB, slug string, user string) ([]Project, error) {
 //   - error: ошибка, если произошла ошибка при выполнении запроса.
 func GetAllUserProjects(db *gorm.DB, user User) ([]Project, error) {
 	var ret []Project
-	err := AllProjects(db, user.ID.String()).
+	err := AllProjects(db, user.ID).
 		Where("id in (?)", db.Table("project_members").Select("project_id").Where("member_id = ?", user.ID)).
 		Find(&ret).Error
 
@@ -1100,7 +1100,7 @@ func (state *State) ToLightDTO() *dto.StateLight {
 		Description: state.Description,
 		Color:       state.Color,
 		ProjectId:   state.ProjectId,
-		WorkspaceId: state.WorkspaceId.String(),
+		WorkspaceId: state.WorkspaceId,
 		Sequence:    state.Sequence,
 		Group:       state.Group,
 		Default:     state.Default,

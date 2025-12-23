@@ -33,7 +33,12 @@ func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
 	user := sprintContext.User
 
 	// Allow Author
-	if user.ID.String() == sprint.CreatedById.String() {
+	if user.ID == sprint.CreatedById {
+		return true, nil
+	}
+
+	// Allow Workspace Admin
+	if sprintContext.WorkspaceMember.Role == types.AdminRole {
 		return true, nil
 	}
 
@@ -49,6 +54,9 @@ func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
 	}
 
 	if strings.HasSuffix(c.Path(), "/issues/search/") && c.Request().Method == http.MethodPost {
+		return workspaceMember.Role > types.GuestRole, nil
+	}
+	if strings.HasSuffix(c.Path(), "/sprint-view/") && c.Request().Method == http.MethodPost {
 		return workspaceMember.Role > types.GuestRole, nil
 	}
 
