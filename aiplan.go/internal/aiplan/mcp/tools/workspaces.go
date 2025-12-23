@@ -6,6 +6,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -53,6 +54,25 @@ var workspacesTools = []Tool{
 			),
 		),
 		getWorkspaceDocs,
+	},
+	{
+		mcp.NewTool(
+			"get_workspace_projects",
+			mcp.WithDescription("Получение списка проектов пространства с пагинацией"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("workspace_id",
+				mcp.Required(),
+				mcp.Description("ID пространства (UUID или slug)"),
+			),
+			mcp.WithNumber("offset",
+				mcp.Description("Смещение для пагинации (по умолчанию 0)"),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Лимит записей (по умолчанию 100)"),
+			),
+		),
+		getWorkspaceProjects,
 	},
 }
 
@@ -214,4 +234,75 @@ func getWorkspaceDocs(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		Limit:  limit,
 		Result: utils.SliceToSlice(&docs, func(d *dao.Doc) dto.DocLight { return *d.ToLightDTO() }),
 	})
+}
+
+// getWorkspaceProjects возвращает список проектов пространства с пагинацией.
+func getWorkspaceProjects(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+
+	workspaceIdOrSlug := args["workspace_id"].(string)
+
+	offset := 0
+	limit := 100
+	if v, ok := args["offset"].(float64); ok {
+		offset = int(v)
+	}
+	if v, ok := args["limit"].(float64); ok {
+		limit = int(v)
+	}
+
+	workspace, err := findWorkspaceByIdOrSlug(db, workspaceIdOrSlug)
+	if err != nil {
+		return mcp.NewToolResultError("workspace не найден"), nil
+	}
+
+	workspaceMember, err := getWorkspaceMemberOrSuperuser(db, workspace, user)
+	if err != nil {
+		return mcp.NewToolResultError("нет доступа к workspace"), nil
+	}
+
+	query := buildProjectsQuery(db, workspace, workspaceMember, user)
+
+	var count int64
+	if err := query.Model(&dao.Project{}).Count(&count).Error; err != nil {
+		return mcp.NewToolResultError("ошибка при подсчете проектов"), nil
+	}
+
+	var projects []dao.ProjectWithCount
+	if err := query.Offset(offset).Limit(limit).Find(&projects).Error; err != nil {
+		return mcp.NewToolResultError("ошибка при получении проектов"), nil
+	}
+
+	return mcp.NewToolResultJSON(dao.PaginationResponse{
+		Count:  count,
+		Offset: offset,
+		Limit:  limit,
+		Result: utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight {
+			return *p.ToLightDTO()
+		}),
+	})
+}
+
+// buildProjectsQuery строит запрос проектов с фильтрацией по правам доступа.
+func buildProjectsQuery(db *gorm.DB, workspace *dao.Workspace, member *dao.WorkspaceMember, user *dao.User) *gorm.DB {
+	query := db.
+		Preload("DefaultAssigneesDetails", "is_default_assignee = ?", true).
+		Preload("DefaultWatchersDetails", "is_default_watcher = ?", true).
+		Preload("Workspace").
+		Preload("Workspace.Owner").
+		Preload("ProjectLead").
+		Select("*,(?) as total_members, (?) as is_favorite",
+			db.Model(&dao.ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id"),
+			db.Raw("EXISTS(SELECT 1 FROM project_favorites WHERE project_favorites.project_id = projects.id AND user_id = ?)", user.ID)).
+		Set("userId", user.ID).
+		Where("workspace_id = ?", workspace.ID).
+		Order("is_favorite desc, lower(name)")
+
+	// Фильтрация по доступу (если не админ workspace и не суперпользователь)
+	if member.Role != types.AdminRole && !user.IsSuperuser {
+		query = query.Where("id in (?) or public = true",
+			db.Model(&dao.ProjectMember{}).Select("project_id").Where("member_id = ?", user.ID))
+	}
+
+	return query
 }
