@@ -213,7 +213,7 @@ func strReplace(in string) string {
 	return "$$$" + strings.Join(out, "$$$") + "$$$"
 }
 
-func msgReplace(user userTg, msg *TgMsg) TgMsg {
+func msgReplace(user userTg, msg TgMsg) TgMsg {
 	for k, v := range msg.replace {
 		key := k
 		keys := strings.Split(k, "_")
@@ -229,5 +229,5 @@ func msgReplace(user userTg, msg *TgMsg) TgMsg {
 			}
 		}
 	}
-	return *msg
+	return msg
 }

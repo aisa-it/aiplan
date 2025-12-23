@@ -54,6 +54,7 @@ func (tnp *TgNotifyProject) LogActivity(activity dao.ProjectActivity) {
 
 		act = NewTgActivity("project")
 		act.SetTitleTemplate(&activity)
+
 		if activity.Field == nil {
 			return
 		}
