@@ -157,7 +157,7 @@ func (asset *FileAsset) ToDTO() *dto.FileAsset {
 		return nil
 	}
 	return &dto.FileAsset{
-		Id:          asset.Id.String(),
+		Id:          asset.Id,
 		Name:        asset.Name,
 		FileSize:    asset.FileSize,
 		ContentType: asset.ContentType,
@@ -187,7 +187,7 @@ func (r *ReleaseNote) ToLightDTO() *dto.ReleaseNoteLight {
 	}
 
 	return &dto.ReleaseNoteLight{
-		ID:          r.ID.String(),
+		ID:          r.ID,
 		TagName:     r.TagName,
 		PublishedAt: r.PublishedAt,
 		Body:        r.Body,

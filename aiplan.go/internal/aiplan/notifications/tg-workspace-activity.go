@@ -183,7 +183,7 @@ func getUserTgIdWorkspaceActivity(tx *gorm.DB, activity interface{}) []userTg {
 
 	var wm []dao.WorkspaceMember
 	if err := tx.Joins("Member").
-		Where("workspace_id = ?", act.WorkspaceId.String()).
+		Where("workspace_id = ?", act.WorkspaceId).
 		Where("workspace_members.role = ?", types.AdminRole).Find(&wm).Error; err != nil {
 		return []userTg{}
 	}

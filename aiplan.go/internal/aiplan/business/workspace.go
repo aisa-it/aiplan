@@ -5,6 +5,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
@@ -55,12 +56,12 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 		return err
 	}
 
-	actorMap := utils.SliceToMap(&actorProjectMembers, func(v *dao.ProjectMember) string {
-		return v.ProjectId.String()
+	actorMap := utils.SliceToMap(&actorProjectMembers, func(v *dao.ProjectMember) uuid.UUID {
+		return v.ProjectId
 	})
 
 	for _, member := range projectMembers {
-		actorPM := actorMap[member.ProjectId.String()]
+		actorPM := actorMap[member.ProjectId]
 
 		b.ProjectCtx(b.workspaceCtx.c, actor.Member, member.Project, &actorPM,
 			b.workspaceCtx.workspace, b.workspaceCtx.workspaceMember)

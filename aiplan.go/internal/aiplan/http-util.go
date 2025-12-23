@@ -642,7 +642,7 @@ func activityMigrate(db *gorm.DB) {
 	})
 }
 
-func hasRecentFieldUpdate[A dao.Activity](tx *gorm.DB, userId string, fields ...string) bool {
+func hasRecentFieldUpdate[A dao.Activity](tx *gorm.DB, userId uuid.UUID, fields ...string) bool {
 	var model A
 	err := tx.Model(&model).
 		Where("actor_id = ?", userId).

@@ -99,8 +99,8 @@ type Issue struct {
 
 	InlineAttachments []FileAsset `json:"issue_inline_attachments" gorm:"foreignKey:IssueId"`
 
-	AssigneeIDs     []string    `json:"assignees" gorm:"-"`
-	WatcherIDs      []string    `json:"watchers" gorm:"-"`
+	AssigneeIDs     []uuid.UUID `json:"assignees" gorm:"-"`
+	WatcherIDs      []uuid.UUID `json:"watchers" gorm:"-"`
 	LabelIDs        []uuid.UUID `json:"labels" gorm:"-"`
 	LinkedIssuesIDs []uuid.UUID `json:"linked_issues_ids" gorm:"-"`
 
@@ -196,7 +196,7 @@ func (i Issue) GetIssueId() uuid.UUID {
 func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightResponse {
 	ii := dto.SearchLightweightResponse{
 		ID:          i.ID,
-		WorkspaceId: i.WorkspaceId.String(),
+		WorkspaceId: i.WorkspaceId,
 		Workspace:   i.Workspace.ToLightDTO(),
 		ProjectId:   i.ProjectId,
 		Project:     i.Project.ToLightDTO(),
@@ -250,7 +250,7 @@ func (i *Issue) ToLightDTO() *dto.IssueLight {
 	}
 	i.SetUrl()
 	return &dto.IssueLight{
-		Id:         i.ID.String(),
+		Id:         i.ID,
 		Name:       i.Name,
 		SequenceId: i.SequenceId,
 		Url:        types.JsonURL{i.URL},
@@ -273,17 +273,6 @@ func (i *Issue) ToDTO() *dto.Issue {
 		return nil
 	}
 
-	var parent *string
-	if i.ParentId.Valid {
-		parentId := i.ParentId.UUID.String()
-		parent = &parentId
-	}
-
-	var updatedById *uuid.UUID
-	if i.UpdatedById.Valid {
-		updatedById = &i.UpdatedById.UUID
-	}
-
 	return &dto.Issue{
 		IssueLight:          *i.ToLightDTO(),
 		SequenceId:          i.SequenceId,
@@ -294,8 +283,8 @@ func (i *Issue) ToDTO() *dto.Issue {
 		TargetDate:          i.TargetDate,
 		CompletedAt:         i.CompletedAt,
 		ProjectId:           i.ProjectId,
-		WorkspaceId:         i.WorkspaceId.String(),
-		UpdatedById:         updatedById,
+		WorkspaceId:         i.WorkspaceId,
+		UpdatedById:         i.UpdatedById,
 		DescriptionHtml:     i.DescriptionHtml,
 		DescriptionStripped: i.DescriptionStripped,
 		DescriptionType:     i.DescriptionType,
@@ -303,7 +292,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 		EstimatePoint:       i.EstimatePoint,
 		Draft:               i.Draft,
 		Pinned:              i.Pinned,
-		ParentId:            parent,
+		ParentId:            i.ParentId,
 		Parent:              i.Parent.ToLightDTO(),
 		Workspace:           i.Workspace.ToLightDTO(),
 		Project:             i.Project.ToLightDTO(),
@@ -439,29 +428,29 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	}
 
 	if issue.Assignees != nil && len(*issue.Assignees) > 0 {
-		var ids []string
-		for _, assignee := range *issue.Assignees {
-			ids = append(ids, assignee.ID.String())
+		ids := make([]uuid.UUID, len(*issue.Assignees))
+		for i, assignee := range *issue.Assignees {
+			ids[i] = assignee.ID
 		}
 		issue.AssigneeIDs = ids
 	} else {
-		issue.AssigneeIDs = make([]string, 0)
+		issue.AssigneeIDs = make([]uuid.UUID, 0)
 	}
 
 	if issue.Watchers != nil && len(*issue.Watchers) > 0 {
-		var ids []string
-		for _, watcher := range *issue.Watchers {
-			ids = append(ids, watcher.ID.String())
+		ids := make([]uuid.UUID, len(*issue.Watchers))
+		for i, watcher := range *issue.Watchers {
+			ids[i] = watcher.ID
 		}
 		issue.WatcherIDs = ids
 	} else {
-		issue.WatcherIDs = make([]string, 0)
+		issue.WatcherIDs = make([]uuid.UUID, 0)
 	}
 
 	if issue.Labels != nil && len(*issue.Labels) > 0 {
-		var ids []uuid.UUID
-		for _, label := range *issue.Labels {
-			ids = append(ids, label.ID)
+		ids := make([]uuid.UUID, len(*issue.Labels))
+		for i, label := range *issue.Labels {
+			ids[i] = label.ID
 		}
 		issue.LabelIDs = ids
 	} else {
@@ -795,7 +784,7 @@ func (issue *Issue) BeforeSave(tx *gorm.DB) error {
 //
 // Возвращает:
 //   - bool: true, если пользователь назначен на задачу, false в противном случае.
-func (issue Issue) IsAssignee(id string) bool {
+func (issue Issue) IsAssignee(id uuid.UUID) bool {
 	for _, assigneeId := range issue.AssigneeIDs {
 		if assigneeId == id {
 			return true
@@ -1005,7 +994,7 @@ func (il *IssueLink) ToLightDTO() *dto.IssueLinkLight {
 	}
 
 	return &dto.IssueLinkLight{
-		Id:    il.Id.String(),
+		Id:    il.Id,
 		Title: il.Title,
 		Url:   il.Url,
 
@@ -1284,9 +1273,9 @@ func (ib *IssueBlocker) ToLightDTO() *dto.IssueBlockerLight {
 		return nil
 	}
 	return &dto.IssueBlockerLight{
-		Id:          ib.Id.String(),
-		BlockId:     ib.BlockId.String(),
-		BlockedById: ib.BlockedById.String(),
+		Id:          ib.Id,
+		BlockId:     ib.BlockId,
+		BlockedById: ib.BlockedById,
 		Block:       ib.Block.ToLightDTO(),
 		BlockedBy:   ib.BlockedBy.ToLightDTO(),
 	}
@@ -1423,7 +1412,7 @@ func (i *IssueComment) ToLightDTO() *dto.IssueCommentLight {
 	}
 	i.SetUrl()
 	return &dto.IssueCommentLight{
-		Id:              i.Id.String(),
+		Id:              i.Id,
 		CommentStripped: i.CommentStripped,
 		CommentHtml:     i.CommentHtml.Body,
 		URL:             types.JsonURL{i.URL},
@@ -1442,34 +1431,18 @@ func (i *IssueComment) ToDTO() *dto.IssueComment {
 		return nil
 	}
 
-	var a *dto.UserLight
-	if i.Actor != nil {
-		a = i.Actor.ToLightDTO()
-	}
-
-	var updatedById *uuid.UUID
-	if i.UpdatedById.Valid {
-		updatedById = &i.UpdatedById.UUID
-	}
-
-	var actorId *string
-	if i.ActorId.Valid {
-		actorIdStr := i.ActorId.UUID.String()
-		actorId = &actorIdStr
-	}
-
 	return &dto.IssueComment{
 		IssueCommentLight: *i.ToLightDTO(),
 		CreatedAt:         i.CreatedAt,
 		UpdatedAt:         i.UpdatedAt,
-		UpdatedById:       updatedById,
-		ActorId:           actorId,
+		UpdatedById:       i.UpdatedById,
+		ActorId:           i.ActorId,
 		ProjectId:         i.ProjectId,
-		WorkspaceId:       i.WorkspaceId.String(),
-		IssueId:           i.IssueId.String(),
+		WorkspaceId:       i.WorkspaceId,
+		IssueId:           i.IssueId,
 		ReplyToCommentId:  i.ReplyToCommentId,
 		OriginalComment:   i.OriginalComment.ToDTO(),
-		Actor:             a,
+		Actor:             i.Actor.ToLightDTO(),
 		Attachments:       utils.SliceToSlice(&i.Attachments, func(fa *FileAsset) *dto.FileAsset { return fa.ToDTO() }),
 		Reactions:         utils.SliceToSlice(&i.Reactions, func(cr *CommentReaction) *dto.CommentReaction { return cr.ToDTO() }),
 		ReactionSummary:   i.ReactionSummary,
@@ -1512,7 +1485,7 @@ func (cr CommentReaction) ToDTO() *dto.CommentReaction {
 		CreatedAt: cr.CreatedAt,
 		UpdatedAt: cr.UpdatedAt,
 		CommentId: cr.CommentId,
-		UserId:    cr.UserId.String(),
+		UserId:    cr.UserId,
 		Reaction:  cr.Reaction,
 	}
 }
@@ -1957,7 +1930,7 @@ func (rl *RulesLog) ToDTO() *dto.RulesLog {
 	}
 
 	return &dto.RulesLog{
-		Id:           rl.Id.String(),
+		Id:           rl.Id,
 		CreatedAt:    rl.CreatedAt,
 		Project:      rl.Project.ToLightDTO(),
 		Workspace:    rl.Workspace.ToLightDTO(),
