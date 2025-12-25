@@ -40,10 +40,12 @@ var (
 func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNotification {
 	notify := ActivityTgNotification{}
 
-	if err := preloadIssueActivity(tx, act.IssueId, act.Issue); err != nil {
+	issue, err := preloadIssueActivity(tx, act.IssueId, act.Issue)
+	if err != nil {
 		slog.Error("Get ProjectActivity", "activityId", act.Id, "err", err)
 		return nil
 	}
+	act.Issue = issue
 
 	msg, err := formatIssueActivity(act)
 	if err != nil {
@@ -59,7 +61,7 @@ func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNot
 	return &notify
 }
 
-func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) error {
+func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) (*dao.Issue, error) {
 	if err := tx.Unscoped().
 		Joins("Author").
 		Joins("Workspace").
@@ -70,10 +72,10 @@ func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) error {
 		Preload("Parent.Project").
 		Where("issues.id = ?", id).
 		First(&issue).Error; err != nil {
-		return fmt.Errorf("preloadIssueActivity: %v", err)
+		return nil, fmt.Errorf("preloadIssueActivity: %v", err)
 	}
 
-	return nil
+	return issue, nil
 }
 
 func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
@@ -88,6 +90,10 @@ func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
 		res = f(act, af)
 	} else {
 		res = issueDefault(act, af)
+	}
+
+	if res.IsEmpty() {
+		return res, fmt.Errorf("issue activity is empty")
 	}
 
 	res.title = fmt.Sprintf(

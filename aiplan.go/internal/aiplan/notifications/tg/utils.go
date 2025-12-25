@@ -15,48 +15,9 @@ import (
 	"gorm.io/gorm"
 )
 
-var fieldsTranslation map[actField.ActivityField]string = map[actField.ActivityField]string{
-	actField.Name.Field:          "Название",
-	actField.Parent.Field:        "Родитель",
-	actField.Priority.Field:      "Приоритет",
-	actField.Status.Field:        "Статус",
-	actField.Description.Field:   "Описание",
-	actField.TargetDate.Field:    "Срок исполнения",
-	actField.StartDate.Field:     "Дата начала",
-	actField.CompletedAt.Field:   "Дата завершения",
-	actField.Label.Field:         "Теги",
-	actField.Assignees.Field:     "Исполнители",
-	actField.Blocking.Field:      "Блокирует",
-	actField.Blocks.Field:        "Заблокирована",
-	actField.EstimatePoint.Field: "Оценки",
-	actField.SubIssue.Field:      "Подзадачи",
-	actField.Identifier.Field:    "Идентификатор",
-	actField.Emoj.Field:          "Emoji",
-	actField.Title.Field:         "Название",
-}
-
-var priorityTranslation map[string]string = map[string]string{
-	"urgent": "Критический",
-	"high":   "Высокий",
-	"medium": "Средний",
-	"low":    "Низкий",
-	"":       "Не выбран",
-}
-
 const (
 	targetDateTimeZ = "TargetDateTimeZ"
 )
-
-func translateMap(tMap map[string]string, str *string) string {
-	key := "<nil>"
-	if str != nil {
-		key = *str
-	}
-	if v, ok := tMap[key]; ok {
-		return v
-	}
-	return ""
-}
 
 func Stelegramf(format string, a ...any) string {
 	for i, v := range a {
@@ -89,24 +50,108 @@ func getUserTgIdIssueActivity(tx *gorm.DB, act *dao.IssueActivity) []userTg {
 	addDefaultWatchers(tx, act.ProjectId, users)
 	addIssueUsers(act.Issue, users)
 
-	userIds := make([]uuid.UUID, 0, len(users))
-	for k := range users {
-		userIds = append(userIds, k)
-	}
-
 	var projectMembers []dao.ProjectMember
-	if err := tx.Where("project_id = ?", act.ProjectId).Where("member_id IN (?)", userIds).Find(&projectMembers).Error; err != nil {
+	if err := tx.
+		Where("project_id = ?", act.ProjectId).
+		Where("member_id IN (?)", utils.MapToSlice(users, func(k uuid.UUID, t userTg) uuid.UUID { return k })).
+		Find(&projectMembers).Error; err != nil {
 		return []userTg{}
 	}
 
-	return filterIssueTgIdIsNotify(projectMembers, act.Issue.Author.ID, users, act.Field, act.Verb)
+	return filterEntityTgIdIsNotify(projectMembers, act.Issue.Author.ID, users, act.Field, act.Verb, "issue")
 }
 
-func filterIssueTgIdIsNotify(projectMembers []dao.ProjectMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string) []userTg {
+func getUserTgProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) []userTg {
+	users := make(map[uuid.UUID]userTg)
+	addDefaultWatchers(tx, act.ProjectId, users)
+	addIssueUsers(act.NewIssue, users)
+	addProjectAdmin(tx, act, users)
+
+	var projectMember []dao.ProjectMember
+	if err := tx.
+		Where("project_id = ?", act.ProjectId).
+		Where("member_id IN (?)", utils.MapToSlice(users, func(k uuid.UUID, t userTg) uuid.UUID { return k })).
+		Find(&projectMember).Error; err != nil {
+		return []userTg{}
+	}
+	return filterEntityTgIdIsNotify(projectMember, act.ActorId.UUID, users, act.Field, act.Verb, "project")
+}
+
+func getUserTgDocActivity(tx *gorm.DB, act *dao.DocActivity) []userTg {
+	userIds := append(append(append([]uuid.UUID{act.Doc.CreatedById}, act.Doc.EditorsIDs...), act.Doc.ReaderIDs...), act.Doc.WatcherIDs...)
+	var workspaceMembers []dao.WorkspaceMember
+	if err := tx.Joins("Member").
+		Where("workspace_id = ?", act.WorkspaceId).
+		Where("workspace_members.member_id IN (?)", userIds).Find(&workspaceMembers).Error; err != nil {
+		return []userTg{}
+	}
+	users := make(map[uuid.UUID]userTg, len(workspaceMembers))
+	for _, member := range workspaceMembers {
+		if usr, ok := getUserTg(*member.Member); ok {
+			users[member.MemberId] = usr
+		}
+	}
+	return filterDocTgIdIsNotify(workspaceMembers, act.ActorId.UUID, users, act.Field, act.Verb)
+}
+
+func filterDocTgIdIsNotify(wm []dao.WorkspaceMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string) []userTg {
+	res := make([]userTg, 0)
+	for _, member := range wm {
+		if member.MemberId == authorId {
+			if member.NotificationAuthorSettingsTG.IsNotify(field, "doc", verb, member.Role) {
+				if v, ok := userTgId[authorId]; ok {
+					res = append(res, v)
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
+		if member.NotificationSettingsTG.IsNotify(field, "doc", verb, member.Role) {
+			if v, ok := userTgId[member.MemberId]; ok {
+				res = append(res, v)
+				continue
+			}
+		}
+	}
+	return res
+}
+
+func filterProjectTgIdIsNotify(wm []dao.ProjectMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string, adminMembers map[uuid.UUID]struct{}) []userTg {
+	res := make([]userTg, 0)
+	for _, member := range wm {
+		if member.Role == types.AdminRole && field != nil && *field == "issue" && authorId != member.MemberId {
+			if _, ok := adminMembers[member.MemberId]; !ok {
+				continue
+			}
+		}
+		if member.MemberId == authorId {
+			if member.NotificationAuthorSettingsTG.IsNotify(field, "project", verb, member.Role) {
+				if v, ok := userTgId[authorId]; ok {
+					res = append(res, v)
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
+		if member.NotificationSettingsTG.IsNotify(field, "project", verb, member.Role) {
+			if v, ok := userTgId[member.MemberId]; ok {
+				res = append(res, v)
+				continue
+			}
+		}
+	}
+	return res
+}
+
+func filterEntityTgIdIsNotify(projectMembers []dao.ProjectMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string, entity string) []userTg {
 	res := make([]userTg, 0)
 	for _, member := range projectMembers {
 		if member.MemberId == authorId {
-			if member.NotificationAuthorSettingsTG.IsNotify(field, "issue", verb, member.Role) {
+			if member.NotificationAuthorSettingsTG.IsNotify(field, entity, verb, member.Role) {
 				if v, ok := userTgId[authorId]; ok {
 					res = append(res, v)
 					continue
@@ -114,7 +159,7 @@ func filterIssueTgIdIsNotify(projectMembers []dao.ProjectMember, authorId uuid.U
 			}
 		}
 
-		if member.NotificationSettingsTG.IsNotify(field, "issue", verb, member.Role) {
+		if member.NotificationSettingsTG.IsNotify(field, entity, verb, member.Role) {
 			if v, ok := userTgId[member.MemberId]; ok {
 				res = append(res, v)
 				continue
@@ -142,6 +187,29 @@ func addOriginalCommentAuthor(tx *gorm.DB, act *dao.IssueActivity, users map[uui
 
 	if user, ok := getUserTg(*act.NewIssueComment.OriginalComment.Actor); ok {
 		users[act.NewIssueComment.OriginalComment.Actor.ID] = user
+	}
+}
+
+func addProjectAdmin(tx *gorm.DB, act *dao.ProjectActivity, users map[uuid.UUID]userTg) {
+	var member []dao.ProjectMember
+	if err := tx.Joins("Member").
+		Where("project_id = ?", act.ProjectId).
+		Where("project_members.role = ?", types.AdminRole).
+		Find(&member).Error; err != nil {
+		return
+	}
+
+	for _, v := range member {
+		if *act.Field == actField.Issue.Field.String() {
+			continue
+		}
+		if _, ok := users[v.MemberId]; ok {
+			continue
+		} else {
+			if usr, ok := getUserTg(*v.Member); ok {
+				users[v.MemberId] = usr
+			}
+		}
 	}
 }
 
@@ -181,6 +249,9 @@ func addDefaultWatchers(tx *gorm.DB, projectId uuid.UUID, users map[uuid.UUID]us
 }
 
 func addIssueUsers(issue *dao.Issue, users map[uuid.UUID]userTg) {
+	if issue == nil {
+		return
+	}
 	if user, ok := getUserTg(*issue.Author); ok {
 		users[issue.Author.ID] = user
 	}
@@ -230,4 +301,30 @@ func msgReplace(user userTg, msg TgMsg) TgMsg {
 		}
 	}
 	return msg
+}
+
+func getUserName(user *dao.User) string {
+	if user == nil {
+		return "Новый пользователь"
+	}
+	if user.LastName == "" {
+		return fmt.Sprintf("%s", user.Email)
+	}
+	return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
+}
+
+func getExistUser(user ...*dao.User) *dao.User {
+	for _, u := range user {
+		if u != nil {
+			return u
+		}
+	}
+	return nil
+}
+
+func (m TgMsg) IsEmpty() bool {
+	if m.title == "" && m.body == "" {
+		return true
+	}
+	return false
 }
