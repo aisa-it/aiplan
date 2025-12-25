@@ -1615,7 +1615,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	oldSubIssuesData := make([]map[string]interface{}, len(subIssues))
 	for i, issue := range subIssues {
 		oldSubIssuesData[i] = StructToJSONMap(issue)
-		oldSubIssuesData[i]["parent"] = uuid.Nil
+		oldSubIssuesData[i]["parent"] = uuid.NullUUID{}
 	}
 
 	id, err := uuid.FromString(parentIssue.ID.String())
@@ -2535,7 +2535,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		}
 	}
 
-	if comment.CommentHtml.StripTags() == "" {
+	if comment.CommentHtml.StripTags() == "" && comment.CommentStripped == "" {
 		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
