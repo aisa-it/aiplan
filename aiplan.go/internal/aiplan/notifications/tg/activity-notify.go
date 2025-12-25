@@ -44,20 +44,15 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 	case dao.ProjectActivity:
 		notify = notifyFromProjectActivity(t.db, &a)
 	case dao.DocActivity:
-		fmt.Println("DocActivity", a.Comment)
-
+		notify = notifyFromDocActivity(t.db, &a)
 	case dao.FormActivity:
-		fmt.Println("FormActivity", a.Comment)
-
+	//	fmt.Println("FormActivity", a.Comment)
 	case dao.WorkspaceActivity:
-		fmt.Println("WorkspaceActivity", a.Comment)
-
+		notify = notifyFromWorkspaceActivity(t.db, &a)
 	case dao.RootActivity:
-		fmt.Println("RootActivity", a.Comment)
-
+	//	fmt.Println("RootActivity", a.Comment)
 	case dao.SprintActivity:
-		fmt.Println("SprintActivity", a.Comment)
-
+		//fmt.Println("SprintActivity", a.Comment)
 	default:
 		slog.Warn("Unknown activity type for Telegram",
 			"type", fmt.Sprintf("%T", activity),
@@ -79,7 +74,7 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 			}
 
 			if id, err := t.Send(u.id, msgReplace(u, notify.Message)); err != nil {
-				slog.Debug("tg send message", "error", err.Error())
+				slog.Error("tg send message", "error", err.Error())
 				continue
 			} else {
 				msgIds = append(msgIds, id)
