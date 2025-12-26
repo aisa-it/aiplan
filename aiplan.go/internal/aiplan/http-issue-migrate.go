@@ -1200,9 +1200,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 
 		if len(diffAssignees.add) > 0 {
 			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-			var newAssignees []dao.IssueAssignee
-			for _, assignee := range diffAssignees.add {
-				newAssignees = append(newAssignees, dao.IssueAssignee{
+			newAssignees := make([]dao.IssueAssignee, len(diffAssignees.add))
+			for i, assignee := range diffAssignees.add {
+				newAssignees[i] = dao.IssueAssignee{
 					Id:          dao.GenUUID(),
 					AssigneeId:  assignee,
 					IssueId:     srcIssue.ID,
@@ -1210,7 +1210,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 					WorkspaceId: srcIssue.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
 				return err
@@ -1249,9 +1249,9 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 
 		if len(diffWatchers.add) > 0 {
 			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-			var newWatchers []dao.IssueWatcher
-			for _, watcher := range diffWatchers.add {
-				newWatchers = append(newWatchers, dao.IssueWatcher{
+			newWatchers := make([]dao.IssueWatcher, len(diffWatchers.add))
+			for i, watcher := range diffWatchers.add {
+				newWatchers[i] = dao.IssueWatcher{
 					Id:          dao.GenUUID(),
 					WatcherId:   watcher,
 					IssueId:     srcIssue.ID,
@@ -1259,7 +1259,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 					WorkspaceId: srcIssue.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
 				return err
