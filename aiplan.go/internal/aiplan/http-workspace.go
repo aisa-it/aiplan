@@ -58,22 +58,25 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		user := c.(AuthContext).User
 		slugOrId := c.Param("workspaceSlug")
 
-		if etag := c.Request().Header.Get("If-None-Match"); etag != "" && c.Path() == "/api/auth/workspaces/:workspaceSlug/" {
-			var exist bool
-			if err := s.db.Model(&dao.Workspace{}).
-				Select("EXISTS(?)",
-					s.db.Model(&dao.Workspace{}).
-						Select("1").
-						Where("encode(hash, 'hex') = ?", etag),
-				).
-				Find(&exist).Error; err != nil {
-				return EError(c, err)
-			}
+		/*
+			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+				etag = strings.TrimSuffix(etag, user.ID.String())
+				var exist bool
+				if err := s.db.Model(&dao.Workspace{}).
+					Select("EXISTS(?)",
+						s.db.Model(&dao.Workspace{}).
+							Select("1").
+							Where("encode(hash, 'hex') = ?", etag),
+					).
+					Find(&exist).Error; err != nil {
+					return EError(c, err)
+				}
 
-			if exist {
-				return c.NoContent(http.StatusNotModified)
+				if exist {
+					return c.NoContent(http.StatusNotModified)
+				}
 			}
-		}
+		*/
 
 		var workspace dao.Workspace
 		workspaceQuery := s.db.
