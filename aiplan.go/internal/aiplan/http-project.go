@@ -50,22 +50,24 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		workspace := c.(WorkspaceContext).Workspace
 		user := c.(WorkspaceContext).User
 
-		if etag := c.Request().Header.Get("If-None-Match"); etag != "" && c.Path() == "/api/auth/workspaces/:workspaceSlug/projects/:projectId/" {
-			var exist bool
-			if err := s.db.Model(&dao.Project{}).
-				Select("EXISTS(?)",
-					s.db.Model(&dao.Project{}).
-						Select("1").
-						Where("encode(hash, 'hex') = ?", etag),
-				).
-				Find(&exist).Error; err != nil {
-				return EError(c, err)
-			}
+		/*
+			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			   			var exist bool
+			   			if err := s.db.Model(&dao.Project{}).
+			   				Select("EXISTS(?)",
+			   					s.db.Model(&dao.Project{}).
+			   						Select("1").
+			   						Where("encode(hash, 'hex') = ?", etag),
+			   				).
+			   				Find(&exist).Error; err != nil {
+			   				return EError(c, err)
+			   			}
 
-			if exist {
-				return c.NoContent(http.StatusNotModified)
-			}
-		}
+			   			if exist {
+			   				return c.NoContent(http.StatusNotModified)
+			   			}
+			   		}
+		*/
 
 		// Joins faster than Preload(clause.Associations)
 		var project dao.Project
