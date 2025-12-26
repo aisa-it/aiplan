@@ -58,7 +58,7 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		user := c.(AuthContext).User
 		slugOrId := c.Param("workspaceSlug")
 
-		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" && c.Path() == "/api/auth/workspaces/:workspaceSlug/" {
 			var exist bool
 			if err := s.db.Model(&dao.Workspace{}).
 				Select("EXISTS(?)",

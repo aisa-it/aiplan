@@ -50,7 +50,7 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		workspace := c.(WorkspaceContext).Workspace
 		user := c.(WorkspaceContext).User
 
-		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" && c.Path() == "/api/auth/workspaces/:workspaceSlug/projects/:projectId/" {
 			var exist bool
 			if err := s.db.Model(&dao.Project{}).
 				Select("EXISTS(?)",
