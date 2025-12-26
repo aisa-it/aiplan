@@ -72,3 +72,8 @@ func NewBL(db *gorm.DB, tracker *tracker.ActivitiesTracker) (*Business, error) {
 
 	return b, nil
 }
+
+// GetTracker возвращает трекер активности для MCP инструментов
+func (b *Business) GetTracker() *tracker.ActivitiesTracker {
+	return b.tracker
+}

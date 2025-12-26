@@ -102,6 +102,7 @@ var (
 	ErrTokenExpired         = DefinedError{Code: 1102, StatusCode: http.StatusUnauthorized, Err: "token expired", RuErr: "Срок действия токена истек"}
 	ErrTokenInvalid         = DefinedError{Code: 1103, StatusCode: http.StatusUnauthorized, Err: "invalid token", RuErr: "Неверный токен"}
 	ErrSessionReset         = DefinedError{Code: 1104, StatusCode: http.StatusUnauthorized, Err: "user session reset", RuErr: "Пользовательская сессия сброшена"}
+	ErrRateLimitExceed      = DefinedError{Code: 1105, StatusCode: http.StatusTooManyRequests, Err: "requests limit exceed", RuErr: "Слишком частые запросы"}
 
 	// 2*** - workspace errors
 	ErrWorkspaceConflict                 = DefinedError{Code: 2001, StatusCode: http.StatusConflict, Err: "workspace already exists", RuErr: "Такое рабочее пространство уже существует"}
