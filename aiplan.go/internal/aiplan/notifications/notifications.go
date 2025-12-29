@@ -48,12 +48,13 @@ func (n *IssueNotification) Handle(activity dao.ActivityI) error {
 
 	if a.Issue == nil {
 		if err := n.Db.Unscoped().
-			Preload("Author").
+			Joins("Author").
+			Joins("Workspace").
+			Joins("Project").
 			Preload("Assignees").
 			Preload("Watchers").
-			Preload("Workspace").
-			Preload("Project").
-			Where("id = ?", a.IssueId).
+			Preload("Project.DefaultWatchersDetails", "is_default_watcher = ?", true).
+			Where("issues.id = ?", a.IssueId).
 			Find(&a.Issue).Error; err != nil {
 			slog.Error("Get issue for activity", "activityId", a.Id, "err", err)
 			return err
@@ -86,6 +87,16 @@ func (n *IssueNotification) Handle(activity dao.ActivityI) error {
 				n.Ws.Send(watcherId, notifyId, a, countNotify)
 			}
 			userIdMap[watcherId] = struct{}{}
+		}
+	}
+
+	for _, defaultWatcher := range a.Issue.Project.DefaultWatchersDetails {
+		if _, ok := userIdMap[defaultWatcher.MemberId]; !ok {
+			notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, defaultWatcher.MemberId, a)
+			if notifyId != uuid.Nil {
+				n.Ws.Send(defaultWatcher.MemberId, notifyId, a, countNotify)
+			}
+			userIdMap[defaultWatcher.MemberId] = struct{}{}
 		}
 	}
 	return nil
