@@ -82,7 +82,7 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		workspaceQuery := s.db.
 			Joins("Owner").
 			Joins("LogoAsset").
-			Set("userID", user.ID)
+			Set("userID", user.ID) // TODO: Remove when front remove current_membership
 
 		if id, err := uuid.FromString(slugOrId); err == nil {
 			workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
@@ -98,10 +98,11 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		var workspaceMember dao.WorkspaceMember
-		if workspace.CurrentUserMembership != nil {
-			workspaceMember = *workspace.CurrentUserMembership
-		} else {
-			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+		if err := s.db.Where("workspace_id = ?", workspace.ID).Where("member_id = ?", user.ID).First(&workspaceMember).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+			}
+			return EError(c, err)
 		}
 		workspaceMember.Workspace = &workspace
 
@@ -136,6 +137,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.GET("/activities/", s.getWorkspaceActivityList)
 
 	workspaceGroup.GET("/members/", s.getWorkspaceMemberList)
+	workspaceGroup.GET("/members/me/", s.getWorkspaceCurrentMembership)
 	workspaceGroup.PATCH("/members/:memberId/", s.updateWorkspaceMember)
 	workspaceGroup.PATCH("/members/:memberId/set-email/", s.updateUserEmail)
 	workspaceGroup.DELETE("/members/:memberId/", s.deleteWorkspaceMember)
@@ -694,6 +696,25 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
 
 	return c.JSON(http.StatusOK, res)
+}
+
+// getWorkspaceCurrentMembership godoc
+// @id getWorkspaceCurrentMembership
+// @Summary Пространство (участники): получение информации о текущем участнике рабочего пространства
+// @Description Возвращает данные участника для текущего пользователя в рабочем пространстве.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceMember "Успешный ответ с данными текущего участника рабочего пространства"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/me/ [get]
+func (s *Services) getWorkspaceCurrentMembership(c echo.Context) error {
+	member := c.(WorkspaceContext).WorkspaceMember
+	return c.JSON(http.StatusOK, member.ToDTO())
 }
 
 // updateWorkspaceMember godoc

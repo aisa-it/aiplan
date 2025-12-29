@@ -92,13 +92,17 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EError(c, err)
 		}
 
-		if project.CurrentUserMembership == nil {
-			return EErrorDefined(c, apierrors.ErrProjectNotFound)
+		var projectMember dao.ProjectMember
+		if err := s.db.Where("project_id = ?", project.ID).Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return EErrorDefined(c, apierrors.ErrProjectNotFound)
+			}
+			return EError(c, err)
 		}
 
 		project.Workspace = &workspace
 
-		return next(ProjectContext{c.(WorkspaceContext), project, *project.CurrentUserMembership})
+		return next(ProjectContext{c.(WorkspaceContext), project, projectMember})
 	}
 }
 
@@ -128,6 +132,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	workspaceGroup.GET("/project-identifiers/", s.checkProjectIdentifierAvailability)
 
 	projectGroup.GET("/members/", s.getProjectMemberList)
+	projectGroup.GET("/members/me/", s.getProjectCurrentMembership)
 	projectGroup.GET("/members/:memberId/", s.getProjectMember)
 	projectGroup.PATCH("/members/:memberId/", s.updateProjectMember)
 	projectGroup.DELETE("/members/:memberId/", s.deleteProjectMember)
@@ -174,6 +179,11 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectGroup.DELETE("/states/:stateId/", s.deleteState)
 
 	projectGroup.POST("/rules-log/", s.getRulesLog)
+
+	// Rules Script (только для админов проекта)
+	projectAdminGroup.GET("/rules-script/", s.getProjectRulesScript)
+	projectAdminGroup.PUT("/rules-script/", s.updateProjectRulesScript)
+	projectAdminGroup.DELETE("/rules-script/", s.deleteProjectRulesScript)
 
 	// Issue Templates
 	projectGroup.GET("/templates/", s.getProjectIssueTemplates)
@@ -740,6 +750,25 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 	count.MyEntity = projectMember.ToLightDTO()
 
 	return c.JSON(http.StatusOK, count)
+}
+
+// getProjectCurrentMembership godoc
+// @id getProjectCurrentMembership
+// @Summary Проекты (участники): получение информации о текущем членстве в проекте
+// @Description Возвращает информацию о членстве текущего пользователя в указанном проекте.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} dto.ProjectMember "Информация о членстве пользователя в проекте"
+// @Failure 404 {object} apierrors.DefinedError "Членство в проекте не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/me [get]
+func (s *Services) getProjectCurrentMembership(c echo.Context) error {
+	member := c.(ProjectContext).ProjectMember
+	return c.JSON(http.StatusOK, member.ToDTO())
 }
 
 // getProjectMember godoc
@@ -3121,6 +3150,158 @@ func (s *Services) getProjectStats(c echo.Context) error {
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusOK, stats)
+}
+
+// getProjectRulesScript godoc
+// @id getProjectRulesScript
+// @Summary Проекты: получение скрипта правил
+// @Description Возвращает скрипт правил проекта. Доступно только для админов проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} dto.RulesScriptResponse "Скрипт правил проекта"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на просмотр скрипта правил"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [get]
+func (s *Services) getProjectRulesScript(c echo.Context) error {
+	project := c.(ProjectContext).Project
+
+	response := dto.RulesScriptResponse{
+		RulesScript: project.RulesScript,
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// updateProjectRulesScript godoc
+// @id updateProjectRulesScript
+// @Summary Проекты: обновление скрипта правил
+// @Description Обновляет скрипт правил проекта. Доступно только для админов проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param request body dto.UpdateRulesScriptRequest true "Данные для обновления скрипта правил"
+// @Success 200 {object} dto.RulesScriptResponse "Обновленный скрипт правил"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные запроса"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на обновление скрипта правил"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [put]
+func (s *Services) updateProjectRulesScript(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+
+	var request dto.UpdateRulesScriptRequest
+	if err := c.Bind(&request); err != nil {
+		return EError(c, err)
+	}
+
+	if err := c.Validate(&request); err != nil {
+		return EError(c, err)
+	}
+
+	// Сохраняем старый скрипт для отслеживания активности
+	oldRulesScript := project.RulesScript
+
+	// Обновляем скрипт
+	project.RulesScript = request.RulesScript
+	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+	// Очищаем неразрывные пробелы
+	if project.RulesScript != nil {
+		*project.RulesScript = strings.ReplaceAll(*project.RulesScript, "\u00A0", " ")
+	}
+
+	// Обновляем в базе данных
+	if err := s.db.Model(&dao.Project{}).
+		Where("id = ?", project.ID).
+		Updates(map[string]interface{}{
+			"rules_script":  project.RulesScript,
+			"updated_by_id": project.UpdatedById,
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Отслеживаем активность
+	oldMap := map[string]interface{}{
+		"rules_script": oldRulesScript,
+	}
+	newMap := map[string]interface{}{
+		"rules_script": project.RulesScript,
+	}
+
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	response := dto.RulesScriptResponse{
+		RulesScript: project.RulesScript,
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// deleteProjectRulesScript godoc
+// @id deleteProjectRulesScript
+// @Summary Проекты: удаление скрипта правил
+// @Description Удаляет скрипт правил проекта. Доступно только для админов проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} dto.RulesScriptResponse "Пустой скрипт правил"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на удаление скрипта правил"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [delete]
+func (s *Services) deleteProjectRulesScript(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+
+	// Сохраняем старый скрипт для отслеживания активности
+	oldRulesScript := project.RulesScript
+
+	// Удаляем скрипт
+	project.RulesScript = nil
+	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+	// Обновляем в базе данных
+	if err := s.db.Model(&dao.Project{}).
+		Where("id = ?", project.ID).
+		Updates(map[string]interface{}{
+			"rules_script":  nil,
+			"updated_by_id": project.UpdatedById,
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Отслеживаем активность
+	oldMap := map[string]interface{}{
+		"rules_script": oldRulesScript,
+	}
+	newMap := map[string]interface{}{
+		"rules_script": nil,
+	}
+
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	response := dto.RulesScriptResponse{
+		RulesScript: nil,
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 /*
