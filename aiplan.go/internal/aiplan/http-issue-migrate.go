@@ -108,6 +108,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	var migrateWithNewState bool
 	var labelIds []uuid.UUID
 	var stateIds []uuid.UUID
 	stateMap := make(map[uuid.UUID]dao.State)
@@ -149,7 +150,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		if v, ok := param.StateId.GetValue(); ok && v != nil {
 			var state dao.State
 			if err := s.db.Where("workspace_id = ?", srcIssue.WorkspaceId).
-				Where("project_id = ?", srcIssue.ProjectId).
+				Where("project_id = ?", targetProject.ID).
 				Where("id = ?", *v).
 				First(&state).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -167,6 +168,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 			srcIssue.StateId = *v
 			srcIssue.State = &state
+			migrateWithNewState = true
 		}
 
 		if v, ok := param.Priority.GetValue(); ok {
@@ -250,7 +252,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 
 		for i, issue := range srcIssues {
-			result, err := s.CheckIssueBeforeMigrate(issue, targetProject)
+			result, err := s.CheckIssueBeforeMigrate(issue, targetProject, migrateWithNewState)
 			if err != nil {
 				return EError(c, err)
 			}
@@ -685,7 +687,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		}
 
 		for i, issue := range srcIssues {
-			result, err := s.CheckIssueBeforeMigrate(issue, targetProject)
+			result, err := s.CheckIssueBeforeMigrate(issue, targetProject, false)
 			if err != nil {
 				return EError(c, err)
 			}
@@ -1024,7 +1026,7 @@ func (st *stateTarget) getID() uuid.NullUUID {
 	return uuid.NullUUID{}
 }
 
-func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao.Project) (IssueCheckResult, error) {
+func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao.Project, migrateWithNewState bool) (IssueCheckResult, error) {
 	res := IssueCheckResult{
 		SrcIssue:      srcIssue,
 		TargetProject: targetProject,
@@ -1107,22 +1109,26 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 	// Check state
 	{
-		if err := s.db.Where("project_id = ?", targetProject.ID).
-			Where("name = ?", srcIssue.State.Name).
-			Where("\"group\" = ?", srcIssue.State.Group).
-			Where("color = ?", srcIssue.State.Color).
-			First(&res.TargetState).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				res.Errors = append(res.Errors, ErrClause{
-					Error:           ErrStateNotFound,
-					SrcIssueId:      &srcIssue.ID,
-					IssueSequenceId: srcIssue.SequenceId,
-					Type:            "state",
-					Entities:        []uuid.UUID{srcIssue.State.ID},
-				})
-			} else {
-				return res, err
+		if migrateWithNewState == false {
+			if err := s.db.Where("project_id = ?", targetProject.ID).
+				Where("name = ?", srcIssue.State.Name).
+				Where("\"group\" = ?", srcIssue.State.Group).
+				Where("color = ?", srcIssue.State.Color).
+				First(&res.TargetState).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					res.Errors = append(res.Errors, ErrClause{
+						Error:           ErrStateNotFound,
+						SrcIssueId:      &srcIssue.ID,
+						IssueSequenceId: srcIssue.SequenceId,
+						Type:            "state",
+						Entities:        []uuid.UUID{srcIssue.State.ID},
+					})
+				} else {
+					return res, err
+				}
 			}
+		} else {
+			res.TargetState = *srcIssue.State
 		}
 	}
 
@@ -1663,28 +1669,33 @@ type diffResult struct {
 
 func diffUUID(req []uuid.UUID, cur []uuid.UUID) diffResult {
 	var result diffResult
-	reqMap := make(map[uuid.UUID]struct{}, len(req))
-	curMap := make(map[uuid.UUID]struct{}, len(cur))
+	type action int
+
+	reqMap := make(map[uuid.UUID]action, len(req)+len(cur))
+	add := action(1)
+	del := action(-1)
+	update := action(0)
 
 	for _, id := range req {
-		reqMap[id] = struct{}{}
+		reqMap[id] = add
 	}
 
 	for _, id := range cur {
-		curMap[id] = struct{}{}
-	}
-
-	for id := range reqMap {
-		if _, exists := curMap[id]; exists {
-			result.update = append(result.update, id)
+		if _, ok := reqMap[id]; ok {
+			reqMap[id] = update
 		} else {
-			result.add = append(result.add, id)
+			reqMap[id] = del
 		}
 	}
 
-	for id := range curMap {
-		if _, exists := reqMap[id]; !exists {
+	for id, v := range reqMap {
+		switch v {
+		case add:
+			result.add = append(result.add, id)
+		case del:
 			result.del = append(result.del, id)
+		case update:
+			result.update = append(result.update, id)
 		}
 	}
 
