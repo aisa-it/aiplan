@@ -75,15 +75,7 @@ func preloadProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) error {
 		return fmt.Errorf("preloadProjectActivity: %v", err)
 	}
 	act.Workspace = act.Project.Workspace
-
-	if act.NewIssue != nil {
-		issue, err := preloadIssueActivity(tx, act.NewIssue.ID, act.NewIssue)
-		if err != nil {
-			return fmt.Errorf("preload issue: %v", err)
-		}
-		act.NewIssue = issue
-	}
-
+	act.NewIssue = preloadIssueActivity(tx, act.NewIssue.ID, act.NewIssue)
 	return nil
 }
 
@@ -91,7 +83,7 @@ func formatProjectActivity(act *dao.ProjectActivity) (TgMsg, error) {
 	var res TgMsg
 
 	if act.Field == nil {
-		return res, fmt.Errorf("IssueActivity field is nil")
+		return res, fmt.Errorf("projectActivity field is nil")
 	}
 
 	af := actField.ActivityField(*act.Field)

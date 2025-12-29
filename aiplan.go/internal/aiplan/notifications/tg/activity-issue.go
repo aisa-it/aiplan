@@ -39,14 +39,11 @@ var (
 
 func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNotification {
 	notify := ActivityTgNotification{}
-
-	issue, err := preloadIssueActivity(tx, act.IssueId, act.Issue)
-	if err != nil {
-		slog.Error("Get ProjectActivity", "activityId", act.Id, "err", err)
+	if act.Field == nil {
 		return nil
 	}
-	act.Issue = issue
 
+	act.Issue = preloadIssueActivity(tx, act.IssueId, act.Issue)
 	msg, err := formatIssueActivity(act)
 	if err != nil {
 		return nil
@@ -61,7 +58,11 @@ func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNot
 	return &notify
 }
 
-func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) (*dao.Issue, error) {
+func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) *dao.Issue {
+	if issue == nil {
+		return nil
+	}
+
 	if err := tx.Unscoped().
 		Joins("Author").
 		Joins("Workspace").
@@ -72,18 +73,15 @@ func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) (*dao.Iss
 		Preload("Parent.Project").
 		Where("issues.id = ?", id).
 		First(&issue).Error; err != nil {
-		return nil, fmt.Errorf("preloadIssueActivity: %v", err)
+		slog.Error("Get IssueActivity", "err", err)
+		return nil
 	}
 
-	return issue, nil
+	return issue
 }
 
 func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
 	var res TgMsg
-
-	if act.Field == nil {
-		return res, fmt.Errorf("IssueActivity field is nil")
-	}
 
 	af := actField.ActivityField(*act.Field)
 	if f, ok := issueMap[af]; ok {
@@ -148,15 +146,14 @@ func issueDefault(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 
 func issueDescription(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
+	if act.Verb != actField.VerbUpdated {
+		return msg
+	}
 
+	msg.title = "изменил(-а) описание"
 	msg.body = Stelegramf("```\n%s```",
 		utils.HtmlToTg(act.NewValue),
 	)
-
-	switch act.Verb {
-	case actField.VerbUpdated:
-		msg.title = "изменил(-а) описание"
-	}
 	return msg
 }
 

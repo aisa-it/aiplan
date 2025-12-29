@@ -43,6 +43,56 @@ func getUserTg(user dao.User) (userTg, bool) {
 	return userTg{id: *user.TelegramId, loc: user.UserTimezone}, true
 }
 
+func strReplace(in string) string {
+	out := strings.Split(in, "_")
+	return "$$$" + strings.Join(out, "$$$") + "$$$"
+}
+
+func msgReplace(user userTg, msg TgMsg) TgMsg {
+	for k, v := range msg.replace {
+		key := k
+		keys := strings.Split(k, "_")
+		if len(keys) > 1 {
+			key = keys[0]
+		}
+		switch key {
+		case targetDateTimeZ:
+			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006 15:04", &user.loc); err == nil {
+				msg.body = strings.ReplaceAll(msg.body, strReplace(k), Stelegramf("%s", strNeW))
+			} else {
+				return NewTgMsg()
+			}
+		}
+	}
+	return msg
+}
+
+func getUserName(user *dao.User) string {
+	if user == nil {
+		return "Новый пользователь"
+	}
+	if user.LastName == "" {
+		return fmt.Sprintf("%s", user.Email)
+	}
+	return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
+}
+
+func getExistUser(user ...*dao.User) *dao.User {
+	for _, u := range user {
+		if u != nil {
+			return u
+		}
+	}
+	return nil
+}
+
+func (m TgMsg) IsEmpty() bool {
+	if m.title == "" && m.body == "" {
+		return true
+	}
+	return false
+}
+
 func getUserTgIdIssueActivity(tx *gorm.DB, act *dao.IssueActivity) []userTg {
 	users := make(map[uuid.UUID]userTg)
 
@@ -109,6 +159,48 @@ func filterDocTgIdIsNotify(wm []dao.WorkspaceMember, authorId uuid.UUID, userTgI
 		}
 
 		if member.NotificationSettingsTG.IsNotify(field, "doc", verb, member.Role) {
+			if v, ok := userTgId[member.MemberId]; ok {
+				res = append(res, v)
+				continue
+			}
+		}
+	}
+	return res
+}
+
+func getUserTgWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) []userTg {
+	var workspaceMembers []dao.WorkspaceMember
+	if err := tx.Joins("Member").
+		Where("workspace_id = ?", act.WorkspaceId).
+		Where("workspace_members.role = ?", types.AdminRole).
+		Find(&workspaceMembers).Error; err != nil {
+		return []userTg{}
+	}
+
+	users := make(map[uuid.UUID]userTg, len(workspaceMembers))
+	for _, member := range workspaceMembers {
+		if usr, ok := getUserTg(*member.Member); ok {
+			users[member.MemberId] = usr
+		}
+	}
+	return filterWorkspaceTgIdIsNotify(workspaceMembers, act.ActorId.UUID, users, act.Field, act.Verb)
+}
+
+func filterWorkspaceTgIdIsNotify(wm []dao.WorkspaceMember, authorId uuid.UUID, userTgId map[uuid.UUID]userTg, field *string, verb string) []userTg {
+	res := make([]userTg, 0)
+	for _, member := range wm {
+		if member.MemberId == authorId {
+			if member.NotificationAuthorSettingsTG.IsNotify(field, "workspace", verb, member.Role) {
+				if v, ok := userTgId[authorId]; ok {
+					res = append(res, v)
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
+		if member.NotificationSettingsTG.IsNotify(field, "workspace", verb, member.Role) {
 			if v, ok := userTgId[member.MemberId]; ok {
 				res = append(res, v)
 				continue
@@ -277,54 +369,4 @@ func addIssueUsers(issue *dao.Issue, users map[uuid.UUID]userTg) {
 			}
 		}
 	}
-}
-
-func strReplace(in string) string {
-	out := strings.Split(in, "_")
-	return "$$$" + strings.Join(out, "$$$") + "$$$"
-}
-
-func msgReplace(user userTg, msg TgMsg) TgMsg {
-	for k, v := range msg.replace {
-		key := k
-		keys := strings.Split(k, "_")
-		if len(keys) > 1 {
-			key = keys[0]
-		}
-		switch key {
-		case targetDateTimeZ:
-			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006 15:04", &user.loc); err == nil {
-				msg.body = strings.ReplaceAll(msg.body, strReplace(k), Stelegramf("%s", strNeW))
-			} else {
-				return NewTgMsg()
-			}
-		}
-	}
-	return msg
-}
-
-func getUserName(user *dao.User) string {
-	if user == nil {
-		return "Новый пользователь"
-	}
-	if user.LastName == "" {
-		return fmt.Sprintf("%s", user.Email)
-	}
-	return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-}
-
-func getExistUser(user ...*dao.User) *dao.User {
-	for _, u := range user {
-		if u != nil {
-			return u
-		}
-	}
-	return nil
-}
-
-func (m TgMsg) IsEmpty() bool {
-	if m.title == "" && m.body == "" {
-		return true
-	}
-	return false
 }

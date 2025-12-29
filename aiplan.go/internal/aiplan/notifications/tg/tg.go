@@ -18,12 +18,13 @@ import (
 )
 
 type TgService struct {
-	db       *gorm.DB
-	bot      *bot.Bot
-	cfg      *config.Config
-	tracker  *tracker.ActivitiesTracker
-	Disabled bool
-	bl       *business.Business
+	db          *gorm.DB
+	bot         *bot.Bot
+	botUserName string
+	cfg         *config.Config
+	tracker     *tracker.ActivitiesTracker
+	Disabled    bool
+	bl          *business.Business
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -63,16 +64,18 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	res, _ := b.GetMe(ctx)
 
 	serv := &TgService{
-		db:       db,
-		bot:      b,
-		cfg:      cfg,
-		tracker:  tracker,
-		Disabled: false,
-		bl:       bl,
-		ctx:      ctx,
-		cancel:   cancel,
+		db:          db,
+		bot:         b,
+		botUserName: res.Username,
+		cfg:         cfg,
+		tracker:     tracker,
+		Disabled:    false,
+		bl:          bl,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, serv.getUserMiddleware()(serv.startHandler))
@@ -83,13 +86,12 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 	return serv
 }
 
-func (s *TgService) Start() {
-	if s.Disabled {
+func (t *TgService) Start() {
+	if t.Disabled {
 		return
 	}
-	dd, _ := s.bot.GetMe(s.ctx)
-	slog.Info("TG bot connected", "username", dd.Username)
-	s.bot.Start(s.ctx)
+	slog.Info("TG bot connected", "username", t.botUserName)
+	t.bot.Start(t.ctx)
 	slog.Info("Telegram bot stopped")
 }
 
@@ -105,7 +107,7 @@ func (t *TgService) GetBotLink() string {
 	if t.Disabled {
 		return ""
 	}
-	return "https://t.me/" + fmt.Sprint(t.bot.ID())
+	return "https://t.me/" + fmt.Sprint(t.botUserName)
 }
 
 func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
