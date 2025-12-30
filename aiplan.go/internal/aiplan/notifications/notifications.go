@@ -7,6 +7,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -14,15 +15,16 @@ import (
 
 type Notification struct {
 	Ws *WebsocketNotificationService
-	Tg *TelegramService
+	Tg *tg.TgService
 	Db *gorm.DB
 	//IssueActivityHandler(activity *dao.IssueActivity)
 }
 
 func NewNotificationService(cfg *config.Config, db *gorm.DB, tracker *tracker.ActivitiesTracker, bl *business.Business) *Notification {
+	//NewTelegramService(db, cfg, tracker, bl),
 	return &Notification{
 		Ws: NewWebsocketNotificationService(),
-		Tg: NewTelegramService(db, cfg, tracker, bl),
+		Tg: tg.New(db, cfg, tracker, bl),
 		Db: db,
 	}
 }

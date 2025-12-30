@@ -10,6 +10,7 @@ import (
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
@@ -479,11 +480,8 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 				return "", "", err
 			}
 			var p string
-			if activity.Issue.Priority == nil {
-				p = priorityTranslation["<nil>"]
-			} else {
-				p = priorityTranslation[*activity.Issue.Priority]
-			}
+			p = types.TranslateMap(types.PriorityTranslation, activity.Issue.Priority)
+
 			activity.Issue.Priority = &p
 			description := replaceTablesToText(replaceImageToText(activity.Issue.DescriptionHtml))
 			description = policy.ProcessCustomHtmlTag(description)
@@ -523,11 +521,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			}
 
 			var p string
-			if activity.Issue.Priority == nil {
-				p = priorityTranslation["<nil>"]
-			} else {
-				p = priorityTranslation[*activity.Issue.Priority]
-			}
+			p = types.TranslateMap(types.PriorityTranslation, activity.Issue.Priority)
 			activity.Issue.Priority = &p
 			description := replaceTablesToText(replaceImageToText(activity.Issue.DescriptionHtml))
 			description = policy.ProcessCustomHtmlTag(description)
@@ -608,14 +602,8 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		field := *activity.Field
 
 		if field == actField.Priority.Field.String() {
-			activity.NewValue = priorityTranslation[activity.NewValue]
-			if activity.OldValue != nil {
-				p := priorityTranslation[*activity.OldValue]
-				activity.OldValue = &p
-			} else {
-				p := priorityTranslation["<nil>"]
-				activity.OldValue = &p
-			}
+			activity.NewValue = types.TranslateMap(types.PriorityTranslation, utils.ToPtr(activity.NewValue))
+			activity.OldValue = utils.ToPtr(types.TranslateMap(types.PriorityTranslation, activity.OldValue))
 		}
 
 		if field == actField.TargetDate.Field.String() {

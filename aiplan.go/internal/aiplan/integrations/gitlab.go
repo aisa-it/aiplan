@@ -16,13 +16,13 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	"github.com/gofrs/uuid"
 
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
@@ -61,7 +61,7 @@ type GitlabPushEvent struct {
 	TotalCommitsCount int `json:"total_commits_count"`
 }
 
-func NewGitlabIntegration(db *gorm.DB, tS *notifications.TelegramService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *GitlabIntegration {
+func NewGitlabIntegration(db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *GitlabIntegration {
 	username := "gitlab_integration"
 	i := &GitlabIntegration{
 		Integration: Integration{
