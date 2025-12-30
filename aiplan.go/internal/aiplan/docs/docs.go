@@ -5164,6 +5164,104 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/users/me/memberships/projects/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о членстве текущего пользователя в указанных проектах, если не указывать проекты - возвращаются все членства",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи: получение членства в проектах",
+                "operationId": "getCurrentUserProjectMemberships",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Список ID проектов через запятую",
+                        "name": "projects",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список членств в проектах",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.ProjectMember"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/users/me/memberships/workspaces/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о членстве текущего пользователя в указанных рабочих пространствах, если не указывать пространства - возвращаются все членства",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи: получение членства в рабочих пространствах",
+                "operationId": "getCurrentUserWorkspaceMemberships",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Список ID рабочих пространств через запятую",
+                        "name": "workspaces",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список членств в рабочих пространствах",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.WorkspaceMember"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/users/me/notifications": {
             "get": {
                 "security": [
