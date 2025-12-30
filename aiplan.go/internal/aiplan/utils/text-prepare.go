@@ -14,10 +14,10 @@ func HtmlToTg(text string) string {
 	res = replaceImageToText(res)
 	res = policy.ProcessCustomHtmlTag(res)
 	res = prepareHtmlBody(policy.StripTagsPolicy, res)
-	return substr(replaceImgToEmoj(res), 0, 4000)
+	return Substr(ReplaceImgToEmoj(res), 0, 4000)
 }
 
-func replaceImgToEmoj(body string) string {
+func ReplaceImgToEmoj(body string) string {
 	imgRegex := regexp.MustCompile(`image:\s+\(alt:\s*([^)]*)\)`)
 	tableRegex := regexp.MustCompile(`table\s*\(size:\s*(\d+)x(\d+)\)`)
 
@@ -42,7 +42,7 @@ func replaceImgToEmoj(body string) string {
 	return strings.ReplaceAll(body, "&#34;", "\"")
 }
 
-func substr(input string, start int, length int) string {
+func Substr(input string, start int, length int) string {
 	asRunes := []rune(input)
 
 	if start >= len(asRunes) {

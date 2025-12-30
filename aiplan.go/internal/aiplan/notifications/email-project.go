@@ -379,13 +379,7 @@ func newIssue(tx *gorm.DB, user *dao.User, act *dao.ProjectActivity) string {
 			return ""
 		}
 
-		var p string
-		if issue.Priority == nil {
-			p = priorityTranslation["<nil>"]
-		} else {
-			p = priorityTranslation[*issue.Priority]
-		}
-		issue.Priority = &p
+		issue.Priority = utils.ToPtr(types.TranslateMap(types.PriorityTranslation, issue.Priority))
 		description := replaceTablesToText(replaceImageToText(issue.DescriptionHtml))
 		description = policy.ProcessCustomHtmlTag(description)
 		description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))

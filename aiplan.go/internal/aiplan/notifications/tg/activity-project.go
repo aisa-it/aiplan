@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/go-telegram/bot"
@@ -75,7 +76,11 @@ func preloadProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) error {
 		return fmt.Errorf("preloadProjectActivity: %v", err)
 	}
 	act.Workspace = act.Project.Workspace
-	act.NewIssue = preloadIssueActivity(tx, act.NewIssue.ID, act.NewIssue)
+
+	if act.NewIssue != nil {
+		act.NewIssue = preloadIssueActivity(tx, act.NewIssue.ID)
+	}
+
 	return nil
 }
 
@@ -99,10 +104,10 @@ func formatProjectActivity(act *dao.ProjectActivity) (TgMsg, error) {
 
 	res.title = fmt.Sprintf(
 		"*%s* %s [%s](%s)",
-		act.Actor.GetName(),
+		bot.EscapeMarkdown(act.Actor.GetName()),
 		bot.EscapeMarkdown(res.title),
 		bot.EscapeMarkdown(fmt.Sprintf("%s/%s", act.Workspace.Slug, act.Project.Identifier)),
-		act.Project.URL,
+		act.Project.URL.String(),
 	)
 
 	return res, nil
@@ -131,12 +136,12 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 		issue := act.NewIssue.Parent
 		act.NewIssue.Parent.SetUrl()
 		format += "\n*%s*: [%s](%s)"
-		values = append(values, fieldsTranslation[actField.Parent.Field], issue.FullIssueName(), issue.URL.String())
+		values = append(values, types.FieldsTranslation[actField.Parent.Field], issue.FullIssueName(), issue.URL.String())
 	}
 
 	if act.NewIssue.Priority != nil {
 		format += "\n*%s*: %s"
-		values = append(values, fieldsTranslation[actField.Priority.Field], priorityTranslation[*act.NewIssue.Priority])
+		values = append(values, types.FieldsTranslation[actField.Priority.Field], types.PriorityTranslation[*act.NewIssue.Priority])
 	}
 
 	if act.NewIssue.Assignees != nil && len(*act.NewIssue.Assignees) > 0 {
@@ -205,7 +210,7 @@ func projectStatus(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	switch af {
 	case actField.StatusGroup.Field:
 		format += "\n*Группу Статуса:* ~%s~ %s"
-		values = append(values, translateMap(statusTranslation, act.OldValue), translateMap(statusTranslation, &act.NewValue))
+		values = append(values, types.TranslateMap(types.StatusTranslation, act.OldValue), types.TranslateMap(types.StatusTranslation, &act.NewValue))
 	case actField.StatusDescription.Field:
 		format += "\n```\n%s```"
 		values = append(values, utils.HtmlToTg(act.NewValue))
@@ -223,7 +228,7 @@ func projectStatus(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	case actField.VerbCreated:
 		msg.title = "создал(-a) статус в"
 		format = "*Название*: %s\n*Группа*: %s"
-		values = []any{act.NewState.Name, translateMap(statusTranslation, &act.NewState.Group)}
+		values = []any{act.NewState.Name, types.TranslateMap(types.StatusTranslation, &act.NewState.Group)}
 	case actField.VerbUpdated:
 		msg.title = "изменил(-a) в"
 	case actField.VerbDeleted:
@@ -281,7 +286,7 @@ func projectMember(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	case actField.VerbAdded:
 		msg.title = "добавил(-a) участника в"
 		format = "__%s__\n*Роль:* %s"
-		values = []any{getUserName(act.NewMember), translateMap(roleTranslation, &act.NewValue)}
+		values = []any{getUserName(act.NewMember), types.TranslateMap(types.RoleTranslation, &act.NewValue)}
 	case actField.VerbRemoved:
 		msg.title = "убрал(-a) участника из"
 		format = "~%s~"
@@ -297,7 +302,7 @@ func projectRole(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	}
 	msg := NewTgMsg()
 	msg.title = "изменил(-a) роль пользователя в"
-	msg.body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), translateMap(roleTranslation, act.OldValue), translateMap(roleTranslation, &act.NewValue))
+	msg.body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
 	return msg
 }
 
@@ -365,9 +370,26 @@ func projectDefault(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	msg.title = "изменил(-a) в"
 
 	if act.OldValue != nil {
-		msg.body += Stelegramf("*%s*: ~%s~ %s", fieldsTranslation[af], *act.OldValue, act.NewValue)
+		msg.body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *act.OldValue, act.NewValue)
 	} else {
-		msg.body += Stelegramf("*%s*: %s", fieldsTranslation[af], act.NewValue)
+		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
 	}
 	return msg
+}
+
+func getUserTgProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) []userTg {
+	users := make(UserRegistry)
+	users.addUser(act.Actor, actionAuthor)
+
+	addDefaultWatchers(tx, act.ProjectId, users)
+	addIssueUsers(act.NewIssue, users)
+
+	if *act.Field != actField.Issue.Field.String() {
+		addProjectAdmin(tx, act.ProjectId, users)
+	}
+
+	if err := users.LoadProjectSettings(tx, act.ProjectId, actionAuthor); err != nil {
+		return []userTg{}
+	}
+	return users.FilterActivity(act.Field, act.Verb, actField.Project.Field.String(), shouldProjectNotify, actionAuthor)
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/go-telegram/bot"
@@ -43,7 +44,7 @@ func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNot
 		return nil
 	}
 
-	act.Issue = preloadIssueActivity(tx, act.IssueId, act.Issue)
+	act.Issue = preloadIssueActivity(tx, act.IssueId)
 	msg, err := formatIssueActivity(act)
 	if err != nil {
 		return nil
@@ -58,11 +59,8 @@ func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNot
 	return &notify
 }
 
-func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) *dao.Issue {
-	if issue == nil {
-		return nil
-	}
-
+func preloadIssueActivity(tx *gorm.DB, id uuid.UUID) *dao.Issue {
+	var issue dao.Issue
 	if err := tx.Unscoped().
 		Joins("Author").
 		Joins("Workspace").
@@ -77,7 +75,7 @@ func preloadIssueActivity(tx *gorm.DB, id uuid.UUID, issue *dao.Issue) *dao.Issu
 		return nil
 	}
 
-	return issue
+	return &issue
 }
 
 func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
@@ -96,10 +94,10 @@ func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
 
 	res.title = fmt.Sprintf(
 		"*%s* %s [%s](%s)",
-		act.Actor.GetName(),
+		bot.EscapeMarkdown(act.Actor.GetName()),
 		bot.EscapeMarkdown(res.title),
 		bot.EscapeMarkdown(act.Issue.FullIssueName()),
-		act.Issue.URL,
+		act.Issue.URL.String(),
 	)
 
 	return res, nil
@@ -124,19 +122,19 @@ func issueDefault(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	msg.title = "изменил(-a)"
 
 	if af == actField.Priority.Field {
-		oldValue = translateMap(priorityTranslation, act.OldValue)
-		newValue = translateMap(priorityTranslation, &act.NewValue)
+		oldValue = types.TranslateMap(types.PriorityTranslation, act.OldValue)
+		newValue = types.TranslateMap(types.PriorityTranslation, &act.NewValue)
 	}
 
 	if oldValue != "" {
 		msg.body += Stelegramf("*%s*: ~%s~ %s",
-			fieldsTranslation[af],
+			types.FieldsTranslation[af],
 			oldValue,
 			newValue,
 		)
 	} else {
 		msg.body += Stelegramf("*%s*: %s",
-			fieldsTranslation[af],
+			types.FieldsTranslation[af],
 			newValue,
 		)
 	}
@@ -389,7 +387,7 @@ func issueTargetDate(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 
 	msg.title = "изменил(-a)"
 	format := "*%s*: "
-	values := []any{fieldsTranslation[af]}
+	values := []any{types.FieldsTranslation[af]}
 	if act.OldValue != nil && *act.OldValue != "<nil>" {
 		format += "~%s~ "
 		key := targetDateTimeZ + "_old"
@@ -419,4 +417,18 @@ func issueProject(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 		act.NewProject.Name,
 	)
 	return msg
+}
+
+func getUserTgIdIssueActivity(tx *gorm.DB, act *dao.IssueActivity) []userTg {
+	users := make(UserRegistry)
+	users.addUser(act.Actor, actionAuthor)
+
+	addOriginalCommentAuthor(tx, act, users)
+	addDefaultWatchers(tx, act.ProjectId, users)
+	addIssueUsers(act.Issue, users)
+
+	if err := users.LoadProjectSettings(tx, act.ProjectId, issueAuthor); err != nil {
+		return []userTg{}
+	}
+	return users.FilterActivity(act.Field, act.Verb, actField.Issue.Field.String(), shouldProjectNotify, issueAuthor)
 }
