@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/go-telegram/bot"
@@ -94,10 +95,10 @@ func formatDocActivity(act *dao.DocActivity) (TgMsg, error) {
 
 	res.title = fmt.Sprintf(
 		"*%s* %s [%s](%s)",
-		act.Actor.GetName(),
+		bot.EscapeMarkdown(act.Actor.GetName()),
 		bot.EscapeMarkdown(res.title),
 		bot.EscapeMarkdown(fmt.Sprintf("%s/%s", act.Workspace.Slug, docTitle)),
-		act.Doc.URL,
+		act.Doc.URL.String(),
 	)
 
 	return res, nil
@@ -182,7 +183,7 @@ func docMember(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 func docRole(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	var format string
-	values := []any{translateMap(roleTranslation, act.OldValue), translateMap(roleTranslation, &act.NewValue)}
+	values := []any{types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue)}
 	msg.title = "изменил(-a) роли в документе"
 	switch af {
 	case actField.ReaderRole.Field:
@@ -234,9 +235,23 @@ func docDefault(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 	msg.title = "изменил(-a) в документе"
 
 	if act.OldValue != nil {
-		msg.body += Stelegramf("*%s*: ~%s~ %s", fieldsTranslation[af], *act.OldValue, act.NewValue)
+		msg.body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *act.OldValue, act.NewValue)
 	} else {
-		msg.body += Stelegramf("*%s*: %s", fieldsTranslation[af], act.NewValue)
+		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
 	}
 	return msg
+}
+
+func getUserTgDocActivity(tx *gorm.DB, act *dao.DocActivity) []userTg {
+	users := make(UserRegistry)
+	users.addUser(act.Actor, actionAuthor)
+	users.addUser(act.Doc.Author, docAuthor)
+
+	addWorkspaceAdmin(tx, act.WorkspaceId, users)
+	addDocMembers(tx, act.DocId, users)
+
+	if err := users.LoadWorkspaceSettings(tx, act.WorkspaceId, actionAuthor); err != nil {
+		return []userTg{}
+	}
+	return users.FilterActivity(act.Field, act.Verb, actField.Doc.Field.String(), shouldWorkspaceNotify, actionAuthor)
 }

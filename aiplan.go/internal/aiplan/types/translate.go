@@ -1,8 +1,8 @@
-package tg
+package types
 
 import actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 
-var fieldsTranslation map[actField.ActivityField]string = map[actField.ActivityField]string{
+var FieldsTranslation map[actField.ActivityField]string = map[actField.ActivityField]string{
 	actField.Name.Field:          "Название",
 	actField.Parent.Field:        "Родитель",
 	actField.Priority.Field:      "Приоритет",
@@ -22,15 +22,16 @@ var fieldsTranslation map[actField.ActivityField]string = map[actField.ActivityF
 	actField.Title.Field:         "Название",
 }
 
-var priorityTranslation map[string]string = map[string]string{
+var PriorityTranslation map[string]string = map[string]string{
 	"urgent": "Критический",
 	"high":   "Высокий",
 	"medium": "Средний",
 	"low":    "Низкий",
 	"":       "Не выбран",
+	"<nil>":  "Не выбран",
 }
 
-var statusTranslation map[string]string = map[string]string{
+var StatusTranslation map[string]string = map[string]string{
 	"backlog":   "Создано",
 	"unstarted": "Не начато",
 	"cancelled": "Отменено",
@@ -38,13 +39,13 @@ var statusTranslation map[string]string = map[string]string{
 	"started":   "Начато",
 }
 
-var roleTranslation map[string]string = map[string]string{
+var RoleTranslation map[string]string = map[string]string{
 	"5":  "Гость",
 	"10": "Участник",
 	"15": "Администратор",
 }
 
-func translateMap(tMap map[string]string, str *string) string {
+func TranslateMap(tMap map[string]string, str *string) string {
 	key := "<nil>"
 	if str != nil {
 		key = *str

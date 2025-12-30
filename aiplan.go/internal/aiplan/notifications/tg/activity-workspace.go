@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/go-telegram/bot"
@@ -86,10 +87,10 @@ func formatWorkspaceActivity(act *dao.WorkspaceActivity) (TgMsg, error) {
 
 	res.title = fmt.Sprintf(
 		"*%s* %s [%s](%s)",
-		act.Actor.GetName(),
+		bot.EscapeMarkdown(act.Actor.GetName()),
 		bot.EscapeMarkdown(res.title),
 		bot.EscapeMarkdown(fmt.Sprintf("%s", act.Workspace.Slug)),
-		act.Workspace.URL,
+		act.Workspace.URL.String(),
 	)
 
 	return res, nil
@@ -142,7 +143,7 @@ func workspaceDescription(act *dao.WorkspaceActivity, af actField.ActivityField)
 		return msg
 	}
 	msg.title = "изменил(-a) в пространстве"
-	msg.body += Stelegramf("*%s*: \n```\n%s```", fieldsTranslation[af], utils.HtmlToTg(act.NewValue))
+	msg.body += Stelegramf("*%s*: \n```\n%s```", types.FieldsTranslation[af], utils.HtmlToTg(act.NewValue))
 	return msg
 }
 
@@ -171,7 +172,7 @@ func workspaceMember(act *dao.WorkspaceActivity, af actField.ActivityField) TgMs
 	switch act.Verb {
 	case actField.VerbAdded:
 		msg.title = "добавил(-a) в пространство"
-		msg.body = Stelegramf("__%s__\n*Роль:* %s", getUserName(act.NewMember), translateMap(roleTranslation, &act.NewValue))
+		msg.body = Stelegramf("__%s__\n*Роль:* %s", getUserName(act.NewMember), types.TranslateMap(types.RoleTranslation, &act.NewValue))
 	case actField.VerbRemoved:
 		msg.title = "убрал(-a) из пространства"
 		msg.body = Stelegramf("~%s~", getUserName(act.OldMember))
@@ -199,7 +200,7 @@ func workspaceRole(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg 
 		return msg
 	}
 	msg.title = "изменил(-a) роль пользователя в пространстве"
-	msg.body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), translateMap(roleTranslation, act.OldValue), translateMap(roleTranslation, &act.NewValue))
+	msg.body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
 	return msg
 }
 
@@ -222,4 +223,15 @@ func workspaceLogo(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg 
 	msg.title = "изменил(-a) в пространстве"
 	msg.body = Stelegramf("*Логотип пространства*")
 	return msg
+}
+
+func getUserTgWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) []userTg {
+	users := make(UserRegistry)
+	users.addUser(act.Actor, actionAuthor)
+	addWorkspaceAdmin(tx, act.WorkspaceId, users)
+
+	if err := users.LoadWorkspaceSettings(tx, act.WorkspaceId, actionAuthor); err != nil {
+		return []userTg{}
+	}
+	return users.FilterActivity(act.Field, act.Verb, actField.Workspace.Field.String(), shouldWorkspaceNotify, actionAuthor)
 }
