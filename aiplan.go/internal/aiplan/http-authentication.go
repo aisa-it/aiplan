@@ -122,6 +122,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				if err := dao.UpdateUserLastActivityTime(config.DB, &user); err != nil {
 					EError(c, err)
 				}
+				c.Set("user", &user)
 				return next(AuthContext{c, &user, accessToken, nil, true})
 			}
 
@@ -229,7 +230,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 			}
 
 			user.Email = strings.ToLower(user.Email)
-
+			c.Set("user", user)
 			return next(AuthContext{c, user, accessToken, refreshToken, false})
 		}
 	}

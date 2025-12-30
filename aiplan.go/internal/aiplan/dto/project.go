@@ -46,8 +46,6 @@ type Project struct {
 
 	ProjectLead *UserLight `json:"project_lead_detail" extensions:"x-nullable"`
 
-	RulesScript *string `json:"rules_script,omitempty" extensions:"x-nullable"`
-
 	Workspace *WorkspaceLight `json:"workspace_detail,omitempty" extensions:"x-nullable"`
 }
 
@@ -147,4 +145,14 @@ type JoinProjectsSuccessResponse struct {
 type CheckProjectIdentifierAvailabilityResponse struct {
 	Exists      int      `json:"exists" example:"1"`
 	Identifiers []string `json:"identifiers" example:"[\"PROJECT1\", \"PROJECT2\"]"`
+}
+
+// UpdateRulesScriptRequest представляет запрос на обновление скрипта правил проекта
+type UpdateRulesScriptRequest struct {
+	RulesScript *string `json:"rules_script,omitempty" validate:"omitempty,max=10000" extensions:"x-nullable"`
+}
+
+// RulesScriptResponse представляет ответ с скриптом правил проекта
+type RulesScriptResponse struct {
+	RulesScript *string `json:"rules_script" extensions:"x-nullable"`
 }

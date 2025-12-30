@@ -111,82 +111,87 @@ func main() {
 		}
 		slog.Info("Filtered migratable columns", "count", len(columnsToMigrate), "skipped", len(allColumns)-len(columnsToMigrate))
 
-		// Execute all migrations in a single transaction
-		err = dbForMigration.Transaction(func(tx *gorm.DB) error {
-			// Step 1: Drop all generated columns (they block type changes)
-			slog.Info("Dropping all generated columns")
-			if err := dao.DropAllGeneratedColumns(tx); err != nil {
-				return fmt.Errorf("failed to drop generated columns: %w", err)
-			}
-			slog.Info("All generated columns dropped")
-
-			// Step 2: Clean orphaned foreign keys (пока FK ещё существуют в БД)
-			slog.Info("Cleaning orphaned foreign keys")
-			if err := dao.CleanAllOrphanedForeignKeys(tx); err != nil {
-				return fmt.Errorf("failed to clean all orphaned foreign keys: %w", err)
-			}
-			slog.Info("All orphaned foreign keys cleaned")
-
-			// Step 3: Drop all FK constraints
-			slog.Info("Dropping all foreign key constraints")
-			if err := dao.DropAllForeignKeys(tx); err != nil {
-				return fmt.Errorf("failed to drop foreign keys: %w", err)
-			}
-			slog.Info("All foreign key constraints dropped")
-
-			// Step 4: Drop all CHECK constraints (including linked_issues check:id1<id2)
-			slog.Info("Dropping all check constraints")
-			if err := dao.DropAllCheckConstraints(tx); err != nil {
-				return fmt.Errorf("failed to drop check constraints: %w", err)
-			}
-			slog.Info("All check constraints dropped")
-
-			// Step 5: Clean invalid UUIDs (set to NULL)
-			slog.Info("Cleaning invalid UUID values", "count", len(columnsToMigrate))
-			for _, col := range columnsToMigrate {
-				if err := dao.CleanInvalidUUIDs(tx, col.Table, col.Column); err != nil {
-					return fmt.Errorf("failed to clean invalid UUIDs in %s.%s: %w", col.Table, col.Column, err)
+		// Пропускаем UUID миграцию если нет колонок для миграции
+		if len(columnsToMigrate) > 0 {
+			// Execute all migrations in a single transaction
+			err = dbForMigration.Transaction(func(tx *gorm.DB) error {
+				// Step 1: Drop all generated columns (they block type changes)
+				slog.Info("Dropping all generated columns")
+				if err := dao.DropAllGeneratedColumns(tx); err != nil {
+					return fmt.Errorf("failed to drop generated columns: %w", err)
 				}
-			}
-			slog.Info("All invalid UUIDs cleaned")
+				slog.Info("All generated columns dropped")
 
-			// Step 6: Replace column types
-			slog.Info("Replacing column types", "count", len(columnsToMigrate))
-			for _, col := range columnsToMigrate {
-				slog.Info("Migrating column", "table", col.Table, "column", col.Column, "currentType", col.CurrentType)
-				if err := utils.ReplaceColumnTypeWithCast(tx, col, "uuid"); err != nil {
-					return fmt.Errorf("failed to replace column %s.%s (type %s): %w", col.Table, col.Column, col.CurrentType, err)
+				// Step 2: Clean orphaned foreign keys (пока FK ещё существуют в БД)
+				slog.Info("Cleaning orphaned foreign keys")
+				if err := dao.CleanAllOrphanedForeignKeys(tx); err != nil {
+					return fmt.Errorf("failed to clean all orphaned foreign keys: %w", err)
 				}
-			}
-			slog.Info("All column types replaced successfully")
+				slog.Info("All orphaned foreign keys cleaned")
 
-			// Step 7: Clean known self-referencing FK (они могли не существовать в БД)
-			slog.Info("Cleaning known self-referencing foreign keys")
-			selfRefFKs := []struct {
-				Table            string
-				Column           string
-				ReferencedTable  string
-				ReferencedColumn string
-			}{
-				{"issues", "parent_id", "issues", "id"},
-				{"docs", "parent_id", "docs", "id"},
-				{"doc_fields", "parent_id", "doc_fields", "id"},
-			}
-			for _, fk := range selfRefFKs {
-				if err := dao.CleanOrphanedForeignKeys(tx, fk.Table, fk.Column, fk.ReferencedTable, fk.ReferencedColumn); err != nil {
-					slog.Warn("Failed to clean self-referencing FK", "table", fk.Table, "column", fk.Column, "err", err)
+				// Step 3: Drop all FK constraints
+				slog.Info("Dropping all foreign key constraints")
+				if err := dao.DropAllForeignKeys(tx); err != nil {
+					return fmt.Errorf("failed to drop foreign keys: %w", err)
 				}
+				slog.Info("All foreign key constraints dropped")
+
+				// Step 4: Drop all CHECK constraints (including linked_issues check:id1<id2)
+				slog.Info("Dropping all check constraints")
+				if err := dao.DropAllCheckConstraints(tx); err != nil {
+					return fmt.Errorf("failed to drop check constraints: %w", err)
+				}
+				slog.Info("All check constraints dropped")
+
+				// Step 5: Clean invalid UUIDs (set to NULL)
+				slog.Info("Cleaning invalid UUID values", "count", len(columnsToMigrate))
+				for _, col := range columnsToMigrate {
+					if err := dao.CleanInvalidUUIDs(tx, col.Table, col.Column); err != nil {
+						return fmt.Errorf("failed to clean invalid UUIDs in %s.%s: %w", col.Table, col.Column, err)
+					}
+				}
+				slog.Info("All invalid UUIDs cleaned")
+
+				// Step 6: Replace column types
+				slog.Info("Replacing column types", "count", len(columnsToMigrate))
+				for _, col := range columnsToMigrate {
+					slog.Info("Migrating column", "table", col.Table, "column", col.Column, "currentType", col.CurrentType)
+					if err := utils.ReplaceColumnTypeWithCast(tx, col, "uuid"); err != nil {
+						return fmt.Errorf("failed to replace column %s.%s (type %s): %w", col.Table, col.Column, col.CurrentType, err)
+					}
+				}
+				slog.Info("All column types replaced successfully")
+
+				// Step 7: Clean known self-referencing FK (они могли не существовать в БД)
+				slog.Info("Cleaning known self-referencing foreign keys")
+				selfRefFKs := []struct {
+					Table            string
+					Column           string
+					ReferencedTable  string
+					ReferencedColumn string
+				}{
+					{"issues", "parent_id", "issues", "id"},
+					{"docs", "parent_id", "docs", "id"},
+					{"doc_fields", "parent_id", "doc_fields", "id"},
+				}
+				for _, fk := range selfRefFKs {
+					if err := dao.CleanOrphanedForeignKeys(tx, fk.Table, fk.Column, fk.ReferencedTable, fk.ReferencedColumn); err != nil {
+						slog.Warn("Failed to clean self-referencing FK", "table", fk.Table, "column", fk.Column, "err", err)
+					}
+				}
+				slog.Info("Self-referencing foreign keys cleaned")
+
+				return nil
+			})
+
+			if err != nil {
+				slog.Error("UUID migration failed", "err", err)
+				os.Exit(1)
 			}
-			slog.Info("Self-referencing foreign keys cleaned")
-
-			return nil
-		})
-
-		if err != nil {
-			slog.Error("UUID migration failed", "err", err)
-			os.Exit(1)
+			slog.Info("UUID migration completed successfully")
+		} else {
+			slog.Info("No UUID columns need migration, skipping UUID migration steps")
 		}
-		slog.Info("UUID migration completed successfully")
 
 		// Step 8: AutoMigrate models (в отдельной транзакции)
 		err = dbForMigration.Transaction(func(tx *gorm.DB) error {
