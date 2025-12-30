@@ -108,6 +108,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	var migrateWithNewState bool
 	var labelIds []uuid.UUID
 	var stateIds []uuid.UUID
 	stateMap := make(map[uuid.UUID]dao.State)
@@ -149,7 +150,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		if v, ok := param.StateId.GetValue(); ok && v != nil {
 			var state dao.State
 			if err := s.db.Where("workspace_id = ?", srcIssue.WorkspaceId).
-				Where("project_id = ?", srcIssue.ProjectId).
+				Where("project_id = ?", targetProject.ID).
 				Where("id = ?", *v).
 				First(&state).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -167,6 +168,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 			srcIssue.StateId = *v
 			srcIssue.State = &state
+			migrateWithNewState = true
 		}
 
 		if v, ok := param.Priority.GetValue(); ok {
@@ -250,7 +252,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 
 		for i, issue := range srcIssues {
-			result, err := s.CheckIssueBeforeMigrate(issue, targetProject)
+			result, err := s.CheckIssueBeforeMigrate(issue, targetProject, migrateWithNewState)
 			if err != nil {
 				return EError(c, err)
 			}
@@ -685,7 +687,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		}
 
 		for i, issue := range srcIssues {
-			result, err := s.CheckIssueBeforeMigrate(issue, targetProject)
+			result, err := s.CheckIssueBeforeMigrate(issue, targetProject, false)
 			if err != nil {
 				return EError(c, err)
 			}
@@ -1024,7 +1026,7 @@ func (st *stateTarget) getID() uuid.NullUUID {
 	return uuid.NullUUID{}
 }
 
-func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao.Project) (IssueCheckResult, error) {
+func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao.Project, migrateWithNewState bool) (IssueCheckResult, error) {
 	res := IssueCheckResult{
 		SrcIssue:      srcIssue,
 		TargetProject: targetProject,
@@ -1107,22 +1109,26 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 	// Check state
 	{
-		if err := s.db.Where("project_id = ?", targetProject.ID).
-			Where("name = ?", srcIssue.State.Name).
-			Where("\"group\" = ?", srcIssue.State.Group).
-			Where("color = ?", srcIssue.State.Color).
-			First(&res.TargetState).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				res.Errors = append(res.Errors, ErrClause{
-					Error:           ErrStateNotFound,
-					SrcIssueId:      &srcIssue.ID,
-					IssueSequenceId: srcIssue.SequenceId,
-					Type:            "state",
-					Entities:        []uuid.UUID{srcIssue.State.ID},
-				})
-			} else {
-				return res, err
+		if migrateWithNewState == false {
+			if err := s.db.Where("project_id = ?", targetProject.ID).
+				Where("name = ?", srcIssue.State.Name).
+				Where("\"group\" = ?", srcIssue.State.Group).
+				Where("color = ?", srcIssue.State.Color).
+				First(&res.TargetState).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					res.Errors = append(res.Errors, ErrClause{
+						Error:           ErrStateNotFound,
+						SrcIssueId:      &srcIssue.ID,
+						IssueSequenceId: srcIssue.SequenceId,
+						Type:            "state",
+						Entities:        []uuid.UUID{srcIssue.State.ID},
+					})
+				} else {
+					return res, err
+				}
 			}
+		} else {
+			res.TargetState = *srcIssue.State
 		}
 	}
 
@@ -1169,61 +1175,103 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 		return nil
 	}
 
-	// Add assignees
-	if len(srcIssue.AssigneeIDs) > 0 {
-		if err := tx.Model(&dao.IssueAssignee{}).
-			Where("issue_id = ?", srcIssue.ID).
-			Update("project_id", issue.TargetProject.ID).Error; err != nil {
+	{ // Add assignees
+		var oldAssignees []dao.IssueAssignee
+		if err := tx.
+			Where("issue_id = ?", srcIssue.ID).Find(&oldAssignees).Error; err != nil {
 			return err
 		}
-	}
-	if len(srcIssue.AssigneeIDs) == 0 && len(issue.TargetProject.DefaultAssignees) > 0 {
-		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-		var newAssignees []dao.IssueAssignee
-		for _, assignee := range issue.TargetProject.DefaultAssignees {
-			newAssignees = append(newAssignees, dao.IssueAssignee{
-				Id:          dao.GenUUID(),
-				AssigneeId:  assignee,
-				IssueId:     srcIssue.ID,
-				ProjectId:   issue.TargetProject.ID,
-				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: userID,
-				UpdatedById: userID,
-			})
+
+		diffAssignees := diffUUID(
+			append(srcIssue.AssigneeIDs, issue.TargetProject.DefaultAssignees...),
+			utils.SliceToSlice(&oldAssignees, func(t *dao.IssueAssignee) uuid.UUID { return t.AssigneeId }),
+		)
+
+		if len(diffAssignees.del) > 0 {
+			if err := tx.
+				Where("issue_id = ?", srcIssue.ID).
+				Where("assignee_id IN (?)", diffAssignees.del).Unscoped().
+				Delete(&dao.IssueAssignee{}).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
-			return err
+
+		if len(diffAssignees.update) > 0 {
+			if err := tx.Model(&dao.IssueAssignee{}).
+				Where("issue_id = ? AND assignee_id IN (?)", srcIssue.ID, diffAssignees.update).
+				Update("project_id", issue.TargetProject.ID).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(diffAssignees.add) > 0 {
+			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+			newAssignees := make([]dao.IssueAssignee, len(diffAssignees.add))
+			for i, assignee := range diffAssignees.add {
+				newAssignees[i] = dao.IssueAssignee{
+					Id:          dao.GenUUID(),
+					AssigneeId:  assignee,
+					IssueId:     srcIssue.ID,
+					ProjectId:   issue.TargetProject.ID,
+					WorkspaceId: srcIssue.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				}
+			}
+			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
+				return err
+			}
 		}
 	}
 
-	// Add watchers
-	if len(srcIssue.WatcherIDs) > 0 {
-		if err := tx.Model(&dao.IssueWatcher{}).
-			Where("issue_id = ?", srcIssue.ID).
-			Update("project_id", issue.TargetProject.ID).Error; err != nil {
+	{ // Add watchers
+		var oldWatchers []dao.IssueWatcher
+		if err := tx.
+			Where("issue_id = ?", srcIssue.ID).Find(&oldWatchers).Error; err != nil {
 			return err
 		}
-	}
 
-	if len(srcIssue.WatcherIDs) == 0 && len(issue.TargetProject.DefaultWatchers) > 0 {
-		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-		var newWatchers []dao.IssueWatcher
-		for _, watcher := range issue.TargetProject.DefaultWatchers {
-			newWatchers = append(newWatchers, dao.IssueWatcher{
-				Id:          dao.GenUUID(),
-				WatcherId:   watcher,
-				IssueId:     srcIssue.ID,
-				ProjectId:   issue.TargetProject.ID,
-				WorkspaceId: srcIssue.WorkspaceId,
-				CreatedById: userID,
-				UpdatedById: userID,
-			})
+		diffWatchers := diffUUID(
+			append(srcIssue.WatcherIDs, issue.TargetProject.DefaultWatchers...),
+			utils.SliceToSlice(&oldWatchers, func(t *dao.IssueWatcher) uuid.UUID { return t.WatcherId }),
+		)
+
+		if len(diffWatchers.del) > 0 {
+			if err := tx.
+				Where("issue_id = ?", srcIssue.ID).
+				Where("watcher_id IN (?)", diffWatchers.del).Unscoped().
+				Delete(&dao.IssueWatcher{}).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
-			return err
+
+		if len(diffWatchers.update) > 0 {
+			if err := tx.Model(&dao.IssueWatcher{}).
+				Where("issue_id = ? AND watcher_id IN (?)", srcIssue.ID, diffWatchers.update).
+				Update("project_id", issue.TargetProject.ID).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(diffWatchers.add) > 0 {
+			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+			newWatchers := make([]dao.IssueWatcher, len(diffWatchers.add))
+			for i, watcher := range diffWatchers.add {
+				newWatchers[i] = dao.IssueWatcher{
+					Id:          dao.GenUUID(),
+					WatcherId:   watcher,
+					IssueId:     srcIssue.ID,
+					ProjectId:   issue.TargetProject.ID,
+					WorkspaceId: srcIssue.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				}
+			}
+			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
+				return err
+			}
 		}
 	}
-
 	// Labels
 	{
 		for srcLabelId, targetLabelId := range issue.MapLabelIds {
@@ -1611,6 +1659,47 @@ func linkedIdToStringKey(s1, s2 uuid.UUID) string {
 	} else {
 		return ""
 	}
+}
+
+type diffResult struct {
+	add    []uuid.UUID
+	del    []uuid.UUID
+	update []uuid.UUID
+}
+
+func diffUUID(req []uuid.UUID, cur []uuid.UUID) diffResult {
+	var result diffResult
+	type action int
+
+	reqMap := make(map[uuid.UUID]action, len(req)+len(cur))
+	add := action(1)
+	del := action(-1)
+	update := action(0)
+
+	for _, id := range req {
+		reqMap[id] = add
+	}
+
+	for _, id := range cur {
+		if _, ok := reqMap[id]; ok {
+			reqMap[id] = update
+		} else {
+			reqMap[id] = del
+		}
+	}
+
+	for id, v := range reqMap {
+		switch v {
+		case add:
+			result.add = append(result.add, id)
+		case del:
+			result.del = append(result.del, id)
+		case update:
+			result.update = append(result.update, id)
+		}
+	}
+
+	return result
 }
 
 // NewIssueParam изменяемы поля при копировании одиночной задачи

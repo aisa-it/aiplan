@@ -184,7 +184,6 @@ func (pwc *ProjectWithCount) ToDTO() *dto.Project {
 		CreatedAt:    pwc.CreatedAt,
 		UpdatedAt:    pwc.UpdatedAt,
 		ProjectLead:  pwc.ProjectLead.ToLightDTO(),
-		RulesScript:  pwc.RulesScript,
 		Workspace:    pwc.Workspace.ToLightDTO(),
 	}
 }
@@ -207,10 +206,6 @@ func (project *Project) ToDTO() *dto.Project {
 		UpdatedAt:    project.UpdatedAt,
 		ProjectLead:  project.ProjectLead.ToLightDTO(),
 		Workspace:    project.Workspace.ToLightDTO(),
-	}
-	if project.CurrentUserMembership != nil && project.CurrentUserMembership.Role == types.AdminRole {
-		// только для админов проекта
-		projectDTO.RulesScript = project.RulesScript
 	}
 
 	return &projectDTO

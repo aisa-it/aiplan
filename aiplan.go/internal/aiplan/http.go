@@ -41,6 +41,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
@@ -132,7 +133,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.HideBanner = true
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		// Ignore brone pipe errors
-		if strings.Contains(err.Error(), "broken pipe") {
+		if err == nil || strings.Contains(err.Error(), "broken pipe") {
 			return
 		}
 
@@ -369,11 +370,33 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		},
 	}))
 	e.Use(echoprometheus.NewMiddleware("aiplan"))
-	e.Pre(middleware.AddTrailingSlashWithConfig(middleware.TrailingSlashConfig{
-		Skipper: func(c echo.Context) bool {
-			return strings.Contains(c.Request().URL.Path, "swagger")
-		},
-	}))
+	e.Pre(
+		middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+			Skipper: func(c echo.Context) bool {
+				return !strings.HasPrefix(c.Path(), "/api")
+			},
+			Store: middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
+				Rate:      20,
+				Burst:     50,
+				ExpiresIn: time.Minute * 3,
+			}),
+			IdentifierExtractor: func(c echo.Context) (string, error) {
+				if u := c.Get("user"); u != nil {
+					return u.(*dao.User).ID.String(), nil
+				}
+				return c.RealIP() + c.Request().UserAgent(), nil
+			},
+			DenyHandler: func(c echo.Context, identifier string, err error) error {
+				slog.Warn("Rate limit exceed", "identifier", identifier)
+				return EErrorDefined(c, apierrors.ErrRateLimitExceed)
+			},
+		}),
+		middleware.AddTrailingSlashWithConfig(middleware.TrailingSlashConfig{
+			Skipper: func(c echo.Context) bool {
+				return strings.Contains(c.Request().URL.Path, "swagger")
+			},
+		}),
+	)
 
 	e.Validator = NewRequestValidator()
 
