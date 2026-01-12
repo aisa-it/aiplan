@@ -272,12 +272,12 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 		// Post-update activity tracking
 		newWorkspaceMap := StructToJSONMap(workspace)
 		if changeOwner {
-			newWorkspaceMap["owner_id_activity_val"] = newMemberOwnerEmail
-			newWorkspaceMap["owner_id_updateScopeId"] = newMemberOwnerId
-			newWorkspaceMap["owner_id_field_log"] = activities.Owner
-			oldWorkspaceMap["owner_id_activity_val"] = user.Email
-			oldWorkspaceMap["owner_id_updateScopeId"] = user.ID
-			oldWorkspaceMap["owner_id_field_log"] = activities.Owner
+			newWorkspaceMap["owner_activity_val"] = newMemberOwnerEmail
+			newWorkspaceMap["owner_updateScopeId"] = newMemberOwnerId
+			newWorkspaceMap["owner_field_log"] = activities.Owner.Field
+			oldWorkspaceMap["owner_activity_val"] = user.Email
+			oldWorkspaceMap["owner_updateScopeId"] = user.ID
+			oldWorkspaceMap["owner_field_log"] = activities.Owner.Field
 		}
 
 		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newWorkspaceMap, oldWorkspaceMap, workspace, user)
