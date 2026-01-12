@@ -50,22 +50,24 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		workspace := c.(WorkspaceContext).Workspace
 		user := c.(WorkspaceContext).User
 
-		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
-			var exist bool
-			if err := s.db.Model(&dao.Project{}).
-				Select("EXISTS(?)",
-					s.db.Model(&dao.Project{}).
-						Select("1").
-						Where("encode(hash, 'hex') = ?", etag),
-				).
-				Find(&exist).Error; err != nil {
-				return EError(c, err)
-			}
+		/*
+			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			   			var exist bool
+			   			if err := s.db.Model(&dao.Project{}).
+			   				Select("EXISTS(?)",
+			   					s.db.Model(&dao.Project{}).
+			   						Select("1").
+			   						Where("encode(hash, 'hex') = ?", etag),
+			   				).
+			   				Find(&exist).Error; err != nil {
+			   				return EError(c, err)
+			   			}
 
-			if exist {
-				return c.NoContent(http.StatusNotModified)
-			}
-		}
+			   			if exist {
+			   				return c.NoContent(http.StatusNotModified)
+			   			}
+			   		}
+		*/
 
 		// Joins faster than Preload(clause.Associations)
 		var project dao.Project
@@ -90,13 +92,17 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EError(c, err)
 		}
 
-		if project.CurrentUserMembership == nil {
-			return EErrorDefined(c, apierrors.ErrProjectNotFound)
+		var projectMember dao.ProjectMember
+		if err := s.db.Where("project_id = ?", project.ID).Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return EErrorDefined(c, apierrors.ErrProjectNotFound)
+			}
+			return EError(c, err)
 		}
 
 		project.Workspace = &workspace
 
-		return next(ProjectContext{c.(WorkspaceContext), project, *project.CurrentUserMembership})
+		return next(ProjectContext{c.(WorkspaceContext), project, projectMember})
 	}
 }
 
@@ -126,6 +132,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	workspaceGroup.GET("/project-identifiers/", s.checkProjectIdentifierAvailability)
 
 	projectGroup.GET("/members/", s.getProjectMemberList)
+	projectGroup.GET("/members/me/", s.getProjectCurrentMembership)
 	projectGroup.GET("/members/:memberId/", s.getProjectMember)
 	projectGroup.PATCH("/members/:memberId/", s.updateProjectMember)
 	projectGroup.DELETE("/members/:memberId/", s.deleteProjectMember)
@@ -172,6 +179,11 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectGroup.DELETE("/states/:stateId/", s.deleteState)
 
 	projectGroup.POST("/rules-log/", s.getRulesLog)
+
+	// Rules Script (только для админов проекта)
+	projectAdminGroup.GET("/rules-script/", s.getProjectRulesScript)
+	projectAdminGroup.PUT("/rules-script/", s.updateProjectRulesScript)
+	projectAdminGroup.DELETE("/rules-script/", s.deleteProjectRulesScript)
 
 	// Issue Templates
 	projectGroup.GET("/templates/", s.getProjectIssueTemplates)
@@ -740,6 +752,25 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 	return c.JSON(http.StatusOK, count)
 }
 
+// getProjectCurrentMembership godoc
+// @id getProjectCurrentMembership
+// @Summary Проекты (участники): получение информации о текущем членстве в проекте
+// @Description Возвращает информацию о членстве текущего пользователя в указанном проекте.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} dto.ProjectMember "Информация о членстве пользователя в проекте"
+// @Failure 404 {object} apierrors.DefinedError "Членство в проекте не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/me [get]
+func (s *Services) getProjectCurrentMembership(c echo.Context) error {
+	member := c.(ProjectContext).ProjectMember
+	return c.JSON(http.StatusOK, member.ToDTO())
+}
+
 // getProjectMember godoc
 // @id getProjectMember
 // @Summary Проекты (участники): получение информации об участнике проекта
@@ -847,9 +878,9 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		if requestedProjectMember.Role == types.GuestRole {
 			if requestedProjectMember.IsDefaultAssignee {
 				requestedProjectMember.IsDefaultAssignee = false
-				var defaultAssignees []string
+				var defaultAssignees []uuid.UUID
 				for _, assignee := range project.DefaultAssignees {
-					if assignee != requestedProjectMember.ID.String() {
+					if assignee != requestedProjectMember.ID {
 						defaultAssignees = append(defaultAssignees, assignee)
 					}
 				}
@@ -1272,9 +1303,9 @@ func (s *Services) addProjectToFavorites(c echo.Context) error {
 
 	projectID := req.ProjectID
 
-	userIdStr := user.ID.String()
+	userId := user.ID
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	project, err := dao.GetProject(s.db, workspace.Slug, userIdStr, projectID)
+	project, err := dao.GetProject(s.db, workspace.Slug, userId, projectID)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -1314,14 +1345,14 @@ func (s *Services) removeProjectFromFavorites(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	projectId := c.Param("projectId")
 
-	userIdStr := user.ID.String()
-	project, err := dao.GetProject(s.db, workspace.Slug, userIdStr, projectId)
+	userId := user.ID
+	project, err := dao.GetProject(s.db, workspace.Slug, userId, projectId)
 	if err != nil {
 		return EError(c, err)
 	}
 
 	if err := s.db.Where("project_id = ?", project.ID).
-		Where("user_id = ?", userIdStr).
+		Where("user_id = ?", userId).
 		Where("workspace_id = ?", project.Workspace.ID).
 		Delete(&dao.ProjectFavorites{}).Error; err != nil {
 		return EError(c, err)
@@ -1583,11 +1614,11 @@ func (s *Services) deleteProjectEstimate(c echo.Context) error {
 type IssueCreateRequest struct {
 	dto.Issue
 
-	BlockersList  []string `json:"blockers_list"`
-	AssigneesList []string `json:"assignees_list"`
-	WatchersList  []string `json:"watchers_list"`
-	LabelsList    []string `json:"labels_list"`
-	BlocksList    []string `json:"blocks_list"`
+	BlockersList  []uuid.UUID `json:"blockers_list"`
+	AssigneesList []uuid.UUID `json:"assignees_list"`
+	WatchersList  []uuid.UUID `json:"watchers_list"`
+	LabelsList    []uuid.UUID `json:"labels_list"`
+	BlocksList    []uuid.UUID `json:"blocks_list"`
 }
 
 // createIssue godoc
@@ -1636,14 +1667,6 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueNameEmpty)
 	}
 
-	var parentId uuid.NullUUID
-	if issue.ParentId != nil {
-		if u, err := uuid.FromString(*issue.ParentId); err == nil {
-			parentId.UUID = u
-			parentId.Valid = true
-		}
-	}
-
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	issueNew := dao.Issue{
 		ID:                  dao.GenUUID(),
@@ -1654,7 +1677,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		CompletedAt:         issue.CompletedAt,
 		SequenceId:          issue.SequenceId,
 		CreatedById:         user.ID,
-		ParentId:            parentId,
+		ParentId:            issue.ParentId,
 		ProjectId:           project.ID,
 		StateId:             issue.StateId,
 		UpdatedById:         uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -1677,7 +1700,7 @@ func (s *Services) createIssue(c echo.Context) error {
 			userIds := issue.WatchersList
 			userIds = append(userIds, issue.AssigneesList...)
 
-			if err := notifications.CreateDeadlineNotification(tx, &issueNew, &dateStr, &userIds); err != nil {
+			if err := notifications.CreateDeadlineNotification(tx, &issueNew, &dateStr, userIds); err != nil {
 				return err
 			}
 		}
@@ -1737,10 +1760,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			issue.AssigneesList = utils.SetToSlice(utils.SliceToSet(issue.AssigneesList))
 			var newAssignees []dao.IssueAssignee
 			for _, assignee := range issue.AssigneesList {
-				assigneeUUID := uuid.FromStringOrNil(assignee)
 				newAssignees = append(newAssignees, dao.IssueAssignee{
 					Id:          dao.GenUUID(),
-					AssigneeId:  assigneeUUID,
+					AssigneeId:  assignee,
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
@@ -1758,10 +1780,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			issue.WatchersList = utils.SetToSlice(utils.SliceToSet(issue.WatchersList))
 			var newWatchers []dao.IssueWatcher
 			for _, watcher := range issue.WatchersList {
-				watcherUUID := uuid.FromStringOrNil(watcher)
 				newWatchers = append(newWatchers, dao.IssueWatcher{
 					Id:          dao.GenUUID(),
-					WatcherId:   watcherUUID,
+					WatcherId:   watcher,
 					IssueId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
@@ -1830,17 +1851,16 @@ func (s *Services) createIssue(c echo.Context) error {
 		data := make(map[string]interface{})
 		oldData := make(map[string]interface{})
 
-		oldData["parent"] = nil
-		data["parent"] = issueNew.ParentId.UUID.String()
+		oldData["parent"] = uuid.NullUUID{}
+		data["parent"] = issueNew.ParentId.UUID
 
 		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityUpdatedActivity, data, oldData, issueNew, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-
 	}
 
-	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID.String()})
+	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID})
 }
 
 // ############# Labels methods ###################
@@ -2032,7 +2052,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 		// Post-update activity tracking
 		newLabelMap := StructToJSONMap(label)
 		newLabelMap["updateScope"] = "label"
-		newLabelMap["updateScopeId"] = labelId
+		newLabelMap["updateScopeId"] = label.ID
 
 		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
 		if err != nil {
@@ -2362,7 +2382,7 @@ func (s *Services) updateState(c echo.Context) error {
 	// Pre-update activity tracking
 	oldStateMap := StructToJSONMap(state)
 	oldStateMap["updateScope"] = "status"
-	oldStateMap["updateScopeId"] = stateId.String()
+	oldStateMap["updateScopeId"] = stateId
 	//TODO rate limit
 
 	var currentDefaultState dao.State
@@ -2423,7 +2443,7 @@ func (s *Services) updateState(c echo.Context) error {
 	newStateMap := StructToJSONMap(state)
 
 	newStateMap["updateScope"] = "status"
-	newStateMap["updateScopeId"] = stateId.String()
+	newStateMap["updateScopeId"] = stateId
 	if req.Default != nil && *req.Default == true {
 		newStateMap["default_activity_val"] = state.Name
 	}
@@ -2863,7 +2883,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 
 	oldTemplateMap := StructToJSONMap(template)
 	oldTemplateMap["updateScope"] = "template"
-	oldTemplateMap["updateScopeId"] = templateId
+	oldTemplateMap["updateScopeId"] = template.Id
 	// TODO rate limit
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
@@ -2893,7 +2913,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 		}
 		newTemplateMap := StructToJSONMap(template)
 		newTemplateMap["updateScope"] = "template"
-		newTemplateMap["updateScopeId"] = templateId
+		newTemplateMap["updateScopeId"] = template.Id
 
 		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newTemplateMap, oldTemplateMap, project, user)
 		if err != nil {
@@ -3063,7 +3083,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 func (s *Services) deleteProjectLogo(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-	oldLogoId := project.LogoId.UUID.String()
+	oldLogoId := project.LogoId.UUID
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -3084,10 +3104,10 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 
 	//Трекинг активности
 	oldMap := map[string]interface{}{
-		"logo": oldLogoId,
+		"logo": oldLogoId.String(),
 	}
 	newMap := map[string]interface{}{
-		"logo": uuid.NullUUID{}.UUID.String(),
+		"logo": uuid.Nil.String(),
 	}
 
 	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
@@ -3132,6 +3152,161 @@ func (s *Services) getProjectStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
+<<<<<<< HEAD
+=======
+// getProjectRulesScript godoc
+// @id getProjectRulesScript
+// @Summary Проекты: получение скрипта правил
+// @Description Возвращает скрипт правил проекта. Доступно только для админов проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} dto.RulesScriptResponse "Скрипт правил проекта"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на просмотр скрипта правил"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [get]
+func (s *Services) getProjectRulesScript(c echo.Context) error {
+	project := c.(ProjectContext).Project
+
+	response := dto.RulesScriptResponse{
+		RulesScript: project.RulesScript,
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// updateProjectRulesScript godoc
+// @id updateProjectRulesScript
+// @Summary Проекты: обновление скрипта правил
+// @Description Обновляет скрипт правил проекта. Доступно только для админов проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param request body dto.UpdateRulesScriptRequest true "Данные для обновления скрипта правил"
+// @Success 200 {object} dto.RulesScriptResponse "Обновленный скрипт правил"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные запроса"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на обновление скрипта правил"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [put]
+func (s *Services) updateProjectRulesScript(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+
+	var request dto.UpdateRulesScriptRequest
+	if err := c.Bind(&request); err != nil {
+		return EError(c, err)
+	}
+
+	if err := c.Validate(&request); err != nil {
+		return EError(c, err)
+	}
+
+	// Сохраняем старый скрипт для отслеживания активности
+	oldRulesScript := project.RulesScript
+
+	// Обновляем скрипт
+	project.RulesScript = request.RulesScript
+	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+	// Очищаем неразрывные пробелы
+	if project.RulesScript != nil {
+		*project.RulesScript = strings.ReplaceAll(*project.RulesScript, "\u00A0", " ")
+	}
+
+	// Обновляем в базе данных
+	if err := s.db.Model(&dao.Project{}).
+		Where("id = ?", project.ID).
+		Updates(map[string]interface{}{
+			"rules_script":  project.RulesScript,
+			"updated_by_id": project.UpdatedById,
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Отслеживаем активность
+	oldMap := map[string]interface{}{
+		"rules_script": oldRulesScript,
+	}
+	newMap := map[string]interface{}{
+		"rules_script": project.RulesScript,
+	}
+
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	response := dto.RulesScriptResponse{
+		RulesScript: project.RulesScript,
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// deleteProjectRulesScript godoc
+// @id deleteProjectRulesScript
+// @Summary Проекты: удаление скрипта правил
+// @Description Удаляет скрипт правил проекта. Доступно только для админов проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} dto.RulesScriptResponse "Пустой скрипт правил"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на удаление скрипта правил"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [delete]
+func (s *Services) deleteProjectRulesScript(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+
+	// Сохраняем старый скрипт для отслеживания активности
+	oldRulesScript := project.RulesScript
+
+	// Удаляем скрипт
+	project.RulesScript = nil
+	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+	// Обновляем в базе данных
+	if err := s.db.Model(&dao.Project{}).
+		Where("id = ?", project.ID).
+		Updates(map[string]interface{}{
+			"rules_script":  nil,
+			"updated_by_id": project.UpdatedById,
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Отслеживаем активность
+	oldMap := map[string]interface{}{
+		"rules_script": oldRulesScript,
+	}
+	newMap := map[string]interface{}{
+		"rules_script": nil,
+	}
+
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	response := dto.RulesScriptResponse{
+		RulesScript: nil,
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+>>>>>>> dev
 /*
 // ############# Issue properties methods ###################
 

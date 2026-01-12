@@ -25,38 +25,38 @@ type Doc struct {
 	Content    types.RedactorHTML `json:"content" swaggertype:"string"`
 	LLMContent bool               `json:"llm_content"`
 
-	ParentDoc *string `json:"parent_doc,omitempty"`
+	ParentDoc uuid.NullUUID `json:"parent_doc,omitempty"`
 
 	InlineAttachments []FileAsset `json:"doc_inline_attachments"`
 
-	Breadcrumbs []string `json:"breadcrumbs"`
+	Breadcrumbs []uuid.UUID `json:"breadcrumbs"`
 
 	ReaderRole int `json:"reader_role"`
 	EditorRole int `json:"editor_role"`
 
-	ReaderIds []string    `json:"reader_ids"`
+	ReaderIds []uuid.UUID `json:"reader_ids"`
 	Readers   []UserLight `json:"readers"`
 
-	EditorIds []string    `json:"editor_ids"`
+	EditorIds []uuid.UUID `json:"editor_ids"`
 	Editors   []UserLight `json:"editors"`
 
-	WatcherIds []string    `json:"watcher_ids"`
+	WatcherIds []uuid.UUID `json:"watcher_ids"`
 	Watchers   []UserLight `json:"watchers"`
 }
 
 type DocLight struct {
-	Id           string `json:"id"`
-	Title        string `json:"title"`
-	HasChildDocs bool   `json:"has_child_docs"`
-	Draft        *bool  `json:"draft,omitempty"`
-	IsFavorite   bool   `json:"is_favorite"`
+	Id           uuid.UUID `json:"id"`
+	Title        string    `json:"title"`
+	HasChildDocs bool      `json:"has_child_docs"`
+	Draft        *bool     `json:"draft,omitempty"`
+	IsFavorite   bool      `json:"is_favorite"`
 
 	Url      types.JsonURL `json:"url,omitempty"`
 	ShortUrl types.JsonURL `json:"short_url,omitempty"`
 }
 
 type DocCommentLight struct {
-	Id string `json:"id"`
+	Id uuid.UUID `json:"id"`
 
 	CommentStripped string             `json:"comment_stripped"`
 	CommentHtml     types.RedactorHTML `json:"comment_html" swaggertype:"string"`
@@ -69,7 +69,7 @@ type DocComment struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	UpdatedById *uuid.UUID `json:"updated_by_id,omitempty"`
+	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty"`
 
 	CommentType     int         `json:"comment_type"`
 	OriginalComment *DocComment `json:"original_comment,omitempty" extensions:"x-nullable"`
@@ -85,7 +85,7 @@ type CommentReaction struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	CommentId uuid.UUID `json:"comment_id"`
-	UserId    string    `json:"user_id"`
+	UserId    uuid.UUID `json:"user_id"`
 	Reaction  string    `json:"reaction"`
 }
 

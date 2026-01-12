@@ -335,9 +335,9 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 
 		query := s.db.
 			Joins("Parent").
-			Joins("Workspace").
+			//Joins("Workspace").
 			Joins("State").
-			Joins("Project").
+			//Joins("Project").
 			Preload("Sprints").
 			Preload("Assignees").
 			Preload("Watchers").
@@ -350,6 +350,8 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 			Where("issues.project_id = ?", project.ID)
 
 		var issue dao.Issue
+		issue.Project = &project
+		issue.Workspace = project.Workspace
 		issue.FullLoad = true
 		if _, err := uuid.FromString(issueIdOrSeq); err == nil {
 			// uuid id of issue
@@ -608,7 +610,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 			}
 
 			if !(oldIssue.ParentId.Valid && oldIssue.ParentId.UUID == parentUUID) {
-				var ancestorIDs []string
+				var ancestorIDs []uuid.UUID
 				err = s.db.Raw(`
                 WITH RECURSIVE ancestor_chain AS (
                     SELECT id, parent_id FROM issues WHERE id = ?
@@ -623,7 +625,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 					return EError(c, err)
 				}
 
-				if slices.Contains(ancestorIDs, issue.ID.String()) {
+				if slices.Contains(ancestorIDs, issue.ID) {
 					return EErrorDefined(c, apierrors.ErrChildDependency)
 				}
 			}
@@ -646,9 +648,13 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var newState dao.State
 	if stateId, ok := data["state"]; ok {
 		statusChange = true
-		data["state_id"] = stateId
+		stateUUID, err := uuid.FromString(stateId.(string))
+		if err != nil {
+			return EError(c, err)
+		}
+		data["state_id"] = stateUUID
 
-		if err := s.db.Where("id = ?", stateId).
+		if err := s.db.Where("id = ?", stateUUID).
 			Where("project_id = ?", issue.ProjectId).
 			First(&newState).Error; err != nil {
 			return EError(c, err)
@@ -687,17 +693,41 @@ func (s *Services) updateIssue(c echo.Context) error {
 		issue.StateId = newState.ID
 	}
 
+	prepareUUIDParams := func(in []interface{}) []interface{} {
+		var res []interface{}
+		for _, i2 := range in {
+			if id := uuid.FromStringOrNil(i2.(string)); !id.IsNil() {
+				res = append(res, id)
+			}
+		}
+		return utils.SetToSlice(utils.SliceToSet(res))
+	}
+
 	blockers, blockersOk := data["blockers_list"].([]interface{}) // задача блокирует [blocker_issues]
+	if blockersOk {
+		blockers = prepareUUIDParams(blockers)
+		data["blockers_list"] = blockers
+	}
 	assignees, assigneesOk := data["assignees_list"].([]interface{})
 	if assigneesOk {
-		assignees = utils.SetToSlice(utils.SliceToSet(assignees))
+		assignees = prepareUUIDParams(assignees)
+		data["assignees_list"] = assignees
 	}
 	watchers, watchersOk := data["watchers_list"].([]interface{})
 	if watchersOk {
-		watchers = utils.SetToSlice(utils.SliceToSet(watchers))
+		watchers = prepareUUIDParams(watchers)
+		data["watchers_list"] = watchers
 	}
 	labels, labelsOk := data["labels_list"].([]interface{})
+	if labelsOk {
+		labels = prepareUUIDParams(labels)
+		data["labels_list"] = labels
+	}
 	blocks, blocksOk := data["blocks_list"].([]interface{}) // блокируют эту задачу [blocked_issues]
+	if blocksOk {
+		blocks = prepareUUIDParams(blocks)
+		data["blocks_list"] = blocks
+	}
 	parent, parentOk := data["parent"]
 
 	//var getProjectMemberList []dao.ProjectMember
@@ -812,7 +842,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return actField.ReqFieldMapping(k) })
-		if hasRecentFieldUpdate[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID.String(), dataField...) {
+		if hasRecentFieldUpdate[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
 			return apierrors.ErrUpdateTooFrequent
 		}
 
@@ -951,11 +981,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 			if targetDateOk || assigneesOk || watchersOk {
 				assigneeIds := &issue.AssigneeIDs
 				watcherIds := &issue.WatcherIDs
-				var notifyUserIds *[]string
+				var notifyUserIds []uuid.UUID
 
 				if targetDateOk {
-					notifyUserIds = &issue.AssigneeIDs
-					*notifyUserIds = append(*notifyUserIds, issue.WatcherIDs...)
+					notifyUserIds = issue.AssigneeIDs
+					notifyUserIds = append(notifyUserIds, issue.WatcherIDs...)
 				}
 
 				if assigneesOk || watchersOk {
@@ -965,28 +995,28 @@ func (s *Services) updateIssue(c echo.Context) error {
 					}
 
 					if assigneesOk {
-						notifyUserIds = &[]string{}
+						notifyUserIds = []uuid.UUID{}
 						for _, v := range assignees {
-							if str, ok := v.(string); ok {
-								*notifyUserIds = append(*notifyUserIds, str)
+							if str, ok := v.(uuid.UUID); ok {
+								notifyUserIds = append(notifyUserIds, str)
 							}
 						}
-						*notifyUserIds = append(*notifyUserIds, *watcherIds...)
+						notifyUserIds = append(notifyUserIds, *watcherIds...)
 					}
 					if watchersOk {
-						notifyUserIds = &[]string{}
+						notifyUserIds = []uuid.UUID{}
 
 						for _, v := range watchers {
-							if str, ok := v.(string); ok {
-								*notifyUserIds = append(*notifyUserIds, str)
+							if str, ok := v.(uuid.UUID); ok {
+								notifyUserIds = append(notifyUserIds, str)
 							}
 						}
-						*notifyUserIds = append(*notifyUserIds, *assigneeIds...)
+						notifyUserIds = append(notifyUserIds, *assigneeIds...)
 					}
 
 					targetDate = &dateStr
 				}
-				*notifyUserIds = append(*notifyUserIds, issue.Author.ID.String())
+				notifyUserIds = append(notifyUserIds, issue.Author.ID)
 
 				err := notifications.CreateDeadlineNotification(tx, &issue, targetDate, notifyUserIds)
 				if err != nil {
@@ -1225,7 +1255,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	oldSubIssuesData := make([]map[string]interface{}, len(subIssues))
 	for i, issue := range subIssues {
 		oldSubIssuesData[i] = StructToJSONMap(issue)
-		oldSubIssuesData[i]["parent"] = nil
+		oldSubIssuesData[i]["parent"] = uuid.NullUUID{}
 	}
 
 	id, err := uuid.FromString(parentIssue.ID.String())
@@ -1251,7 +1281,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	newSubIssuesData := make([]map[string]interface{}, len(subIssues))
 	for i := range subIssues {
 		newSubIssuesData[i] = make(map[string]interface{})
-		newSubIssuesData[i]["parent"] = parentId.UUID.String()
+		newSubIssuesData[i]["parent"] = parentId.UUID
 	}
 
 	// Activity tracking
@@ -1876,7 +1906,7 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 
 	{ //rateLimit
 		dataField := utils.MapToSlice(oldMap, func(k string, v interface{}) string { return fmt.Sprintf("link_%s", actField.ReqFieldMapping(k)) })
-		if hasRecentFieldUpdate[dao.IssueActivity](s.db.Where("issue_id = ?", oldLink.IssueId), user.ID.String(), dataField...) {
+		if hasRecentFieldUpdate[dao.IssueActivity](s.db.Where("issue_id = ?", oldLink.IssueId), user.ID, dataField...) {
 			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 		}
 	}
@@ -1885,10 +1915,10 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 		return EError(c, err)
 	}
 	newMap := StructToJSONMap(oldLink)
-	newMap["updateScopeId"] = linkId
+	newMap["updateScopeId"] = oldLink.Id
 
 	oldMap["updateScope"] = "link"
-	oldMap["updateScopeId"] = linkId
+	oldMap["updateScopeId"] = oldLink.Id
 
 	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, oldLink, &user)
 	if err != nil {
@@ -1919,7 +1949,7 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 func (s *Services) deleteIssueLink(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID.String()
+	issueId := c.(IssueContext).Issue.ID
 	linkId := c.Param("linkId")
 
 	var link dao.IssueLink
@@ -2145,7 +2175,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		}
 	}
 
-	if comment.CommentHtml.StripTags() == "" {
+	if comment.CommentHtml.StripTags() == "" && comment.CommentStripped == "" {
 		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
@@ -2207,16 +2237,16 @@ func (s *Services) createIssueComment(c echo.Context) error {
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
-			authorIdStr := authorOriginalComment.ID.String()
+			authorId := authorOriginalComment.ID
 			if authorOriginalComment.ID != issue.CreatedById {
 				for _, id := range issue.AssigneeIDs {
-					if id == authorIdStr {
+					if id == authorId {
 						replyNotMember = true
 						break
 					}
 				}
 				for _, id := range issue.WatcherIDs {
-					if id == authorIdStr {
+					if id == authorId {
 						replyNotMember = true
 						break
 					}
@@ -2426,16 +2456,16 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				First(&authorOriginalComment).Error; err != nil {
 				return err
 			}
-			authorIdStr := authorOriginalComment.ID.String()
+			authorId := authorOriginalComment.ID
 			if authorOriginalComment.ID != issue.CreatedById {
 				for _, id := range issue.AssigneeIDs {
-					if id == authorIdStr {
+					if id == authorId {
 						replyNotMember = true
 						break
 					}
 				}
 				for _, id := range issue.WatcherIDs {
-					if id == authorIdStr {
+					if id == authorId {
 						replyNotMember = true
 						break
 					}
@@ -2478,11 +2508,11 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 	}
 
 	newMap := StructToJSONMap(commentOld)
-	newMap["updateScopeId"] = commentId
+	newMap["updateScopeId"] = commentOld.Id
 	newMap["field_log"] = actField.Comment.Field
 
 	oldMap["updateScope"] = "comment"
-	oldMap["updateScopeId"] = commentId
+	oldMap["updateScopeId"] = commentOld.Id
 	//if err := s.tracker.TrackActivity(tracker.COMMENT_UPDATED_ACTIVITY, newMap, oldMap, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, commentOld.Project, user); err != nil {
 	//	return EError(c, err)
 	//}
@@ -2517,7 +2547,7 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
 	projectMember := c.(IssueContext).ProjectMember
-	issueId := c.(IssueContext).Issue.ID.String()
+	issueId := c.(IssueContext).Issue.ID
 	commentId := c.Param("commentId")
 
 	var comment dao.IssueComment
@@ -2991,7 +3021,7 @@ func (s *Services) downloadIssueAttachments(c echo.Context) error {
 func (s *Services) deleteIssueAttachment(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID.String()
+	issueId := c.(IssueContext).Issue.ID
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.IssueAttachment
@@ -3093,17 +3123,17 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 		}
 
 		for _, v := range linkedIssues {
-			if v.Id1.String() != issue.ID.String() {
-				oldIDs = append(oldIDs, v.Id1.String())
+			if v.Id1 != issue.ID {
+				oldIDs = append(oldIDs, v.Id1)
 			}
-			if v.Id2.String() != issue.ID.String() {
-				oldIDs = append(oldIDs, v.Id2.String())
+			if v.Id2 != issue.ID {
+				oldIDs = append(oldIDs, v.Id2)
 			}
 		}
 
 		newIDs := make([]interface{}, len(param.IssueIDs))
 		for i, v := range param.IssueIDs {
-			newIDs[i] = v.String()
+			newIDs[i] = v
 		}
 
 		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Delete(&dao.LinkedIssues{}).Error; err != nil {

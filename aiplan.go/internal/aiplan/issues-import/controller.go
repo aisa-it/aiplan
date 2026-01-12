@@ -215,7 +215,7 @@ func (is *ImportService) GetUserImports(userId uuid.UUID) ([]ImportStatus, error
 	return res, nil
 }
 
-func (is *ImportService) GetUserImportStatus(id string, actorId string) (ImportStatus, error) {
+func (is *ImportService) GetUserImportStatus(id string, actorId uuid.UUID) (ImportStatus, error) {
 	var i Import
 	if err := is.memDB.
 		Where("actor_id = ?", actorId).
@@ -227,7 +227,7 @@ func (is *ImportService) GetUserImportStatus(id string, actorId string) (ImportS
 	return i.GetStatus(), nil
 }
 
-func (is *ImportService) CanStartImport(actorId string) bool {
+func (is *ImportService) CanStartImport(actorId uuid.UUID) bool {
 	var working bool
 	if err := is.memDB.Model(&Import{}).
 		Select("EXISTS(?)",
@@ -282,7 +282,7 @@ func (is *ImportService) GetActiveImports() ([]ImportStatus, error) {
 	return res, nil
 }
 
-func (is *ImportService) CancelWorkspaceImports(workspaceId string) error {
+func (is *ImportService) CancelWorkspaceImports(workspaceId uuid.UUID) error {
 	var imports []Import
 	if err := is.memDB.
 		Where("finished = 0").

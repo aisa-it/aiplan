@@ -84,6 +84,9 @@ func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
 	if strings.Contains(c.Path(), "/api/auth/workspaces/:workspaceSlug/sprints/:sprintId/issues/search/") {
 		return workspaceMember.Role > types.GuestRole, nil
 	}
+	if strings.Contains(c.Path(), "/api/auth/workspaces/:workspaceSlug/sprints/:sprintId/sprint-view/") {
+		return workspaceMember.Role > types.GuestRole, nil
+	}
 
 	switch c.Request().Method {
 	//Safe methods

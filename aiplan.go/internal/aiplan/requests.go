@@ -20,16 +20,16 @@ import (
 )
 
 type CreateProjectRequest struct {
-	Name               string   `json:"name" validate:"projectName"`
-	Public             bool     `json:"public"`
-	Identifier         string   `json:"identifier" validate:"identifier"`
-	DefaultAssigneeIds []string `json:"default_assignees"`
-	DefaultWatcherIds  []string `json:"default_watchers"`
-	ProjectLeadId      string   `json:"project_lead"`
-	Emoji              int32    `json:"emoji,string"`
-	CoverImage         *string  `json:"cover_image"`
-	EstimateId         *string  `json:"estimate"`
-	RulesScript        *string  `json:"rules_script"`
+	Name               string      `json:"name" validate:"projectName"`
+	Public             bool        `json:"public"`
+	Identifier         string      `json:"identifier" validate:"identifier"`
+	DefaultAssigneeIds []uuid.UUID `json:"default_assignees"`
+	DefaultWatcherIds  []uuid.UUID `json:"default_watchers"`
+	ProjectLeadId      uuid.UUID   `json:"project_lead"`
+	Emoji              int32       `json:"emoji,string"`
+	CoverImage         *string     `json:"cover_image"`
+	EstimateId         *string     `json:"estimate"`
+	RulesScript        *string     `json:"rules_script"`
 }
 
 func (req *CreateProjectRequest) Bind(project *dao.Project) {
@@ -38,8 +38,7 @@ func (req *CreateProjectRequest) Bind(project *dao.Project) {
 	project.Identifier = req.Identifier
 	project.DefaultAssignees = req.DefaultAssigneeIds
 	project.DefaultWatchers = req.DefaultWatcherIds
-	projectLeadUUID, _ := uuid.FromString(req.ProjectLeadId)
-	project.ProjectLeadId = projectLeadUUID
+	project.ProjectLeadId = req.ProjectLeadId
 	project.Emoji = req.Emoji
 	project.CoverImage = req.CoverImage
 	project.EstimateId = req.EstimateId
@@ -72,7 +71,6 @@ type FilterParams struct {
 
 func ExtractFilterRequest(c echo.Context) (*dao.User, FilterParams, int, int, error) {
 	user := c.(AuthContext).User
-
 	offset := -1
 	limit := 100
 	if err := echo.QueryParamsBinder(c).

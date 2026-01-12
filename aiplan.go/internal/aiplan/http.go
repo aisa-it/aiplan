@@ -133,7 +133,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.HideBanner = true
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		// Ignore brone pipe errors
-		if strings.Contains(err.Error(), "broken pipe") {
+		if err == nil || strings.Contains(err.Error(), "broken pipe") {
 			return
 		}
 
@@ -369,28 +369,33 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		},
 	}))
 	e.Use(echoprometheus.NewMiddleware("aiplan"))
-	e.Pre(middleware.AddTrailingSlashWithConfig(middleware.TrailingSlashConfig{
-		Skipper: func(c echo.Context) bool {
-			return strings.Contains(c.Request().URL.Path, "swagger")
-		},
-	}))
-	e.Pre(middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
-		Store: middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
-			Rate:      20,
-			Burst:     50,
-			ExpiresIn: time.Minute * 3,
+	e.Pre(
+		middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+			Skipper: func(c echo.Context) bool {
+				return !strings.HasPrefix(c.Path(), "/api")
+			},
+			Store: middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
+				Rate:      20,
+				Burst:     50,
+				ExpiresIn: time.Minute * 3,
+			}),
+			IdentifierExtractor: func(c echo.Context) (string, error) {
+				if u := c.Get("user"); u != nil {
+					return u.(*dao.User).ID.String(), nil
+				}
+				return c.RealIP() + c.Request().UserAgent(), nil
+			},
+			DenyHandler: func(c echo.Context, identifier string, err error) error {
+				slog.Warn("Rate limit exceed", "identifier", identifier)
+				return EErrorDefined(c, apierrors.ErrRateLimitExceed)
+			},
 		}),
-		IdentifierExtractor: func(c echo.Context) (string, error) {
-			if u := c.Get("user"); u != nil {
-				return u.(*dao.User).ID.String(), nil
-			}
-			return c.RealIP() + c.Request().UserAgent(), nil
-		},
-		DenyHandler: func(c echo.Context, identifier string, err error) error {
-			slog.Warn("Rate limit exceed", "identifier", identifier)
-			return EErrorDefined(c, apierrors.ErrRateLimitExceed)
-		},
-	}))
+		middleware.AddTrailingSlashWithConfig(middleware.TrailingSlashConfig{
+			Skipper: func(c echo.Context) bool {
+				return strings.Contains(c.Request().URL.Path, "swagger")
+			},
+		}),
+	)
 
 	e.Validator = NewRequestValidator()
 
@@ -484,20 +489,29 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	// Front handler
-	if cfg.FrontFilesPath != "" {
+	if cfg.FrontFilesPath != "" || utils.CheckEmbedSPA(frontFS) {
+		config := middleware.StaticConfig{
+			Index: "index.html",
+			Root:  "spa/",
+			HTML5: true,
+			Skipper: func(c echo.Context) bool {
+				return strings.Contains(c.Path(), "api") ||
+					strings.Contains(c.Path(), "tus") ||
+					strings.Contains(c.Path(), "mcp") ||
+					strings.Contains(c.Path(), "swagger")
+			},
+			Filesystem: http.FS(frontFS),
+		}
+
+		if !utils.CheckEmbedSPA(frontFS) {
+			config.Root = "."
+			config.Filesystem = http.Dir(cfg.FrontFilesPath)
+		}
+
 		slog.Info("Start front routing")
 		e.Use(
-			NewSPACacheMiddleware(filepath.Join(cfg.FrontFilesPath, "index.html")),
-			middleware.StaticWithConfig(middleware.StaticConfig{
-				Root:  cfg.FrontFilesPath,
-				HTML5: true,
-				Skipper: func(c echo.Context) bool {
-					return strings.Contains(c.Path(), "api") ||
-						strings.Contains(c.Path(), "tus") ||
-						strings.Contains(c.Path(), "mcp") ||
-						strings.Contains(c.Path(), "swagger")
-				},
-			}),
+			NewSPACacheMiddleware(config),
+			middleware.StaticWithConfig(config),
 		)
 
 		uHttp, _ := url.Parse(fmt.Sprintf("http://%s", cfg.AWSEndpoint))
@@ -737,6 +751,14 @@ func StructToJSONMap(obj interface{}) map[string]interface{} {
 					fieldValue = fieldValue.Elem()
 				}
 			}
+			if fieldValue.Type() == reflect.TypeOf(uuid.UUID{}) {
+				res[tagName] = fieldValue.Interface().(uuid.UUID)
+				continue
+			}
+			if fieldValue.Type() == reflect.TypeOf(uuid.NullUUID{}) {
+				res[tagName] = fieldValue.Interface().(uuid.NullUUID)
+				continue
+			}
 			if fieldValue.Type() == reflect.TypeOf(time.Time{}) {
 				res[tagName] = fieldValue.Interface().(time.Time)
 				continue
@@ -906,9 +928,9 @@ func imageThumbnail(r io.Reader, contentType string) (io.Reader, int, string, er
 	return buf, buf.Len(), dataType, err
 }
 
-func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[string]types.ActivityTable, error) {
+func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[uuid.UUID]types.ActivityTable, error) {
 	var activities []struct {
-		ActorId string
+		ActorId uuid.UUID
 		Day     time.Time
 		Cnt     int
 	}
@@ -923,7 +945,7 @@ func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[str
 		return nil, err
 	}
 
-	resp := make(map[string]types.ActivityTable)
+	resp := make(map[uuid.UUID]types.ActivityTable)
 	for _, activity := range activities {
 		m, ok := resp[activity.ActorId]
 		if !ok {

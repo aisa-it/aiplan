@@ -49,8 +49,8 @@ type Form struct {
 	CurrentWorkspaceMember *WorkspaceMember       `json:"current_workspace_member,omitempty" gorm:"-" extensions:"x-nullable"`
 }
 
-func (f Form) GetId() string {
-	return f.ID.String()
+func (f Form) GetId() uuid.UUID {
+	return f.ID
 }
 
 func (f Form) GetString() string {
@@ -76,21 +76,17 @@ func (f *Form) ToLightDTO() *dto.FormLight {
 	}
 	f.SetUrl()
 	ff := &dto.FormLight{
-		ID:          f.ID.String(),
-		Slug:        f.Slug,
-		Title:       f.Title,
-		Description: f.Description,
-		AuthRequire: f.AuthRequire,
-		EndDate:     f.EndDate,
-		WorkspaceId: f.WorkspaceId.String(),
-		Fields:      f.Fields,
-		Active:      f.Active,
-		Url:         types.JsonURL{f.URL},
-	}
-
-	if f.TargetProjectId.Valid {
-		targetProjectIdStr := f.TargetProjectId.UUID.String()
-		ff.TargetProjectId = &targetProjectIdStr
+		ID:              f.ID,
+		Slug:            f.Slug,
+		Title:           f.Title,
+		Description:     f.Description,
+		AuthRequire:     f.AuthRequire,
+		EndDate:         f.EndDate,
+		TargetProjectId: f.TargetProjectId,
+		WorkspaceId:     f.WorkspaceId,
+		Fields:          f.Fields,
+		Active:          f.Active,
+		Url:             types.JsonURL{f.URL},
 	}
 
 	return ff
@@ -270,8 +266,8 @@ type FormAnswer struct {
 //   - string: имя таблицы для сущности Form.
 func (FormAnswer) TableName() string { return "form_answers" }
 
-func (f FormAnswer) GetId() string {
-	return f.ID.String()
+func (f FormAnswer) GetId() uuid.UUID {
+	return f.ID
 }
 
 func (f FormAnswer) GetString() string {
@@ -302,7 +298,7 @@ func (fa *FormAnswer) ToDTO() *dto.FormAnswer {
 		return nil
 	}
 	return &dto.FormAnswer{
-		ID:         fa.ID.String(),
+		ID:         fa.ID,
 		SeqId:      fa.SeqId,
 		CreatedAt:  fa.CreatedAt,
 		Responder:  fa.Responder.ToLightDTO(),
@@ -375,9 +371,9 @@ type FormActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:form_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -410,7 +406,7 @@ func (fa FormActivity) SkipPreload() bool {
 		return true
 	}
 
-	if fa.NewIdentifier == nil && fa.OldIdentifier == nil {
+	if !fa.NewIdentifier.Valid && !fa.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -424,17 +420,17 @@ func (fa FormActivity) GetVerb() string {
 	return fa.Verb
 }
 
-func (fa FormActivity) GetNewIdentifier() string {
-	return pointerToStr(fa.NewIdentifier)
+func (fa FormActivity) GetNewIdentifier() uuid.NullUUID {
+	return fa.NewIdentifier
 }
 
-func (fa FormActivity) GetOldIdentifier() string {
-	return pointerToStr(fa.OldIdentifier)
+func (fa FormActivity) GetOldIdentifier() uuid.NullUUID {
+	return fa.OldIdentifier
 
 }
 
-func (fa FormActivity) GetId() string {
-	return fa.Id.String()
+func (fa FormActivity) GetId() uuid.UUID {
+	return fa.Id
 }
 
 func (wa FormActivity) GetUrl() *string {
@@ -519,8 +515,8 @@ func (FormAttachment) TableName() string { return "form_attachments" }
 //
 // Возвращает:
 //   - string: идентификатор аттачмента.
-func (fa FormAttachment) GetId() string {
-	return fa.Id.String()
+func (fa FormAttachment) GetId() uuid.UUID {
+	return fa.Id
 }
 
 // GetString возвращает имя файла, если связанный объект asset существует, иначе возвращает тип объекта.

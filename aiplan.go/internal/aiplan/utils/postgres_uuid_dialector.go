@@ -3,7 +3,6 @@ package utils
 
 import (
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strings"
 
@@ -93,13 +92,6 @@ func (m *PostgresUUIDMigrator) AlterColumn(value interface{}, field string) erro
 				// Если колонка уже имеет тип uuid, не изменяем её
 				databaseType := columnType.DatabaseTypeName()
 
-				// Debug logging
-				slog.Info("AlterColumn check",
-					"table", stmt.Table,
-					"column", schemaField.DBName,
-					"dbType", databaseType,
-					"wantType", m.DataTypeOf(schemaField))
-
 				if strings.EqualFold(databaseType, "uuid") {
 					fieldType := schemaField.FieldType
 					if fieldType.Kind() == reflect.Pointer {
@@ -107,9 +99,6 @@ func (m *PostgresUUIDMigrator) AlterColumn(value interface{}, field string) erro
 					}
 					if fieldType == reflect.TypeOf(uuid.UUID{}) || fieldType == reflect.TypeOf(uuid.NullUUID{}) {
 						// Колонка уже uuid и поле тоже uuid - пропускаем изменение
-						slog.Info("Skipping AlterColumn (already uuid)",
-							"table", stmt.Table,
-							"column", schemaField.DBName)
 						return nil
 					}
 				}

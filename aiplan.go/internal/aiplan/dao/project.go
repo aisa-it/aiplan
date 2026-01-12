@@ -56,10 +56,10 @@ type Project struct {
 	Public     bool           `json:"public"`
 	Identifier string         `json:"identifier" gorm:"uniqueIndex:project_identifier_idx,priority:2,where:deleted_at is NULL" validate:"identifier"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	CreatedById      uuid.UUID `json:"created_by" gorm:"type:uuid"`
-	DefaultAssignees []string  `json:"default_assignees" gorm:"-"`
-	DefaultWatchers  []string  `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
-	ProjectLeadId    uuid.UUID `json:"project_lead" gorm:"type:uuid"`
+	CreatedById      uuid.UUID   `json:"created_by" gorm:"type:uuid"`
+	DefaultAssignees []uuid.UUID `json:"default_assignees" gorm:"-"`
+	DefaultWatchers  []uuid.UUID `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
+	ProjectLeadId    uuid.UUID   `json:"project_lead" gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	WorkspaceId uuid.UUID     `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
@@ -94,8 +94,8 @@ type ProjectWithCount struct {
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 }
 
-func (p Project) GetId() string {
-	return p.ID.String()
+func (p Project) GetId() uuid.UUID {
+	return p.ID
 }
 
 func (p Project) GetString() string {
@@ -106,8 +106,8 @@ func (p Project) GetEntityType() string {
 	return actField.Project.Field.String()
 }
 
-func (p Project) GetProjectId() string {
-	return p.GetId()
+func (p Project) GetProjectId() uuid.UUID {
+	return p.ID
 }
 
 func (p Project) GetWorkspaceId() uuid.UUID {
@@ -134,7 +134,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		Public:                  project.Public,
 		Identifier:              project.Identifier,
 		ProjectLeadId:           project.ProjectLeadId,
-		WorkspaceId:             project.WorkspaceId.String(),
+		WorkspaceId:             project.WorkspaceId,
 		Emoji:                   project.Emoji,
 		LogoId:                  project.LogoId,
 		CoverImage:              project.CoverImage,
@@ -184,7 +184,6 @@ func (pwc *ProjectWithCount) ToDTO() *dto.Project {
 		CreatedAt:    pwc.CreatedAt,
 		UpdatedAt:    pwc.UpdatedAt,
 		ProjectLead:  pwc.ProjectLead.ToLightDTO(),
-		RulesScript:  pwc.RulesScript,
 		Workspace:    pwc.Workspace.ToLightDTO(),
 	}
 }
@@ -207,10 +206,6 @@ func (project *Project) ToDTO() *dto.Project {
 		UpdatedAt:    project.UpdatedAt,
 		ProjectLead:  project.ProjectLead.ToLightDTO(),
 		Workspace:    project.Workspace.ToLightDTO(),
-	}
-	if project.CurrentUserMembership != nil && project.CurrentUserMembership.Role == types.AdminRole {
-		// только для админов проекта
-		projectDTO.RulesScript = project.RulesScript
 	}
 
 	return &projectDTO
@@ -380,12 +375,12 @@ func (project *Project) SetUrl() {
 // Возвращает:
 //   - error: ошибка, если произошла ошибка при обновлении статуса участника проекта или удалении связанных данных.
 func (project *Project) BeforeDelete(tx *gorm.DB) error {
-	if deletingProjects.IsDeleting(project.ID.String()) {
+	if deletingProjects.IsDeleting(project.ID) {
 		return nil
 	}
 
-	deletingProjects.StartDeletion(project.ID.String())
-	defer deletingProjects.FinishDeletion(project.ID.String())
+	deletingProjects.StartDeletion(project.ID)
+	defer deletingProjects.FinishDeletion(project.ID)
 
 	if err := tx.
 		Where("project_activity_id in (?)", tx.Select("id").Where("project_id = ?", project.ID).
@@ -536,8 +531,8 @@ type EntityMemberExtendFields struct {
 	OldMember *User `json:"-" gorm:"-" field:"member" extensions:"x-nullable"`
 }
 
-func (pm ProjectMember) GetId() string {
-	return pm.ID.String()
+func (pm ProjectMember) GetId() uuid.UUID {
+	return pm.ID
 }
 
 func (pm ProjectMember) GetString() string {
@@ -548,8 +543,8 @@ func (pm ProjectMember) GetEntityType() string {
 	return actField.Member.Field.String()
 }
 
-func (pm ProjectMember) GetProjectId() string {
-	return pm.ProjectId.String()
+func (pm ProjectMember) GetProjectId() uuid.UUID {
+	return pm.ProjectId
 }
 
 func (pm ProjectMember) GetWorkspaceId() uuid.UUID {
@@ -568,12 +563,12 @@ func (pm *ProjectMember) ToLightDTO() *dto.ProjectMemberLight {
 		return nil
 	}
 	return &dto.ProjectMemberLight{
-		ID:                pm.ID.String(),
+		ID:                pm.ID,
 		Role:              pm.Role,
 		WorkspaceAdmin:    pm.WorkspaceAdmin,
 		IsDefaultAssignee: pm.IsDefaultAssignee,
 		IsDefaultWatcher:  pm.IsDefaultWatcher,
-		MemberId:          pm.MemberId.String(),
+		MemberId:          pm.MemberId,
 		Member:            pm.Member.ToLightDTO(),
 		ProjectId:         pm.ProjectId,
 		Project:           pm.Project.ToLightDTO(),
@@ -695,7 +690,7 @@ func (pf *ProjectFavorites) ToDTO() *dto.ProjectFavorites {
 //
 // Возвращает:
 //   - *gorom.DB: экземпляр базы данных GORM для дальнейшей обработки результатов.
-func AllProjects(db *gorm.DB, user string) *gorm.DB {
+func AllProjects(db *gorm.DB, user uuid.UUID) *gorm.DB {
 	projectMembers := db.Model(&ProjectMember{}).Select("count(*)").Where("project_members.project_id = projects.id")
 	isFavorite := db.Raw("EXISTS(SELECT 1 FROM project_favorites WHERE project_favorites.project_id = projects.id AND user_id = ?)", user)
 
@@ -713,7 +708,7 @@ func AllProjects(db *gorm.DB, user string) *gorm.DB {
 //
 // Возвращает:
 //   - Project: объект проекта, либо ошибка, если проект не найден или произошла ошибка при выполнении запроса.
-func GetProject(db *gorm.DB, slug string, user string, prj string) (Project, error) {
+func GetProject(db *gorm.DB, slug string, user uuid.UUID, prj string) (Project, error) {
 	p := Project{}
 	return p, db.Where("workspace_id in (?)", db.Model(&Workspace{}).Select("id").Where("slug = ?", slug)).
 		Where("id in (?) or public = true", db.Table("project_members").Select("project_id").Where("member_id = ?", user)).
@@ -736,7 +731,7 @@ func GetProject(db *gorm.DB, slug string, user string, prj string) (Project, err
 // Возвращает:
 //   - []Project: список проектов.
 //   - error: ошибка, если произошла ошибка при выполнении запроса.
-func GetProjects(db *gorm.DB, slug string, user string) ([]Project, error) {
+func GetProjects(db *gorm.DB, slug string, user uuid.UUID) ([]Project, error) {
 	var ret []Project
 
 	err := AllProjects(db, user).
@@ -760,7 +755,7 @@ func GetProjects(db *gorm.DB, slug string, user string) ([]Project, error) {
 //   - error: ошибка, если произошла ошибка при выполнении запроса.
 func GetAllUserProjects(db *gorm.DB, user User) ([]Project, error) {
 	var ret []Project
-	err := AllProjects(db, user.ID.String()).
+	err := AllProjects(db, user.ID).
 		Where("id in (?)", db.Table("project_members").Select("project_id").Where("member_id = ?", user.ID)).
 		Find(&ret).Error
 
@@ -900,7 +895,6 @@ type ImportedProject struct {
 }
 
 // Шильдик
-// Шильдик
 type Label struct {
 	// id uuid NOT NULL,
 	ID uuid.UUID `gorm:"column:id;primaryKey" json:"id"`
@@ -947,8 +941,8 @@ func (Label) TableName() string {
 //
 // Возвращает:
 //   - string: строка, представляющая собой идентификатор Issue.
-func (l Label) GetId() string {
-	return l.ID.String()
+func (l Label) GetId() uuid.UUID {
+	return l.ID
 }
 
 // GetString возвращает строку из идентификатора Issue.
@@ -977,8 +971,8 @@ func (l Label) GetWorkspaceId() uuid.UUID {
 	return l.WorkspaceId
 }
 
-func (l Label) GetProjectId() string {
-	return l.ProjectId.String()
+func (l Label) GetProjectId() uuid.UUID {
+	return l.ProjectId
 }
 
 // ToLightDTO преобразует объект IssueComment в структуру dto.IssueCommentLight для упрощения передачи данных в клиентский код.
@@ -1101,7 +1095,7 @@ func (state *State) ToLightDTO() *dto.StateLight {
 		Description: state.Description,
 		Color:       state.Color,
 		ProjectId:   state.ProjectId,
-		WorkspaceId: state.WorkspaceId.String(),
+		WorkspaceId: state.WorkspaceId,
 		Sequence:    state.Sequence,
 		Group:       state.Group,
 		Default:     state.Default,
@@ -1115,8 +1109,8 @@ type StateExtendFields struct {
 	OldState *State `json:"-" gorm:"-" field:"status" extensions:"x-nullable"`
 }
 
-func (s State) GetId() string {
-	return s.ID.String()
+func (s State) GetId() uuid.UUID {
+	return s.ID
 }
 
 func (s State) GetString() string {
@@ -1131,8 +1125,8 @@ func (s State) GetWorkspaceId() uuid.UUID {
 	return s.WorkspaceId
 }
 
-func (s State) GetProjectId() string {
-	return s.ProjectId.String()
+func (s State) GetProjectId() uuid.UUID {
+	return s.ProjectId
 }
 
 func (s *State) BeforeDelete(tx *gorm.DB) error {
@@ -1162,7 +1156,7 @@ func (s *State) BeforeDelete(tx *gorm.DB) error {
 
 type ProjectEntityI interface {
 	WorkspaceEntityI
-	GetProjectId() string
+	GetProjectId() uuid.UUID
 }
 
 type ProjectActivity struct {
@@ -1187,9 +1181,9 @@ type ProjectActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -1247,7 +1241,7 @@ func (pa ProjectActivity) SkipPreload() bool {
 		return true
 	}
 
-	if pa.NewIdentifier == nil && pa.OldIdentifier == nil {
+	if !pa.NewIdentifier.Valid && !pa.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -1261,17 +1255,17 @@ func (pa ProjectActivity) GetVerb() string {
 	return pa.Verb
 }
 
-func (pa ProjectActivity) GetNewIdentifier() string {
-	return pointerToStr(pa.NewIdentifier)
+func (pa ProjectActivity) GetNewIdentifier() uuid.NullUUID {
+	return pa.NewIdentifier
 }
 
-func (pa ProjectActivity) GetOldIdentifier() string {
-	return pointerToStr(pa.OldIdentifier)
+func (pa ProjectActivity) GetOldIdentifier() uuid.NullUUID {
+	return pa.OldIdentifier
 
 }
 
-func (pa ProjectActivity) GetId() string {
-	return pa.Id.String()
+func (pa ProjectActivity) GetId() uuid.UUID {
+	return pa.Id
 }
 
 func (activity *ProjectActivity) ToLightDTO() *dto.EntityActivityLight {
@@ -1411,8 +1405,8 @@ type IssueTemplate struct {
 	UpdatedBy *User
 }
 
-func (it IssueTemplate) GetId() string {
-	return it.Id.String()
+func (it IssueTemplate) GetId() uuid.UUID {
+	return it.Id
 }
 
 func (it IssueTemplate) GetString() string {
@@ -1423,12 +1417,12 @@ func (it IssueTemplate) GetEntityType() string {
 	return actField.Template.Field.String()
 }
 
-func (it IssueTemplate) GetProjectId() string {
-	return it.ProjectId.String()
+func (it IssueTemplate) GetProjectId() uuid.UUID {
+	return it.ProjectId
 }
 
-func (it IssueTemplate) GetWorkspaceId() string {
-	return it.WorkspaceId.String()
+func (it IssueTemplate) GetWorkspaceId() uuid.UUID {
+	return it.WorkspaceId
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM (GORM). Применяется для определения имени таблицы, в которой хранятся данные модели.

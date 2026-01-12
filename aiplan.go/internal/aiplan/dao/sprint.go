@@ -16,7 +16,7 @@ import (
 
 type SprintEntityI interface {
 	WorkspaceEntityI
-	GetSprintId() string
+	GetSprintId() uuid.UUID
 }
 
 type Sprint struct {
@@ -70,8 +70,8 @@ type IssueSprintExtendFields struct {
 func (Sprint) TableName() string { return "sprints" }
 
 // GetId Возвращает идентификатор спринта в виде строки.
-func (s Sprint) GetId() string {
-	return s.Id.String()
+func (s Sprint) GetId() uuid.UUID {
+	return s.Id
 }
 
 // GetString Возвращает заголовок спринта.
@@ -84,12 +84,12 @@ func (s Sprint) GetEntityType() string {
 	return actField.Sprint.Field.String()
 }
 
-func (s Sprint) GetWorkspaceId() string {
-	return s.WorkspaceId.String()
+func (s Sprint) GetWorkspaceId() uuid.UUID {
+	return s.WorkspaceId
 }
 
-func (s Sprint) GetSprintId() string {
-	return s.GetId()
+func (s Sprint) GetSprintId() uuid.UUID {
+	return s.Id
 }
 
 func (s *Sprint) AfterFind(tx *gorm.DB) error {
@@ -103,8 +103,7 @@ func (s *Sprint) AfterFind(tx *gorm.DB) error {
 			} else {
 				return err
 			}
-		}
-		if sprintView != nil {
+		} else {
 			s.View = sprintView.ViewProps
 		}
 	}
@@ -282,9 +281,9 @@ type SprintActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -338,7 +337,7 @@ func (sa SprintActivity) SkipPreload() bool {
 		return true
 	}
 
-	if sa.NewIdentifier == nil && sa.OldIdentifier == nil {
+	if !sa.NewIdentifier.Valid && !sa.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -352,16 +351,16 @@ func (sa SprintActivity) GetVerb() string {
 	return sa.Verb
 }
 
-func (sa SprintActivity) GetNewIdentifier() string {
-	return pointerToStr(sa.NewIdentifier)
+func (sa SprintActivity) GetNewIdentifier() uuid.NullUUID {
+	return sa.NewIdentifier
 }
 
-func (sa SprintActivity) GetOldIdentifier() string {
-	return pointerToStr(sa.OldIdentifier)
+func (sa SprintActivity) GetOldIdentifier() uuid.NullUUID {
+	return sa.OldIdentifier
 }
 
-func (sa SprintActivity) GetId() string {
-	return sa.Id.String()
+func (sa SprintActivity) GetId() uuid.UUID {
+	return sa.Id
 }
 
 func (activity *SprintActivity) ToLightDTO() *dto.EntityActivityLight {
