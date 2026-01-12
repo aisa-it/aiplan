@@ -171,7 +171,7 @@ func main() {
 					ReferencedColumn string
 				}{
 					{"issues", "parent_id", "issues", "id"},
-					{"docs", "parent_id", "docs", "id"},
+					{"docs", "parent_doc_id", "docs", "id"},
 					{"doc_fields", "parent_id", "doc_fields", "id"},
 				}
 				for _, fk := range selfRefFKs {
