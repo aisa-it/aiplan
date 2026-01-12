@@ -171,10 +171,10 @@ func GetMentionedUsers(db *gorm.DB, text types.RedactorHTML) ([]User, error) {
 	return users, err
 }
 
-func ExtractProjectMemberIDs(members []ProjectMember) []string {
-	ids := make([]string, len(members))
+func ExtractProjectMemberIDs(members []ProjectMember) []uuid.UUID {
+	ids := make([]uuid.UUID, len(members))
 	for i, member := range members {
-		ids[i] = member.MemberId.String()
+		ids[i] = member.MemberId
 	}
 	return ids
 }
@@ -212,13 +212,13 @@ func GetUserNeighbors(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []
 }
 
 func GetUserFromProjectMember(members []User, ids []interface{}) []User {
-	var users []User
-	idsMap := make(map[string]struct{})
+	users := make([]User, 0, len(members))
+	idsMap := make(map[uuid.UUID]struct{}, len(ids))
 	for _, id := range ids {
-		idsMap[id.(string)] = struct{}{}
+		idsMap[id.(uuid.UUID)] = struct{}{}
 	}
 	for _, member := range members {
-		if _, ok := idsMap[member.ID.String()]; ok {
+		if _, ok := idsMap[member.ID]; ok {
 			users = append(users, member)
 		}
 	}
@@ -683,10 +683,10 @@ WHERE tc.constraint_type = 'FOREIGN KEY'
 	slog.Info("Found foreign key constraints to drop", "count", len(constraints))
 
 	// Увеличиваем lock_timeout и statement_timeout для длительных операций
-	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
 		slog.Warn("Failed to set lock_timeout", "err", err)
 	}
-	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
 		slog.Warn("Failed to set statement_timeout", "err", err)
 	}
 
@@ -759,10 +759,10 @@ WHERE table_schema = 'public'
 	slog.Info("Found generated columns to drop", "count", len(columns))
 
 	// Увеличиваем lock_timeout и statement_timeout для длительных операций
-	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
 		slog.Warn("Failed to set lock_timeout", "err", err)
 	}
-	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
 		slog.Warn("Failed to set statement_timeout", "err", err)
 	}
 
@@ -832,10 +832,10 @@ WHERE tc.constraint_type = 'CHECK'
 	slog.Info("Found check constraints to drop", "count", len(constraints))
 
 	// Увеличиваем lock_timeout и statement_timeout для длительных операций
-	if err := tx.Exec("SET lock_timeout = '60s';").Error; err != nil {
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
 		slog.Warn("Failed to set lock_timeout", "err", err)
 	}
-	if err := tx.Exec("SET statement_timeout = '120s';").Error; err != nil {
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
 		slog.Warn("Failed to set statement_timeout", "err", err)
 	}
 

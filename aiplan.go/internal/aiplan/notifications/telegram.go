@@ -187,8 +187,8 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 
 						if act.Issue != nil {
 							var identifier uuid.UUID
-							if act.Field != nil && *act.Field == actField.Comment.Field.String() && act.NewIdentifier != nil {
-								identifier = uuid.FromStringOrNil(*act.NewIdentifier)
+							if act.Field != nil && *act.Field == actField.Comment.Field.String() && act.NewIdentifier.Valid {
+								identifier = act.NewIdentifier.UUID
 							}
 							err := bl.CreateIssueComment(*act.Issue, user, update.Message.Text, identifier, true)
 							if err != nil {
@@ -203,14 +203,8 @@ func NewTelegramService(db *gorm.DB, cfg *config.Config, tracker *tracker.Activi
 						}
 
 						if act.Doc != nil {
-							var identifier uuid.NullUUID
-							if act.Field != nil && *act.Field == actField.Comment.Field.String() && act.NewIdentifier != nil {
-								if v, err := uuid.FromString(*act.NewIdentifier); err == nil {
-									identifier = uuid.NullUUID{UUID: v, Valid: true}
-								}
-							}
-
-							err := bl.CreateDocComment(*act.Doc, user, update.Message.Text, identifier, true)
+							// todo проверить
+							err := bl.CreateDocComment(*act.Doc, user, update.Message.Text, act.NewIdentifier, true)
 							if err != nil {
 								if err.Error() == "create comment forbidden" {
 									bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "У вас нет прав оставлять комментарии в данном пространстве"))
@@ -487,7 +481,7 @@ func GetUserTgIdFromIssue(issue *dao.Issue) map[uuid.UUID]userTg {
 	return userTgId
 }
 
-func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId string) map[uuid.UUID]userTg {
+func GetUserTgIgDefaultWatchers(tx *gorm.DB, projectId uuid.UUID) map[uuid.UUID]userTg {
 	userTgId := make(map[uuid.UUID]userTg)
 	rows, err := tx.Select("users.id, users.telegram_id").
 		Model(dao.ProjectMember{}).

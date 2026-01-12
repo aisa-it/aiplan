@@ -235,9 +235,8 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			}
 
 			if a.Field != nil && *a.Field == actField.Comment.Field.String() && a.Verb != "deleted" {
-				if a.NewIdentifier != nil {
-					commentUUID := uuid.Must(uuid.FromString(*a.NewIdentifier))
-					notification.CommentId = &commentUUID
+				if a.NewIdentifier.Valid {
+					notification.CommentId = uuid.NullUUID{UUID: a.NewIdentifier.UUID, Valid: true}
 				}
 			}
 
@@ -286,7 +285,7 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 		ID:          dao.GenUUID(),
 		UserId:      userId,
 		Type:        "comment",
-		CommentId:   &comment.Id,
+		CommentId:   uuid.NullUUID{UUID: comment.Id, Valid: true},
 		Comment:     &comment,
 		WorkspaceId: uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true},
 		IssueId:     uuid.NullUUID{UUID: comment.IssueId, Valid: comment.IssueId != uuid.Nil},
@@ -377,7 +376,7 @@ func (nc *NotificationCleaner) Clean() {
 	}
 }
 
-func CreateDeadlineNotification(tx *gorm.DB, issue *dao.Issue, deadlineTime *string, assignees *[]string) error {
+func CreateDeadlineNotification(tx *gorm.DB, issue *dao.Issue, deadlineTime *string, assignees []uuid.UUID) error {
 	if err := tx.Unscoped().
 		Where("issue_id = ?", issue.ID).
 		Where("notification_type = ?", "deadline_notification").
@@ -403,7 +402,7 @@ func CreateDeadlineNotification(tx *gorm.DB, issue *dao.Issue, deadlineTime *str
 
 	var issueAssignees []dao.User
 
-	if err := tx.Where("id IN (?)", *assignees).Find(&issueAssignees).Error; err != nil {
+	if err := tx.Where("id IN (?)", assignees).Find(&issueAssignees).Error; err != nil {
 		return err
 	}
 
@@ -473,7 +472,7 @@ func truncateToDay(t time.Time) time.Time {
 }
 
 type NotificationResponse struct {
-	Id     string                     `json:"id,omitempty"`
+	Id     uuid.UUID                  `json:"id,omitempty"`
 	Type   string                     `json:"type"`
 	Detail NotificationDetailResponse `json:"detail"`
 	Data   interface{}                `json:"data"`

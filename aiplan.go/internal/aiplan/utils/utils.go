@@ -10,6 +10,7 @@ package utils
 
 import (
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
 	"iter"
@@ -281,4 +282,9 @@ func FormatDateToSqlNullTime(dateStr string) sql.NullTime {
 		return sql.NullTime{}
 	}
 	return sql.NullTime{Valid: true, Time: date}
+}
+
+func CheckEmbedSPA(fs embed.FS) bool {
+	d, err := fs.ReadFile("spa/index.html")
+	return len(d) > 0 && err == nil
 }

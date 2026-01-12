@@ -59,7 +59,7 @@ func parseParagraph(node TipTapNode) *edtypes.Paragraph {
 				p.Content = append(p.Content, hb)
 			}
 		default:
-			slog.Warn("Unknown paragraph child type", "type", child.Type)
+			slog.Debug("Unknown paragraph child type", "type", child.Type)
 		}
 	}
 

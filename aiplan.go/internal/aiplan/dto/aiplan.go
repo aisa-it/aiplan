@@ -47,24 +47,24 @@ type EntityActivityFull struct {
 	Doc       *DocLight       `json:"doc_detail,omitempty" extensions:"x-nullable"`
 	Sprint    *SprintLight    `json:"sprint_detail,omitempty" extensions:"x-nullable"`
 
-	NewIdentifier *string `json:"new_identifier,omitempty" extensions:"x-nullable"`
-	OldIdentifier *string `json:"old_identifier,omitempty" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier,omitempty" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier,omitempty" extensions:"x-nullable"`
 
 	StateLag int `json:"state_lag_ms,omitempty"`
 }
 
 type ReleaseNoteLight struct {
-	ID          string             ` json:"id"`
+	ID          uuid.UUID          ` json:"id"`
 	TagName     string             `json:"tag_name" `
 	PublishedAt time.Time          `json:"published_at"`
 	Body        types.RedactorHTML `json:"body" swaggertype:"string"`
 }
 
 type FileAsset struct {
-	Id          string `json:"id"`
-	Name        string `json:"name"`
-	FileSize    int    `json:"size"`
-	ContentType string `json:"content_type"`
+	Id          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	FileSize    int       `json:"size"`
+	ContentType string    `json:"content_type"`
 }
 
 type StateLight struct {
@@ -73,14 +73,14 @@ type StateLight struct {
 	Description string    `json:"description"`
 	Color       string    `json:"color"`
 	ProjectId   uuid.UUID `json:"project"`
-	WorkspaceId string    `json:"workspace"`
+	WorkspaceId uuid.UUID `json:"workspace"`
 	Sequence    uint64    `json:"sequence"`
 	Group       string    `json:"group"`
 	Default     bool      `json:"default"`
 }
 
 type HistoryBodyLight struct {
-	Id       string    `json:"Id"`
+	Id       uuid.UUID `json:"Id"`
 	CratedAt time.Time `json:"crated_at"`
 	Author   *UserLight
 }
@@ -116,7 +116,7 @@ type Attachment struct {
 type WorkspaceLimitsInfo struct {
 	TariffName        string `json:"tariff_name"`
 	ProjectsRemains   int    `json:"projects_remains,omitempty"`
-	ProjcetsMax       int    `json:"projects_max,omitempty"`
+	ProjectsMax       int    `json:"projects_max,omitempty"`
 	InvitesRemains    int    `json:"invites_remains,omitempty"`
 	InvitesMax        int    `json:"invites_max,omitempty"`
 	AttachmentsRemain int    `json:"attachments_remains,omitempty"`

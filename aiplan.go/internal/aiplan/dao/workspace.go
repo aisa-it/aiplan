@@ -68,8 +68,8 @@ type Workspace struct {
 	IsFavorite            bool             `json:"is_favorite" gorm:"-"`
 }
 
-func (w Workspace) GetId() string {
-	return w.ID.String()
+func (w Workspace) GetId() uuid.UUID {
+	return w.ID
 }
 
 func (w Workspace) GetWorkspaceId() uuid.UUID {
@@ -231,7 +231,7 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 	}
 
 	// delete projects
-	var runningIds []string
+	var runningIds []uuid.UUID
 	if err := tx.Model(&Project{}).Select("id").Unscoped().Where("id in (?)", deletingProjects.RunningDeletions()).Find(&runningIds).Error; err != nil {
 		return err
 	}
@@ -372,8 +372,8 @@ type WorkspaceMember struct {
 	NotificationAuthorSettingsEmail types.WorkspaceMemberNS `json:"notification_author_settings_email" gorm:"type:jsonb"`
 }
 
-func (wm WorkspaceMember) GetId() string {
-	return wm.ID.String()
+func (wm WorkspaceMember) GetId() uuid.UUID {
+	return wm.ID
 }
 
 func (wm WorkspaceMember) GetString() string {
@@ -394,7 +394,7 @@ func (wm *WorkspaceMember) ToLightDTO() *dto.WorkspaceMemberLight {
 	}
 
 	return &dto.WorkspaceMemberLight{
-		ID:              wm.ID.String(),
+		ID:              wm.ID,
 		Role:            wm.Role,
 		EditableByAdmin: wm.EditableByAdmin,
 		MemberId:        wm.MemberId,
@@ -625,9 +625,9 @@ type WorkspaceActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:workspace_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -661,7 +661,7 @@ func (wa WorkspaceActivity) SkipPreload() bool {
 		return true
 	}
 
-	if wa.NewIdentifier == nil && wa.OldIdentifier == nil {
+	if !wa.NewIdentifier.Valid && !wa.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -675,16 +675,16 @@ func (wa WorkspaceActivity) GetVerb() string {
 	return wa.Verb
 }
 
-func (wa WorkspaceActivity) GetNewIdentifier() string {
-	return pointerToStr(wa.NewIdentifier)
+func (wa WorkspaceActivity) GetNewIdentifier() uuid.NullUUID {
+	return wa.NewIdentifier
 }
 
-func (wa WorkspaceActivity) GetOldIdentifier() string {
-	return pointerToStr(wa.OldIdentifier)
+func (wa WorkspaceActivity) GetOldIdentifier() uuid.NullUUID {
+	return wa.OldIdentifier
 }
 
-func (wa WorkspaceActivity) GetId() string {
-	return wa.Id.String()
+func (wa WorkspaceActivity) GetId() uuid.UUID {
+	return wa.Id
 }
 
 func (wa WorkspaceActivity) SetTgSender(id int64) {

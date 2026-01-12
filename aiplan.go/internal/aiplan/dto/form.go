@@ -10,17 +10,18 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 )
 
 type FormLight struct {
-	ID              string                `json:"id"`
+	ID              uuid.UUID             `json:"id"`
 	Slug            string                `json:"slug"`
 	Title           string                `json:"title" validate:"required"`
 	Description     types.RedactorHTML    `json:"description" swaggertype:"string"`
 	AuthRequire     bool                  `json:"auth_require"`
 	EndDate         *types.TargetDate     `json:"end_date" extensions:"x-nullable" swaggertype:"string"`
-	TargetProjectId *string               `json:"target_project_id,omitempty"  extensions:"x-nullable"`
-	WorkspaceId     string                `json:"workspace" `
+	TargetProjectId uuid.NullUUID         `json:"target_project_id,omitempty"  extensions:"x-nullable"`
+	WorkspaceId     uuid.UUID             `json:"workspace" `
 	Fields          types.FormFieldsSlice `json:"fields"`
 	Active          bool                  `json:"active"`
 	Url             types.JsonURL         `json:"url,omitempty"`
@@ -35,7 +36,7 @@ type Form struct {
 }
 
 type FormAnswer struct {
-	ID        string    `json:"id"`
+	ID        uuid.UUID `json:"id"`
 	SeqId     int       `json:"seq_id"`
 	CreatedAt time.Time `json:"created_at"`
 
@@ -48,7 +49,7 @@ type FormAnswer struct {
 }
 
 type FormAttachmentLight struct {
-	Id        string     `json:"id"`
+	Id        uuid.UUID  `json:"id"`
 	CreatedAt time.Time  `json:"created_at"`
 	Asset     *FileAsset `json:"asset"`
 }

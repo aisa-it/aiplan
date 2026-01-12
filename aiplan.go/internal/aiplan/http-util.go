@@ -2,6 +2,7 @@ package aiplan
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -164,21 +165,21 @@ func activityMigrate(db *gorm.DB) {
 					case "priority", "state", "target_date", "name", "description", "blocks", "blocking", "start_date", "completed_at":
 						is.Verb = "updated"
 					case "assignees", "watchers", "labels", "parent", "sub_issue", "linked":
-						if is.NewIdentifier == nil {
+						if !is.NewIdentifier.Valid {
 							is.Verb = "removed"
 						} else {
 							is.Verb = "added"
 						}
 					case "attachment", "link", "comment":
-						var id string
-						if activity.NewIdentifier != nil && activity.OldIdentifier != nil {
+						var id uuid.NullUUID
+						if activity.NewIdentifier.Valid && activity.OldIdentifier.Valid {
 							is.Verb = "updated"
-						} else if activity.NewIdentifier != nil {
-							id = *activity.NewIdentifier
+						} else if activity.NewIdentifier.Valid {
+							id = activity.NewIdentifier
 							is.Verb = "created"
 						} else {
-							if activity.OldIdentifier != nil {
-								id = *activity.OldIdentifier
+							if activity.OldIdentifier.Valid {
+								id = activity.OldIdentifier
 							}
 							is.Verb = "deleted"
 						}
@@ -186,9 +187,9 @@ func activityMigrate(db *gorm.DB) {
 						if *activity.Field == "attachment" {
 							var issueAttachment dao.IssueAttachment
 							if err := tx.Where("id = ?", id).First(&issueAttachment).Error; err != nil {
-								if gorm.ErrRecordNotFound == err {
-									is.OldIdentifier = nil
-									is.NewIdentifier = nil
+								if errors.Is(err, gorm.ErrRecordNotFound) {
+									is.OldIdentifier = uuid.NullUUID{}
+									is.NewIdentifier = uuid.NullUUID{}
 								} else {
 									continue
 								}
@@ -206,9 +207,9 @@ func activityMigrate(db *gorm.DB) {
 
 							var issueComment dao.IssueComment
 							if err := tx.Where("id = ?", id).First(&issueComment).Error; err != nil {
-								if gorm.ErrRecordNotFound == err {
-									is.OldIdentifier = nil
-									is.NewIdentifier = nil
+								if errors.Is(err, gorm.ErrRecordNotFound) {
+									is.OldIdentifier = uuid.NullUUID{}
+									is.NewIdentifier = uuid.NullUUID{}
 								} else {
 									continue
 								}
@@ -238,24 +239,18 @@ func activityMigrate(db *gorm.DB) {
 						}
 
 						pa := dao.ProjectActivity{
-							Id:          activity.Id,
-							CreatedAt:   activity.CreatedAt,
-							Verb:        "created",         // в зависимости от нового поведения
-							Field:       &field,            // в зависимости от нового поведения
-							OldValue:    activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
-							NewValue:    issue.String(),
-							Comment:     activity.Comment,
-							ProjectId:   activity.ProjectId.UUID,
-							WorkspaceId: activity.WorkspaceId,
-							ActorId:     activity.ActorId,
-							NewIdentifier: func() *string {
-								if activity.IssueId.Valid {
-									s := activity.IssueId.UUID.String()
-									return &s
-								}
-								return nil
-							}(), // в зависимости от нового поведения
-							OldIdentifier: nil, // в зависимости от нового поведения
+							Id:            activity.Id,
+							CreatedAt:     activity.CreatedAt,
+							Verb:          "created",         // в зависимости от нового поведения
+							Field:         &field,            // в зависимости от нового поведения
+							OldValue:      activity.OldValue, //TODO убрать все <nil> & в зависимости от нового поведения
+							NewValue:      issue.String(),
+							Comment:       activity.Comment,
+							ProjectId:     activity.ProjectId.UUID,
+							WorkspaceId:   activity.WorkspaceId,
+							ActorId:       activity.ActorId,
+							NewIdentifier: activity.IssueId, // в зависимости от нового поведения
+							OldIdentifier: uuid.NullUUID{},  // в зависимости от нового поведения
 							Notified:      activity.Notified,
 							TelegramMsgId: activity.TelegramMsgId,
 						}
@@ -286,15 +281,15 @@ func activityMigrate(db *gorm.DB) {
 					case "name", "emoji", "identifier", "public", "role", "default_assignees", "default_watchers", "project_lead", "default":
 						pa.Verb = "updated"
 					case "state", "label":
-						var id string
-						if activity.NewIdentifier != nil && activity.OldIdentifier != nil {
+						var id uuid.NullUUID
+						if activity.NewIdentifier.Valid && activity.OldIdentifier.Valid {
 							pa.Verb = "updated"
-						} else if activity.NewIdentifier != nil {
-							id = *activity.NewIdentifier
+						} else if activity.NewIdentifier.Valid {
+							id = activity.NewIdentifier
 							pa.Verb = "created"
 						} else {
-							if activity.OldIdentifier != nil {
-								id = *activity.OldIdentifier
+							if activity.OldIdentifier.Valid {
+								id = activity.OldIdentifier
 							}
 							pa.Verb = "deleted"
 						}
@@ -302,9 +297,9 @@ func activityMigrate(db *gorm.DB) {
 						if *activity.Field == "state" {
 							var state dao.State
 							if err := tx.Where("id = ?", id).First(&state).Error; err != nil {
-								if gorm.ErrRecordNotFound == err {
-									pa.OldIdentifier = nil
-									pa.NewIdentifier = nil
+								if errors.Is(err, gorm.ErrRecordNotFound) {
+									pa.OldIdentifier = uuid.NullUUID{}
+									pa.NewIdentifier = uuid.NullUUID{}
 								} else {
 									continue
 								}
@@ -314,9 +309,9 @@ func activityMigrate(db *gorm.DB) {
 						if *activity.Field == "label" {
 							var label dao.Label
 							if err := tx.Where("id = ?", id).First(&label).Error; err != nil {
-								if gorm.ErrRecordNotFound == err {
-									pa.OldIdentifier = nil
-									pa.NewIdentifier = nil
+								if errors.Is(err, gorm.ErrRecordNotFound) {
+									pa.OldIdentifier = uuid.NullUUID{}
+									pa.NewIdentifier = uuid.NullUUID{}
 								} else {
 									continue
 								}
@@ -327,12 +322,12 @@ func activityMigrate(db *gorm.DB) {
 						ids = append(ids, activity.Id.String())
 						continue
 					case "member":
-						var id string
-						if activity.NewIdentifier != nil {
-							id = *activity.NewIdentifier
+						var id uuid.NullUUID
+						if activity.NewIdentifier.Valid {
+							id = activity.NewIdentifier
 						}
-						if activity.OldIdentifier != nil {
-							id = *activity.OldIdentifier
+						if activity.OldIdentifier.Valid {
+							id = activity.OldIdentifier
 						}
 						var user dao.User
 						if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
@@ -365,24 +360,24 @@ func activityMigrate(db *gorm.DB) {
 						Comment:       activity.Comment,
 						WorkspaceId:   activity.WorkspaceId,
 						ActorId:       activity.ActorId,
-						NewIdentifier: nil, // в зависимости от нового поведения
-						OldIdentifier: nil, // в зависимости от нового поведения
+						NewIdentifier: uuid.NullUUID{}, // в зависимости от нового поведения
+						OldIdentifier: uuid.NullUUID{}, // в зависимости от нового поведения
 						Notified:      activity.Notified,
 						TelegramMsgId: activity.TelegramMsgId,
 					}
 
 					if wa.Verb == "created" {
-						projectId := activity.ProjectId.UUID.String()
-						wa.NewIdentifier = &projectId
+						projectId := activity.ProjectId.UUID
+						wa.NewIdentifier = uuid.NullUUID{projectId, true}
 					}
 
 					var project dao.Project
 					if err := tx.Preload("Workspace").
 						Where("id = ?", activity.ProjectId.UUID).
 						First(&project).Error; err != nil {
-						if gorm.ErrRecordNotFound == err {
-							wa.OldIdentifier = nil
-							wa.NewIdentifier = nil
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							wa.OldIdentifier = uuid.NullUUID{}
+							wa.NewIdentifier = uuid.NullUUID{}
 						} else {
 							continue
 						}
@@ -411,10 +406,10 @@ func activityMigrate(db *gorm.DB) {
 					case "role", "name", "logo", "integration_token":
 						wa.Verb = "updated"
 					case "member":
-						if activity.NewIdentifier == nil {
+						if activity.NewIdentifier.Valid {
 							wa.Verb = "deleted"
 						}
-						if activity.OldIdentifier == nil {
+						if activity.OldIdentifier.Valid {
 							wa.Verb = "created"
 						}
 
@@ -434,24 +429,23 @@ func activityMigrate(db *gorm.DB) {
 						NewValue:      activity.NewValue,
 						Comment:       activity.Comment,
 						ActorId:       activity.ActorId,
-						NewIdentifier: nil, // в зависимости от нового поведения
-						OldIdentifier: nil, // в зависимости от нового поведения
+						NewIdentifier: uuid.NullUUID{}, // в зависимости от нового поведения
+						OldIdentifier: uuid.NullUUID{}, // в зависимости от нового поведения
 						Notified:      activity.Notified,
 						TelegramMsgId: activity.TelegramMsgId,
 					}
 
 					if ra.Verb == "created" {
-						workspaceId := activity.WorkspaceId.String()
-						ra.NewIdentifier = &workspaceId
+						ra.NewIdentifier = uuid.NullUUID{UUID: activity.WorkspaceId, Valid: true}
 					}
 
 					var workspace dao.Workspace
 					if err := tx.
 						Where("id = ?", activity.WorkspaceId).
 						First(&workspace).Error; err != nil {
-						if gorm.ErrRecordNotFound == err {
-							ra.OldIdentifier = nil
-							ra.NewIdentifier = nil
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							ra.OldIdentifier = uuid.NullUUID{}
+							ra.NewIdentifier = uuid.NullUUID{}
 						} else {
 							continue
 						}
@@ -480,7 +474,7 @@ func activityMigrate(db *gorm.DB) {
 					switch *activity.Field {
 					case "fields", "end_date", "title", "description", "auth_require":
 						if *activity.Field == "description" {
-							fa.NewIdentifier = nil
+							fa.NewIdentifier = uuid.NullUUID{}
 						}
 						fa.Verb = "updated"
 					case "answer":
@@ -505,24 +499,23 @@ func activityMigrate(db *gorm.DB) {
 						Comment:       activity.Comment,
 						WorkspaceId:   activity.WorkspaceId,
 						ActorId:       activity.ActorId,
-						NewIdentifier: nil, // в зависимости от нового поведения
-						OldIdentifier: nil, // в зависимости от нового поведения
+						NewIdentifier: uuid.NullUUID{}, // в зависимости от нового поведения
+						OldIdentifier: uuid.NullUUID{}, // в зависимости от нового поведения
 						Notified:      activity.Notified,
 						TelegramMsgId: activity.TelegramMsgId,
 					}
 
 					if wa.Verb == "created" {
-						formId := activity.FormId.UUID.String()
-						wa.NewIdentifier = &formId
+						wa.NewIdentifier = activity.FormId
 					}
 
 					var form dao.Form
 					if err := tx.Preload("Workspace").
 						Where("id = ?", activity.FormId.UUID).
 						First(&form).Error; err != nil {
-						if gorm.ErrRecordNotFound == err {
-							wa.OldIdentifier = nil
-							wa.NewIdentifier = nil
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							wa.OldIdentifier = uuid.NullUUID{}
+							wa.NewIdentifier = uuid.NullUUID{}
 						} else {
 							continue
 						}
@@ -649,7 +642,7 @@ func activityMigrate(db *gorm.DB) {
 	})
 }
 
-func hasRecentFieldUpdate[A dao.Activity](tx *gorm.DB, userId string, fields ...string) bool {
+func hasRecentFieldUpdate[A dao.Activity](tx *gorm.DB, userId uuid.UUID, fields ...string) bool {
 	var model A
 	err := tx.Model(&model).
 		Where("actor_id = ?", userId).

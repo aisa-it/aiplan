@@ -53,16 +53,16 @@ type Doc struct {
 
 	InlineAttachments []FileAsset `json:"doc_inline_attachments" gorm:"foreignKey:DocId"`
 
-	ChildDocs   []string `json:"-" gorm:"-"`
-	Breadcrumbs []string `json:"-" gorm:"-"`
+	ChildDocs   []uuid.UUID `json:"-" gorm:"-"`
+	Breadcrumbs []uuid.UUID `json:"-" gorm:"-"`
 
 	Editors  *[]User `json:"editor_details,omitempty" gorm:"-"`
 	Readers  *[]User `json:"reader_details,omitempty" gorm:"-"`
 	Watchers *[]User `json:"watcher_details,omitempty" gorm:"-"`
 
-	EditorsIDs []string `json:"editors" gorm:"-"`
-	ReaderIDs  []string `json:"readers" gorm:"-"`
-	WatcherIDs []string `json:"watchers" gorm:"-"`
+	EditorsIDs []uuid.UUID `json:"editors" gorm:"-"`
+	ReaderIDs  []uuid.UUID `json:"readers" gorm:"-"`
+	WatcherIDs []uuid.UUID `json:"watchers" gorm:"-"`
 
 	AccessRules []DocAccessRules `json:"-" gorm:"foreignKey:DocId"`
 
@@ -74,9 +74,9 @@ type Doc struct {
 }
 
 func (d *Doc) PopulateAccessFields() {
-	d.EditorsIDs = []string{}
-	d.ReaderIDs = []string{}
-	d.WatcherIDs = []string{}
+	d.EditorsIDs = []uuid.UUID{}
+	d.ReaderIDs = []uuid.UUID{}
+	d.WatcherIDs = []uuid.UUID{}
 	editorUsers := make([]User, 0)
 	readerUsers := make([]User, 0)
 	watcherUsers := make([]User, 0)
@@ -89,25 +89,25 @@ func (d *Doc) PopulateAccessFields() {
 		return
 	}
 
-	editors := make([]string, 0)
-	readers := make([]string, 0)
-	watchers := make([]string, 0)
+	editors := make([]uuid.UUID, 0)
+	readers := make([]uuid.UUID, 0)
+	watchers := make([]uuid.UUID, 0)
 
 	for _, access := range d.AccessRules {
 		if access.Edit {
-			editors = append(editors, access.MemberId.String())
+			editors = append(editors, access.MemberId)
 			if access.Member != nil {
 				editorUsers = append(editorUsers, *access.Member)
 			}
 		} else {
-			readers = append(readers, access.MemberId.String())
+			readers = append(readers, access.MemberId)
 			if access.Member != nil {
 				readerUsers = append(readerUsers, *access.Member)
 			}
 		}
 
 		if access.Watch {
-			watchers = append(watchers, access.MemberId.String())
+			watchers = append(watchers, access.MemberId)
 			if access.Member != nil {
 				watcherUsers = append(watcherUsers, *access.Member)
 			}
@@ -140,8 +140,8 @@ type DocExtendFields struct {
 }
 
 // Возвращает идентификатор документа в виде строки.
-func (d Doc) GetId() string {
-	return d.ID.String()
+func (d Doc) GetId() uuid.UUID {
+	return d.ID
 }
 
 // Возвращает заголовок документа.
@@ -158,8 +158,8 @@ func (d Doc) GetWorkspaceId() uuid.UUID {
 	return d.WorkspaceId
 }
 
-func (d Doc) GetDocId() string {
-	return d.GetId()
+func (d Doc) GetDocId() uuid.UUID {
+	return d.ID
 }
 
 // Функция AfterFind выполняется после успешного поиска записи в базе данных.  Она выполняет дополнительные операции, такие как обновление информации о URL,  получение итоговых данных о реакции на комментарии, и другие необходимые действия после извлечения данных из базы.
@@ -211,7 +211,7 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 
 	if _, ok := tx.Get("breadcrumbs"); ok {
 		if d.ParentDocID.Valid {
-			var breadcrumbs []string
+			var breadcrumbs []uuid.UUID
 
 			err := tx.Raw(`
     WITH RECURSIVE breadcrumbs AS (
@@ -311,13 +311,12 @@ func (d *Doc) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	var commentId []string
-
-	for _, comment := range comments {
-		commentId = append(commentId, comment.Id.String())
+	commentIds := make([]uuid.UUID, len(comments))
+	for i := range comments {
+		commentIds[i] = comments[i].Id
 	}
 
-	if err := tx.Where("comment_id in ?", commentId).Delete(&DocCommentReaction{}).Error; err != nil {
+	if err := tx.Where("comment_id in ?", commentIds).Delete(&DocCommentReaction{}).Error; err != nil {
 		return err
 	}
 
@@ -362,19 +361,13 @@ func (d *Doc) ToDTO() *dto.Doc {
 		return nil
 	}
 
-	var parentId *string
-	if d.ParentDocID.Valid {
-		id := d.ParentDocID.UUID.String()
-		parentId = &id
-	}
-
 	docDTO := dto.Doc{
 		DocLight:          *d.ToLightDTO(),
 		CreatedAt:         d.CreatedAt,
 		UpdateAt:          d.UpdatedAt,
 		Content:           d.Content,
 		LLMContent:        d.LLMContent,
-		ParentDoc:         parentId,
+		ParentDoc:         d.ParentDocID,
 		InlineAttachments: utils.SliceToSlice(&d.InlineAttachments, func(f *FileAsset) dto.FileAsset { return *f.ToDTO() }),
 		Breadcrumbs:       d.Breadcrumbs,
 		Author:            d.Author.ToLightDTO(),
@@ -402,7 +395,7 @@ func (d *Doc) ToLightDTO() *dto.DocLight {
 	}
 	d.SetUrl()
 	return &dto.DocLight{
-		Id:           d.ID.String(),
+		Id:           d.ID,
 		Title:        d.Title,
 		HasChildDocs: len(d.ChildDocs) > 0,
 		Draft:        &d.Draft,
@@ -461,8 +454,8 @@ type DocCommentExtendFields struct {
 }
 
 // Возвращает идентификатор документа в виде строки.
-func (dc DocComment) GetId() string {
-	return dc.Id.String()
+func (dc DocComment) GetId() uuid.UUID {
+	return dc.Id
 }
 
 // Возвращает заголовок документа.
@@ -479,8 +472,8 @@ func (dc DocComment) GetWorkspaceId() uuid.UUID {
 	return dc.WorkspaceId
 }
 
-func (dc DocComment) GetDocId() string {
-	return dc.DocId.String()
+func (dc DocComment) GetDocId() uuid.UUID {
+	return dc.DocId
 }
 
 // Выполняет дополнительные операции после успешного поиска записи в базе данных. В частности, обновляет информацию об URL, получает итоги реакции на комментарии и другие необходимые действия после извлечения данных из базы.
@@ -543,7 +536,7 @@ func (dc *DocComment) ToLightDTO() *dto.DocCommentLight {
 	}
 
 	return &dto.DocCommentLight{
-		Id:              dc.Id.String(),
+		Id:              dc.Id,
 		CommentStripped: dc.CommentStripped,
 		CommentHtml:     dc.CommentHtml,
 		URL:             types.JsonURL{dc.URL},
@@ -556,17 +549,12 @@ func (dc *DocComment) ToDTO() *dto.DocComment {
 		return nil
 	}
 
-	var updatedById *uuid.UUID
-	if dc.UpdatedById.Valid {
-		updatedById = &dc.UpdatedById.UUID
-	}
-
 	comment := dto.DocComment{
 		DocCommentLight: *dc.ToLightDTO(),
 		CreatedAt:       dc.CreatedAt,
 		UpdatedAt:       dc.UpdatedAt,
 
-		UpdatedById: updatedById,
+		UpdatedById: dc.UpdatedById,
 		Actor:       dc.Actor.ToLightDTO(),
 
 		CommentType:     dc.CommentType,
@@ -618,7 +606,7 @@ func (dcr *DocCommentReaction) ToDTO() *dto.CommentReaction {
 		CreatedAt: dcr.CreatedAt,
 		UpdatedAt: dcr.UpdatedAt,
 		CommentId: dcr.CommentId,
-		UserId:    dcr.UserId.String(),
+		UserId:    dcr.UserId,
 		Reaction:  dcr.Reaction,
 	}
 }
@@ -628,7 +616,7 @@ func (DocCommentReaction) TableName() string { return "doc_comment_reactions" }
 
 type DocEntityI interface {
 	WorkspaceEntityI
-	GetDocId() string
+	GetDocId() uuid.UUID
 }
 
 type DocActivity struct {
@@ -652,9 +640,9 @@ type DocActivity struct {
 	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:doc_activities_actor_index,priority:1" extensions:"x-nullable"`
 
 	// new_identifier uuid IS_NULL:YES
-	NewIdentifier *string `json:"new_identifier" extensions:"x-nullable"`
+	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	// old_identifier uuid IS_NULL:YES
-	OldIdentifier *string       `json:"old_identifier" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
 	Notified      bool          `json:"-" gorm:"default:false"`
 	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
 
@@ -708,7 +696,7 @@ func (da DocActivity) SkipPreload() bool {
 		return true
 	}
 
-	if da.NewIdentifier == nil && da.OldIdentifier == nil {
+	if !da.NewIdentifier.Valid && !da.OldIdentifier.Valid {
 		return true
 	}
 	return false
@@ -724,18 +712,17 @@ func (da DocActivity) GetVerb() string {
 }
 
 // Добавляет новый идентификатор к объекту Doc. Используется для уникальной идентификации документа в базе данных.
-func (da DocActivity) GetNewIdentifier() string {
-	return pointerToStr(da.NewIdentifier)
+func (da DocActivity) GetNewIdentifier() uuid.NullUUID {
+	return da.NewIdentifier
 }
 
 // Возвращает старый идентификатор Doc, если он существует.  Используется для отслеживания изменений идентификаторов Doc при репликации или других операциях.
-func (da DocActivity) GetOldIdentifier() string {
-	return pointerToStr(da.OldIdentifier)
-
+func (da DocActivity) GetOldIdentifier() uuid.NullUUID {
+	return da.OldIdentifier
 }
 
-func (da DocActivity) GetId() string {
-	return da.Id.String()
+func (da DocActivity) GetId() uuid.UUID {
+	return da.Id
 }
 
 // Преобразует Doc в структуру dto.EntityActivityLight для упрощения передачи данных в API.
@@ -842,7 +829,7 @@ func (da *DocActivity) ToHistoryLightDTO() *dto.HistoryBodyLight {
 	}
 
 	return &dto.HistoryBodyLight{
-		Id:       da.Id.String(),
+		Id:       da.Id,
 		CratedAt: da.CreatedAt,
 		Author:   da.Actor.ToLightDTO(),
 	}
@@ -891,8 +878,8 @@ type DocAttachmentExtendFields struct {
 //
 // Возвращает:
 //   - string: идентификатор документа в виде строки.
-func (da DocAttachment) GetId() string {
-	return da.Id.String()
+func (da DocAttachment) GetId() uuid.UUID {
+	return da.Id
 }
 
 // Возвращает заголовок документа.
@@ -912,8 +899,8 @@ func (da DocAttachment) GetWorkspaceId() uuid.UUID {
 	return da.WorkspaceId
 }
 
-func (da DocAttachment) GetDocId() string {
-	return da.DocId.String()
+func (da DocAttachment) GetDocId() uuid.UUID {
+	return da.DocId
 }
 
 // Преобразует структуру Doc в структуру dto.Attachment для удобства передачи данных в API.
@@ -1078,7 +1065,7 @@ func (df *DocFavorites) ToDTO() *dto.DocFavorites {
 //
 // Возвращает:
 //   - Doc: документ, соответствующий указанному ID, или ошибка, если документ не найден или произошла другая ошибка при работе с базой данных.
-func GetDoc(db *gorm.DB, workspaceId, docId string, workspaceMember WorkspaceMember) (Doc, error) {
+func GetDoc(db *gorm.DB, workspaceId, docId uuid.UUID, workspaceMember WorkspaceMember) (Doc, error) {
 	d := Doc{}
 	return d, db.Set("member_id", workspaceMember.MemberId).
 		Set("member_role", workspaceMember.Role).
@@ -1113,8 +1100,8 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 
 	doc.ReaderIDs = getUniqueDocMemberIDs(doc.WatcherIDs, doc.ReaderIDs, doc.EditorsIDs)
 
-	userMap := utils.SliceToMap(&users, func(u *User) string { return u.ID.String() })
-	var newAccessRules []DocAccessRules
+	userMap := utils.SliceToMap(&users, func(u *User) uuid.UUID { return u.ID })
+	newAccessRules := make([]DocAccessRules, 0, len(userMap))
 	for id, u := range userMap {
 		newAccessRules = append(newAccessRules, DocAccessRules{
 			Id: GenUUID(),
@@ -1133,20 +1120,20 @@ func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
 		return err
 	}
 
-	doc.Editors = utils.ToPtr(utils.SliceToSlice(&doc.EditorsIDs, func(s *string) User { return userMap[*s] }))
-	doc.Watchers = utils.ToPtr(utils.SliceToSlice(&doc.WatcherIDs, func(s *string) User { return userMap[*s] }))
-	doc.Readers = utils.ToPtr(utils.SliceToSlice(&doc.ReaderIDs, func(s *string) User { return userMap[*s] }))
+	doc.Editors = utils.ToPtr(utils.SliceToSlice(&doc.EditorsIDs, func(s *uuid.UUID) User { return userMap[*s] }))
+	doc.Watchers = utils.ToPtr(utils.SliceToSlice(&doc.WatcherIDs, func(s *uuid.UUID) User { return userMap[*s] }))
+	doc.Readers = utils.ToPtr(utils.SliceToSlice(&doc.ReaderIDs, func(s *uuid.UUID) User { return userMap[*s] }))
 
 	return nil
 }
 
-func getUniqueDocMemberIDs(watcherIDs, readerIDs, editorIDs []string) []string {
-	editorSet := make(map[string]bool)
+func getUniqueDocMemberIDs(watcherIDs, readerIDs, editorIDs []uuid.UUID) []uuid.UUID {
+	editorSet := make(map[uuid.UUID]bool, len(editorIDs))
 	for _, id := range editorIDs {
 		editorSet[id] = true
 	}
 
-	filteredWatchers := make([]string, 0)
+	filteredWatchers := make([]uuid.UUID, 0, len(watcherIDs))
 	for _, id := range watcherIDs {
 		if !editorSet[id] {
 			filteredWatchers = append(filteredWatchers, id)

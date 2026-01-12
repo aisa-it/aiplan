@@ -1,3 +1,62 @@
+## Интеграция фронтенда в сборку
+
+### Build tags
+
+Используются два файла с взаимоисключающими build tags:
+
+**embedFront.go** (`//go:build embedSPA`):
+```go
+//go:embed pwa
+var frontFS embed.FS
+```
+- Активируется при сборке с флагом `-tags embedSPA`
+- Встраивает содержимое папки `pwa` в бинарник через `embed.FS`
+
+**externalFront.go** (`//go:build !embedSPA`):
+```go
+var frontFS embed.FS  // пустая
+```
+- Активируется по умолчанию (без тега)
+- `frontFS` пустая — фронтенд обслуживается через переменную окружения `FRONT_PATH`
+
+### Условия сборки
+
+| Режим | Build tag | Фронтенд | Использование |
+|-------|-----------|----------|---------------|
+| Production (Dagger CI) | `-tags embedSPA` | Встроен в бинарник | Docker образы для деплоя |
+| Development | без тега | Внешний (`FRONT_PATH`) | Локальная разработка |
+
+### Dagger CI (dagger-ci/main.go)
+
+```go
+// Сборка фронтенда
+front := m.FrontBuildEnv(version, source.Directory("aiplan-front/"))
+
+// Сборка бэкенда с embedded SPA
+builder := m.GoBuildEnv(source).
+    WithExec([]string{"go", "build", "-tags", "embedSPA", ...})
+
+// Контейнер с обоими вариантами
+m.BackEnv(...).
+    WithDirectory("/app/spa", front.Directory("/src/dist/pwa")).
+    WithEnvVariable("FRONT_PATH", "/app/spa")
+```
+
+В production контейнере:
+- Фронтенд встроен в бинарник (через `embedSPA`)
+- Также копируется в `/app/spa` как fallback
+
+### Локальная разработка
+
+```bash
+# Бэкенд (без embedded фронтенда)
+go build ./cmd/aiplan
+FRONT_PATH=../aiplan-front/dist/pwa ./aiplan
+
+# Фронтенд отдельно
+cd aiplan-front && yarn dev
+```
+
 ## Роли участников в проекте
 
 Старые роли:

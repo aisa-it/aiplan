@@ -58,28 +58,31 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		user := c.(AuthContext).User
 		slugOrId := c.Param("workspaceSlug")
 
-		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
-			var exist bool
-			if err := s.db.Model(&dao.Workspace{}).
-				Select("EXISTS(?)",
-					s.db.Model(&dao.Workspace{}).
-						Select("1").
-						Where("encode(hash, 'hex') = ?", etag),
-				).
-				Find(&exist).Error; err != nil {
-				return EError(c, err)
-			}
+		/*
+			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+				etag = strings.TrimSuffix(etag, user.ID.String())
+				var exist bool
+				if err := s.db.Model(&dao.Workspace{}).
+					Select("EXISTS(?)",
+						s.db.Model(&dao.Workspace{}).
+							Select("1").
+							Where("encode(hash, 'hex') = ?", etag),
+					).
+					Find(&exist).Error; err != nil {
+					return EError(c, err)
+				}
 
-			if exist {
-				return c.NoContent(http.StatusNotModified)
+				if exist {
+					return c.NoContent(http.StatusNotModified)
+				}
 			}
-		}
+		*/
 
 		var workspace dao.Workspace
 		workspaceQuery := s.db.
 			Joins("Owner").
 			Joins("LogoAsset").
-			Set("userID", user.ID)
+			Set("userID", user.ID) // TODO: Remove when front remove current_membership
 
 		if id, err := uuid.FromString(slugOrId); err == nil {
 			workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
@@ -95,10 +98,11 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		var workspaceMember dao.WorkspaceMember
-		if workspace.CurrentUserMembership != nil {
-			workspaceMember = *workspace.CurrentUserMembership
-		} else {
-			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+		if err := s.db.Where("workspace_id = ?", workspace.ID).Where("member_id = ?", user.ID).First(&workspaceMember).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+			}
+			return EError(c, err)
 		}
 		workspaceMember.Workspace = &workspace
 
@@ -133,6 +137,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.GET("/activities/", s.getWorkspaceActivityList)
 
 	workspaceGroup.GET("/members/", s.getWorkspaceMemberList)
+	workspaceGroup.GET("/members/me/", s.getWorkspaceCurrentMembership)
 	workspaceGroup.PATCH("/members/:memberId/", s.updateWorkspaceMember)
 	workspaceGroup.PATCH("/members/:memberId/set-email/", s.updateUserEmail)
 	workspaceGroup.DELETE("/members/:memberId/", s.deleteWorkspaceMember)
@@ -230,7 +235,8 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	workspace.ID = id
 	workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspace.Name = strings.TrimSpace(workspace.Name)
-	var newMemberOwnerId, newMemberOwnerEmail string
+	var newMemberOwnerId uuid.UUID
+	var newMemberOwnerEmail string
 	err := c.Validate(workspace)
 	if err != nil {
 		return EError(c, err)
@@ -250,7 +256,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			}
 			return EError(c, err)
 		}
-		newMemberOwnerId = member.MemberId.String()
+		newMemberOwnerId = member.MemberId
 		newMemberOwnerEmail = member.Member.Email
 	}
 
@@ -390,7 +396,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
-	oldLogoId := workspace.LogoId.UUID.String()
+	oldLogoId := workspace.LogoId.UUID
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -411,10 +417,10 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 
 	//Трекинг активности
 	oldMap := map[string]interface{}{
-		"logo": oldLogoId,
+		"logo": oldLogoId.String(),
 	}
 	newMap := map[string]interface{}{
-		"logo": uuid.NullUUID{}.UUID.String(),
+		"logo": uuid.Nil.String(),
 	}
 
 	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
@@ -453,7 +459,7 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 		return err
 	}
 	// Cancel jira imports
-	if err := s.importService.CancelWorkspaceImports(workspace.ID.String()); err != nil {
+	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
 		return EError(c, err)
 	}
 
@@ -692,6 +698,25 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
+// getWorkspaceCurrentMembership godoc
+// @id getWorkspaceCurrentMembership
+// @Summary Пространство (участники): получение информации о текущем участнике рабочего пространства
+// @Description Возвращает данные участника для текущего пользователя в рабочем пространстве.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceMember "Успешный ответ с данными текущего участника рабочего пространства"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/me/ [get]
+func (s *Services) getWorkspaceCurrentMembership(c echo.Context) error {
+	member := c.(WorkspaceContext).WorkspaceMember
+	return c.JSON(http.StatusOK, member.ToDTO())
+}
+
 // updateWorkspaceMember godoc
 // @id updateWorkspaceMember
 // @Summary Пространство (участники): обновление роли участника пространства
@@ -915,7 +940,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 	// One cannot remove role higher than his own role
 	if workspaceMember.Role < requestedMember.Role && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveHigherRoleUser)
-	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID.String() != requestedMemberId {
+	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID != requestedMember.ID {
 		return EErrorDefined(c, apierrors.ErrDeleteSuperUser)
 	}
 	if workspace.OwnerId == requestedMember.MemberId {
@@ -1182,9 +1207,9 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 				}
 			}
 			var existingMember dao.WorkspaceMember
-			userIdStr := user.ID.String()
+			userUUID := user.ID
 			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-			if err := tx.Where("member_id = ? AND workspace_id = ?", userIdStr, workspace.ID).First(&existingMember).Error; err == nil {
+			if err := tx.Where("member_id = ? AND workspace_id = ?", userUUID, workspace.ID).First(&existingMember).Error; err == nil {
 				return apierrors.ErrInviteMemberExist
 			}
 
@@ -1237,7 +1262,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 					}
 					if err := tx.Clauses(clause.OnConflict{
 						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
-						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userIdStr}),
+						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userUUID}),
 					}).Create(&projectMember).Error; err != nil {
 						return err
 					}
@@ -1579,15 +1604,15 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	result := make(map[string][]dto.StateLight)
+	result := make(map[uuid.UUID][]dto.StateLight)
 	hash := sha256.New()
 	for _, state := range states {
-		arr, ok := result[state.ProjectId.String()]
+		arr, ok := result[state.ProjectId]
 		if !ok {
 			arr = make([]dto.StateLight, 0)
 		}
 		arr = append(arr, *state.ToLightDTO())
-		result[state.ProjectId.String()] = arr
+		result[state.ProjectId] = arr
 		hash.Write(state.Hash)
 	}
 	c.Response().Header().Add("ETag", hex.EncodeToString(hash.Sum(nil)))
@@ -1715,7 +1740,7 @@ func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
 func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 	user := *c.(AuthContext).User
 	workspaceID := c.Param("workspaceID")
-	userIdStr := user.ID.String()
+	userIdStr := user.ID
 	workspace, err := dao.GetWorkspaceByID(s.db, workspaceID, user.ID)
 
 	if err != nil {
@@ -1748,7 +1773,7 @@ func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 func (s *Services) getIntegrationList(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 
-	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID.String()))
+	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID))
 }
 
 // addIntegrationToWorkspace godoc

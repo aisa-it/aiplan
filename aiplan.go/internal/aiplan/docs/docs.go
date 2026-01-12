@@ -5164,6 +5164,104 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/users/me/memberships/projects/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о членстве текущего пользователя в указанных проектах, если не указывать проекты - возвращаются все членства",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи: получение членства в проектах",
+                "operationId": "getCurrentUserProjectMemberships",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Список ID проектов через запятую",
+                        "name": "projects",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список членств в проектах",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.ProjectMember"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/users/me/memberships/workspaces/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о членстве текущего пользователя в указанных рабочих пространствах, если не указывать пространства - возвращаются все членства",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Пользователи: получение членства в рабочих пространствах",
+                "operationId": "getCurrentUserWorkspaceMemberships",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Список ID рабочих пространств через запятую",
+                        "name": "workspaces",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список членств в рабочих пространствах",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.WorkspaceMember"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/users/me/notifications": {
             "get": {
                 "security": [
@@ -9419,6 +9517,62 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/members/me/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает данные участника для текущего пользователя в рабочем пространстве.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Workspace"
+                ],
+                "summary": "Пространство (участники): получение информации о текущем участнике рабочего пространства",
+                "operationId": "getWorkspaceCurrentMembership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Успешный ответ с данными текущего участника рабочего пространства",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WorkspaceMember"
+                        }
+                    },
+                    "403": {
+                        "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Ошибка: рабочее пространство не найдено",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -14175,6 +14329,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/me": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о членстве текущего пользователя в указанном проекте.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты (участники): получение информации о текущем членстве в проекте",
+                "operationId": "getProjectCurrentMembership",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Информация о членстве пользователя в проекте",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProjectMember"
+                        }
+                    },
+                    "404": {
+                        "description": "Членство в проекте не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/{memberId}": {
             "get": {
                 "security": [
@@ -14611,6 +14822,188 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает скрипт правил проекта. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты: получение скрипта правил",
+                "operationId": "getProjectRulesScript",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Скрипт правил проекта",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RulesScriptResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на просмотр скрипта правил",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Проект не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет скрипт правил проекта. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты: обновление скрипта правил",
+                "operationId": "updateProjectRulesScript",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные для обновления скрипта правил",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateRulesScriptRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленный скрипт правил",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RulesScriptResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на обновление скрипта правил",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Проект не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет скрипт правил проекта. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты: удаление скрипта правил",
+                "operationId": "deleteProjectRulesScript",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Пустой скрипт правил",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RulesScriptResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на удаление скрипта правил",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Проект не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states": {
             "get": {
                 "security": [
@@ -14931,6 +15324,87 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/stats/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает агрегированную статистику проекта: счётчики задач, распределение по статусам,",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты: получение статистики проекта",
+                "operationId": "getProjectStats",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта (UUID)",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Включить статистику по исполнителям, топ-50 (по умолчанию true)",
+                        "name": "include_assignee_stats",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Включить статистику по меткам, топ-50 (по умолчанию true)",
+                        "name": "include_label_stats",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Включить статистику по спринтам, последние 50 (по умолчанию true)",
+                        "name": "include_sprint_stats",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Включить временную статистику за 12 месяцев (по умолчанию true)",
+                        "name": "include_timeline",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Агрегированная статистика проекта",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProjectStats"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к проекту",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -15816,7 +16290,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-views/": {
+        "/api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/": {
             "post": {
                 "security": [
                     {
@@ -17288,7 +17762,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "parent_detail": {
                     "allOf": [
@@ -17351,7 +17825,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "url": {
@@ -17489,6 +17967,13 @@ const docTemplate = `{
                 },
                 "target_date": {
                     "type": "string",
+                    "x-nullable": true
+                },
+                "watcher_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
                     "x-nullable": true
                 }
             }
@@ -18067,6 +18552,27 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AssigneeStatItem": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "description": "Active количество активных задач",
+                    "type": "integer"
+                },
+                "completed": {
+                    "description": "Completed количество завершённых задач",
+                    "type": "integer"
+                },
+                "display_name": {
+                    "description": "DisplayName отображаемое имя пользователя",
+                    "type": "string"
+                },
+                "user_id": {
+                    "description": "UserID идентификатор пользователя",
+                    "type": "string"
+                }
+            }
+        },
         "dto.Attachment": {
             "type": "object",
             "properties": {
@@ -18245,7 +18751,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "parent_doc": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "reader_ids": {
                     "type": "array",
@@ -18342,7 +18848,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by_id": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "url": {
                     "type": "string"
@@ -18444,7 +18950,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "new_identifier": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "new_value": {
@@ -18454,7 +18964,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "old_identifier": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "old_value": {
@@ -18566,7 +19080,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "target_project_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "title": {
@@ -18664,7 +19182,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "target_project_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "title": {
@@ -18851,7 +19373,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "parent_detail": {
                     "allOf": [
@@ -18914,7 +19436,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "url": {
@@ -18982,7 +19508,11 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "actor_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "comment_attachments": {
@@ -19041,7 +19571,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by_id": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "url": {
                     "type": "string"
@@ -19065,6 +19595,27 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.IssueCounters": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "description": "Active количество активных задач (не completed и не cancelled)",
+                    "type": "integer"
+                },
+                "cancelled": {
+                    "description": "Cancelled количество отменённых задач",
+                    "type": "integer"
+                },
+                "completed": {
+                    "description": "Completed количество завершённых задач",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total общее количество задач",
+                    "type": "integer"
                 }
             }
         },
@@ -19290,7 +19841,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 },
                 "parent_detail": {
                     "allOf": [
@@ -19356,7 +19907,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "url": {
@@ -19411,6 +19966,27 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.LabelStatItem": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "description": "Color цвет метки в HEX формате",
+                    "type": "string"
+                },
+                "count": {
+                    "description": "Count количество задач с этой меткой",
+                    "type": "integer"
+                },
+                "label_id": {
+                    "description": "LabelID идентификатор метки",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name название метки",
+                    "type": "string"
+                }
+            }
+        },
         "dto.LastWorkspaceResponse": {
             "type": "object",
             "properties": {
@@ -19446,6 +20022,19 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.MonthlyCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "Count количество",
+                    "type": "integer"
+                },
+                "month": {
+                    "description": "Month месяц в формате \"YYYY-MM\"",
+                    "type": "string"
+                }
+            }
+        },
         "dto.NewIssueID": {
             "type": "object",
             "properties": {
@@ -19462,6 +20051,20 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.OverdueStats": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "Count количество просроченных задач",
+                    "type": "integer"
+                },
+                "oldest_date": {
+                    "description": "OldestDate дата самой старой просроченной задачи",
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
         "dto.PasswordResponse": {
             "type": "object",
             "properties": {
@@ -19469,6 +20072,31 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.PriorityStats": {
+            "type": "object",
+            "properties": {
+                "high": {
+                    "description": "High высокий приоритет",
+                    "type": "integer"
+                },
+                "low": {
+                    "description": "Low низкий приоритет",
+                    "type": "integer"
+                },
+                "medium": {
+                    "description": "Medium средний приоритет",
+                    "type": "integer"
+                },
+                "none": {
+                    "description": "None без приоритета",
+                    "type": "integer"
+                },
+                "urgent": {
+                    "description": "Urgent срочные задачи",
                     "type": "integer"
                 }
             }
@@ -19551,10 +20179,6 @@ const docTemplate = `{
                 },
                 "public": {
                     "type": "boolean"
-                },
-                "rules_script": {
-                    "type": "string",
-                    "x-nullable": true
                 },
                 "total_members": {
                     "type": "integer"
@@ -19781,6 +20405,112 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ProjectStats": {
+            "type": "object",
+            "properties": {
+                "assignee_stats": {
+                    "description": "AssigneeStats статистика по исполнителям (опционально, топ-50)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AssigneeStatItem"
+                    },
+                    "x-nullable": true
+                },
+                "by_priority": {
+                    "description": "ByPriority распределение по приоритетам",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.PriorityStats"
+                        }
+                    ]
+                },
+                "by_state": {
+                    "description": "ByState распределение по статусам",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.StateStatItem"
+                    }
+                },
+                "by_state_group": {
+                    "description": "ByStateGroup распределение по группам статусов",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.StateGroupStats"
+                        }
+                    ]
+                },
+                "issues": {
+                    "description": "Issues общие счётчики задач",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.IssueCounters"
+                        }
+                    ]
+                },
+                "label_stats": {
+                    "description": "LabelStats статистика по меткам (опционально, топ-50)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.LabelStatItem"
+                    },
+                    "x-nullable": true
+                },
+                "overdue": {
+                    "description": "Overdue статистика просроченных задач",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.OverdueStats"
+                        }
+                    ]
+                },
+                "project": {
+                    "description": "Project базовая информация о проекте",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.ProjectStatsProject"
+                        }
+                    ]
+                },
+                "sprint_stats": {
+                    "description": "SprintStats статистика по спринтам (опционально, последние 50)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintStatItem"
+                    },
+                    "x-nullable": true
+                },
+                "timeline": {
+                    "description": "Timeline временная статистика (опционально, за 12 месяцев)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.TimelineStats"
+                        }
+                    ],
+                    "x-nullable": true
+                }
+            }
+        },
+        "dto.ProjectStatsProject": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "ID идентификатор проекта",
+                    "type": "string"
+                },
+                "identifier": {
+                    "description": "Identifier короткий идентификатор проекта (например, \"PORTAL\")",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name название проекта",
+                    "type": "string"
+                },
+                "total_members": {
+                    "description": "TotalMembers общее количество участников проекта",
+                    "type": "integer"
+                }
+            }
+        },
         "dto.ReleaseNoteLight": {
             "type": "object",
             "properties": {
@@ -19872,6 +20602,15 @@ const docTemplate = `{
                 },
                 "workspace_detail": {
                     "$ref": "#/definitions/dto.WorkspaceLight"
+                }
+            }
+        },
+        "dto.RulesScriptResponse": {
+            "type": "object",
+            "properties": {
+                "rules_script": {
+                    "type": "string",
+                    "x-nullable": true
                 }
             }
         },
@@ -20077,6 +20816,52 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SprintStatItem": {
+            "type": "object",
+            "properties": {
+                "completed": {
+                    "description": "Completed количество завершённых задач в спринте",
+                    "type": "integer"
+                },
+                "name": {
+                    "description": "Name название спринта",
+                    "type": "string"
+                },
+                "sprint_id": {
+                    "description": "SprintID идентификатор спринта",
+                    "type": "string"
+                },
+                "total": {
+                    "description": "Total общее количество задач в спринте",
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.StateGroupStats": {
+            "type": "object",
+            "properties": {
+                "backlog": {
+                    "description": "Backlog задачи в бэклоге",
+                    "type": "integer"
+                },
+                "cancelled": {
+                    "description": "Cancelled отменённые задачи",
+                    "type": "integer"
+                },
+                "completed": {
+                    "description": "Completed завершённые задачи",
+                    "type": "integer"
+                },
+                "started": {
+                    "description": "Started задачи в работе",
+                    "type": "integer"
+                },
+                "unstarted": {
+                    "description": "Unstarted задачи не начатые",
+                    "type": "integer"
+                }
+            }
+        },
         "dto.StateLight": {
             "type": "object",
             "properties": {
@@ -20106,6 +20891,60 @@ const docTemplate = `{
                 },
                 "workspace": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.StateStatItem": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "description": "Color цвет статуса в HEX формате",
+                    "type": "string"
+                },
+                "count": {
+                    "description": "Count количество задач с этим статусом",
+                    "type": "integer"
+                },
+                "group": {
+                    "description": "Group группа статуса (backlog, unstarted, started, completed, cancelled)",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name название статуса",
+                    "type": "string"
+                },
+                "state_id": {
+                    "description": "StateID идентификатор статуса",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TimelineStats": {
+            "type": "object",
+            "properties": {
+                "completed_by_month": {
+                    "description": "CompletedByMonth количество завершённых задач по месяцам",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.MonthlyCount"
+                    }
+                },
+                "created_by_month": {
+                    "description": "CreatedByMonth количество созданных задач по месяцам",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.MonthlyCount"
+                    }
+                }
+            }
+        },
+        "dto.UpdateRulesScriptRequest": {
+            "type": "object",
+            "properties": {
+                "rules_script": {
+                    "type": "string",
+                    "maxLength": 10000,
+                    "x-nullable": true
                 }
             }
         },
@@ -20161,7 +21000,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "last_workspace_id": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "last_workspace_slug": {

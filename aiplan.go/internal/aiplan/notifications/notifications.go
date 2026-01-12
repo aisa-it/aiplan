@@ -48,12 +48,13 @@ func (n *IssueNotification) Handle(activity dao.ActivityI) error {
 
 	if a.Issue == nil {
 		if err := n.Db.Unscoped().
-			Preload("Author").
+			Joins("Author").
+			Joins("Workspace").
+			Joins("Project").
 			Preload("Assignees").
 			Preload("Watchers").
-			Preload("Workspace").
-			Preload("Project").
-			Where("id = ?", a.IssueId).
+			Preload("Project.DefaultWatchersDetails", "is_default_watcher = ?", true).
+			Where("issues.id = ?", a.IssueId).
 			Find(&a.Issue).Error; err != nil {
 			slog.Error("Get issue for activity", "activityId", a.Id, "err", err)
 			return err
@@ -70,24 +71,32 @@ func (n *IssueNotification) Handle(activity dao.ActivityI) error {
 	userIdMap[a.Issue.CreatedById] = struct{}{}
 
 	for _, assigneeId := range a.Issue.AssigneeIDs {
-		assigneeUUID := uuid.FromStringOrNil(assigneeId)
-		if _, ok := userIdMap[assigneeUUID]; !ok {
-			notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, assigneeUUID, a)
+		if _, ok := userIdMap[assigneeId]; !ok {
+			notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, assigneeId, a)
 			if notifyId != uuid.Nil {
-				n.Ws.Send(assigneeUUID, notifyId, a, countNotify)
+				n.Ws.Send(assigneeId, notifyId, a, countNotify)
 			}
-			userIdMap[assigneeUUID] = struct{}{}
+			userIdMap[assigneeId] = struct{}{}
 		}
 	}
 
 	for _, watcherId := range a.Issue.WatcherIDs {
-		watcherUUID := uuid.FromStringOrNil(watcherId)
-		if _, ok := userIdMap[watcherUUID]; !ok {
-			notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, watcherUUID, a)
+		if _, ok := userIdMap[watcherId]; !ok {
+			notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, watcherId, a)
 			if notifyId != uuid.Nil {
-				n.Ws.Send(watcherUUID, notifyId, a, countNotify)
+				n.Ws.Send(watcherId, notifyId, a, countNotify)
 			}
-			userIdMap[watcherUUID] = struct{}{}
+			userIdMap[watcherId] = struct{}{}
+		}
+	}
+
+	for _, defaultWatcher := range a.Issue.Project.DefaultWatchersDetails {
+		if _, ok := userIdMap[defaultWatcher.MemberId]; !ok {
+			notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, defaultWatcher.MemberId, a)
+			if notifyId != uuid.Nil {
+				n.Ws.Send(defaultWatcher.MemberId, notifyId, a, countNotify)
+			}
+			userIdMap[defaultWatcher.MemberId] = struct{}{}
 		}
 	}
 	return nil
@@ -123,11 +132,11 @@ func (n *ProjectNotification) Handle(activity dao.ActivityI) error {
 		}
 	}
 	if a.Field != nil && *a.Field == "issue" && a.Verb != "deleted" {
-		var issueId string
-		if a.NewIdentifier != nil {
-			issueId = *a.NewIdentifier
-		} else if a.OldIdentifier != nil {
-			issueId = *a.OldIdentifier
+		var issueId uuid.UUID
+		if a.NewIdentifier.Valid {
+			issueId = a.NewIdentifier.UUID
+		} else if a.OldIdentifier.Valid {
+			issueId = a.OldIdentifier.UUID
 		} else {
 			return nil
 		}
@@ -169,24 +178,22 @@ func (n *ProjectNotification) Handle(activity dao.ActivityI) error {
 			a.NewIssue.Workspace = a.Workspace
 
 			for _, assigneeId := range a.NewIssue.AssigneeIDs {
-				assigneeUUID := uuid.FromStringOrNil(assigneeId)
-				if _, ok := userIdMap[assigneeUUID]; !ok {
-					notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, assigneeUUID, a)
+				if _, ok := userIdMap[assigneeId]; !ok {
+					notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, assigneeId, a)
 					if notifyId != uuid.Nil {
-						n.Ws.Send(assigneeUUID, notifyId, a, countNotify)
+						n.Ws.Send(assigneeId, notifyId, a, countNotify)
 					}
-					userIdMap[assigneeUUID] = struct{}{}
+					userIdMap[assigneeId] = struct{}{}
 				}
 			}
 
 			for _, watcherId := range a.NewIssue.WatcherIDs {
-				watcherUUID := uuid.FromStringOrNil(watcherId)
-				if _, ok := userIdMap[watcherUUID]; !ok {
-					notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, watcherUUID, a)
+				if _, ok := userIdMap[watcherId]; !ok {
+					notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, watcherId, a)
 					if notifyId != uuid.Nil {
-						n.Ws.Send(watcherUUID, notifyId, a, countNotify)
+						n.Ws.Send(watcherId, notifyId, a, countNotify)
 					}
-					userIdMap[watcherUUID] = struct{}{}
+					userIdMap[watcherId] = struct{}{}
 				}
 			}
 
@@ -257,12 +264,12 @@ func (n *DocNotification) Handle(activity dao.ActivityI) error {
 
 	doc.AfterFind(n.Db)
 
-	authorId := doc.CreatedById.String()
+	authorId := doc.CreatedById
 	readerIds := doc.ReaderIDs
 	editorsIds := doc.EditorsIDs
 	watcherIds := doc.WatcherIDs
 
-	userIds := append(append(append([]string{authorId}, editorsIds...), readerIds...), watcherIds...)
+	userIds := append(append(append([]uuid.UUID{authorId}, editorsIds...), readerIds...), watcherIds...)
 
 	var workspaceMembers []dao.WorkspaceMember
 	if err := n.Db.Joins("Member").
