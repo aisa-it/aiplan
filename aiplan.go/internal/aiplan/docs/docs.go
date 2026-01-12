@@ -5185,7 +5185,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Список ID проектов через запятую",
                         "name": "projects",
-                        "in": "path"
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5234,7 +5234,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Список ID рабочих пространств через запятую",
                         "name": "workspaces",
-                        "in": "path"
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -18748,6 +18748,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "is_favorite": {
+                    "type": "boolean"
+                },
+                "llm_content": {
                     "type": "boolean"
                 },
                 "parent_doc": {

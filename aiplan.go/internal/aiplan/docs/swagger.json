@@ -5177,7 +5177,7 @@
                         "type": "string",
                         "description": "Список ID проектов через запятую",
                         "name": "projects",
-                        "in": "path"
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5226,7 +5226,7 @@
                         "type": "string",
                         "description": "Список ID рабочих пространств через запятую",
                         "name": "workspaces",
-                        "in": "path"
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -18740,6 +18740,9 @@
                     "type": "string"
                 },
                 "is_favorite": {
+                    "type": "boolean"
+                },
+                "llm_content": {
                     "type": "boolean"
                 },
                 "parent_doc": {
