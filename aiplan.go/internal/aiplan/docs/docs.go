@@ -5165,13 +5165,16 @@ const docTemplate = `{
             }
         },
         "/api/auth/users/me/memberships/projects/": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
                 "description": "Возвращает информацию о членстве текущего пользователя в указанных проектах, если не указывать проекты - возвращаются все членства",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -5182,10 +5185,15 @@ const docTemplate = `{
                 "operationId": "getCurrentUserProjectMemberships",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Список ID проектов через запятую",
-                        "name": "projects",
-                        "in": "query"
+                        "description": "Список ID проектов",
+                        "name": "data",
+                        "in": "body",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
                     }
                 ],
                 "responses": {
@@ -5196,6 +5204,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.ProjectMember"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
                         }
                     },
                     "401": {
@@ -5214,13 +5228,16 @@ const docTemplate = `{
             }
         },
         "/api/auth/users/me/memberships/workspaces/": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
                 "description": "Возвращает информацию о членстве текущего пользователя в указанных рабочих пространствах, если не указывать пространства - возвращаются все членства",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -5231,10 +5248,15 @@ const docTemplate = `{
                 "operationId": "getCurrentUserWorkspaceMemberships",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Список ID рабочих пространств через запятую",
-                        "name": "workspaces",
-                        "in": "query"
+                        "description": "Список ID рабочих пространств",
+                        "name": "data",
+                        "in": "body",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
                     }
                 ],
                 "responses": {
@@ -5245,6 +5267,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.WorkspaceMember"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
                         }
                     },
                     "401": {
