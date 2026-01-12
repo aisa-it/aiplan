@@ -2297,14 +2297,14 @@ func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
 // @Tags Users
 // @Security ApiKeyAuth
 // @Produce json
-// @Param workspaces path string false "Список ID рабочих пространств через запятую"
+// @Param workspaces query string false "Список ID рабочих пространств через запятую"
 // @Success 200 {array} dto.WorkspaceMember "Список членств в рабочих пространствах"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/memberships/workspaces/ [get]
 func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 	user := c.(AuthContext).User
-	workspaces := strings.Split(c.Param("workspaces"), ",")
+	workspaces := strings.Split(c.QueryParam("workspaces"), ",")
 
 	query := s.db.Where("member_id = ?", user.ID)
 	if len(workspaces) > 0 {
@@ -2325,14 +2325,14 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 // @Tags Users
 // @Security ApiKeyAuth
 // @Produce json
-// @Param projects path string false "Список ID проектов через запятую"
+// @Param projects query string false "Список ID проектов через запятую"
 // @Success 200 {array} dto.ProjectMember "Список членств в проектах"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/memberships/projects/ [get]
 func (s *Services) getCurrentUserProjectMemberships(c echo.Context) error {
 	user := c.(AuthContext).User
-	projects := strings.Split(c.Param("projects"), ",")
+	projects := strings.Split(c.QueryParam("projects"), ",")
 
 	query := s.db.Where("member_id = ?", user.ID)
 	if len(projects) > 0 && len(c.Param("projects")) > 0 {
