@@ -116,8 +116,8 @@ func (s *Services) AddUserServices(g *echo.Group) {
 	releaseNoteGroup.GET("", s.getProductUpdateList)
 	releaseNoteGroup.GET(":noteId/", s.getRecentReleaseNoteList)
 
-	g.GET("users/me/memberships/workspaces/", s.getCurrentUserWorkspaceMemberships)
-	g.GET("users/me/memberships/projects/", s.getCurrentUserProjectMemberships)
+	g.POST("users/me/memberships/workspaces/", s.getCurrentUserWorkspaceMemberships)
+	g.POST("users/me/memberships/projects/", s.getCurrentUserProjectMemberships)
 
 	g.GET("jitsi-url/", func(c echo.Context) error {
 		u := "meet.jit.si" // fallback to jitsi instance
@@ -2296,15 +2296,21 @@ func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
 // @Description Возвращает информацию о членстве текущего пользователя в указанных рабочих пространствах, если не указывать пространства - возвращаются все членства
 // @Tags Users
 // @Security ApiKeyAuth
+// @Accept json
 // @Produce json
-// @Param workspaces query string false "Список ID рабочих пространств через запятую"
+// @Param data body []uuid.UUID false "Список ID рабочих пространств"
 // @Success 200 {array} dto.WorkspaceMember "Список членств в рабочих пространствах"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/users/me/memberships/workspaces/ [get]
+// @Router /api/auth/users/me/memberships/workspaces/ [post]
 func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 	user := c.(AuthContext).User
-	workspaces := strings.Split(c.QueryParam("workspaces"), ",")
+
+	var workspaces []uuid.UUID
+	if err := c.Bind(&workspaces); err != nil {
+		return EError(c, err)
+	}
 
 	query := s.db.Where("member_id = ?", user.ID)
 	if len(workspaces) > 0 {
@@ -2324,18 +2330,24 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 // @Description Возвращает информацию о членстве текущего пользователя в указанных проектах, если не указывать проекты - возвращаются все членства
 // @Tags Users
 // @Security ApiKeyAuth
+// @Accept json
 // @Produce json
-// @Param projects query string false "Список ID проектов через запятую"
+// @Param data body []uuid.UUID false "Список ID проектов"
 // @Success 200 {array} dto.ProjectMember "Список членств в проектах"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/users/me/memberships/projects/ [get]
+// @Router /api/auth/users/me/memberships/projects/ [post]
 func (s *Services) getCurrentUserProjectMemberships(c echo.Context) error {
 	user := c.(AuthContext).User
-	projects := strings.Split(c.QueryParam("projects"), ",")
+
+	var projects []uuid.UUID
+	if err := c.Bind(&projects); err != nil {
+		return EError(c, err)
+	}
 
 	query := s.db.Where("member_id = ?", user.ID)
-	if len(projects) > 0 && len(c.Param("projects")) > 0 {
+	if len(projects) > 0 {
 		query = query.Where("project_id in (?)", projects)
 	}
 
