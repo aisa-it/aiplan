@@ -593,13 +593,13 @@ func CleanOrphanedForeignKeys(tx *gorm.DB, table string, column string, referenc
 	// Устанавливаем NULL для всех записей, где внешний ключ указывает на несуществующую запись
 	// Используем ::text для приведения типов на случай если referenced колонка уже UUID а текущая ещё text
 	sql := fmt.Sprintf(`
-		UPDATE "%s"
+		UPDATE "%s" as outer_table
 		SET "%s" = NULL
 		WHERE "%s" IS NOT NULL
 		AND NOT EXISTS (
-			SELECT 1 FROM "%s" WHERE "%s"::text = "%s"."%s"::text
+			SELECT 1 FROM "%s" as inner_table WHERE inner_table."%s"::text = outer_table."%s"::text
 		)
-	`, table, column, column, referencedTable, referencedColumn, table, column)
+	`, table, column, column, referencedTable, referencedColumn, column)
 
 	result := tx.Exec(sql)
 	if result.Error != nil {
