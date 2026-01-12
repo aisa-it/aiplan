@@ -53,7 +53,7 @@ func serializeElement(elem any) *TipTapNode {
 	case *edtypes.IssueLinkMention:
 		return serializeIssueLinkMention(e)
 	default:
-		slog.Warn("Unknown element type for serialization", "type", e)
+		slog.Debug("Unknown element type for serialization", "type", e)
 		return nil
 	}
 }
