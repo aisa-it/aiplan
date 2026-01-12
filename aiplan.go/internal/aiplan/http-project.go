@@ -3152,8 +3152,6 @@ func (s *Services) getProjectStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-<<<<<<< HEAD
-=======
 // getProjectRulesScript godoc
 // @id getProjectRulesScript
 // @Summary Проекты: получение скрипта правил
@@ -3306,7 +3304,6 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
->>>>>>> dev
 /*
 // ############# Issue properties methods ###################
 

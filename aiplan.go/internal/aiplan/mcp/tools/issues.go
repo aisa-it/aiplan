@@ -365,21 +365,28 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		return logger.Error(err), nil
 	}
 
-	// Выполняем поиск (глобальный поиск, пустой ProjectMember)
-	result, err := search.GetIssueListData(
+	// Проверка на группировку - не поддерживается для Markdown
+	if searchParams.GroupByParam != "" {
+		return mcp.NewToolResultError("группировка не поддерживается в MCP search_issues"), nil
+	}
+
+	// Получаем сырые данные из БД напрямую через BuildIssueListQuery
+	issues, count, err := search.BuildIssueListQuery(
 		db,
 		*user,
 		dao.ProjectMember{}, // пустой - глобальный поиск
 		nil,                 // без спринта
 		true,                // globalSearch = true
 		searchParams,
-		nil, // без streaming
 	)
 	if err != nil {
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(result)
+	// Форматируем в Markdown таблицу для экономии токенов
+	markdown := search.FormatIssuesToMarkdownTable(issues, count, searchParams.Offset, searchParams.Limit)
+
+	return mcp.NewToolResultText(markdown), nil
 }
 
 // createIssue создаёт новую задачу в проекте
@@ -1179,27 +1186,29 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	// Формируем ответ
 	type activityResponse struct {
-		ID            string    `json:"id"`
-		CreatedAt     time.Time `json:"created_at"`
-		Verb          string    `json:"verb"`
-		Field         string    `json:"field,omitempty"`
-		OldValue      string    `json:"old_value,omitempty"`
-		NewValue      string    `json:"new_value,omitempty"`
-		Comment       string    `json:"comment,omitempty"`
-		ActorID       string    `json:"actor_id,omitempty"`
-		ActorName     string    `json:"actor_name,omitempty"`
-		NewIdentifier string    `json:"new_identifier,omitempty"`
-		OldIdentifier string    `json:"old_identifier,omitempty"`
+		ID            string        `json:"id"`
+		CreatedAt     time.Time     `json:"created_at"`
+		Verb          string        `json:"verb"`
+		Field         string        `json:"field,omitempty"`
+		OldValue      string        `json:"old_value,omitempty"`
+		NewValue      string        `json:"new_value,omitempty"`
+		Comment       string        `json:"comment,omitempty"`
+		ActorID       string        `json:"actor_id,omitempty"`
+		ActorName     string        `json:"actor_name,omitempty"`
+		NewIdentifier uuid.NullUUID `json:"new_identifier"`
+		OldIdentifier uuid.NullUUID `json:"old_identifier"`
 	}
 
 	result := make([]activityResponse, len(activities))
 	for i, a := range activities {
 		resp := activityResponse{
-			ID:        a.Id.String(),
-			CreatedAt: a.CreatedAt,
-			Verb:      a.Verb,
-			NewValue:  a.NewValue,
-			Comment:   a.Comment,
+			ID:            a.Id.String(),
+			CreatedAt:     a.CreatedAt,
+			Verb:          a.Verb,
+			NewValue:      a.NewValue,
+			Comment:       a.Comment,
+			NewIdentifier: a.NewIdentifier,
+			OldIdentifier: a.OldIdentifier,
 		}
 
 		if a.Field != nil {
@@ -1207,12 +1216,6 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		}
 		if a.OldValue != nil {
 			resp.OldValue = *a.OldValue
-		}
-		if a.NewIdentifier != nil {
-			resp.NewIdentifier = *a.NewIdentifier
-		}
-		if a.OldIdentifier != nil {
-			resp.OldIdentifier = *a.OldIdentifier
 		}
 		if a.Actor != nil {
 			resp.ActorID = a.Actor.ID.String()
