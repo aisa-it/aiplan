@@ -9,7 +9,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"github.com/go-telegram/bot"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
@@ -79,28 +78,13 @@ func preloadIssueActivity(tx *gorm.DB, id uuid.UUID) *dao.Issue {
 }
 
 func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
-	var res TgMsg
 
-	af := actField.ActivityField(*act.Field)
-	if f, ok := issueMap[af]; ok {
-		res = f(act, af)
-	} else {
-		res = issueDefault(act, af)
+	res, err := formatByField(act, issueMap, issueDefault)
+	if err != nil {
+		return res, err
 	}
 
-	if res.IsEmpty() {
-		return res, fmt.Errorf("issue activity is empty")
-	}
-
-	res.title = fmt.Sprintf(
-		"*%s* %s [%s](%s)",
-		bot.EscapeMarkdown(act.Actor.GetName()),
-		bot.EscapeMarkdown(res.title),
-		bot.EscapeMarkdown(act.Issue.FullIssueName()),
-		act.Issue.URL.String(),
-	)
-
-	return res, nil
+	return finalizeActivityTitle(res, act.Actor.GetName(), act.Issue.FullIssueName(), act.Issue.URL), nil
 }
 
 func issueSkipper(act *dao.IssueActivity, af actField.ActivityField) TgMsg {

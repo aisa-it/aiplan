@@ -5,7 +5,6 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -42,32 +41,6 @@ const (
 
 	actionAuthor
 )
-
-func roleFromLayer(in int, entity string) role {
-
-	switch entity {
-	case actField.Project.Field.String():
-		switch in {
-		case types.AdminRole:
-			return projectAdminRole
-		case types.MemberRole:
-			return projectMemberRole
-		case types.GuestRole:
-			return projectGuestRole
-		}
-	case actField.Workspace.Field.String():
-		switch in {
-		case types.AdminRole:
-			return workspaceAdminRole
-		case types.MemberRole:
-			return workspaceMemberRole
-		case types.GuestRole:
-			return workspaceGuestRole
-		}
-	}
-
-	return role(0)
-}
 
 type userTg struct {
 	id  int64
