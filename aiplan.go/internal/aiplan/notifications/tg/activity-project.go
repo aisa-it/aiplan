@@ -8,7 +8,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"github.com/go-telegram/bot"
 	"gorm.io/gorm"
 )
 
@@ -85,32 +84,14 @@ func preloadProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) error {
 }
 
 func formatProjectActivity(act *dao.ProjectActivity) (TgMsg, error) {
-	var res TgMsg
-
-	if act.Field == nil {
-		return res, fmt.Errorf("projectActivity field is nil")
+	res, err := formatByField(act, projectMap, projectDefault)
+	if err != nil {
+		return res, err
 	}
 
-	af := actField.ActivityField(*act.Field)
-	if f, ok := projectMap[af]; ok {
-		res = f(act, af)
-	} else {
-		res = projectDefault(act, af)
-	}
+	entity := fmt.Sprintf("%s/%s", act.Workspace.Slug, act.Project.Identifier)
 
-	if res.IsEmpty() {
-		return res, fmt.Errorf("project activity is empty")
-	}
-
-	res.title = fmt.Sprintf(
-		"*%s* %s [%s](%s)",
-		bot.EscapeMarkdown(act.Actor.GetName()),
-		bot.EscapeMarkdown(res.title),
-		bot.EscapeMarkdown(fmt.Sprintf("%s/%s", act.Workspace.Slug, act.Project.Identifier)),
-		act.Project.URL.String(),
-	)
-
-	return res, nil
+	return finalizeActivityTitle(res, act.Actor.GetName(), entity, act.Project.URL), nil
 }
 
 func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {

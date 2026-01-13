@@ -7,7 +7,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"github.com/go-telegram/bot"
 	"gorm.io/gorm"
 )
 
@@ -71,21 +70,9 @@ func preloadDocActivity(tx *gorm.DB, act *dao.DocActivity) error {
 }
 
 func formatDocActivity(act *dao.DocActivity) (TgMsg, error) {
-	var res TgMsg
-
-	if act.Field == nil {
-		return res, fmt.Errorf("IssueActivity field is nil")
-	}
-
-	af := actField.ActivityField(*act.Field)
-	if f, ok := docMap[af]; ok {
-		res = f(act, af)
-	} else {
-		//res = projectDefault(act, af)
-	}
-
-	if res.IsEmpty() {
-		return res, fmt.Errorf("doc activity is empty")
+	res, err := formatByField(act, docMap, nil)
+	if err != nil {
+		return res, err
 	}
 
 	docTitle := act.Doc.Title
@@ -93,13 +80,8 @@ func formatDocActivity(act *dao.DocActivity) (TgMsg, error) {
 		docTitle = Stelegramf("...%s", act.Doc.Title)
 	}
 
-	res.title = fmt.Sprintf(
-		"*%s* %s [%s](%s)",
-		bot.EscapeMarkdown(act.Actor.GetName()),
-		bot.EscapeMarkdown(res.title),
-		bot.EscapeMarkdown(fmt.Sprintf("%s/%s", act.Workspace.Slug, docTitle)),
-		act.Doc.URL.String(),
-	)
+	entity := fmt.Sprintf("%s/%s", act.Workspace.Slug, docTitle)
+	res = finalizeActivityTitle(res, act.Actor.GetName(), entity, act.Doc.URL)
 
 	return res, nil
 }

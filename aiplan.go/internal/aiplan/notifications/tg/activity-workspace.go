@@ -8,7 +8,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"github.com/go-telegram/bot"
 	"gorm.io/gorm"
 )
 
@@ -68,32 +67,12 @@ func preloadWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) error {
 }
 
 func formatWorkspaceActivity(act *dao.WorkspaceActivity) (TgMsg, error) {
-	var res TgMsg
-
-	if act.Field == nil {
-		return res, fmt.Errorf("workspaceActivity field is nil")
+	res, err := formatByField(act, workspaceMap, nil)
+	if err != nil {
+		return res, err
 	}
 
-	af := actField.ActivityField(*act.Field)
-	if f, ok := workspaceMap[af]; ok {
-		res = f(act, af)
-	} else {
-		//res = projectDefault(act, af)
-	}
-
-	if res.IsEmpty() {
-		return res, fmt.Errorf("workspace activity is empty")
-	}
-
-	res.title = fmt.Sprintf(
-		"*%s* %s [%s](%s)",
-		bot.EscapeMarkdown(act.Actor.GetName()),
-		bot.EscapeMarkdown(res.title),
-		bot.EscapeMarkdown(fmt.Sprintf("%s", act.Workspace.Slug)),
-		act.Workspace.URL.String(),
-	)
-
-	return res, nil
+	return finalizeActivityTitle(res, act.Actor.GetName(), act.Workspace.Slug, act.Workspace.URL), nil
 }
 
 func workspaceProject(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
