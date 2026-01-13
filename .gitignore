@@ -108,3 +108,5 @@ git-data
 .claude/
 CLAUDE.md
 PLAN.md
+
+aiplan.go/aiplan

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
 )
 
@@ -38,6 +39,45 @@ func (e DefinedError) TusdError() tusd.Error {
 			},
 		},
 	}
+}
+
+func (e DefinedError) WithFormattedMessage(args ...interface{}) DefinedError {
+	if len(args) > 0 {
+		e.Err = fmt.Sprintf(e.Err, args...)
+		e.RuErr = fmt.Sprintf(e.RuErr, args...)
+	} else {
+		e.Err = strings.Replace(e.Err, "%s", "", -1)
+		e.RuErr = strings.Replace(e.RuErr, "%s", "", -1)
+	}
+	return e
+}
+
+func (e DefinedError) MCPError(hints ...string) *mcp.CallToolResult {
+	res := &mcp.CallToolResult{
+		Content: []mcp.Content{
+			mcp.TextContent{
+				Type: mcp.ContentTypeText,
+				Text: fmt.Sprintf("Error code: %d", e.Code),
+			},
+			mcp.TextContent{
+				Type: mcp.ContentTypeText,
+				Text: e.RuErr,
+			},
+		},
+		StructuredContent: e,
+		IsError:           true,
+	}
+
+	if len(hints) > 0 {
+		res.Content = append(res.Content,
+			mcp.TextContent{
+				Type: mcp.ContentTypeText,
+				Text: fmt.Sprintf("Error hints: %s", strings.Join(hints, ", ")),
+			},
+		)
+	}
+
+	return res
 }
 
 const (
@@ -264,14 +304,3 @@ var (
 	ErrSSHDisabled          = DefinedError{Code: 11006, StatusCode: http.StatusForbidden, Err: "SSH access is disabled", RuErr: "SSH доступ отключен"}
 	ErrSSHRateLimitExceeded = DefinedError{Code: 11007, StatusCode: http.StatusTooManyRequests, Err: "SSH rate limit exceeded", RuErr: "Превышен лимит SSH запросов"}
 )
-
-func (e DefinedError) WithFormattedMessage(args ...interface{}) DefinedError {
-	if len(args) > 0 {
-		e.Err = fmt.Sprintf(e.Err, args...)
-		e.RuErr = fmt.Sprintf(e.RuErr, args...)
-	} else {
-		e.Err = strings.Replace(e.Err, "%s", "", -1)
-		e.RuErr = strings.Replace(e.RuErr, "%s", "", -1)
-	}
-	return e
-}

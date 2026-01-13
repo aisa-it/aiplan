@@ -5157,13 +5157,16 @@
             }
         },
         "/api/auth/users/me/memberships/projects/": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
                 "description": "Возвращает информацию о членстве текущего пользователя в указанных проектах, если не указывать проекты - возвращаются все членства",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -5174,10 +5177,15 @@
                 "operationId": "getCurrentUserProjectMemberships",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Список ID проектов через запятую",
-                        "name": "projects",
-                        "in": "path"
+                        "description": "Список ID проектов",
+                        "name": "data",
+                        "in": "body",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
                     }
                 ],
                 "responses": {
@@ -5188,6 +5196,12 @@
                             "items": {
                                 "$ref": "#/definitions/dto.ProjectMember"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
                         }
                     },
                     "401": {
@@ -5206,13 +5220,16 @@
             }
         },
         "/api/auth/users/me/memberships/workspaces/": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
                 "description": "Возвращает информацию о членстве текущего пользователя в указанных рабочих пространствах, если не указывать пространства - возвращаются все членства",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -5223,10 +5240,15 @@
                 "operationId": "getCurrentUserWorkspaceMemberships",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Список ID рабочих пространств через запятую",
-                        "name": "workspaces",
-                        "in": "path"
+                        "description": "Список ID рабочих пространств",
+                        "name": "data",
+                        "in": "body",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
                     }
                 ],
                 "responses": {
@@ -5237,6 +5259,12 @@
                             "items": {
                                 "$ref": "#/definitions/dto.WorkspaceMember"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
                         }
                     },
                     "401": {
@@ -18740,6 +18768,9 @@
                     "type": "string"
                 },
                 "is_favorite": {
+                    "type": "boolean"
+                },
+                "llm_content": {
                     "type": "boolean"
                 },
                 "parent_doc": {

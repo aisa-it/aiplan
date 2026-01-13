@@ -261,6 +261,70 @@ func (i *Issue) ToLightDTO() *dto.IssueLight {
 	}
 }
 
+// ToMCP форматирует задачу как одну строку упрощенной Markdown таблицы для MCP
+// Используется когда счетчики недоступны (не IssueWithCount)
+// Для поиска задач рекомендуется использовать IssueWithCount.ToMCP() с полными данными
+func (i *Issue) ToMCP() string {
+	if i == nil {
+		return "| - | - | - | - | - | - |"
+	}
+
+	// ID (PROJECT-123 или #123)
+	id := fmt.Sprintf("#%d", i.SequenceId)
+	if i.Project != nil && i.Project.Identifier != "" {
+		id = fmt.Sprintf("%s-%d", i.Project.Identifier, i.SequenceId)
+	}
+
+	// Название (макс 100 символов)
+	name := i.Name
+	nameRunes := []rune(name)
+	if len(nameRunes) > 100 {
+		name = string(nameRunes[:97]) + "..."
+	}
+
+	// Статус
+	status := "-"
+	if i.State != nil {
+		status = i.State.Name
+	}
+
+	// Приоритет
+	priority := "-"
+	if i.Priority != nil {
+		priority = *i.Priority
+	}
+
+	// Исполнители (макс 3)
+	assignees := "-"
+	if i.Assignees != nil && len(*i.Assignees) > 0 {
+		names := []string{}
+		for idx, a := range *i.Assignees {
+			if idx >= 3 {
+				names = append(names, fmt.Sprintf("+%d", len(*i.Assignees)-3))
+				break
+			}
+			name := a.FirstName
+			if a.LastName != "" {
+				name += " " + string([]rune(a.LastName)[0]) + "."
+			}
+			names = append(names, name)
+		}
+		assignees = strings.Join(names, ", ")
+	}
+
+	// Автор
+	author := "-"
+	if i.Author != nil {
+		author = i.Author.FirstName
+		if i.Author.LastName != "" {
+			author += " " + string([]rune(i.Author.LastName)[0]) + "."
+		}
+	}
+
+	return fmt.Sprintf("| %s | %s | %s | %s | %s | %s |",
+		id, name, status, priority, assignees, author)
+}
+
 // ToDTO преобразует Issue в структуру dto.Issue для удобства использования в API.
 //
 // Параметры:
@@ -389,6 +453,139 @@ func (iwc *IssueWithCount) ToDTO() *dto.IssueWithCount {
 		NameHighlighted:   iwc.NameHighlighted,
 		DescHighlighted:   iwc.DescHighlighted,
 	}
+}
+
+// ToMCP форматирует задачу с счетчиками как одну строку расширенной Markdown таблицы для MCP
+// Используется для экономии токенов при передаче данных LLM через MCP протокол
+func (iwc *IssueWithCount) ToMCP() string {
+	if iwc == nil {
+		return "| - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |"
+	}
+
+	i := &iwc.Issue
+
+	// ID (PROJECT-123 или #123)
+	id := fmt.Sprintf("#%d", i.SequenceId)
+	if i.Project != nil && i.Project.Identifier != "" {
+		id = fmt.Sprintf("%s-%d", i.Project.Identifier, i.SequenceId)
+	}
+
+	// Название (макс 100 символов)
+	name := i.Name
+	nameRunes := []rune(name)
+	if len(nameRunes) > 100 {
+		name = string(nameRunes[:97]) + "..."
+	}
+
+	// Статус
+	status := "-"
+	if i.State != nil {
+		status = i.State.Name
+	}
+
+	// Приоритет
+	priority := "-"
+	if i.Priority != nil {
+		priority = *i.Priority
+	}
+
+	// Исполнители (макс 3)
+	assignees := "-"
+	if i.Assignees != nil && len(*i.Assignees) > 0 {
+		names := []string{}
+		for idx, a := range *i.Assignees {
+			if idx >= 3 {
+				names = append(names, fmt.Sprintf("+%d", len(*i.Assignees)-3))
+				break
+			}
+			name := a.FirstName
+			if a.LastName != "" {
+				name += " " + string([]rune(a.LastName)[0]) + "."
+			}
+			names = append(names, name)
+		}
+		assignees = strings.Join(names, ", ")
+	}
+
+	// Наблюдатели (макс 3)
+	watchers := "-"
+	if i.Watchers != nil && len(*i.Watchers) > 0 {
+		names := []string{}
+		for idx, w := range *i.Watchers {
+			if idx >= 3 {
+				names = append(names, fmt.Sprintf("+%d", len(*i.Watchers)-3))
+				break
+			}
+			name := w.FirstName
+			if w.LastName != "" {
+				name += " " + string([]rune(w.LastName)[0]) + "."
+			}
+			names = append(names, name)
+		}
+		watchers = strings.Join(names, ", ")
+	}
+
+	// Автор
+	author := "-"
+	if i.Author != nil {
+		author = i.Author.FirstName
+		if i.Author.LastName != "" {
+			author += " " + string([]rune(i.Author.LastName)[0]) + "."
+		}
+	}
+
+	// Даты
+	createdAt := i.CreatedAt.Format("2006-01-02")
+
+	targetDate := "-"
+	if i.TargetDate != nil {
+		targetDate = i.TargetDate.Time.Format("2006-01-02")
+	}
+
+	startDate := "-"
+	if i.StartDate != nil {
+		startDate = i.StartDate.Time.Format("2006-01-02")
+	}
+
+	completedAt := "-"
+	if i.CompletedAt != nil {
+		completedAt = i.CompletedAt.Time.Format("2006-01-02")
+	}
+
+	// Родитель
+	parent := "-"
+	if i.Parent != nil {
+		if i.Parent.Project != nil && i.Parent.Project.Identifier != "" {
+			parent = fmt.Sprintf("%s-%d", i.Parent.Project.Identifier, i.Parent.SequenceId)
+		} else {
+			parent = fmt.Sprintf("#%d", i.Parent.SequenceId)
+		}
+	}
+
+	// Блокирует (количество задач, которые эта задача блокирует)
+	blockerCount := "-"
+	if len(i.BlockerIssuesIDs) > 0 {
+		blockerCount = fmt.Sprintf("%d", len(i.BlockerIssuesIDs))
+	}
+
+	// Заблокирована (количество задач, которые блокируют эту задачу)
+	blockedByCount := "-"
+	if len(i.BlockedIssuesIDs) > 0 {
+		blockedByCount = fmt.Sprintf("%d", len(i.BlockedIssuesIDs))
+	}
+
+	// Счетчики
+	subIssues := fmt.Sprintf("%d", iwc.SubIssuesCount)
+	links := fmt.Sprintf("%d", iwc.LinkCount)
+	attachments := fmt.Sprintf("%d", iwc.AttachmentCount)
+	linkedIssues := fmt.Sprintf("%d", iwc.LinkedIssuesCount)
+	comments := fmt.Sprintf("%d", iwc.CommentsCount)
+
+	return fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |",
+		id, name, status, priority, assignees, watchers, author,
+		createdAt, targetDate, startDate, completedAt,
+		parent, blockerCount, blockedByCount,
+		subIssues, links, attachments, linkedIssues, comments)
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности. Используется для определения имени таблицы при взаимодействии с базой данных.
