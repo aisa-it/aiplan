@@ -45,6 +45,7 @@ import (
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
@@ -366,6 +367,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			return c.Path() == "/api/auth/ws/notifications/" ||
 				c.Path() == "/api/ws/notifications/" ||
 				strings.HasPrefix(c.Path(), "/api/auth/file/") ||
+				strings.HasPrefix(c.Path(), "/mcp/") ||
 				strings.Contains(c.Request().URL.Path, "swagger")
 		},
 	}))
@@ -407,14 +409,13 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	s.integrationsService = integrations.NewIntegrationService(apiGroup, db, s.notificationsService.Tg, s.storage, tr, bl)
 
-	authGroup := apiGroup.Group("auth/",
-		AuthMiddleware(AuthConfig{
-			Secret:      []byte(cfg.SecretKey),
-			DB:          db,
-			MemDB:       memDB,
-			TokensCache: tokenscache.NewTokensCache(),
-		}),
-	)
+	authMiddleware := AuthMiddleware(AuthConfig{
+		Secret:      []byte(cfg.SecretKey),
+		DB:          db,
+		MemDB:       memDB,
+		TokensCache: tokenscache.NewTokensCache(),
+	})
+	authGroup := apiGroup.Group("auth/", authMiddleware)
 
 	apiGroup.Group("docs", middleware.StaticWithConfig(middleware.StaticConfig{
 		Root:       "aiplan-help",
@@ -480,11 +481,15 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	e.GET("sf/:id/", s.shortSearchFilterURLRedirect)
 
 	// Get minio file
-	apiGroup.GET("file/:fileName/", s.redirectToMinioFileLegacy) // Legacy, remove after front migration to new endpoint
 	authGroup.GET("file/:fileName/", s.assetsHandler)
 
 	// Jitsi conf redirect
 	authGroup.GET("conf/:room/", s.redirectToJitsiConf)
+
+	// MCP handler
+	if cfg.MCPEnabled {
+		e.Any("mcp/*", mcp.NewMCPServer(db, s.business), authMiddleware)
+	}
 
 	// Front handler
 	if cfg.FrontFilesPath != "" || utils.CheckEmbedSPA(frontFS) {
@@ -495,6 +500,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			Skipper: func(c echo.Context) bool {
 				return strings.Contains(c.Path(), "api") ||
 					strings.Contains(c.Path(), "tus") ||
+					strings.Contains(c.Path(), "mcp") ||
 					strings.Contains(c.Path(), "swagger")
 			},
 			Filesystem: http.FS(frontFS),

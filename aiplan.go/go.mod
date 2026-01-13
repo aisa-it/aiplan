@@ -36,6 +36,7 @@ require (
 	github.com/go-telegram/bot v1.17.0
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
+	github.com/mark3labs/mcp-go v0.43.2
 	github.com/nao1215/markdown v0.8.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/ollama/ollama v0.9.6
@@ -47,6 +48,7 @@ require (
 	github.com/tus/tusd/v2 v2.8.0
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
+	gorm.io/driver/sqlite v1.6.0
 )
 
 require (
@@ -68,7 +70,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.34.1 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
+	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bmatcuk/doublestar v1.3.4 // indirect
+	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/badger/v4 v4.8.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
@@ -84,16 +88,21 @@ require (
 	github.com/gofrs/uuid/v5 v5.3.2 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
+	github.com/mattn/go-sqlite3 v1.14.28 // indirect
 	github.com/minio/crc64nvme v1.1.0 // indirect
 	github.com/olekukonko/errors v1.1.0 // indirect
 	github.com/olekukonko/ll v0.0.9 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/spf13/cast v1.7.1 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/tdewolff/parse/v2 v2.8.1 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
+	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/zclconf/go-cty-yaml v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.37.0 // indirect

@@ -62,7 +62,7 @@ var (
 	SubIssue = FieldMapping{"", "sub_issue"}
 
 	Token         = FieldMapping{"integration_token", "integration_token"}
-	Owner         = FieldMapping{"owner_id", "owner_id"}
+	Owner         = FieldMapping{"owner_id", "owner"}
 	Logo          = FieldMapping{"logo", "logo"}
 	Parent        = FieldMapping{"parent", "parent"}
 	Default       = FieldMapping{"default", "default"}
