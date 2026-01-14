@@ -60,8 +60,9 @@ type ProjectMemberLight struct {
 	MemberId uuid.UUID  `json:"member_id"`
 	Member   *UserLight `json:"member,omitempty" extensions:"x-nullable"`
 
-	ProjectId uuid.UUID     `json:"project_id"`
-	Project   *ProjectLight `json:"project,omitempty" extensions:"x-nullable"`
+	WorkspaceId uuid.UUID     `json:"workspace_id"`
+	ProjectId   uuid.UUID     `json:"project_id"`
+	Project     *ProjectLight `json:"project,omitempty" extensions:"x-nullable"`
 }
 
 type ProjectMember struct {
