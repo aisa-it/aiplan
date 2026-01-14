@@ -269,13 +269,13 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 
 				if isWatcher || isAssignee || issue.CreatedById == member.User.ID {
 					if issue.CreatedById == member.User.ID {
-						if member.ProjectAuthorSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
+						if member.ProjectAuthorSettings.IsNotify(activity.Field, actField.Project.Field, activity.Verb, member.ProjectRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
 						}
 						continue
 					}
-					if member.ProjectMemberSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
+					if member.ProjectMemberSettings.IsNotify(activity.Field, actField.Project.Field, activity.Verb, member.ProjectRole) {
 						sendActivities = append(sendActivities, activity)
 						continue
 					}

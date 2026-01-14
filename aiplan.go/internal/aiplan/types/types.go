@@ -587,14 +587,14 @@ func (ns *ProjectMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns ProjectMemberNS) IsNotify(field *string, entity string, verb string, role int) bool {
+func (ns ProjectMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
 	if field == nil {
 		return false
 	}
 
-	isIssue := entity == "issue"
-	isProject := entity == "project"
-	isPrAdmin := entity == "project" && role == AdminRole
+	isIssue := entity == actField.Issue.Field
+	isProject := entity == actField.Project.Field
+	isPrAdmin := entity == actField.Project.Field && role == AdminRole
 
 	switch actField.ActivityField(*field) {
 	case actField.Name.Field:
@@ -805,14 +805,14 @@ func (ns *WorkspaceMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, role int) bool {
+func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
 	if field == nil {
 		return false
 	}
 
-	isDoc := entity == "doc"
-	isWorkspace := entity == "workspace"
-	isWorkspaceAdmin := entity == "workspace" && role == AdminRole
+	isDoc := entity == actField.Doc.Field
+	isWorkspace := entity == actField.Workspace.Field
+	isWorkspaceAdmin := entity == actField.Workspace.Field && role == AdminRole
 
 	switch actField.ActivityField(*field) {
 	case actField.Title.Field:

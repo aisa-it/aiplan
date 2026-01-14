@@ -43,27 +43,40 @@ var (
 	}
 )
 
-func notifyFromProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) *ActivityTgNotification {
-	var notify ActivityTgNotification
+func notifyFromProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) (*ActivityTgNotification, error) {
 	if act.Field == nil {
-		return nil
+		return nil, nil
 	}
 
 	if err := preloadProjectActivity(tx, act); err != nil {
-		return nil
+		return nil, err
 	}
 
 	msg, err := formatProjectActivity(act)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("formatProjectActivity: %w", err)
 	}
 
-	notify.Message = msg
-	notify.Users = getUserTgProjectActivity(tx, act)
-	notify.TableName = act.TableName()
-	notify.EntityID = act.Id
-	notify.AuthorTgID = act.ActivitySender.SenderTg
-	return &notify
+	steps := []UsersStep{
+		addUserRole(act.Actor, actionAuthor),
+		addDefaultWatchers(act.ProjectId),
+		addIssueUsers(act.NewIssue),
+	}
+
+	if *act.Field != actField.Issue.Field.String() {
+		steps = append(steps, addProjectAdmin(act.ProjectId))
+	}
+
+	plan := NotifyPlan{
+		TableName:      act.TableName(),
+		settings:       fromWorkspace(act.WorkspaceId),
+		ActivitySender: act.ActivitySender.SenderTg,
+		Entity:         actField.Doc.Field,
+		AuthorRole:     actionAuthor,
+		Steps:          steps,
+	}
+
+	return NewActivityTgNotification(tx, act, msg, plan), nil
 }
 
 func preloadProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) error {
@@ -356,21 +369,4 @@ func projectDefault(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
 	}
 	return msg
-}
-
-func getUserTgProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) []userTg {
-	users := make(UserRegistry)
-	users.addUser(act.Actor, actionAuthor)
-
-	addDefaultWatchers(tx, act.ProjectId, users)
-	addIssueUsers(act.NewIssue, users)
-
-	if *act.Field != actField.Issue.Field.String() {
-		addProjectAdmin(tx, act.ProjectId, users)
-	}
-
-	if err := users.LoadProjectSettings(tx, act.ProjectId, actionAuthor); err != nil {
-		return []userTg{}
-	}
-	return users.FilterActivity(act.Field, act.Verb, actField.Project.Field.String(), shouldProjectNotify, actionAuthor)
 }

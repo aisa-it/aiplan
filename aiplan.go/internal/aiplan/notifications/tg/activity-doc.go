@@ -31,27 +31,39 @@ var (
 	}
 )
 
-func notifyFromDocActivity(tx *gorm.DB, act *dao.DocActivity) *ActivityTgNotification {
-	var notify ActivityTgNotification
+func notifyFromDocActivity(tx *gorm.DB, act *dao.DocActivity) (*ActivityTgNotification, error) {
 	if act.Field == nil {
-		return nil
+		return nil, nil
 	}
 
 	if err := preloadDocActivity(tx, act); err != nil {
-		return nil
+		return nil, err
 	}
 
 	msg, err := formatDocActivity(act)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("formatDocActivity: %w", err)
+	}
+	steps := []UsersStep{
+		addUserRole(act.Actor, actionAuthor),
+		addUserRole(act.Doc.Author, docAuthor),
+		addCommentMentionedUsers(act.NewDocComment),
+		addDocMembers(act.DocId),
+	}
+	if act.Doc == nil && act.Verb == actField.VerbCreated {
+		steps = append(steps, addWorkspaceAdmins(act.WorkspaceId))
 	}
 
-	notify.Message = msg
-	notify.Users = getUserTgDocActivity(tx, act)
-	notify.TableName = act.TableName()
-	notify.EntityID = act.Id
-	notify.AuthorTgID = act.ActivitySender.SenderTg
-	return &notify
+	plan := NotifyPlan{
+		TableName:      act.TableName(),
+		settings:       fromWorkspace(act.WorkspaceId),
+		ActivitySender: act.ActivitySender.SenderTg,
+		Entity:         actField.Doc.Field,
+		AuthorRole:     actionAuthor,
+		Steps:          steps,
+	}
+
+	return NewActivityTgNotification(tx, act, msg, plan), nil
 }
 
 func preloadDocActivity(tx *gorm.DB, act *dao.DocActivity) error {
@@ -178,37 +190,17 @@ func docRole(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 }
 
 func docComment(act *dao.DocActivity, af actField.ActivityField) TgMsg {
-	msg := NewTgMsg()
-	format := "```\n%s```"
-	var values []any
-
-	switch act.Verb {
-	case actField.VerbCreated:
-		msg.title = "прокомментировал(-a) документ"
-		values = []any{utils.HtmlToTg(act.NewDocComment.CommentHtml.Body)}
-	case actField.VerbDeleted:
-		msg.title = "удалил(-a) комментарий из документа"
-		values = []any{utils.HtmlToTg(*act.OldValue)}
-	case actField.VerbUpdated:
-		msg.title = "изменил(-a) комментарий в документе"
-		values = []any{utils.HtmlToTg(act.NewDocComment.CommentHtml.Body)}
-	}
-
-	msg.body = fmt.Sprintf(format, values...)
-	return msg
+	return genComment(act.NewDocComment, act.OldValue, act.Verb,
+		"изменил(-a) комментарий в документе",
+		"прокомментировал(-a) документ",
+		"удалил(-a) комментарий из документа")
 }
 
 func docAttachment(act *dao.DocActivity, af actField.ActivityField) TgMsg {
-	msg := NewTgMsg()
-	switch act.Verb {
-	case actField.VerbCreated:
-		msg.title = "добавил(-a) вложение в документ"
-		msg.body += Stelegramf("*%s*", act.NewValue)
-	case actField.VerbDeleted:
-		msg.title = "удалил(-a) вложение из документа"
-		msg.body += Stelegramf("~%s~", *act.OldValue)
-	}
-	return msg
+	return genAttachment(act.OldValue, act.NewValue, act.Verb,
+		"добавил(-a) вложение в документ",
+		"удалил(-a) вложение из документа",
+	)
 }
 
 func docDefault(act *dao.DocActivity, af actField.ActivityField) TgMsg {
@@ -222,18 +214,4 @@ func docDefault(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
 	}
 	return msg
-}
-
-func getUserTgDocActivity(tx *gorm.DB, act *dao.DocActivity) []userTg {
-	users := make(UserRegistry)
-	users.addUser(act.Actor, actionAuthor)
-	users.addUser(act.Doc.Author, docAuthor)
-
-	addWorkspaceAdmin(tx, act.WorkspaceId, users)
-	addDocMembers(tx, act.DocId, users)
-
-	if err := users.LoadWorkspaceSettings(tx, act.WorkspaceId, actionAuthor); err != nil {
-		return []userTg{}
-	}
-	return users.FilterActivity(act.Field, act.Verb, actField.Doc.Field.String(), shouldWorkspaceNotify, actionAuthor)
 }

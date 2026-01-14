@@ -1,47 +1,46 @@
 package tg
 
 import (
-	"fmt"
-	"net/url"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/go-telegram/bot"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 )
 
-func finalizeActivityTitle(msg TgMsg, actor, entity string, url *url.URL) TgMsg {
-	msg.title = fmt.Sprintf(
-		"*%s* %s [%s](%s)",
-		bot.EscapeMarkdown(actor),
-		bot.EscapeMarkdown(msg.title),
-		bot.EscapeMarkdown(entity),
-		url.String(),
-	)
+func genComment[R dao.IRedactorHTML](comment *R, oldV *string, verb, titleUpdate, titleCreate, titleDelete string) TgMsg {
+	msg := NewTgMsg()
+
+	if comment != nil {
+		msg.body = Stelegramf("```\n%s```",
+			utils.HtmlToTg((*comment).GetRedactorHtml().Body),
+		)
+	} else {
+		if oldV != nil {
+			msg.body = Stelegramf("```\n%s```",
+				utils.HtmlToTg(*oldV))
+		}
+	}
+	msg.replace[userMentioned] = struct{}{}
+
+	switch verb {
+	case actField.VerbUpdated:
+		msg.title = titleUpdate
+	case actField.VerbCreated:
+		msg.title = titleCreate
+	case actField.VerbDeleted:
+		msg.title = titleDelete
+	}
 	return msg
 }
 
-func formatByField[T dao.ActivityI, F ~func(*T, actField.ActivityField) TgMsg](
-	act *T,
-	m map[actField.ActivityField]F,
-	defaultFn F,
-) (TgMsg, error) {
-	var res TgMsg
-
-	if (*act).GetField() == "" {
-		return res, fmt.Errorf("%s field is nil", (*act).GetEntity())
+func genAttachment(oldV *string, newV, verb, titleCreate, titleDelete string) TgMsg {
+	msg := NewTgMsg()
+	switch verb {
+	case actField.VerbCreated:
+		msg.title = titleCreate
+		msg.body += Stelegramf("*файл*: %s", newV)
+	case actField.VerbDeleted:
+		msg.title = titleDelete
+		msg.body += Stelegramf("*файл*: ~%s~", *oldV)
 	}
-
-	af := actField.ActivityField((*act).GetField())
-
-	if f, ok := m[af]; ok {
-		res = f(act, af)
-	} else if defaultFn != nil {
-		res = defaultFn(act, af)
-	}
-
-	if res.IsEmpty() {
-		return res, fmt.Errorf("%s activity is empty", (*act).GetEntity())
-	}
-
-	return res, nil
+	return msg
 }

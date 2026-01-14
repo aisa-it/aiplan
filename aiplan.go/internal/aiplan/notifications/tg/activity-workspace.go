@@ -31,27 +31,33 @@ var (
 	}
 )
 
-func notifyFromWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) *ActivityTgNotification {
-	var notify ActivityTgNotification
+func notifyFromWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) (*ActivityTgNotification, error) {
 	if act.Field == nil {
-		return nil
+		return nil, nil
 	}
 
 	if err := preloadWorkspaceActivity(tx, act); err != nil {
-		return nil
+		return nil, err
 	}
 
 	msg, err := formatWorkspaceActivity(act)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("formatWorkspaceActivity: %w", err)
 	}
 
-	notify.Message = msg
-	notify.Users = getUserTgWorkspaceActivity(tx, act)
-	notify.TableName = act.TableName()
-	notify.EntityID = act.Id
-	notify.AuthorTgID = act.ActivitySender.SenderTg
-	return &notify
+	plan := NotifyPlan{
+		TableName:      act.TableName(),
+		settings:       fromWorkspace(act.WorkspaceId),
+		ActivitySender: act.ActivitySender.SenderTg,
+		Entity:         actField.Doc.Field,
+		AuthorRole:     actionAuthor,
+		Steps: []UsersStep{
+			addUserRole(act.Actor, actionAuthor),
+			addWorkspaceAdmins(act.WorkspaceId),
+		},
+	}
+
+	return NewActivityTgNotification(tx, act, msg, plan), nil
 }
 
 func preloadWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) error {
@@ -202,15 +208,4 @@ func workspaceLogo(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg 
 	msg.title = "изменил(-a) в пространстве"
 	msg.body = Stelegramf("*Логотип пространства*")
 	return msg
-}
-
-func getUserTgWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) []userTg {
-	users := make(UserRegistry)
-	users.addUser(act.Actor, actionAuthor)
-	addWorkspaceAdmin(tx, act.WorkspaceId, users)
-
-	if err := users.LoadWorkspaceSettings(tx, act.WorkspaceId, actionAuthor); err != nil {
-		return []userTg{}
-	}
-	return users.FilterActivity(act.Field, act.Verb, actField.Workspace.Field.String(), shouldWorkspaceNotify, actionAuthor)
 }

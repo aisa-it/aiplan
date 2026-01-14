@@ -13,6 +13,7 @@ import (
 
 const (
 	targetDateTimeZ = "TargetDateTimeZ"
+	userMentioned   = "UserMentioned"
 )
 
 func Stelegramf(format string, a ...any) string {
@@ -57,6 +58,10 @@ func msgReplace(user userTg, msg TgMsg) TgMsg {
 				msg.body = strings.ReplaceAll(msg.body, strReplace(k), Stelegramf("%s", strNeW))
 			} else {
 				return NewTgMsg()
+			}
+		case userMentioned:
+			if user.Has(commentMentioned) {
+				msg.title += Stelegramf("\n__%s__", "Вас упомянули в комментарии")
 			}
 		}
 	}
