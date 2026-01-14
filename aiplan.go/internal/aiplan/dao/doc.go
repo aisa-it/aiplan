@@ -476,6 +476,10 @@ func (dc DocComment) GetDocId() uuid.UUID {
 	return dc.DocId
 }
 
+func (dc DocComment) GetRedactorHtml() types.RedactorHTML {
+	return dc.CommentHtml
+}
+
 // Выполняет дополнительные операции после успешного поиска записи в базе данных. В частности, обновляет информацию об URL, получает итоги реакции на комментарии и другие необходимые действия после извлечения данных из базы.
 func (dc *DocComment) AfterFind(tx *gorm.DB) error {
 	raw := fmt.Sprintf("/api/auth/workspaces/%s/doc/%s/comments/%s/", dc.WorkspaceId.String(), dc.DocId.String(), dc.Id)

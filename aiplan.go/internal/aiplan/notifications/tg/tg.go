@@ -231,8 +231,9 @@ func (t *TgService) UserMentionNotification(user dao.User, comment dao.IssueComm
 
 	msg := NewTgMsg()
 	msg.title = fmt.Sprintf(
-		"*%s* упомянул(-а) вас в комментарии [%s](%s)",
+		"*%s* %s [%s](%s)",
 		bot.EscapeMarkdown(comment.Actor.GetName()),
+		bot.EscapeMarkdown("упомянул(-а) вас в комментарии"),
 		bot.EscapeMarkdown(comment.Issue.FullIssueName()),
 		comment.Issue.URL.String(),
 	)

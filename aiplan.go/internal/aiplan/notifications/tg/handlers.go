@@ -89,7 +89,7 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 		Joins("Doc").
 		Where("? = any (telegram_msg_ids)", update.Message.ReplyToMessage.ID).First(&act).Error; err != nil {
 		t.Send(update.Message.Chat.ID, TgMsg{
-			title: "Не возможно оставлять комментарий",
+			title: "Не возможно оставить комментарий",
 		})
 		return
 

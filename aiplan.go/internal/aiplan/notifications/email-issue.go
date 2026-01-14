@@ -164,9 +164,9 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
-			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
+			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, actField.Issue.Field, activity.Verb, member.ProjectRole)
 			if activity.Issue.CreatedById == member.User.ID {
-				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
+				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, actField.Issue.Field, activity.Verb, member.ProjectRole)
 			}
 			if (member.IssueAuthor && authorNotify) || (!member.IssueAuthor && memberNotify) {
 				sendActivities = append(sendActivities, activity)
@@ -198,7 +198,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.ProjectMemberSettings.IsNotify(&field, "issue", "all", author.ProjectRole) {
+		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.ProjectMemberSettings.IsNotify(&field, actField.Issue.Field, "all", author.ProjectRole) {
 			content, textContent, err := getIssueNotificationHTML(tx, author.activities, &author.User)
 			if err != nil {
 				slog.Error("Make issue notification HTML", "err", err)

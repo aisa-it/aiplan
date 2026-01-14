@@ -1596,6 +1596,10 @@ func (i IssueComment) GetIssueId() uuid.UUID {
 	return i.IssueId
 }
 
+func (i IssueComment) GetRedactorHtml() types.RedactorHTML {
+	return i.CommentHtml
+}
+
 // ToLightDTO преобразует объект IssueComment в структуру IssueCommentLight для упрощения передачи данных в клиентский код.
 //
 // Параметры:

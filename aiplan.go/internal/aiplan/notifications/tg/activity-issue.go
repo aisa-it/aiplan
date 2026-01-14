@@ -37,25 +37,34 @@ var (
 	}
 )
 
-func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) *ActivityTgNotification {
-	notify := ActivityTgNotification{}
+func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) (*ActivityTgNotification, error) {
 	if act.Field == nil {
-		return nil
+		return nil, nil
 	}
 
 	act.Issue = preloadIssueActivity(tx, act.IssueId)
 	msg, err := formatIssueActivity(act)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("formatIssueActivity: %w", err)
 	}
 
-	notify.Message = msg
-	notify.Users = getUserTgIdIssueActivity(tx, act)
-	notify.TableName = act.TableName()
-	notify.EntityID = act.Id
-	notify.AuthorTgID = act.ActivitySender.SenderTg
+	plan := NotifyPlan{
+		TableName:      act.TableName(),
+		settings:       fromProject(act.ProjectId),
+		ActivitySender: act.ActivitySender.SenderTg,
+		Entity:         actField.Issue.Field,
+		AuthorRole:     issueAuthor,
+		Steps: []UsersStep{
+			addUserRole(act.Actor, actionAuthor),
+			addUserRole(act.Issue.Author, issueAuthor),
+			addIssueUsers(act.Issue),
+			addOriginalCommentAuthor(act),
+			addCommentMentionedUsers(act.NewIssueComment),
+			addDefaultWatchers(act.ProjectId),
+		},
+	}
 
-	return &notify
+	return NewActivityTgNotification(tx, act, msg, plan), nil
 }
 
 func preloadIssueActivity(tx *gorm.DB, id uuid.UUID) *dao.Issue {
@@ -140,49 +149,17 @@ func issueDescription(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 }
 
 func issueComment(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
-	msg := NewTgMsg()
-
-	comment := act.NewIssueComment
-
-	if comment != nil {
-		msg.body = Stelegramf("```\n%s```",
-			utils.HtmlToTg(comment.CommentHtml.Body),
-		)
-	} else {
-		if act.OldValue != nil {
-			msg.body = Stelegramf("```\n%s```",
-				utils.HtmlToTg(*act.OldValue))
-		}
-	}
-
-	switch act.Verb {
-	case actField.VerbUpdated:
-		msg.title = "изменил(-a) комментарий"
-	case actField.VerbCreated:
-		msg.title = "прокомментировал(-a)"
-	case actField.VerbDeleted:
-		msg.title = "удалил(-a) комментарий из"
-	}
-	return msg
+	return genComment(act.NewIssueComment, act.OldValue, act.Verb,
+		"изменил(-a) комментарий",
+		"прокомментировал(-a)",
+		"удалил(-a) комментарий из")
 }
 
 func issueAttachment(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
-	msg := NewTgMsg()
-
-	if act.OldValue != nil {
-		msg.body = Stelegramf("*файл*: %s", *act.OldValue)
-	} else {
-		msg.body = Stelegramf("*файл*: %s", act.NewValue)
-	}
-
-	switch act.Verb {
-	case actField.VerbCreated:
-		msg.title = "добавил(-a) вложение в"
-	case actField.VerbDeleted:
-		msg.title = "удалил(-a) вложение из"
-
-	}
-	return msg
+	return genAttachment(act.OldValue, act.NewValue, act.Verb,
+		"добавил(-a) вложение в",
+		"удалил(-a) вложение из",
+	)
 }
 
 func issueLinked(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
@@ -401,18 +378,4 @@ func issueProject(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 		act.NewProject.Name,
 	)
 	return msg
-}
-
-func getUserTgIdIssueActivity(tx *gorm.DB, act *dao.IssueActivity) []userTg {
-	users := make(UserRegistry)
-	users.addUser(act.Actor, actionAuthor)
-
-	addOriginalCommentAuthor(tx, act, users)
-	addDefaultWatchers(tx, act.ProjectId, users)
-	addIssueUsers(act.Issue, users)
-
-	if err := users.LoadProjectSettings(tx, act.ProjectId, issueAuthor); err != nil {
-		return []userTg{}
-	}
-	return users.FilterActivity(act.Field, act.Verb, actField.Issue.Field.String(), shouldProjectNotify, issueAuthor)
 }
