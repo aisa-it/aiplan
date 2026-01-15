@@ -7,20 +7,26 @@
 package notifications
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"time"
 
 	"gorm.io/gorm/clause"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
+	"github.com/jackc/pgx/v5"
 	"gorm.io/gorm"
 )
 
 // Constant for the maximum number of retry attempts
-const maxRetryAttempts = 3
+const (
+	maxRetryAttempts     = 3
+	notificationsChannel = "notifications"
+)
 
 // NotificationProcessor is responsible for processing notifications
 type NotificationProcessor struct {
@@ -28,6 +34,9 @@ type NotificationProcessor struct {
 	telegramService  *TelegramService
 	emailService     *EmailService
 	websocketService *WebsocketNotificationService
+
+	ctx    context.Context
+	cancle context.CancelFunc
 }
 
 func CreateNotificationSender(notification *dao.DeferredNotifications) (INotifySend, error) {
@@ -49,12 +58,55 @@ func CreateNotificationSender(notification *dao.DeferredNotifications) (INotifyS
 }
 
 func NewNotificationProcessor(db *gorm.DB, telegramService *TelegramService, emailService *EmailService, websocketService *WebsocketNotificationService) *NotificationProcessor {
+	ctx, cancle := context.WithCancel(context.Background())
 	return &NotificationProcessor{
 		db:               db,
 		telegramService:  telegramService,
 		emailService:     emailService,
 		websocketService: websocketService,
+		ctx:              ctx,
+		cancle:           cancle,
 	}
+}
+
+func (np *NotificationProcessor) Stop() {
+	slog.Info("Wait fot NotificationProcessor stop")
+	np.cancle()
+	<-np.ctx.Done()
+}
+
+func (np *NotificationProcessor) ListenNotifications(dsn string) error {
+	conn, err := pgx.Connect(context.Background(), dsn)
+	if err != nil {
+		return err
+	}
+
+	if _, err := conn.Exec(np.ctx, "LISTEN "+notificationsChannel); err != nil {
+		return err
+	}
+
+	slog.Info("Notifications listener started")
+	go func() {
+		for {
+			notRaw, err := conn.WaitForNotification(np.ctx)
+			if err != nil {
+				if np.ctx.Err() != nil {
+					break
+				}
+				slog.Error("Error waiting for notification", "err", err)
+				continue
+			}
+
+			var notification dao.DeferredNotifications
+			if err := json.Unmarshal([]byte(notRaw.Payload), &notification); err != nil {
+				slog.Error("Unmarshall DeferredNotification payload", "payload", notRaw.Payload, "err", err)
+				continue
+			}
+
+			go np.handleNotification(&notification)
+		}
+	}()
+	return nil
 }
 
 // ProcessNotifications processes records from the notifications_log table
