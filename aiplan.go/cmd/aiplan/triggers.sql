@@ -224,3 +224,75 @@ CREATE OR REPLACE TRIGGER insert_or_update_search_filters
   ON search_filters
   FOR EACH ROW
   EXECUTE PROCEDURE gen_search_filter_name_tokens();
+
+-- Deferred Notifications trigger for real-time notification delivery
+-- Отправляет NOTIFY только для уведомлений, готовых к обработке:
+-- sent_at IS NULL - ещё не отправлено
+-- time_send < NOW() - время отправки наступило
+-- attempt_count < 3 - не превышен лимит попыток
+-- JSON включает связанные сущности: workspace, project, user, issue
+CREATE OR REPLACE FUNCTION notify_deferred_notification()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    payload jsonb;
+BEGIN
+    IF NEW.sent_at IS NULL AND NEW.time_send < NOW() AND NEW.attempt_count < 3 THEN
+        SELECT json_build_object(
+            'id', NEW.id,
+            'user_id', NEW.user_id,
+            'issue_id', NEW.issue_id,
+            'project_id', NEW.project_id,
+            'workspace_id', NEW.workspace_id,
+            'notification_type', NEW.notification_type,
+            'delivery_method', NEW.delivery_method,
+            'time_send', NEW.time_send,
+            'attempt_count', NEW.attempt_count,
+            'last_attempt_at', NEW.last_attempt_at,
+            'sent_at', NEW.sent_at,
+            'notification_payload', NEW.notification_payload,
+            'user', CASE WHEN u.id IS NOT NULL THEN json_build_object(
+                'id', u.id,
+                'is_active', u.is_active,
+                'is_integration', u.is_integration,
+                'is_bot', u.is_bot,
+                'telegram_id', u.telegram_id,
+                'user_timezone', u.user_timezone,
+                'settings', u.settings,
+                'email', u.email
+            ) END,
+            'workspace', CASE WHEN w.id IS NOT NULL THEN json_build_object(
+                'id', w.id,
+                'name', w.name,
+                'slug', w.slug
+            ) END,
+            'project', CASE WHEN p.id IS NOT NULL THEN json_build_object(
+                'id', p.id,
+                'identifier', p.identifier
+            ) END,
+            'issue', CASE WHEN i.id IS NOT NULL THEN json_build_object(
+                'id', i.id,
+                'name', i.name,
+                'sequence_id', i.sequence_id,
+                'project', i.project_id,
+                'created_by', i.created_by_id
+            ) END
+        ) INTO payload
+        FROM (SELECT 1) AS dummy
+        LEFT JOIN users u ON u.id = NEW.user_id
+        LEFT JOIN workspaces w ON w.id = NEW.workspace_id
+        LEFT JOIN projects p ON p.id = NEW.project_id
+        LEFT JOIN issues i ON i.id = NEW.issue_id;
+
+        PERFORM pg_notify('notifications', payload::text);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER deferred_notifications_notify
+    AFTER INSERT OR UPDATE
+    ON deferred_notifications
+    FOR EACH ROW
+    EXECUTE PROCEDURE notify_deferred_notification();
