@@ -163,6 +163,22 @@ func (tz TimeZone) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%s\"", &loc)), nil
 }
 
+func (tz *TimeZone) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	if str == "" {
+		str = "Europe/Moscow"
+	}
+	loc, err := time.LoadLocation(str)
+	if err != nil {
+		return err
+	}
+	*tz = TimeZone(*loc)
+	return nil
+}
+
 // Theme type
 type Theme struct {
 	System    *bool `json:"system,omitempty" extensions:"x-nullable"`

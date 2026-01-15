@@ -570,6 +570,7 @@ func (pm *ProjectMember) ToLightDTO() *dto.ProjectMemberLight {
 		IsDefaultWatcher:  pm.IsDefaultWatcher,
 		MemberId:          pm.MemberId,
 		Member:            pm.Member.ToLightDTO(),
+		WorkspaceId:       pm.WorkspaceId,
 		ProjectId:         pm.ProjectId,
 		Project:           pm.Project.ToLightDTO(),
 	}

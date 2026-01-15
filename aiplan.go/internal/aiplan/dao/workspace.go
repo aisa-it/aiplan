@@ -399,6 +399,7 @@ func (wm *WorkspaceMember) ToLightDTO() *dto.WorkspaceMemberLight {
 		EditableByAdmin: wm.EditableByAdmin,
 		MemberId:        wm.MemberId,
 		Member:          wm.Member.ToLightDTO(),
+		WorkspaceId:     wm.WorkspaceId,
 	}
 }
 
