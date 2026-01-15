@@ -50,6 +50,7 @@ type WorkspaceMemberLight struct {
 	EditableByAdmin bool       `json:"editable_by_admin"`
 	MemberId        uuid.UUID  `json:"member_id"`
 	Member          *UserLight `json:"member"`
+	WorkspaceId     uuid.UUID  `json:"workspace_id"`
 }
 
 type WorkspaceMember struct {
