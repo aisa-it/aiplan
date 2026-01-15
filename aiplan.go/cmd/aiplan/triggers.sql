@@ -259,7 +259,8 @@ BEGIN
                 'is_bot', u.is_bot,
                 'telegram_id', u.telegram_id,
                 'user_timezone', u.user_timezone,
-                'settings', u.settings
+                'settings', u.settings,
+                'email', u.email
             ) END,
             'workspace', CASE WHEN w.id IS NOT NULL THEN json_build_object(
                 'id', w.id,
@@ -274,8 +275,8 @@ BEGIN
                 'id', i.id,
                 'name', i.name,
                 'sequence_id', i.sequence_id,
-                'project_id', i.project_id,
-                'created_by_id', i.created_by_id
+                'project', i.project_id,
+                'created_by', i.created_by_id
             ) END
         ) INTO payload
         FROM (SELECT 1) AS dummy
