@@ -16,10 +16,10 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -39,7 +39,7 @@ type Integration struct {
 	Added     bool      `json:"added,omitempty"`
 
 	db              *gorm.DB
-	telegramService *notifications.TelegramService
+	telegramService *tg.TgService
 	fileStorage     filestorage.FileStorage
 	tracker         *tracker.ActivitiesTracker
 	bl              *business.Business
@@ -98,7 +98,7 @@ type IntegrationsService struct {
 	db           *gorm.DB
 }
 
-func NewIntegrationService(g *echo.Group, db *gorm.DB, tS *notifications.TelegramService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *IntegrationsService {
+func NewIntegrationService(g *echo.Group, db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *IntegrationsService {
 	integrations := []IntegrationInterface{
 		NewGitlabIntegration(db, tS, fs, tr, bl),
 		NewGithubIntegration(db, tS, fs, tr, bl),
