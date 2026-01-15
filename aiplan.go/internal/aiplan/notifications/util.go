@@ -11,8 +11,6 @@ package notifications
 
 import (
 	"fmt"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"regexp"
 	"strings"
 	"time"
@@ -101,21 +99,4 @@ func FormatDate(dateStr, outFormat string, tz *types.TimeZone) (string, error) {
 		}
 	}
 	return t.Format(outFormat), err
-}
-
-func MsgWithUser(msg tgbotapi.MessageConfig, ut userTg, act *tgMsg) tgbotapi.MessageConfig {
-	msg.ChatID = ut.id
-	msg.DisableWebPagePreview = true
-
-	if act.newValTime.Valid {
-		if strNeW, err := utils.FormatDateStr(act.newValTime.Time.String(), "02.01.2006 15:04", &ut.loc); err == nil {
-			msg.Text = strings.ReplaceAll(msg.Text, "$$$$TargetDateTimeZ$$$$new$$$$", Stelegramf("%s", strNeW))
-		}
-	}
-	if act.oldValTime.Valid {
-		if strOld, err := utils.FormatDateStr(act.oldValTime.Time.String(), "02.01.2006 15:04", &ut.loc); err == nil {
-			msg.Text = strings.ReplaceAll(msg.Text, "$$$$TargetDateTimeZ$$$$old$$$$", Stelegramf("%s", strOld))
-		}
-	}
-	return msg
 }

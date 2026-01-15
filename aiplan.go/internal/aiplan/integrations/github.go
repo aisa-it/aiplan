@@ -16,11 +16,11 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	"github.com/gofrs/uuid"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -74,7 +74,7 @@ type GithubPushEvent struct {
 	} `json:"sender"`
 }
 
-func NewGithubIntegration(db *gorm.DB, tS *notifications.TelegramService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *GithubIntegration {
+func NewGithubIntegration(db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *GithubIntegration {
 	username := "github_integration"
 	i := &GithubIntegration{
 		Integration: Integration{

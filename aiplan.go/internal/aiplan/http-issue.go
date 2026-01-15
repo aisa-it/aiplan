@@ -2273,7 +2273,6 @@ func (s *Services) createIssueComment(c echo.Context) error {
 				}
 			}
 
-			s.notificationsService.Tg.UserMentionNotification(u, comment)
 			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, u.ID, comment); err == nil {
 				s.notificationsService.Ws.Send(u.ID, notify.ID, notifications.Mention{IssueComment: comment}, countNotify)
 			}
@@ -2403,7 +2402,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return c.JSON(http.StatusOK, commentOld)
 	}
 
-	if comment.CommentHtml.StripTags() == "" {
+	if comment.CommentHtml.StripTags() == "" && comment.CommentStripped == "" {
 		return EErrorDefined(c, apierrors.ErrIssueCommentEmpty)
 	}
 
@@ -2496,7 +2495,6 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 					continue
 				}
 			}
-			s.notificationsService.Tg.UserMentionNotification(u, commentOld)
 			if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, u.ID, commentOld); err == nil {
 				s.notificationsService.Ws.Send(u.ID, notify.ID, commentOld, countNotify)
 			}

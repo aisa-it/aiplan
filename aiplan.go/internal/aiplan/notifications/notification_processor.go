@@ -14,6 +14,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"gorm.io/gorm/clause"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -31,7 +33,7 @@ const (
 // NotificationProcessor is responsible for processing notifications
 type NotificationProcessor struct {
 	db               *gorm.DB
-	telegramService  *TelegramService
+	telegramService  *tg.TgService
 	emailService     *EmailService
 	websocketService *WebsocketNotificationService
 
@@ -57,7 +59,7 @@ func CreateNotificationSender(notification *dao.DeferredNotifications) (INotifyS
 	return res, nil
 }
 
-func NewNotificationProcessor(db *gorm.DB, telegramService *TelegramService, emailService *EmailService, websocketService *WebsocketNotificationService) *NotificationProcessor {
+func NewNotificationProcessor(db *gorm.DB, telegramService *tg.TgService, emailService *EmailService, websocketService *WebsocketNotificationService) *NotificationProcessor {
 	ctx, cancle := context.WithCancel(context.Background())
 	return &NotificationProcessor{
 		db:               db,
@@ -189,7 +191,7 @@ func (np *NotificationProcessor) handleNotification(notification *dao.DeferredNo
 }
 
 func (np *NotificationProcessor) sendToTelegram(notification *dao.DeferredNotifications, sender INotifySend) bool {
-	if np.telegramService.disabled {
+	if np.telegramService.Disabled {
 		return false
 	}
 	if !notification.User.CanReceiveNotifications() && !notification.User.Settings.TgNotificationMute {
@@ -300,7 +302,7 @@ type INotifySend interface {
 	isNotifyTg(tx *gorm.DB, notification *dao.DeferredNotifications) bool
 	isNotifyEmail(tx *gorm.DB, notification *dao.DeferredNotifications) bool
 	isNotifyApp(tx *gorm.DB, notification *dao.DeferredNotifications) bool
-	toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []string)
+	toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any)
 	toEmail(emailService *EmailService, notification *dao.DeferredNotifications, author *dao.User) bool
 }
 
@@ -333,7 +335,7 @@ func (nm *notifyMessage) getUserNotification() *dao.UserNotifications {
 	return &res
 }
 
-func (nm *notifyMessage) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []string) {
+func (nm *notifyMessage) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any) {
 	var firstName, lastName string
 	if author == nil {
 		firstName = "Администратор"
@@ -347,14 +349,14 @@ func (nm *notifyMessage) toTelegram(notification *dao.DeferredNotifications, aut
 	message = replaceImageToText(message)
 	message = prepareHtmlBody(htmlStripPolicy, message)
 	formatMsg := "%s %s отправил сообщение пользователям\n[%s](%s)\n*%s*\n```\n%s```"
-	var out []string
+	var out []interface{}
 	out = append(out,
 		firstName,
 		lastName,
 		notification.Workspace.Name,
 		notification.Workspace.URL.String(),
 		nm.Title,
-		substr(replaceImgToEmoj(message), 0, 4000))
+		utils.Substr(utils.ReplaceImgToEmoj(message), 0, 4000))
 	return *notification.User.TelegramId, formatMsg, out
 }
 
@@ -410,9 +412,9 @@ func (nd *notifyDeadline) getUserNotification() *dao.UserNotifications {
 	return &res
 }
 
-func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []string) {
+func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any) {
 	formatMsg := "❗Срок выполнения задачи\n[%s](%s)\nистекает *%s*"
-	var out []string
+	var out []interface{}
 
 	date, err := FormatDate(nd.Deadline.Format("02.01.2006 15:04 MST"), "02.01.2006 15:04 MST", &notification.User.UserTimezone)
 	if err != nil {
@@ -536,15 +538,15 @@ func (s serviceMessage) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNotif
 	return true
 }
 
-func (s serviceMessage) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []string) {
+func (s serviceMessage) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any) {
 	formatMsg := "🔹Сервисное уведомление пользователям\n*%s*\n```\n%s```"
 	message := replaceTablesToText(s.Msg)
 	message = replaceImageToText(message)
 	message = prepareHtmlBody(htmlStripPolicy, message)
-	var out []string
+	var out []interface{}
 	out = append(out,
 		s.Title,
-		substr(replaceImgToEmoj(message), 0, 4000))
+		utils.Substr(utils.ReplaceImgToEmoj(message), 0, 4000))
 	return *notification.User.TelegramId, formatMsg, out
 }
 

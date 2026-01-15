@@ -33,6 +33,7 @@ require (
 	github.com/coder/websocket v1.8.13
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-ldap/ldap/v3 v3.4.12
+	github.com/go-telegram/bot v1.17.0
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/mark3labs/mcp-go v0.43.2

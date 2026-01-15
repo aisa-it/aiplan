@@ -256,13 +256,13 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 
 				if isWatcher || isReader || isEditor || doc.CreatedById == member.User.ID {
 					if doc.CreatedById == member.User.ID {
-						if member.WorkspaceAuthorSettings.IsNotify(activity.Field, "workspace", activity.Verb, member.WorkspaceRole) {
+						if member.WorkspaceAuthorSettings.IsNotify(activity.Field, actField.Workspace.Field, activity.Verb, member.WorkspaceRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
 						}
 						continue
 					}
-					if member.WorkspaceMemberSettings.IsNotify(activity.Field, "workspace", activity.Verb, member.WorkspaceRole) {
+					if member.WorkspaceMemberSettings.IsNotify(activity.Field, actField.Workspace.Field, activity.Verb, member.WorkspaceRole) {
 						sendActivities = append(sendActivities, activity)
 						continue
 					}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
@@ -51,6 +52,10 @@ type ActivityI interface {
 	GetId() uuid.UUID
 	//SetAffectedUser(user *User)
 	//BuildActivity(entity E, tmpl TemplateActivity) (A, error)
+}
+
+type IRedactorHTML interface {
+	GetRedactorHtml() types.RedactorHTML
 }
 
 type IEntity[A Activity] interface {
