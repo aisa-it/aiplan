@@ -10,6 +10,7 @@ import (
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
@@ -163,9 +164,9 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
-			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
+			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, actField.Issue.Field, activity.Verb, member.ProjectRole)
 			if activity.Issue.CreatedById == member.User.ID {
-				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, "issue", activity.Verb, member.ProjectRole)
+				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, actField.Issue.Field, activity.Verb, member.ProjectRole)
 			}
 			if (member.IssueAuthor && authorNotify) || (!member.IssueAuthor && memberNotify) {
 				sendActivities = append(sendActivities, activity)
@@ -197,7 +198,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.ProjectMemberSettings.IsNotify(&field, "issue", "all", author.ProjectRole) {
+		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.ProjectMemberSettings.IsNotify(&field, actField.Issue.Field, "all", author.ProjectRole) {
 			content, textContent, err := getIssueNotificationHTML(tx, author.activities, &author.User)
 			if err != nil {
 				slog.Error("Make issue notification HTML", "err", err)
@@ -479,11 +480,8 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 				return "", "", err
 			}
 			var p string
-			if activity.Issue.Priority == nil {
-				p = priorityTranslation["<nil>"]
-			} else {
-				p = priorityTranslation[*activity.Issue.Priority]
-			}
+			p = types.TranslateMap(types.PriorityTranslation, activity.Issue.Priority)
+
 			activity.Issue.Priority = &p
 			description := replaceTablesToText(replaceImageToText(activity.Issue.DescriptionHtml))
 			description = policy.ProcessCustomHtmlTag(description)
@@ -523,11 +521,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			}
 
 			var p string
-			if activity.Issue.Priority == nil {
-				p = priorityTranslation["<nil>"]
-			} else {
-				p = priorityTranslation[*activity.Issue.Priority]
-			}
+			p = types.TranslateMap(types.PriorityTranslation, activity.Issue.Priority)
 			activity.Issue.Priority = &p
 			description := replaceTablesToText(replaceImageToText(activity.Issue.DescriptionHtml))
 			description = policy.ProcessCustomHtmlTag(description)
@@ -608,14 +602,8 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		field := *activity.Field
 
 		if field == actField.Priority.Field.String() {
-			activity.NewValue = priorityTranslation[activity.NewValue]
-			if activity.OldValue != nil {
-				p := priorityTranslation[*activity.OldValue]
-				activity.OldValue = &p
-			} else {
-				p := priorityTranslation["<nil>"]
-				activity.OldValue = &p
-			}
+			activity.NewValue = types.TranslateMap(types.PriorityTranslation, utils.ToPtr(activity.NewValue))
+			activity.OldValue = utils.ToPtr(types.TranslateMap(types.PriorityTranslation, activity.OldValue))
 		}
 
 		if field == actField.TargetDate.Field.String() {

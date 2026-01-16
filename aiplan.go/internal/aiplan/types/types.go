@@ -163,6 +163,22 @@ func (tz TimeZone) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%s\"", &loc)), nil
 }
 
+func (tz *TimeZone) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	if str == "" {
+		str = "Europe/Moscow"
+	}
+	loc, err := time.LoadLocation(str)
+	if err != nil {
+		return err
+	}
+	*tz = TimeZone(*loc)
+	return nil
+}
+
 // Theme type
 type Theme struct {
 	System    *bool `json:"system,omitempty" extensions:"x-nullable"`
@@ -587,14 +603,14 @@ func (ns *ProjectMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns ProjectMemberNS) IsNotify(field *string, entity string, verb string, role int) bool {
+func (ns ProjectMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
 	if field == nil {
 		return false
 	}
 
-	isIssue := entity == "issue"
-	isProject := entity == "project"
-	isPrAdmin := entity == "project" && role == AdminRole
+	isIssue := entity == actField.Issue.Field
+	isProject := entity == actField.Project.Field
+	isPrAdmin := entity == actField.Project.Field && role == AdminRole
 
 	switch actField.ActivityField(*field) {
 	case actField.Name.Field:
@@ -812,15 +828,15 @@ func (ns *WorkspaceMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns WorkspaceMemberNS) IsNotify(field *string, entity string, verb string, role int) bool {
+func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
 	if field == nil {
 		return false
 	}
 
-	isSprint := entity == actField.Sprint.Field.String()
-	isDoc := entity == "doc"
-	isWorkspace := entity == "workspace"
-	isWorkspaceAdmin := entity == "workspace" && role == AdminRole
+	isSprint := entity == actField.Sprint.Field
+	isDoc := entity == actField.Doc.Field
+	isWorkspace := entity == actField.Workspace.Field
+	isWorkspaceAdmin := entity == actField.Workspace.Field && role == AdminRole
 
 	switch actField.ActivityField(*field) {
 	case actField.Title.Field:

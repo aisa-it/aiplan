@@ -269,13 +269,13 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 
 				if isWatcher || isAssignee || issue.CreatedById == member.User.ID {
 					if issue.CreatedById == member.User.ID {
-						if member.ProjectAuthorSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
+						if member.ProjectAuthorSettings.IsNotify(activity.Field, actField.Project.Field, activity.Verb, member.ProjectRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
 						}
 						continue
 					}
-					if member.ProjectMemberSettings.IsNotify(activity.Field, "project", activity.Verb, member.ProjectRole) {
+					if member.ProjectMemberSettings.IsNotify(activity.Field, actField.Project.Field, activity.Verb, member.ProjectRole) {
 						sendActivities = append(sendActivities, activity)
 						continue
 					}
@@ -379,13 +379,7 @@ func newIssue(tx *gorm.DB, user *dao.User, act *dao.ProjectActivity) string {
 			return ""
 		}
 
-		var p string
-		if issue.Priority == nil {
-			p = priorityTranslation["<nil>"]
-		} else {
-			p = priorityTranslation[*issue.Priority]
-		}
-		issue.Priority = &p
+		issue.Priority = utils.ToPtr(types.TranslateMap(types.PriorityTranslation, issue.Priority))
 		description := replaceTablesToText(replaceImageToText(issue.DescriptionHtml))
 		description = policy.ProcessCustomHtmlTag(description)
 		description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))

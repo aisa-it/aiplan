@@ -47,6 +47,7 @@ import (
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -188,6 +189,10 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
+	if err := np.ListenNotifications(cfg.DatabaseDSN); err != nil {
+		slog.Error("Notification listener fail", "err", err)
+		os.Exit(1)
+	}
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
 
 	var ldapProvider *authprovider.LdapProvider
@@ -210,7 +215,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	jobRegistry := cronmanager.JobRegistry{
 		"notification_processing": cronmanager.Job{
 			Func:     np.ProcessNotifications,
-			Schedule: "* * * * *", // every minute
+			Schedule: "0 */1 * * *", // every minute
 		},
 
 		"email_processing": cronmanager.Job{
@@ -312,7 +317,10 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		}
 
 		cronManager.Stop()
+		np.Stop()
 		es.Stop()
+		ns.Tg.Stop()
+		e.Shutdown(context.Background())
 		os.Exit(0)
 	}()
 
@@ -328,10 +336,11 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	{ // register handler telegram activity
-		tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
-		tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
-		tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))
-		tr.RegisterHandler(notifications.NewTgNotifyWorkspace(ns.Tg))
+		tr.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))
+		//tr.RegisterHandler(notifications.NewTgNotifyWorkspace(ns.Tg))
 	}
 
 	// Global middlewares

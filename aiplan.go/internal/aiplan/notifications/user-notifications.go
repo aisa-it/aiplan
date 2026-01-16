@@ -63,7 +63,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			return uuid.Nil, 0, fmt.Errorf("user off app notify")
 		}
 
-		if member.NotificationSettingsApp.IsNotify(a.Field, "workspace", a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Workspace.Field, a.Verb, member.Role) {
 			notification := dao.UserNotifications{
 				ID:                  dao.GenUUID(),
 				UserId:              userId,
@@ -139,10 +139,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			authorOK = true
 		}
 
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "doc", a.Verb, member.Role) {
+		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Doc.Field, a.Verb, member.Role) {
 			authorNotifyOk = true
 		}
-		if member.NotificationSettingsApp.IsNotify(a.Field, "doc", a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Doc.Field, a.Verb, member.Role) {
 			memberNotifyOK = true
 		}
 

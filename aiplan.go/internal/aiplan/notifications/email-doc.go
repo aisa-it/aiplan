@@ -160,9 +160,9 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 
 		for _, activity := range da.activities {
 			var authorNotify, memberNotify bool
-			memberNotify = member.DocMemberSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
+			memberNotify = member.DocMemberSettings.IsNotify(activity.Field, actField.Doc.Field, activity.Verb, member.WorkspaceRole)
 			if activity.Doc.CreatedById == member.User.ID {
-				authorNotify = member.DocAuthorSettings.IsNotify(activity.Field, "doc", activity.Verb, member.WorkspaceRole)
+				authorNotify = member.DocAuthorSettings.IsNotify(activity.Field, actField.Doc.Field, activity.Verb, member.WorkspaceRole)
 			}
 			if (member.DocAuthor && authorNotify) || (!member.DocAuthor && memberNotify) {
 				sendActivities = append(sendActivities, activity)
@@ -194,7 +194,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.WorkspaceMemberSettings.IsNotify(&field, "doc", "all", author.WorkspaceRole) {
+		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.WorkspaceMemberSettings.IsNotify(&field, actField.Doc.Field, "all", author.WorkspaceRole) {
 			content, textContent, err := getDocNotificationHTML(tx, author.activities, &author.User, da.doc)
 			if err != nil {
 				slog.Error("Make doc notification HTML", "err", err)

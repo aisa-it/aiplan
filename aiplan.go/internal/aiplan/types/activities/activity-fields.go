@@ -124,6 +124,11 @@ const (
 	VerbDeleted = "deleted"
 	VerbCreated = "created"
 	VerbMove    = "move"
+	VerbCopied  = "copied"
+
+	VerbMoveDocWorkspace = "move_doc_to_workspace"
+	VerbMoveDocDoc       = "move_doc_to_doc"
+	VerbMoveWorkspaceDoc = "move_workspace_to_doc"
 )
 
 func (a ActivityField) String() string {

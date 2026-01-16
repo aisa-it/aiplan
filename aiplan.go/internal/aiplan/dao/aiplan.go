@@ -10,6 +10,7 @@
 package dao
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -619,24 +620,24 @@ func (EntityActivity) TableName() string { return "entity_activities" }
 
 // DeferredNotifications corresponds to the notifications_log table
 type DeferredNotifications struct {
-	ID uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ID uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 
-	UserID      uuid.UUID     `gorm:"type:uuid;not null;index"`
-	User        *User         `gorm:"foreignKey:UserID" extensions:"x-nullable"`
-	IssueID     uuid.NullUUID `gorm:"type:uuid;index" extensions:"x-nullable"`
-	Issue       *Issue        `gorm:"foreignKey:IssueID" extensions:"x-nullable"`
-	ProjectID   uuid.NullUUID `gorm:"type:uuid;index" extensions:"x-nullable"`
-	Project     *Project      `gorm:"foreignKey:ProjectID" extensions:"x-nullable"`
-	WorkspaceID uuid.NullUUID `gorm:"type:uuid;index" extensions:"x-nullable"`
-	Workspace   *Workspace    `gorm:"foreignKey:WorkspaceID" extensions:"x-nullable"`
+	UserID      uuid.UUID     `gorm:"type:uuid;not null;index" json:"user_id"`
+	User        *User         `gorm:"foreignKey:UserID" json:"user,omitempty" extensions:"x-nullable"`
+	IssueID     uuid.NullUUID `gorm:"type:uuid;index" json:"issue_id" extensions:"x-nullable"`
+	Issue       *Issue        `gorm:"foreignKey:IssueID" json:"issue,omitempty" extensions:"x-nullable"`
+	ProjectID   uuid.NullUUID `gorm:"type:uuid;index" json:"project_id" extensions:"x-nullable"`
+	Project     *Project      `gorm:"foreignKey:ProjectID" json:"project,omitempty" extensions:"x-nullable"`
+	WorkspaceID uuid.NullUUID `gorm:"type:uuid;index" json:"workspace_id" extensions:"x-nullable"`
+	Workspace   *Workspace    `gorm:"foreignKey:WorkspaceID" json:"workspace,omitempty" extensions:"x-nullable"`
 
-	NotificationType    string     `gorm:"type:varchar(50);not null"`
-	DeliveryMethod      string     `gorm:"type:varchar(50);not null"`
-	TimeSend            *time.Time `gorm:"type:timestamptz;index"`
-	AttemptCount        int        `gorm:"default:0;index:idx_deferred_notifications_attempt_count"`
-	LastAttemptAt       time.Time  `gorm:"type:timestamptz;autoUpdateTime"`
-	SentAt              *time.Time `gorm:"type:timestamptz;index:idx_deferred_notifications_sent_at" extensions:"x-nullable"`
-	NotificationPayload []byte     `gorm:"type:jsonb"`
+	NotificationType    string          `gorm:"type:varchar(50);not null" json:"notification_type"`
+	DeliveryMethod      string          `gorm:"type:varchar(50);not null" json:"delivery_method"`
+	TimeSend            *time.Time      `gorm:"type:timestamptz;index" json:"time_send"`
+	AttemptCount        int             `gorm:"default:0;index:idx_deferred_notifications_attempt_count" json:"attempt_count"`
+	LastAttemptAt       time.Time       `gorm:"type:timestamptz;autoUpdateTime" json:"last_attempt_at"`
+	SentAt              *time.Time      `gorm:"type:timestamptz;index:idx_deferred_notifications_sent_at" json:"sent_at" extensions:"x-nullable"`
+	NotificationPayload json.RawMessage `gorm:"type:jsonb" json:"notification_payload"`
 }
 
 // TableName sets the insert table name for this struct type
