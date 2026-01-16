@@ -628,7 +628,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	}
 
 	if form.NotificationChannels.Telegram && !form.Author.Settings.TgNotificationMute && form.Author.TelegramId != nil {
-		s.notificationsService.Tg.SendFormAnswer(*form.Author.TelegramId, form, &answer, answer.Responder)
+		s.notificationsService.Tg.SendFormAnswer(*form.Author.TelegramId, form, &answer, user)
 	}
 
 	result := dto.ResponseAnswers{

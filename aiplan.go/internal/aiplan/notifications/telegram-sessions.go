@@ -24,6 +24,11 @@ import (
 	"gorm.io/gorm"
 )
 
+type TelegramService struct {
+	db      *gorm.DB
+	tracker *tracker.ActivitiesTracker
+}
+
 type SessionHandler struct {
 	sessions map[int64]*Flow
 	m        sync.RWMutex
@@ -244,5 +249,4 @@ func (ts *TelegramService) createIssue(user dao.User, args []interface{}) {
 		slog.Error("Track new issue from telegram activity", "err", err)
 		return
 	}
-
 }
