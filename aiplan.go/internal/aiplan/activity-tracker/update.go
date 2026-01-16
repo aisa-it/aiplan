@@ -56,7 +56,9 @@ func entityEditorsUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 
 func entityIssuesUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
 	requestedData["current_table"] = dao.Issue{}.TableName()
-	requestedData["field_log"] = actField.Issues.Field
+	if _, ok := requestedData["field_log"]; !ok {
+		requestedData["field_log"] = actField.Issues.Field
+	}
 
 	return entityFieldsListUpdate[E, A, dao.Issue](actField.Issues, tracker, requestedData, currentInstance, entity, actor)
 }

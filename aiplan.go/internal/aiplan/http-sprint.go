@@ -410,6 +410,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	newIssuesIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID })
 	reqData := map[string]interface{}{
 		"issue_list": newIssuesIds,
+		"field_log":  activities.Issue.Field,
 	}
 	currentInstance := map[string]interface{}{
 		"issues": oldIssueIds,
