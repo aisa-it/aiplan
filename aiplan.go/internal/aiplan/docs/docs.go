@@ -20391,6 +20391,9 @@ const docTemplate = `{
                 },
                 "workspace_admin": {
                     "type": "boolean"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },
@@ -20433,6 +20436,9 @@ const docTemplate = `{
                 },
                 "workspace_admin": {
                     "type": "boolean"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },
@@ -21327,6 +21333,9 @@ const docTemplate = `{
                 },
                 "role": {
                     "type": "integer"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },
@@ -21347,6 +21356,9 @@ const docTemplate = `{
                 },
                 "role": {
                     "type": "integer"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },
