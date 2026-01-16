@@ -82,6 +82,7 @@ type Config struct {
 	LDAPBindUser     string   `env:"LDAP_BIND_DN"`
 	LDAPBindPassword string   `env:"LDAP_BIND_PASSWORD"`
 	LDAPFilter       string   `env:"LDAP_FILTER"`
+	LDAPForce        bool     `env:"LDAP_FORCE"`
 
 	MCPEnabled bool `env:"MCP_ENABLED"`
 }

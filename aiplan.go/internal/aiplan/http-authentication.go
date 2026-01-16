@@ -274,40 +274,39 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 
 	req.Email = strings.ToLower(req.Email)
 
-	if !cfg.CaptchaDisabled && !CaptchaService.Validate(req.CaptchaPayload) {
-		return EErrorDefined(c, apierrors.ErrCaptchaFail)
-	}
+	// Validation
+	{
+		if !cfg.CaptchaDisabled && !CaptchaService.Validate(req.CaptchaPayload) {
+			return EErrorDefined(c, apierrors.ErrCaptchaFail)
+		}
 
-	if req.Email == "" || req.Password == "" {
-		return EErrorDefined(c, apierrors.ErrLoginCredentialsRequired)
-	}
+		if req.Email == "" || req.Password == "" {
+			return EErrorDefined(c, apierrors.ErrLoginCredentialsRequired)
+		}
 
-	if !ValidateEmail(req.Email) {
-		return EErrorDefined(c, apierrors.ErrInvalidEmail)
+		if !ValidateEmail(req.Email) {
+			return EErrorDefined(c, apierrors.ErrInvalidEmail)
+		}
 	}
 
 	var user dao.User
 	if err := a.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			if a.ldapProvider != nil {
-				if a.ldapProvider.AuthUser(req.Email, req.Password) {
-					slog.Info("Create new user from LDAP", "email", req.Email)
+			if a.ldapProvider != nil && a.ldapProvider.AuthUser(req.Email, req.Password) {
+				slog.Info("Create new user from LDAP", "email", req.Email)
 
-					user = dao.User{
-						ID:           dao.GenUUID(),
-						Email:        req.Email,
-						Password:     dao.GenPasswordHash(req.Password),
-						Theme:        types.DefaultTheme,
-						IsActive:     true,
-						IsOnboarded:  false,
-						AuthProvider: "ldap",
-					}
+				user = dao.User{
+					ID:           dao.GenUUID(),
+					Email:        req.Email,
+					Password:     dao.GenPasswordHash(req.Password),
+					Theme:        types.DefaultTheme,
+					IsActive:     true,
+					IsOnboarded:  false,
+					AuthProvider: "ldap",
+				}
 
-					if err := a.db.Create(&user).Error; err != nil {
-						return EError(c, err)
-					}
-				} else {
-					return EErrorDefined(c, apierrors.ErrFailedLogin)
+				if err := a.db.Create(&user).Error; err != nil {
+					return EError(c, err)
 				}
 			} else {
 				return EErrorDefined(c, apierrors.ErrFailedLogin)
@@ -329,38 +328,48 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIntegrationLogin)
 	}
 
-	if !checkPassword(req.Password, user.Password) {
-		if a.ldapProvider != nil && a.ldapProvider.AuthUser(req.Email, req.Password) {
+	sucessfullLogin := false
+	if a.ldapProvider != nil {
+		if a.ldapProvider.AuthUser(req.Email, req.Password) {
 			// If LDAP auth success - update user password to LDAP password
-			if err := a.db.Model(&user).Updates(map[string]any{
-				"password":      dao.GenPasswordHash(req.Password),
-				"auth_provider": "ldap",
-			}).Error; err != nil {
-				return EError(c, err)
+			if user.AuthProvider != "ldap" {
+				if err := a.db.Model(&user).Updates(map[string]any{
+					"password":      dao.GenPasswordHash(req.Password),
+					"auth_provider": "ldap",
+				}).Error; err != nil {
+					return EError(c, err)
+				}
 			}
-		} else {
-			user.LoginAttempts++
-			time.Sleep(time.Second * time.Duration(user.LoginAttempts))
-
-			// block after 5 fails
-			if user.LoginAttempts >= 5 {
-				slog.Info("Block user for more than 5 failed attempts", "user", user.String())
-				user.BlockedUntil = sql.NullTime{Valid: true, Time: time.Now().Add(time.Minute * 20)}
-				user.LoginAttempts = 0
-			}
-
-			if err := a.db.Model(&user).Select("LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
-				return EError(c, err)
-			}
-
-			if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
-				a.telegramService.UserBlockedUntil(user, user.BlockedUntil.Time)
-				a.emailService.UserBlockedUntil(user, user.BlockedUntil.Time)
-				return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
-			}
-
-			return EErrorDefined(c, apierrors.ErrFailedLogin)
+			sucessfullLogin = true
 		}
+	}
+
+	if !cfg.LDAPForce && checkPassword(req.Password, user.Password) {
+		sucessfullLogin = true
+	}
+
+	if !sucessfullLogin {
+		user.LoginAttempts++
+		time.Sleep(time.Second * time.Duration(user.LoginAttempts))
+
+		// block after 5 fails
+		if user.LoginAttempts >= 5 {
+			slog.Info("Block user for more than 5 failed attempts", "user", user.String())
+			user.BlockedUntil = sql.NullTime{Valid: true, Time: time.Now().Add(time.Minute * 20)}
+			user.LoginAttempts = 0
+		}
+
+		if err := a.db.Model(&user).Select("LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
+			return EError(c, err)
+		}
+
+		if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
+			a.telegramService.UserBlockedUntil(user, user.BlockedUntil.Time)
+			a.emailService.UserBlockedUntil(user, user.BlockedUntil.Time)
+			return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
+		}
+
+		return EErrorDefined(c, apierrors.ErrFailedLogin)
 	}
 
 	tm := time.Now()
@@ -372,7 +381,7 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	user.LastLoginUagent = c.Request().UserAgent()
 	user.TokenUpdatedAt = &tm
 	user.LoginAttempts = 0
-	user.BlockedUntil = sql.NullTime{Valid: false}
+	user.BlockedUntil = sql.NullTime{}
 	if err := a.db.Model(&user).Select("LastActive", "LastLoginTime", "LastLoginIp", "LastLoginUagent", "TokenUpdatedAt", "LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
