@@ -534,7 +534,7 @@ func activityMigrate(db *gorm.DB) {
 				}
 
 				for _, activity := range issueAct {
-					if err := tx.Model(&dao.UserNotifications{}).
+					if err := tx.Model(&dao.в{}).
 						Where("entity_activity_id = ?", activity.Id.String()).
 						Updates(map[string]interface{}{
 							"issue_activity_id":  activity.Id,
