@@ -246,6 +246,56 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			notifyId = notification.ID
 		}
 
+	case dao.SprintActivity:
+		var member dao.WorkspaceMember
+
+		if err := tx.Joins("Member").
+			Where("workspace_id = ?", a.WorkspaceId).
+			Where("member_id = ?", userId).First(&member).Error; err != nil {
+			return uuid.Nil, 0, err
+		}
+		if !member.Member.CanReceiveNotifications() {
+			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
+		}
+
+		if member.Member.Settings.AppNotificationMute {
+			return uuid.Nil, 0, fmt.Errorf("user off app notify")
+		}
+
+		var authorOK, authorNotifyOk, memberNotifyOK bool
+
+		if a.Sprint.CreatedById == userId {
+			authorOK = true
+		}
+
+		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Sprint.Field.String(), a.Verb, member.Role) {
+			authorNotifyOk = true
+		}
+
+		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Sprint.Field.String(), a.Verb, member.Role) {
+			memberNotifyOK = true
+		}
+
+		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
+
+			notification := dao.UserNotifications{
+				ID:               dao.GenUUID(),
+				UserId:           userId,
+				Type:             "activity",
+				WorkspaceId:      uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
+				SprintActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
+			}
+
+			//if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
+			//	notification.CommentId = a.NewIdentifier
+			//}
+
+			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
+				return uuid.Nil, 0, err
+			}
+			notifyId = notification.ID
+		}
+
 	default:
 		return uuid.Nil, 0, errStack.TrackErrorStack(fmt.Errorf("unknown type notify %T", a))
 	}
@@ -495,4 +545,5 @@ type NotificationDetailResponse struct {
 	Workspace    *dto.WorkspaceLight    `json:"workspace,omitempty"`
 	Form         *dto.FormLight         `json:"form,omitempty"`
 	Doc          *dto.DocLight          `json:"doc,omitempty"`
+	Sprint       *dto.SprintLight       `json:"sprint,omitempty"`
 }

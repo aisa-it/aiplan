@@ -1516,8 +1516,10 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 	form.UnionCustomFields = "'form' AS entity_type"
 	var workspace dao.WorkspaceActivity
 	workspace.UnionCustomFields = "'workspace' AS entity_type"
+	var sprint dao.SprintActivity
+	sprint.UnionCustomFields = "'sprint' AS entity_type"
 
-	unionTable := dao.BuildUnionSubquery(s.db, "ua", dao.FullActivity{}, issue, project, doc, form, workspace)
+	unionTable := dao.BuildUnionSubquery(s.db, "ua", dao.FullActivity{}, issue, project, doc, form, workspace, sprint)
 
 	var userNotifications []dao.UserNotifications
 
@@ -1537,6 +1539,10 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		if u.WorkspaceActivityId.Valid {
 			return u.WorkspaceActivityId
 		}
+		if u.SprintActivityId.Valid {
+			return u.SprintActivityId
+		}
+
 		return uuid.NullUUID{}
 	}
 
@@ -1550,6 +1556,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		Joins("ProjectActivity").
 		Joins("DocActivity").
 		Joins("FormActivity").
+		Joins("SprintActivity").
 
 		//Joins("IssueActivity").
 		//Preload("IssueActivity.Actor").
@@ -1700,6 +1707,7 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 					Workspace: notify.FullActivity.Workspace.ToLightDTO(),
 					Doc:       notify.FullActivity.Doc.ToLightDTO(),
 					Form:      notify.FullActivity.Form.ToLightDTO(),
+					Sprint:    notify.FullActivity.Sprint.ToLightDTO(),
 				}
 				entityActivity := notify.FullActivity.ToLightDTO()
 				//entityActivity.NewEntity = dao.GetActionEntity(*notify.FullActivity, "New")
