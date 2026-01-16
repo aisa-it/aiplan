@@ -49,7 +49,7 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 	case dao.RootActivity:
 	//	fmt.Println("RootActivity", a.Comment)
 	case dao.SprintActivity:
-		//fmt.Println("SprintActivity", a.Comment)
+		notify, err = notifyFromSprintActivity(t.db, &a)
 	default:
 		slog.Warn("Unknown activity type for Telegram",
 			"type", fmt.Sprintf("%T", activity),
@@ -177,7 +177,7 @@ func formatByField[T dao.ActivityI, F ~func(*T, actField.ActivityField) TgMsg](
 	}
 
 	if res.IsEmpty() {
-		return res, fmt.Errorf("%s activity is empty", (*act).GetEntity())
+		return res, fmt.Errorf("%s activity is empty, verb: %s, field: %s, id: %s", (*act).GetEntity(), (*act).GetVerb(), (*act).GetField(), (*act).GetId())
 	}
 
 	return res, nil

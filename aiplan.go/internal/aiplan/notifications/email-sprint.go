@@ -301,9 +301,9 @@ func (ia *sprintActivity) getMails(tx *gorm.DB) []mail {
 
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
-			memberNotify = member.WorkspaceMemberSettings.IsNotify(activity.Field, actField.Sprint.Field.String(), activity.Verb, member.WorkspaceRole)
+			memberNotify = member.WorkspaceMemberSettings.IsNotify(activity.Field, actField.Sprint.Field, activity.Verb, member.WorkspaceRole)
 			if activity.Sprint.CreatedById == member.User.ID {
-				authorNotify = member.WorkspaceAuthorSettings.IsNotify(activity.Field, actField.Sprint.Field.String(), activity.Verb, member.WorkspaceRole)
+				authorNotify = member.WorkspaceAuthorSettings.IsNotify(activity.Field, actField.Sprint.Field, activity.Verb, member.WorkspaceRole)
 			}
 			if (member.SprintAuthor && authorNotify) || (!member.SprintAuthor && memberNotify) {
 				sendActivities = append(sendActivities, activity)

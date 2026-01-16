@@ -2,6 +2,7 @@ package tg
 
 import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 )
@@ -41,6 +42,19 @@ func genAttachment(oldV *string, newV, verb, titleCreate, titleDelete string) Tg
 	case actField.VerbDeleted:
 		msg.title = titleDelete
 		msg.body += Stelegramf("*файл*: ~%s~", *oldV)
+	}
+	return msg
+}
+
+func genDefault(oldV *string, newV string, af actField.ActivityField, title string) TgMsg {
+	msg := NewTgMsg()
+
+	msg.title = title
+
+	if oldV != nil {
+		msg.body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *oldV, newV)
+	} else {
+		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], newV)
 	}
 	return msg
 }
