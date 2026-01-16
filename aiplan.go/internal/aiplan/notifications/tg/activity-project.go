@@ -69,9 +69,9 @@ func notifyFromProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) (*Activity
 
 	plan := NotifyPlan{
 		TableName:      act.TableName(),
-		settings:       fromWorkspace(act.WorkspaceId),
+		settings:       fromProject(act.ProjectId),
 		ActivitySender: act.ActivitySender.SenderTg,
-		Entity:         actField.Doc.Field,
+		Entity:         actField.Project.Field,
 		AuthorRole:     actionAuthor,
 		Steps:          steps,
 	}

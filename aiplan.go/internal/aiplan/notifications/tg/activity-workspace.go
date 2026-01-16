@@ -49,7 +49,7 @@ func notifyFromWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) (*Acti
 		TableName:      act.TableName(),
 		settings:       fromWorkspace(act.WorkspaceId),
 		ActivitySender: act.ActivitySender.SenderTg,
-		Entity:         actField.Doc.Field,
+		Entity:         actField.Workspace.Field,
 		AuthorRole:     actionAuthor,
 		Steps: []UsersStep{
 			addUserRole(act.Actor, actionAuthor),
