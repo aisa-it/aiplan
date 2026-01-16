@@ -268,11 +268,11 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			authorOK = true
 		}
 
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Sprint.Field.String(), a.Verb, member.Role) {
+		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Sprint.Field, a.Verb, member.Role) {
 			authorNotifyOk = true
 		}
 
-		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Sprint.Field.String(), a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Sprint.Field, a.Verb, member.Role) {
 			memberNotifyOK = true
 		}
 
