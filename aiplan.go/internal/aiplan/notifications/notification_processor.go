@@ -415,7 +415,8 @@ func (nd *notifyDeadline) getUserNotification() *dao.UserNotifications {
 func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any) {
 	formatMsg := "❗Срок выполнения задачи\n[%s](%s)\nистекает *%s*"
 	var out []interface{}
-
+	notification.Issue.Project = notification.Project
+	notification.Issue.SetUrl()
 	date, err := FormatDate(nd.Deadline.Format("02.01.2006 15:04 MST"), "02.01.2006 15:04 MST", &notification.User.UserTimezone)
 	if err != nil {
 		return 0, "", nil
@@ -429,6 +430,8 @@ func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, au
 }
 
 func (nd *notifyDeadline) toEmail(emailService *EmailService, notification *dao.DeferredNotifications, author *dao.User) bool {
+	notification.Issue.Workspace = notification.Workspace
+	notification.Issue.SetUrl()
 	err := emailService.DeadlineMessageNotify(*notification.User, *notification, *nd)
 	if err != nil {
 		return false
