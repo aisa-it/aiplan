@@ -1,26 +1,33 @@
 package authprovider
 
 import (
-	"fmt"
-	"net/url"
 	"testing"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuth(t *testing.T) {
-	// The username and password we want to check
-	username := ""
-	password := ""
+var cfg *config.Config
 
-	bindusername := ""
-	bindpassword := ""
+func TestMain(t *testing.T) {
+	cfg = config.ReadConfig()
+}
 
-	ldapURL, _ := url.Parse("")
-	baseDn := ""
-
-	lp, err := InitLDAP(ldapURL, bindusername, bindpassword, baseDn, "(&(uniqueIdentifier={email}))")
+func TestSync(t *testing.T) {
+	lp, err := InitLDAP(cfg.LDAPServerURL, cfg.LDAPBindUser, cfg.LDAPBindPassword, cfg.LDAPBaseDN, "(&(uniqueIdentifier={email}))")
 	require.NoError(t, err)
-
-	fmt.Println(lp.AuthUser(username, password))
+	users := []dao.User{
+		{
+			Email:       "",
+			IsActive:    false,
+			IsSuperuser: true,
+		},
+		{
+			Email:       "",
+			IsActive:    true,
+			IsSuperuser: true,
+		},
+	}
+	require.NoError(t, lp.Sync(users))
 }
