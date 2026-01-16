@@ -136,6 +136,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 		Set("issueProgress", true).
 		Preload("Issues.State").
 		Where("workspace_id = ?", workspace.ID).
+		Order("start_date DESC").
 		Find(&sprints).Error; err != nil {
 		return EError(c, err)
 	}
