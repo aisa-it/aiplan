@@ -42,7 +42,7 @@ func (lp *LdapProvider) check() error {
 	defer l.Close()
 
 	if err := l.StartTLS(&tls.Config{InsecureSkipVerify: true}); err != nil {
-		return err
+		slog.Debug("Start LDAP TLS", "err", err)
 	}
 
 	return l.Bind(lp.adminUsr, lp.adminPwd)
@@ -58,8 +58,7 @@ func (lp *LdapProvider) AuthUser(email string, password string) bool {
 
 	err = l.StartTLS(&tls.Config{InsecureSkipVerify: true})
 	if err != nil {
-		slog.Error("Start LDAP TLS", "err", err)
-		return false
+		slog.Debug("Start LDAP TLS", "err", err)
 	}
 
 	if err := l.Bind(lp.adminUsr, lp.adminPwd); err != nil {
