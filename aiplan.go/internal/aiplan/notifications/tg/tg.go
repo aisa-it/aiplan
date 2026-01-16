@@ -149,7 +149,7 @@ func isReplyMessage(update *models.Update) bool {
 
 func (t *TgService) SendMessage(tgId int64, format string, anyStr []any) bool {
 	msg := NewTgMsg()
-	msg.title = Stelegramf(format, anyStr)
+	msg.title = Stelegramf(format, anyStr...)
 	_, err := t.Send(tgId, msg)
 	if err != nil {
 		slog.Error("Sending message to Telegram:", "error", err)
