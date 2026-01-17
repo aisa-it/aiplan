@@ -141,10 +141,10 @@ func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
 }
 
 func isReplyMessage(update *models.Update) bool {
-	if update.Message.ReplyToMessage == nil {
+	if update.Message == nil || update.Message.ReplyToMessage == nil {
 		return false
 	}
-	return true
+	return update.Message.Chat.Type == "private"
 }
 
 func (t *TgService) SendMessage(tgId int64, format string, anyStr []any) bool {
