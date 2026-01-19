@@ -480,7 +480,7 @@ func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, ms
 }
 
 func (es *EmailService) DeadlineMessageNotify(user dao.User, notification dao.DeferredNotifications, nd notifyDeadline) error {
-	subject := fmt.Sprintf("Уведомление об истечении срока выполнения задачи: %s-%d", notification.Project.Identifier, notification.Issue.SequenceId)
+	subject := fmt.Sprintf("Уведомление об истечении срока выполнения задачи: %s", notification.Issue.FullIssueName())
 
 	loc := time.Location(user.UserTimezone)
 	date := nd.Deadline.In(&loc)
