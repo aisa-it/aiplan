@@ -53,7 +53,7 @@ func FormValidator() map[string]validateFunc {
 
 func validateCheckbox(val interface{}, required bool, custom *types2.ValidationRule) bool {
 	if val == nil {
-		return false
+		return !required
 	}
 	_, ok := val.(bool)
 	if !ok {
