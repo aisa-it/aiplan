@@ -123,6 +123,10 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 		msg.title = "убрал(-a) задачу из"
 		msg.body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
 		return msg
+	case actField.VerbDeleted:
+		msg.title = "удалил(-a) задачу из"
+		msg.body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
+		return msg
 	}
 
 	format := "[%s](%s)"
