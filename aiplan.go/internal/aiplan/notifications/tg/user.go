@@ -262,6 +262,15 @@ func addIssueUsers(issue *dao.Issue) UsersStep {
 	}
 }
 
+func addUsers(from []dao.User, r role) UsersStep {
+	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+		for _, u := range from {
+			users.addUser(&u, r)
+		}
+		return nil
+	}
+}
+
 func addCommentMentionedUsers[R dao.IRedactorHTML](comment *R) UsersStep {
 	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
 		if comment == nil {

@@ -63,10 +63,7 @@ func notifyFromProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) (*Activity
 		addUserRole(act.Actor, actionAuthor),
 		addDefaultWatchers(act.ProjectId),
 		addIssueUsers(act.NewIssue),
-	}
-
-	if *act.Field != actField.Issue.Field.String() {
-		steps = append(steps, addProjectAdmin(act.ProjectId))
+		addProjectAdmin(act.ProjectId),
 	}
 
 	plan := NotifyPlan{
@@ -365,16 +362,7 @@ func projectDefaultMember(act *dao.ProjectActivity, af actField.ActivityField) T
 }
 
 func projectDefault(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
-	msg := NewTgMsg()
-
-	msg.title = "изменил(-a) в"
-
-	if act.OldValue != nil {
-		msg.body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *act.OldValue, act.NewValue)
-	} else {
-		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
-	}
-	return msg
+	return genDefault(act.OldValue, act.NewValue, af, "изменил(-a) в")
 }
 
 func projectEmoj(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {

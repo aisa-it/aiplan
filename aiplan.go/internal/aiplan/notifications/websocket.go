@@ -151,6 +151,14 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 			Workspace: v.Form.Workspace.ToLightDTO(),
 		}
 		msg.Data = v.ToLightDTO()
+	case dao.SprintActivity:
+		msg.Type = "activity"
+		msg.Detail = NotificationDetailResponse{
+			User:      v.Actor.ToLightDTO(),
+			Sprint:    v.Sprint.ToLightDTO(),
+			Workspace: v.Sprint.Workspace.ToLightDTO(),
+		}
+		msg.Data = v.ToLightDTO()
 	case dao.EntityActivity:
 		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
 			return nil

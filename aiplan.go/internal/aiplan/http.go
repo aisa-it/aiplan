@@ -339,6 +339,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		tr.RegisterHandler(notifications.NewDocNotification(ns))
 		tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
 		tr.RegisterHandler(notifications.NewFormNotification(ns))
+		tr.RegisterHandler(notifications.NewSprintNotification(ns))
 	}
 
 	{ // register handler telegram activity

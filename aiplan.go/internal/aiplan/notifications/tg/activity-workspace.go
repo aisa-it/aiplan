@@ -18,6 +18,7 @@ var (
 		actField.Project.Field:     workspaceProject,
 		actField.Doc.Field:         workspaceDoc,
 		actField.Form.Field:        workspaceForm,
+		actField.Sprint.Field:      workspaceSprint,
 		actField.Description.Field: workspaceDescription,
 
 		actField.Token.Field:       workspaceToken,
@@ -118,6 +119,19 @@ func workspaceForm(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg 
 	case actField.VerbDeleted:
 		msg.title = "удалил(-a) из пространства"
 		msg.body = Stelegramf("*Форму:* ~%s~", fmt.Sprint(*act.OldValue))
+	}
+	return msg
+}
+
+func workspaceSprint(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+	msg := NewTgMsg()
+	switch act.Verb {
+	case actField.VerbCreated:
+		msg.title = "создал(-a) в пространстве"
+		msg.body = Stelegramf("*Спринт:* [%s](%s)", act.NewSprint.GetFullName(), act.NewSprint.URL.String())
+	case actField.VerbDeleted:
+		msg.title = "удалил(-a) из пространства"
+		msg.body = Stelegramf("*Спринт:* ~%s~", fmt.Sprint(*act.OldValue))
 	}
 	return msg
 }
