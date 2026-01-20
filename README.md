@@ -88,11 +88,15 @@ docker-compose up -d
 | `SWAGGER`             | Enabling the Swagger API documentation at /api/swagger                     | bool   |
 | `NY_ENABLE`                   | Enabling the New Year theme                                                | bool   |
 | `CAPTCHA_DISABLED`            | Disabling captcha                                                          | bool   |
+| `EXTERNAL_LIMITER_URL`        | External rate limiter URL                                                  | string |
+| `EXTERNAL_MEMDB`              | External memory database URL                                               | string |
 | `LDAP_URL`                    | LDAP server URL for authentication                                         | string |
 | `LDAP_BASE_DN`                | Base DN for LDAP search                                                    | string |
 | `LDAP_BIND_DN`                | Bind DN for LDAP authentication                                            | string |
 | `LDAP_BIND_PASSWORD`          | Bind password for LDAP authentication                                      | string |
 | `LDAP_FILTER`                 | LDAP filter for user search (default: `(&(uniqueIdentifier={email}))`)     | string |
+| `LDAP_FORCE`                  | Force LDAP authentication even if user exists locally                      | bool   |
+| `MCP_ENABLED`                 | Enabling Model Context Protocol (MCP)                                      | bool   |
 
 ### nginx SSL example
 ```
