@@ -94,11 +94,15 @@ docker-compose up -d
 | `SWAGGER`           | Включение Swagger API документации на адрес /api/swagger                   | bool   |
 | `NY_ENABLE`                 | Включение новогодней темы                                                  | bool   |
 | `CAPTCHA_DISABLED`          | Отключение капчи                                                           | bool   |
+| `EXTERNAL_LIMITER_URL`      | URL внешнего rate limiter                                                  | string |
+| `EXTERNAL_MEMDB`            | URL внешней базы данных в памяти                                           | string |
 | `LDAP_URL`                  | URL сервера LDAP для аутентификации                                        | string |
 | `LDAP_BASE_DN`              | Базовый DN для поиска в LDAP                                               | string |
 | `LDAP_BIND_DN`              | Bind DN для аутентификации в LDAP                                          | string |
 | `LDAP_BIND_PASSWORD`        | Пароль для аутентификации в LDAP                                           | string |
 | `LDAP_FILTER`               | Фильтр для поиска пользователей в LDAP (по умолчанию: `(&(uniqueIdentifier={email}))`) | string |
+| `LDAP_FORCE`                | Принудительная LDAP аутентификация даже если пользователь существует локально | bool   |
+| `MCP_ENABLED`               | Включение Model Context Protocol (MCP)                                     | bool   |
 ### Пример настройки nginx SSL
 ```
 server {
