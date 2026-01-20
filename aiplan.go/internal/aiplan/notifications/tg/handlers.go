@@ -43,8 +43,13 @@ func (t *TgService) getUserMiddleware() bot.Middleware {
 			}
 
 			if userCtx.User == nil {
-				t.Send(update.Message.Chat.ID, TgMsg{
-					title: "Telegram ID не связан с пользователем, добавьте его в профиль\n/start",
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: update.Message.Chat.ID,
+					Text: bot.EscapeMarkdown(fmt.Sprintf(
+						"Ваш Telegram ID: `%d`\nВнесите его в настройках профиля",
+						update.Message.Chat.ID,
+					)),
+					ParseMode: models.ParseModeMarkdown,
 				})
 				return
 			}
