@@ -2,6 +2,7 @@ package tg
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -40,6 +41,7 @@ var (
 
 		actField.Public.Field: projectPublic,
 		actField.Logo.Field:   projectLogo,
+		actField.Emoj.Field:   projectEmoj,
 	}
 )
 
@@ -63,17 +65,9 @@ func notifyFromProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) (*Activity
 		addIssueUsers(act.NewIssue),
 	}
 
-	var settings memberSettings
-	if *act.Field != actField.Issue.Field.String() {
-		steps = append(steps, addProjectAdmin(act.ProjectId))
-		settings = fromWorkspace(act.WorkspaceId)
-	} else {
-		settings = fromProject(act.ProjectId)
-	}
-
 	plan := NotifyPlan{
 		TableName:      act.TableName(),
-		settings:       settings,
+		settings:       fromProject(act.ProjectId),
 		ActivitySender: act.ActivitySender.SenderTg,
 		Entity:         actField.Project.Field,
 		AuthorRole:     actionAuthor,
@@ -244,9 +238,9 @@ func projectLabel(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	var format string
 	var values []any
 
-	if act.NewState != nil {
+	if act.NewLabel != nil {
 		format = "__Тег %s__"
-		values = append(values, act.NewState.Name)
+		values = append(values, act.NewLabel.Name)
 	}
 
 	switch af {
@@ -345,9 +339,9 @@ func projectDefaultMember(act *dao.ProjectActivity, af actField.ActivityField) T
 	var role string
 	switch af {
 	case actField.DefaultWatchers.Field:
-		role = "исполнителя"
-	case actField.DefaultAssignees.Field:
 		role = "наблюдателя"
+	case actField.DefaultAssignees.Field:
+		role = "исполнителя"
 	}
 
 	switch act.Verb {
@@ -364,4 +358,19 @@ func projectDefaultMember(act *dao.ProjectActivity, af actField.ActivityField) T
 
 func projectDefault(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	return genDefault(act.OldValue, act.NewValue, af, "изменил(-a) в")
+}
+
+func projectEmoj(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+	msg := NewTgMsg()
+	msg.title = "изменил(-a) в"
+	msg.body = Stelegramf("*%s*: ~%s~ %s", "Emoji", emojiFromCode(fmt.Sprint(*act.OldValue)), emojiFromCode(act.NewValue))
+	return msg
+}
+
+func emojiFromCode(code string) string {
+	i, err := strconv.Atoi(code)
+	if err != nil {
+		return ""
+	}
+	return string(rune(i))
 }

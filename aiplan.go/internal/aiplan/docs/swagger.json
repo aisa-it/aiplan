@@ -20383,6 +20383,9 @@
                 },
                 "workspace_admin": {
                     "type": "boolean"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },
@@ -20425,6 +20428,9 @@
                 },
                 "workspace_admin": {
                     "type": "boolean"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },
@@ -21319,6 +21325,9 @@
                 },
                 "role": {
                     "type": "integer"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },
@@ -21339,6 +21348,9 @@
                 },
                 "role": {
                     "type": "integer"
+                },
+                "workspace_id": {
+                    "type": "string"
                 }
             }
         },

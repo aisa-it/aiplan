@@ -276,6 +276,7 @@ BEGIN
                 'name', i.name,
                 'sequence_id', i.sequence_id,
                 'project', i.project_id,
+                'workspace', i.workspace_id,
                 'created_by', i.created_by_id
             ) END
         ) INTO payload
