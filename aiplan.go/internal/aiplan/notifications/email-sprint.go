@@ -425,7 +425,7 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 		Body:             result,
 		Sprint:           activities[0].Sprint,
 		ActivityCount:    activityCount,
-		SprintBreadcrumb: fmt.Sprintf("/%s/", activities[0].Workspace.Slug),
+		SprintBreadcrumb: fmt.Sprintf("%s / Спринт", activities[0].Workspace.Name),
 	}); err != nil {
 		return "", "", err
 	}
