@@ -34,19 +34,11 @@ func (e *emailNotifySprint) Process() {
 
 	var activities []dao.SprintActivity
 	if err := e.service.db.Unscoped().
-		Preload("Issue").
-		Preload("Watchers").
-		Joins("CreatedBy").
+		Preload("Sprint.Watchers").
+		Joins("Sprint.CreatedBy").
+		Preload("Sprint.Issues.Project").
+		Joins("Actor").
 		Joins("Workspace").
-		//Preload("Issue.Author").
-		//Preload("Issue.Assignees").
-		//Preload("Issue.Watchers").
-		//Preload("Issue.State").
-		//Preload("Issue.Parent").
-		//Preload("Issue.Project").
-		//Preload("Issue.Project.DefaultWatchersDetails", "is_default_watcher = ?", true).
-		//Preload("Issue.Project.DefaultWatchersDetails.Member").
-		//Preload("Issue.Parent.Project").
 		Order("created_at").
 		Where("notified = ?", false).
 		Limit(100).
@@ -97,12 +89,12 @@ func (e *emailNotifySprint) Process() {
 			}
 		}
 	case err := <-errorChan:
-		slog.Error("Error processing IssueActivities", "err", err)
+		slog.Error("Error processing SprintActivities", "err", err)
 	}
 
 	if err := e.service.db.Transaction(func(tx *gorm.DB) error {
 		for _, activity := range activities {
-			if err := e.service.db.Model(&dao.IssueActivity{}).
+			if err := e.service.db.Model(&dao.SprintActivity{}).
 				Unscoped().
 				Where("id = ?", activity.Id).
 				Update("notified", true).Error; err != nil {
@@ -116,9 +108,6 @@ func (e *emailNotifySprint) Process() {
 }
 
 func (ia *sprintActivity) Finalization(tx *gorm.DB) error {
-	//if err := ia.getCommentNotify(tx); err != nil {
-	//  return err
-	//}
 	if err := ia.getNotifySettings(tx); err != nil {
 		return err
 	}
@@ -146,18 +135,13 @@ func (ia *sprintActivity) getNotifySettings(tx *gorm.DB) error {
 			v.WorkspaceMemberSettings = member.NotificationSettingsEmail
 			ia.users[member.Member.Email] = v
 		}
-		//if v, ok := ia.commentActivityUser[member.Member.Email]; ok {
-		//  v.ProjectAuthorSettings = member.NotificationAuthorSettingsEmail
-		//  v.ProjectMemberSettings = member.NotificationSettingsEmail
-		//  ia.commentActivityUser[member.Member.Email] = v
-		//}
 	}
 	return nil
 }
 
 type sprintActivitySorter struct {
 	skipActivities []dao.SprintActivity
-	Sprint         map[uuid.UUID]sprintActivity //map[issueId]
+	Sprint         map[uuid.UUID]sprintActivity //map[sprintId]
 }
 
 type sprintMember struct {
@@ -173,9 +157,6 @@ type sprintActivity struct {
 	sprint     *dao.Sprint
 	activities []dao.SprintActivity
 	users      map[string]sprintMember //map[user.Email]
-
-	//commentActivityMap  map[uuid.UUID][]dao.IssueActivity // map[commentId]
-	//commentActivityUser map[string]issueCommentAuthor     //map[user.Email]
 }
 
 func (as *sprintActivitySorter) sortEntity(activity dao.SprintActivity) {
@@ -202,13 +183,12 @@ func newSprintActivity(sprint *dao.Sprint) *sprintActivity {
 	if sprint == nil {
 		return nil
 	}
+	sprint.SetUrl()
 
 	res := sprintActivity{
 		sprint:     sprint,
 		activities: make([]dao.SprintActivity, 0),
 		users:      make(map[string]sprintMember),
-		//commentActivityMap:  make(map[uuid.UUID][]dao.IssueActivity),
-		//commentActivityUser: make(map[string]issueCommentAuthor),
 	}
 
 	{ //add author
@@ -245,43 +225,11 @@ func (ia *sprintActivity) AddActivity(activity dao.SprintActivity) bool {
 	}
 
 	ia.activities = append(ia.activities, activity)
-
-	//if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier.Valid {
-	//  if activity.Verb == "created" || activity.Verb == "updated" {
-	//    //TODO
-	//    var arr []dao.IssueActivity
-	//    if v, ok := ia.commentActivityMap[activity.NewIdentifier.UUID]; !ok {
-	//      arr = append(arr, activity)
-	//    } else {
-	//      arr = append(v, activity)
-	//    }
-	//    ia.commentActivityMap[activity.NewIdentifier.UUID] = arr
-	//  }
-	//}
 	return true
 }
 
 // Для пропуска активностей
 func (ia *sprintActivity) skip(activity dao.SprintActivity) bool {
-	//if activity.Verb == "cloned" {
-	//  return true
-	//}
-	//if activity.Issue.Draft {
-	//  return true
-	//}
-	//
-	//if activity.Field != nil && *activity.Field == actField.StartDate.Field.String() {
-	//  return true
-	//}
-	//
-	//if activity.Field != nil && *activity.Field == actField.CompletedAt.Field.String() {
-	//  return true
-	//}
-	//
-	//if activity.Field != nil && *activity.Field == actField.Link.Field.String() && activity.Verb == "deleted" {
-	//  return true
-	//}
-
 	return false
 }
 
@@ -314,9 +262,9 @@ func (ia *sprintActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		content, textContent, err := getSprintNotificationHTML(tx, sendActivities, &member.User)
+		content, textContent, err := getSprintNotificationHTML(tx, ia.sprint, sendActivities, &member.User)
 		if err != nil {
-			slog.Error("Make issue notification HTML", "err", err)
+			slog.Error("Make sprint notification HTML", "err", err)
 			continue
 		}
 
@@ -327,143 +275,62 @@ func (ia *sprintActivity) getMails(tx *gorm.DB) []mail {
 			TextContent: textContent,
 		})
 	}
-
-	//for _, author := range ia.commentActivityUser {
-	//	field := actField.Comment.Field.String()
-	//
-	//	if len(author.activities) == 0 {
-	//		continue
-	//	}
-	//
-	//	if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.ProjectMemberSettings.IsNotify(&field, "issue", "all", author.ProjectRole) {
-	//		content, textContent, err := getIssueNotificationHTML(tx, author.activities, &author.User)
-	//		if err != nil {
-	//			slog.Error("Make issue notification HTML", "err", err)
-	//			continue
-	//		}
-	//		mails = append(mails, mail{
-	//			To:          author.User.Email,
-	//			Subject:     subj,
-	//			Content:     content,
-	//			TextContent: textContent,
-	//		})
-	//	}
-	//}
-
 	return mails
 }
 
-func getSprintNotificationHTML(tx *gorm.DB, activities []dao.SprintActivity, targetUser *dao.User) (string, string, error) {
+func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao.SprintActivity, targetUser *dao.User) (string, string, error) {
 	result := ""
 
 	actorsChangesMap := make(map[uuid.UUID]map[string]dao.SprintActivity)
 	actorsMap := make(map[uuid.UUID]dao.User)
-	removeIssues := make([]dao.Issue, 0)
-	addIssues := make(map[uuid.UUID]struct{})
+	removeIssuesId := make([]uuid.UUID, 0)
+	removeWatchers := make([]dao.User, 0)
+
+	issuesExist := make(map[uuid.UUID]struct{})
+	watchersExist := make(map[uuid.UUID]struct{})
 
 	type IssueView struct {
 		Issue dao.Issue
 		IsNew bool
 	}
+	type WatchersView struct {
+		Watcher dao.User
+		IsNew   bool
+	}
 	for _, activity := range activities {
-		// sprint deletion
-		//if activity.Field != nil && *activity.Field == actField.Sprint.Field.String() && activity.Verb == "deleted" {
-		//	var template dao.Template
-		//	if err := tx.Where("name = ?", "issue_activity_delete").First(&template).Error; err != nil {
-		//		return "", "", err
-		//	}
-		//
-		//	var buf bytes.Buffer
-		//	if err := template.ParsedTemplate.Execute(&buf, struct {
-		//		Actor     *dao.User
-		//		Issue     dao.Issue
-		//		CreatedAt time.Time
-		//	}{
-		//		activity.Actor,
-		//		*activity.Issue,
-		//		activity.CreatedAt.In((*time.Location)(&targetUser.UserTimezone)),
-		//	}); err != nil {
-		//		return "", "", err
-		//	}
-		//
-		//	result += buf.String()
-		//	continue
-		//}
-
-		// new issue
-		//if activity.Field == nil {
-		//	var template dao.Template
-		//	if err := tx.Where("name = ?", "issue_activity_new").First(&template).Error; err != nil {
-		//		return "", "", err
-		//	}
-		//	var p string
-		//	if activity.Issue.Priority == nil {
-		//		p = priorityTranslation["<nil>"]
-		//	} else {
-		//		p = priorityTranslation[*activity.Issue.Priority]
-		//	}
-		//	activity.Issue.Priority = &p
-		//	description := replaceTablesToText(replaceImageToText(activity.Issue.DescriptionHtml))
-		//	description = policy.ProcessCustomHtmlTag(description)
-		//	description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))
-		//	description = template.ReplaceTxtToSvg(description)
-		//	var buf bytes.Buffer
-		//	if err := template.ParsedTemplate.Execute(&buf, struct {
-		//		Actor       *dao.User
-		//		Issue       dao.Issue
-		//		CreatedAt   time.Time
-		//		Description string
-		//	}{
-		//		activity.Actor,
-		//		*activity.Issue,
-		//		activity.CreatedAt.In((*time.Location)(&targetUser.UserTimezone)),
-		//		description,
-		//	}); err != nil {
-		//		return "", "", err
-		//	}
-		//
-		//	result += buf.String()
-		//	continue
-		//}
-
-		// comment
-
 		changesMap, ok := actorsChangesMap[activity.ActorId.UUID]
 		if !ok {
 			changesMap = make(map[string]dao.SprintActivity)
 		}
 		field := *activity.Field
 
-		//if field == actField.Priority.Field.String() {
-		//	activity.NewValue = priorityTranslation[activity.NewValue]
-		//	if activity.OldValue != nil {
-		//		p := priorityTranslation[*activity.OldValue]
-		//		activity.OldValue = &p
-		//	} else {
-		//		p := priorityTranslation["<nil>"]
-		//		activity.OldValue = &p
-		//	}
-		//}
-		//
-		//if field == actField.TargetDate.Field.String() {
-		//	newT, errNew := FormatDate(activity.NewValue, "02.01.2006 15:04", &targetUser.UserTimezone)
-		//
-		//	if activity.OldValue != nil {
-		//		if oldT, errOld := FormatDate(*activity.OldValue, "02.01.2006 15:04", &targetUser.UserTimezone); errOld == nil {
-		//			activity.OldValue = &oldT
-		//		}
-		//	}
-		//
-		//	if errNew == nil {
-		//		activity.NewValue = newT
-		//	}
-		//}
+		if field == actField.StartDate.Field.String() || field == actField.EndDate.Field.String() {
+			newT, errNew := FormatDate(activity.NewValue, "02.01.2006", &targetUser.UserTimezone)
+
+			if activity.OldValue != nil {
+				if oldT, errOld := FormatDate(*activity.OldValue, "02.01.2006", &targetUser.UserTimezone); errOld == nil {
+					activity.OldValue = &oldT
+				}
+			}
+
+			if errNew == nil {
+				activity.NewValue = newT
+			}
+		}
 		if field == actField.Issue.Field.String() {
 			switch activity.Verb {
 			case actField.VerbAdded:
-				//addIssues = append(addIssues, *activity.NewSprintIssue)
+				issuesExist[activity.NewSprintIssue.ID] = struct{}{}
 			case actField.VerbRemoved:
-				removeIssues = append(removeIssues, *activity.OldSprintIssue)
+				removeIssuesId = append(removeIssuesId, activity.OldSprintIssue.ID)
+			}
+		}
+		if field == actField.Watchers.Field.String() {
+			switch activity.Verb {
+			case actField.VerbAdded:
+				watchersExist[activity.NewSprintWatcher.ID] = struct{}{}
+			case actField.VerbRemoved:
+				removeWatchers = append(removeWatchers, *activity.OldSprintWatcher)
 			}
 		}
 
@@ -483,11 +350,25 @@ func getSprintNotificationHTML(tx *gorm.DB, activities []dao.SprintActivity, tar
 		actorsChangesMap[activity.ActorId.UUID] = changesMap
 	}
 
-	rrr := make([]IssueView, 0, len(activities[0].Sprint.Issues))
+	issues := make([]IssueView, 0, len(activities[0].Sprint.Issues))
+	watchers := make([]WatchersView, 0, len(activities[0].Sprint.Watchers))
 
 	for _, issue := range activities[0].Sprint.Issues {
-		_, iok := addIssues[issue.ID]
-		rrr = append(rrr, IssueView{issue, iok})
+		_, iok := issuesExist[issue.ID]
+		issues = append(issues, IssueView{issue, iok})
+	}
+
+	for _, w := range activities[0].Sprint.Watchers {
+		_, iok := watchersExist[w.ID]
+		watchers = append(watchers, WatchersView{w, iok})
+	}
+
+	var removeIssues []dao.Issue
+	if err := tx.Joins("Project").
+		Where("issues.workspace_id = ?", sprint.WorkspaceId).
+		Where("issues.id IN (?)", removeIssuesId).
+		Find(&removeIssues).Error; err != nil {
+		return "", "", err
 	}
 
 	var template dao.Template
@@ -498,19 +379,21 @@ func getSprintNotificationHTML(tx *gorm.DB, activities []dao.SprintActivity, tar
 
 	for userId, changesMap := range actorsChangesMap {
 		context := struct {
-			SprintURL    string
-			Issues       []dao.Issue
-			Changes      map[string]dao.SprintActivity
-			AddIssues    []IssueView
-			RemoveIssues []dao.Issue
-			Actor        dao.User
-			CreatedAt    time.Time
+			SprintURL      string
+			Changes        map[string]dao.SprintActivity
+			Issues         []IssueView
+			Watchers       []WatchersView
+			RemoveIssues   []dao.Issue
+			RemoveWatchers []dao.User
+			Actor          dao.User
+			CreatedAt      time.Time
 		}{
-			activities[0].Sprint.URL.String(),
-			activities[0].Sprint.Issues,
+			sprint.URL.String(),
 			changesMap,
-			rrr,
+			issues,
+			watchers,
 			removeIssues,
+			removeWatchers,
 			actorsMap[userId],
 			time.Now().In((*time.Location)(&targetUser.UserTimezone)),
 		}
@@ -530,17 +413,19 @@ func getSprintNotificationHTML(tx *gorm.DB, activities []dao.SprintActivity, tar
 
 	var buff bytes.Buffer
 	if err := templateBody.ParsedTemplate.Execute(&buff, struct {
-		Sprint        *dao.Sprint
-		Title         string
-		CreatedAt     time.Time
-		Body          string
-		ActivityCount int
+		Sprint           *dao.Sprint
+		Title            string
+		CreatedAt        time.Time
+		SprintBreadcrumb string
+		Body             string
+		ActivityCount    int
 	}{
-		Title:         activities[0].Sprint.Name,
-		CreatedAt:     time.Now(), //TODO: timezone
-		Body:          result,
-		Sprint:        activities[0].Sprint,
-		ActivityCount: activityCount,
+		Title:            sprint.GetFullName(),
+		CreatedAt:        time.Now(), //TODO: timezone
+		Body:             result,
+		Sprint:           activities[0].Sprint,
+		ActivityCount:    activityCount,
+		SprintBreadcrumb: fmt.Sprintf("/%s/", activities[0].Workspace.Slug),
 	}); err != nil {
 		return "", "", err
 	}

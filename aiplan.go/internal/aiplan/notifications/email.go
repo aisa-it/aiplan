@@ -51,6 +51,7 @@ func (es *EmailService) EmailActivity() {
 	newEmailNotifyProject(es).Process()
 	newEmailNotifyIssue(es).Process()
 	newEmailNotifyDoc(es).Process()
+	newEmailNotifySprint(es).Process()
 }
 
 type EmailService struct {
