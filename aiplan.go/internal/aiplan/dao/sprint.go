@@ -192,6 +192,9 @@ func (s *Sprint) ToLightDTO() *dto.SprintLight {
 	if s == nil {
 		return nil
 	}
+
+	s.SetUrl()
+
 	return &dto.SprintLight{
 		Id:          s.Id,
 		Name:        s.Name,
