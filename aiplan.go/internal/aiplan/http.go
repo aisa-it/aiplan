@@ -189,10 +189,10 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 	ns := notifications.NewNotificationService(cfg, db, tr, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
-	if err := np.ListenNotifications(cfg.DatabaseDSN); err != nil {
+	/*if err := np.ListenNotifications(cfg.DatabaseDSN); err != nil {
 		slog.Error("Notification listener fail", "err", err)
 		os.Exit(1)
-	}
+	}*/
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
 
 	var ldapProvider *authprovider.LdapProvider
@@ -215,7 +215,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	jobRegistry := cronmanager.JobRegistry{
 		"notification_processing": cronmanager.Job{
 			Func:     np.ProcessNotifications,
-			Schedule: "0 */1 * * *", // every minute
+			Schedule: "*/1 * * * *", // every minute
 		},
 
 		"email_processing": cronmanager.Job{
@@ -242,6 +242,13 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			Func:     maintenance.NewProjectsCleaner(db).CleanProjects,
 			Schedule: "0 3 * * *", // daily at 03:00
 		},
+	}
+
+	if cfg.LDAPServerURL != nil {
+		jobRegistry["ldap_sync"] = cronmanager.Job{
+			Func:     maintenance.NewLdapSynchronizer(db, ldapProvider).SyncJob,
+			Schedule: "*/5 * * * *", // every 5 minutes
+		}
 	}
 
 	// Create CronManager
@@ -556,7 +563,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		}
 	}()
 
-	if err := e.Start(":8080"); err != nil {
+	if err := e.Start(":8080"); err != nil && err != http.ErrServerClosed {
 		slog.Error("Server fail", "err", err)
 	}
 }

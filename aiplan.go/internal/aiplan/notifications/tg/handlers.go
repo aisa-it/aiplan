@@ -24,6 +24,9 @@ func (t *TgService) getUserMiddleware() bot.Middleware {
 				next(ctx, b, update)
 				return
 			}
+			if update.Message.Chat.Type != "private" {
+				return
+			}
 
 			chatID := update.Message.Chat.ID
 
