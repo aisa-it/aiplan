@@ -337,7 +337,7 @@ func projectLogo(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 
 func projectDefaultMember(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	user := getExistUser(act.NewDefaultWatcher, act.NewDefaultAssignee, act.OldDefaultWatcher, act.NewDefaultAssignee)
+	user := getExistUser(act.NewDefaultWatcher, act.NewDefaultAssignee, act.OldDefaultWatcher, act.OldDefaultAssignee)
 	if user == nil {
 		return msg
 	}

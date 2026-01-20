@@ -12,9 +12,10 @@ package policy
 import (
 	"container/list"
 	"fmt"
-	"golang.org/x/net/html"
 	"regexp"
 	"strings"
+
+	"golang.org/x/net/html"
 
 	"github.com/microcosm-cc/bluemonday"
 )
@@ -60,6 +61,7 @@ func init() {
 	dataLinksRegexp := regexp.MustCompile(`^\[\s*\{[^{}]*}\s*(,\s*\{[^{}]*}\s*)*]$`)
 
 	UgcPolicy.AllowAttrs("class").Matching(classRegexp).OnElements("span")
+	UgcPolicy.AllowAttrs("data-issue-table-params", "style", "class").OnElements("table")
 
 	UgcPolicy.AllowAttrs("spellcheck", "class").OnElements("pre")
 	UgcPolicy.AllowAttrs("data-color", "style").OnElements("mark")
