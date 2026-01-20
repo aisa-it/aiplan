@@ -789,6 +789,13 @@ type WorkspaceMemberNS struct {
 	DisableWorkspaceMember      bool `json:"disable_workspace_member"`
 	DisableWorkspaceRole        bool `json:"disable_workspace_role"`
 	DisableWorkspaceIntegration bool `json:"disable_workspace_integration"`
+	DisableWorkspaceSprint      bool `json:"disable_workspace_sprint"`
+
+	DisableSprintName        bool `json:"disable_sprint_name"`
+	DisableSprintDescription bool `json:"disable_sprint_description"`
+	DisableSprintIssueList   bool `json:"disable_sprint_issue_list"`
+	DisableSprintWatcherList bool `json:"disable_sprint_watcher_list"`
+	DisableSprintDate        bool `json:"disable_sprint_date"`
 }
 
 func (ns WorkspaceMemberNS) Value() (driver.Value, error) {
@@ -826,6 +833,7 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityFiel
 		return false
 	}
 
+	isSprint := entity == actField.Sprint.Field
 	isDoc := entity == actField.Doc.Field
 	isWorkspace := entity == actField.Workspace.Field
 	isWorkspaceAdmin := entity == actField.Workspace.Field && role == AdminRole
@@ -836,6 +844,9 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityFiel
 			return !ns.DisableDocTitle
 		}
 	case actField.Description.Field:
+		if isSprint {
+			return !ns.DisableSprintDescription
+		}
 		if isDoc {
 			return !ns.DisableDocDesc
 		}
@@ -859,6 +870,9 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityFiel
 			return !ns.DisableDocComment
 		}
 	case actField.Watchers.Field:
+		if isSprint {
+			return !ns.DisableSprintWatcherList
+		}
 		if isDoc {
 			return !ns.DisableDocWatchers
 		}
@@ -897,6 +911,9 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityFiel
 			//return !ns.DisableWorkspaceForm
 		}
 	case actField.Name.Field:
+		if isSprint {
+			return !ns.DisableSprintName
+		}
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceName
 		}
@@ -923,6 +940,18 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityFiel
 	case actField.WorkspaceOwner.Field:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceOwner
+		}
+	case actField.Issue.Field:
+		if isSprint {
+			return !ns.DisableSprintIssueList
+		}
+	case actField.StartDate.Field, actField.EndDate.Field:
+		if isSprint {
+			return !ns.DisableSprintDate
+		}
+	case actField.Sprint.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceSprint
 		}
 	}
 

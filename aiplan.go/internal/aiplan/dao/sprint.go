@@ -3,6 +3,8 @@ package dao
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -48,6 +50,7 @@ type Sprint struct {
 
 	Stats types.SprintStats `gorm:"-" json:"-"`
 	View  types.ViewProps   `gorm:"-" json:"-"`
+	URL   *url.URL          `json:"-" gorm:"-" extensions:"x-nullable"`
 }
 
 // SprintExtendFields
@@ -55,9 +58,6 @@ type Sprint struct {
 type SprintExtendFields struct {
 	NewSprint *Sprint `json:"-" gorm:"-" field:"sprint::workspace" extensions:"x-nullable"`
 	OldSprint *Sprint `json:"-" gorm:"-" field:"sprint::workspace" extensions:"x-nullable"`
-
-	NewSprintIssue *Issue `json:"-" gorm:"-" field:"issue::sprint" extensions:"x-nullable"`
-	OldSprintIssue *Issue `json:"-" gorm:"-" field:"issue::sprint" extensions:"x-nullable"`
 }
 
 // IssueSprintExtendFields
@@ -107,7 +107,21 @@ func (s *Sprint) AfterFind(tx *gorm.DB) error {
 			s.View = sprintView.ViewProps
 		}
 	}
+	s.SetUrl()
+
 	return nil
+}
+
+func (s *Sprint) SetUrl() {
+	raw := fmt.Sprintf("/%s/sprints/%d", s.WorkspaceId.String(), s.SequenceId)
+	u, _ := url.Parse(raw)
+	s.URL = Config.WebURL.ResolveReference(u)
+}
+
+func (s *Sprint) GetFullName() string {
+	s.StartDate.Time.Format("02.01")
+
+	return fmt.Sprintf("%s ( %s-%s )", s.Name, s.StartDate.Time.Format("02.01"), s.EndDate.Time.Format("02.01"))
 }
 
 func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
@@ -183,7 +197,7 @@ func (s *Sprint) ToLightDTO() *dto.SprintLight {
 		Name:        s.Name,
 		SequenceId:  s.SequenceId,
 		Description: s.Description,
-		//Url:        types.JsonURL{},
+		Url:         types.JsonURL{Url: s.URL},
 		//ShortUrl:   types.JsonURL{},
 		StartDate: utils.SqlNullTimeToPointerTime(s.StartDate),
 		EndDate:   utils.SqlNullTimeToPointerTime(s.EndDate),
@@ -235,6 +249,13 @@ type SprintIssue struct {
 }
 
 func (SprintIssue) TableName() string { return "sprint_issues" }
+
+// SprintIssuesExtendFields
+// -migration
+type SprintIssuesExtendFields struct {
+	NewSprintIssue *Issue `json:"-" gorm:"-" field:"issue::sprint" extensions:"x-nullable"`
+	OldSprintIssue *Issue `json:"-" gorm:"-" field:"issue::sprint" extensions:"x-nullable"`
+}
 
 type SprintWatcher struct {
 	Id        uuid.UUID `gorm:"primaryKey;type:uuid"`
@@ -300,6 +321,7 @@ type SprintActivity struct {
 // -migration
 type SprintActivityExtendFields struct {
 	SprintWatcherExtendFields
+	SprintIssuesExtendFields
 }
 
 func (SprintActivity) TableName() string { return "sprint_activities" }

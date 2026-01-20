@@ -393,3 +393,67 @@ func (n *FormNotification) Handle(activity dao.ActivityI) error {
 
 	return nil
 }
+
+// Sprint Notification
+
+type SprintNotification struct {
+	Notification
+}
+
+func NewSprintNotification(n *Notification) *SprintNotification {
+	if n == nil {
+		return nil
+	}
+	return &SprintNotification{
+		Notification: *n,
+	}
+}
+
+func (n *SprintNotification) Handle(activity dao.ActivityI) error {
+	a, ok := activity.(dao.SprintActivity)
+	if !ok {
+		return nil
+	}
+
+	if a.Sprint == nil {
+		if err := n.Db.Unscoped().
+			Joins("Workspace").
+			Joins("CreatedBy").
+			Preload("Watchers").
+			Where("sprints.id = ?", a.SprintId).
+			Find(&a.Sprint).Error; err != nil {
+			slog.Error("Get sprint for activity", "activityId", a.Id, "err", err)
+			return err
+		}
+	}
+
+	var wm []dao.WorkspaceMember
+	if err := n.Db.Joins("Member").
+		Where("workspace_id = ?", a.WorkspaceId).
+		Find(&wm).Error; err != nil {
+		return nil
+	}
+
+	userIdMap := make(map[uuid.UUID]interface{})
+	authorUUID := a.Sprint.CreatedById
+	notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, authorUUID, a)
+
+	if notifyId != uuid.Nil {
+		n.Ws.Send(authorUUID, notifyId, a, countNotify)
+	}
+
+	userIdMap[authorUUID] = struct{}{}
+
+	for _, member := range a.Sprint.Watchers {
+
+		if _, ok := userIdMap[member.ID]; !ok {
+			notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, member.ID, a)
+			if notifyId != uuid.Nil {
+				n.Ws.Send(member.ID, notifyId, a, countNotify)
+			}
+			userIdMap[member.ID] = struct{}{}
+		}
+
+	}
+	return nil
+}

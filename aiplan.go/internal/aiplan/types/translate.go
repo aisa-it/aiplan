@@ -10,6 +10,7 @@ var FieldsTranslation map[actField.ActivityField]string = map[actField.ActivityF
 	actField.Description.Field:   "Описание",
 	actField.TargetDate.Field:    "Срок исполнения",
 	actField.StartDate.Field:     "Дата начала",
+	actField.EndDate.Field:       "Дата завершения",
 	actField.CompletedAt.Field:   "Дата завершения",
 	actField.Label.Field:         "Теги",
 	actField.Assignees.Field:     "Исполнители",
