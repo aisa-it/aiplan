@@ -57,8 +57,16 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 		return &TgService{Disabled: true}
 	}
 
+	serv := &TgService{
+		db:       db,
+		cfg:      cfg,
+		tracker:  tracker,
+		Disabled: false,
+		bl:       bl,
+	}
+
 	opts := []bot.Option{
-		bot.WithDefaultHandler(func(ctx context.Context, bot *bot.Bot, update *models.Update) {}),
+		bot.WithDefaultHandler(serv.getUserMiddleware()(serv.startHandler)),
 	}
 
 	b, err := bot.New(
@@ -73,17 +81,10 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 	ctx, cancel := context.WithCancel(context.Background())
 	res, _ := b.GetMe(ctx)
 
-	serv := &TgService{
-		db:          db,
-		bot:         b,
-		botUserName: res.Username,
-		cfg:         cfg,
-		tracker:     tracker,
-		Disabled:    false,
-		bl:          bl,
-		ctx:         ctx,
-		cancel:      cancel,
-	}
+	serv.bot = b
+	serv.ctx = ctx
+	serv.cancel = cancel
+	serv.botUserName = res.Username
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, serv.getUserMiddleware()(serv.startHandler))
 	b.RegisterHandlerMatchFunc(isReplyMessage, serv.getUserMiddleware()(serv.commentActivityHandler))
