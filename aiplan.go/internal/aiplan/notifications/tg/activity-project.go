@@ -63,6 +63,7 @@ func notifyFromProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) (*Activity
 		addUserRole(act.Actor, actionAuthor),
 		addDefaultWatchers(act.ProjectId),
 		addIssueUsers(act.NewIssue),
+		addProjectAdmin(act.ProjectId),
 	}
 
 	plan := NotifyPlan{
