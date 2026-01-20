@@ -1626,6 +1626,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		Joins("Issue").
 		Joins("Doc").
 		Joins("Form").
+		Joins("Sprint").
 		Where("ua.id::text IN (?)", qqq).
 		Find(&fa).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
