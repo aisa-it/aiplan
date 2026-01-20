@@ -114,7 +114,10 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 			slog.Error("Create comment from tg reply", "err", err)
 			return
 		}
-		t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий к задаче '%s'\nотправлен", act.Issue.Name)})
+		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий к задаче '%s'\nотправлен", act.Issue.Name)})
+		if errSend != nil {
+			slog.Error("Send comment from tg reply", "err", errSend)
+		}
 		return
 	}
 
@@ -130,7 +133,10 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 			slog.Error("Create comment from tg reply", "err", err)
 			return
 		}
-		t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий в документ '%s'\nотправлен", act.Doc.Title)})
+		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий в документ '%s'\nотправлен", act.Doc.Title)})
+		if errSend != nil {
+			slog.Error("Send comment from tg reply", "err", errSend)
+		}
 	}
 
 	return
