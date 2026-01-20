@@ -118,6 +118,12 @@ func (s *Sprint) SetUrl() {
 	s.URL = Config.WebURL.ResolveReference(u)
 }
 
+func (s *Sprint) GetFullName() string {
+	s.StartDate.Time.Format("02.01")
+
+	return fmt.Sprintf("%s ( %s-%s )", s.Name, s.StartDate.Time.Format("02.01"), s.EndDate.Time.Format("02.01"))
+}
+
 func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
 	// Calculate sequence id
 	var lastId sql.NullInt64

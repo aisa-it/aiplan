@@ -28,199 +28,13 @@
             <td class="task-table-separator" colspan="3"
                 style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;"></td>
         </tr>
-<!--        {{with .Changes.status }}-->
-<!--        <tr>-->
-<!--            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">-->
-<!--            </td>-->
-<!--            <td class="task-table-left-col"-->
-<!--                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">-->
-<!--                Статус:-->
-<!--            </td>-->
-<!--            <td class="task-table-right-col"-->
-<!--                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">-->
-<!--                <del style="color: #999999">{{.OldValue}}</del>-->
-<!--                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span>-->
-<!--            </td>-->
-<!--        </tr>-->
-<!--        <tr>-->
-<!--            <td class="task-table-separator" colspan="3"-->
-<!--                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">-->
-<!--            </td>-->
-<!--        </tr>-->
-<!--        {{end}}-->
-<!--        {{with $activity := .Changes.assignees }}-->
-<!--        <tr>-->
-<!--            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">-->
-<!--            </td>-->
-<!--            <td class="task-table-left-col"-->
-<!--                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">-->
-<!--                Исполнители:-->
-<!--            </td>-->
-<!--            <td class="task-table-right-col"-->
-<!--                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">-->
-<!--                {{ $first := true }}-->
-<!--                {{ range $index, $assignee := .Issue.Assignees}}-->
-<!--                {{- if or $activity.OldAssignee (and $activity.NewAssignee (not (eq $assignee.ID-->
-<!--                $activity.NewAssignee.ID))) -}}-->
-<!--                {{- if not $first -}}, {{else}} {{$first = false}} {{end}}-->
-<!--                {{- $assignee.GetName -}}-->
-<!--                {{- end -}}-->
-<!--                {{end}}{{- if not $first -}},{{- end -}}-->
-<!--                {{if .OldAssignee}}-->
-<!--                <del style="color: #999999">{{.OldAssignee.GetName}}</del>-->
-<!--                {{end}}-->
-<!--                {{if .NewAssignee}}<span class="new-status" style="color: #05bd8d">{{ .NewAssignee.GetName }}</span>{{end}}-->
-<!--            </td>-->
-<!--        </tr>-->
-<!--        <tr>-->
-<!--            <td class="task-table-separator" colspan="3"-->
-<!--                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">-->
-<!--            </td>-->
-<!--        </tr>-->
-<!--        {{end}}-->
-        {{with $activity := .Changes.watchers }}
+        {{with .Changes.name }}
         <tr>
             <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
             </td>
             <td class="task-table-left-col"
                 style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Наблюдатели:
-            </td>
-            <td class="task-table-right-col"
-                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                {{ $first := true }}
-                {{ range $index, $watcher := .Issue.Watchers}}
-                {{- if or $activity.OldWatcher (and $activity.NewWatcher (not (eq $watcher.ID $activity.NewWatcher.ID)))
-                -}}
-                {{- if not $first -}}, {{else}} {{$first = false}} {{end}}
-                {{- $watcher.GetName -}}
-                {{- end -}}
-                {{end}}{{- if not $first -}},{{- end -}}
-                {{if .OldWatcher}}
-                <del style="color: #999999">{{.OldWatcher.GetName}}</del>
-                {{end}}
-                {{if .NewWatcher}}<span class="new-status" style="color: #05bd8d">{{ .NewWatcher.GetName }}</span>{{end}}
-            </td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3"
-                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-        </tr>
-        {{end}}
-        {{with $activity := .Changes.issue }}
-        <tr>
-            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-            <td class="task-table-left-col"
-                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Задачи:
-            </td>
-            <td class="task-table-right-col"
-                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                {{ $first := true }}
-                {{ range $index, $issue := $.Issues}}
-                {{- if or $activity.OldIssueSprint (and $activity.NewIssueSprint (not (eq $issue.ID
-                $activity.NewIssueSprint.ID))) -}}
-                {{- if not $first -}}, {{else}} {{$first = false}} {{end}}
-                {{- $activity.Project.Identifier -}}-{{- $issue.FullIssueName -}}
-                {{- end -}}
-                {{end}}{{- if not $first -}},{{- end -}}
-                {{if .OldIssueSprint}}
-                <del style="color: #999999">{{- .Project.Identifier -}}-{{.OldIssueSprint.FullIssueName}}</del>
-                {{end}}
-                {{if .NewIssueSprint}}<span class="new-status" style="color: #05bd8d">{{- .Project.Identifier -}}-{{ .NewIssueSprint.FullIssueName }}</span>{{end}}
-            </td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3"
-                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-        </tr>
-        {{end}}
-        {{with .Changes.priority }}
-        <tr>
-            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-            <td class="task-table-left-col"
-                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Приоритет:
-            </td>
-            <td class="task-table-right-col"
-                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                <del style="color: #999999">{{.OldValue}}</del>
-                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span></td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3"
-                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-        </tr>
-        {{end}}
-        {{with .Changes.parent }}
-        <tr>
-            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-            <td class="task-table-left-col"
-                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Родительская задача:
-            </td>
-            <td class="task-table-right-col"
-                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                <del style="color: #999999">{{.OldValue}}</del>
-                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span></td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3"
-                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-        </tr>
-        {{end}}
-        {{with .Changes.blocking }}
-        <tr>
-            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-            <td class="task-table-left-col"
-                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Блокирует:
-            </td>
-            <td class="task-table-right-col"
-                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                <del style="color: #999999">{{.OldValue}}</del>
-                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span></td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3"
-                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-        </tr>
-        {{end}}
-        {{with .Changes.blocks }}
-        <tr>
-            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-            <td class="task-table-left-col"
-                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Заблокирована:
-            </td>
-            <td class="task-table-right-col"
-                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                <del style="color: #999999">{{.OldValue}}</del>
-                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span></td>
-        </tr>
-        <tr>
-            <td class="task-table-separator" colspan="3"
-                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-        </tr>
-        {{end}}
-        {{with .Changes.target_date }}
-        <tr>
-            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
-            </td>
-            <td class="task-table-left-col"
-                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Срок исполнения:
+                Название:
             </td>
             <td class="task-table-right-col"
                 style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
@@ -253,19 +67,18 @@
             </td>
         </tr>
         {{end}}
-        {{with .Changes.linked }}
+        {{with .Changes.end_date }}
         <tr>
             <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
             </td>
             <td class="task-table-left-col"
                 style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Связанные задачи:
+                Конец:
             </td>
             <td class="task-table-right-col"
                 style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
                 <del style="color: #999999">{{.OldValue}}</del>
-                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span>
-            </td>
+                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span></td>
         </tr>
         <tr>
             <td class="task-table-separator" colspan="3"
@@ -273,23 +86,18 @@
             </td>
         </tr>
         {{end}}
-        {{with .Changes.link }}
+        {{with .Changes.start_date }}
         <tr>
             <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
             </td>
             <td class="task-table-left-col"
                 style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Ссылки:
+                Начало:
             </td>
             <td class="task-table-right-col"
                 style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
                 <del style="color: #999999">{{.OldValue}}</del>
-                <span class="new-status" style="color: #05bd8d;">
-                    <a href="{{ .NewLink.Url }}" target="_blank" style="color: #05bd8d; text-decoration: none;">
-                        {{ .NewLink.Title }}
-                    </a>
-                </span>
-            </td>
+                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span></td>
         </tr>
         <tr>
             <td class="task-table-separator" colspan="3"
@@ -297,19 +105,83 @@
             </td>
         </tr>
         {{end}}
-        {{with .Changes.labels }}
+        {{with $activity := .Changes.issue }}
         <tr>
             <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
             </td>
             <td class="task-table-left-col"
                 style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                Теги:
+                Задачи:
             </td>
             <td class="task-table-right-col"
                 style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
-                <del style="color: #999999">{{.OldValue}}</del>
-                <span class="new-status" style="color: #05bd8d;">{{ .NewValue }}</span>
+                {{- $first := true -}}
+                {{- range $.Issues -}}
+                {{- if not $first }}, {{ end -}}
+
+                {{- if .IsNew -}}
+                <span class="new-status" style="color:#05bd8d">
+                {{ .Issue.FullIssueName }}
+            </span>
+                {{- else -}}
+                {{ .Issue.FullIssueName }}
+                {{- end -}}
+
+                {{- $first = false -}}
+                {{- end -}}
+
+                {{- range $.RemoveIssues -}}
+                {{- if not $first }}, {{ end -}}
+
+                <del style="color:#999999">
+                    {{ .FullIssueName }}
+                </del>
+
+                {{- $first = false -}}
+                {{- end -}}
+
+        </tr>
+        <tr>
+            <td class="task-table-separator" colspan="3"
+                style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
             </td>
+        </tr>
+        {{end}}
+        {{with $activity := .Changes.watchers }}
+        <tr>
+            <td style="padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;">
+            </td>
+            <td class="task-table-left-col"
+                style="text-align: right;width: 124px;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                Наблюдатели:
+            </td>
+            <td class="task-table-right-col"
+                style="text-align: left;vertical-align: top;padding-top: 0;padding-bottom: 0;padding-left: 4px;padding-right: 4px;letter-spacing: 0.5px;">
+                {{- $first := true -}}
+                {{- range $.Watchers -}}
+                {{- if not $first }}, {{ end -}}
+
+                {{- if .IsNew -}}
+                <span class="new-status" style="color:#05bd8d">
+                {{ .Watcher.GetName }}
+            </span>
+                {{- else -}}
+                {{ .Watcher.GetName }}
+                {{- end -}}
+
+                {{- $first = false -}}
+                {{- end -}}
+
+                {{- range $.RemoveWatchers -}}
+                {{- if not $first }}, {{ end -}}
+
+                <del style="color:#999999">
+                    {{ .GetName }}
+                </del>
+
+                {{- $first = false -}}
+                {{- end -}}
+
         </tr>
         <tr>
             <td class="task-table-separator" colspan="3"

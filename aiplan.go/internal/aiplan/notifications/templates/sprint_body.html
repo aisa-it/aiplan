@@ -123,7 +123,7 @@
                                 <td class="mail-body-v-spacing" colspan="3" style="width: 21px;height: 19px;padding: 0;">
                                 </td>
                             </tr>
-                            {{if and .Doc (or (gt .ActivityCount 0) (gt .CommentCount 0))}}
+                            {{if and .Sprint (gt .ActivityCount 0)}}
                             <tr>
                                 <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>
                                 <td style="padding: 0;">
@@ -133,14 +133,6 @@
                                               style="font-weight: bold;letter-spacing: 0.75px;">{{.ActivityCount}}
                                     обновл{{if eq .ActivityCount 1}}ение{{else}}.{{end}}</span>
                                         {{- end -}}
-                                        {{- if and (gt .ActivityCount 0) (gt .CommentCount 0) -}}
-                                        ,
-                                        {{end}}
-                                        {{if gt .CommentCount 0}}
-                                        <span class="updates-count"
-                                              style="font-weight: bold;letter-spacing: 0.75px;">{{.CommentCount}}
-                                    коммент{{if eq .CommentCount 1}}арий{{else}}.{{end}}</span>
-                                        {{end}}
                                     </div>
                                 </td>
                                 <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>
@@ -162,25 +154,27 @@
                                         <tr>
                                             <td class="main-h-spacing" style="padding: 0;width: 10px;"></td>
                                             <td>
+
+
                                                 <div class="breadcrumbs" style="margin-bottom: 4px;letter-spacing: 0.5px;">
-                                                    {{.DocBreadcrumb}}</div>
+                                                    {{.SprintBreadcrumb}}</div>
 
 
                                                 <div class="title"
                                                      style="font-size: 24px;font-weight: 500;line-height: 19px;margin-bottom: 8px;">
                                                     {{.Title}}</div>
 
-                                                {{if .Doc}}
-                                                <div><a class="task-link" href="{{.Doc.URL.String}}"
+                                                {{if .Sprint}}
+                                                <div><a class="task-link" href="{{.Sprint.URL.String}}"
                                                         style="color: #3f76ff;text-decoration: none;letter-spacing: 0.5px;">Посмотреть
-                                                    документ</a></div>
+                                                    спринт</a></div>
                                                 {{else}}
                                                 <div class="datetime-info" style="color: #8b8b98;">{{.CreatedAt.Format
                                                     "02.01.2006 15:04 MST"}}
                                                 </div>
                                                 {{end}}
 
-                                                {{.DocBody}}
+                                                {{.Body}}
                                             </td>
                                             <td class="main-h-spacing" style="padding: 0;width: 10px;"></td>
                                         </tr>
