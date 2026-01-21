@@ -21729,6 +21729,9 @@ const docTemplate = `{
                 "project": {
                     "$ref": "#/definitions/dto.ProjectLight"
                 },
+                "sprint": {
+                    "$ref": "#/definitions/dto.SprintLight"
+                },
                 "user": {
                     "$ref": "#/definitions/dto.UserLight"
                 },
@@ -22211,6 +22214,21 @@ const docTemplate = `{
                 "disable_doc_watchers": {
                     "type": "boolean"
                 },
+                "disable_sprint_date": {
+                    "type": "boolean"
+                },
+                "disable_sprint_description": {
+                    "type": "boolean"
+                },
+                "disable_sprint_issue_list": {
+                    "type": "boolean"
+                },
+                "disable_sprint_name": {
+                    "type": "boolean"
+                },
+                "disable_sprint_watcher_list": {
+                    "type": "boolean"
+                },
                 "disable_workspace_desc": {
                     "type": "boolean"
                 },
@@ -22239,6 +22257,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "disable_workspace_role": {
+                    "type": "boolean"
+                },
+                "disable_workspace_sprint": {
                     "type": "boolean"
                 },
                 "disable_workspace_token": {
