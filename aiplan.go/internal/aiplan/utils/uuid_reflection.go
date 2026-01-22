@@ -323,9 +323,9 @@ func ReplaceColumnTypeWithCast(db *gorm.DB, col ColumnInfo, newType string) erro
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		// Шаг 1: Удаляем FK constraints
+		// Шаг 1: Удаляем FK constraints (IF EXISTS т.к. они могли быть удалены ранее в DropAllForeignKeys)
 		for _, fk := range fks {
-			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s;", fk.ForeignTableName, fk.ConstraintName)).Error; err != nil {
+			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", fk.ForeignTableName, fk.ConstraintName)).Error; err != nil {
 				return err
 			}
 		}

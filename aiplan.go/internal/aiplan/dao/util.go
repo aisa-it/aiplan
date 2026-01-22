@@ -567,39 +567,62 @@ func CleanInvalidUUIDs(tx *gorm.DB, table string, column string) error {
 	return nil
 }
 
+// joinTablesForDeletion — таблицы связей, где orphaned записи нужно удалять, а не обнулять
+// Это таблицы, где FK колонки обязательны по бизнес-логике
+var joinTablesForDeletion = map[string]bool{
+	"issue_blockers":  true,
+	"issue_assignees": true,
+	"issue_labels":    true,
+	"issue_links":     true,
+	"issue_watchers":  true,
+}
+
 // CleanOrphanedForeignKeys очищает "осиротевшие" внешние ключи - записи, которые ссылаются на несуществующие записи в referenced таблице
 func CleanOrphanedForeignKeys(tx *gorm.DB, table string, column string, referencedTable string, referencedColumn string) error {
-	// Сначала проверяем, существует ли колонка в таблице
+	// Сначала проверяем, существует ли таблица и колонка
 	checkColumnSQL := fmt.Sprintf(`
-		SELECT EXISTS (
-			SELECT 1
-			FROM information_schema.columns
-			WHERE table_schema = 'public'
-			AND table_name = '%s'
-			AND column_name = '%s'
-		)
+		SELECT is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		AND table_name = '%s'
+		AND column_name = '%s'
 	`, table, column)
 
-	var columnExists bool
-	if err := tx.Raw(checkColumnSQL).Scan(&columnExists).Error; err != nil {
-		return fmt.Errorf("failed to check column existence %s.%s: %w", table, column, err)
-	}
-
-	// Если колонка не существует, просто пропускаем
-	if !columnExists {
+	var isNullable string
+	if err := tx.Raw(checkColumnSQL).Scan(&isNullable).Error; err != nil {
+		// Если колонка/таблица не существует, просто пропускаем
 		return nil
 	}
 
-	// Устанавливаем NULL для всех записей, где внешний ключ указывает на несуществующую запись
-	// Используем ::text для приведения типов на случай если referenced колонка уже UUID а текущая ещё text
-	sql := fmt.Sprintf(`
-		UPDATE "%s" as outer_table
-		SET "%s" = NULL
-		WHERE "%s" IS NOT NULL
-		AND NOT EXISTS (
-			SELECT 1 FROM "%s" as inner_table WHERE inner_table."%s"::text = outer_table."%s"::text
-		)
-	`, table, column, column, referencedTable, referencedColumn, column)
+	// Дополнительная проверка: если isNullable пустой, значит колонка не найдена
+	if isNullable == "" {
+		return nil
+	}
+
+	// Для join tables или NOT NULL колонок — удаляем записи, иначе — обнуляем
+	useDelete := joinTablesForDeletion[table] || isNullable != "YES"
+
+	var sql string
+	if useDelete {
+		// Удаляем записи с orphaned FK
+		sql = fmt.Sprintf(`
+			DELETE FROM "%s" as outer_table
+			WHERE "%s" IS NOT NULL
+			AND NOT EXISTS (
+				SELECT 1 FROM "%s" as inner_table WHERE inner_table."%s"::text = outer_table."%s"::text
+			)
+		`, table, column, referencedTable, referencedColumn, column)
+	} else {
+		// Устанавливаем NULL для всех записей, где внешний ключ указывает на несуществующую запись
+		sql = fmt.Sprintf(`
+			UPDATE "%s" as outer_table
+			SET "%s" = NULL
+			WHERE "%s" IS NOT NULL
+			AND NOT EXISTS (
+				SELECT 1 FROM "%s" as inner_table WHERE inner_table."%s"::text = outer_table."%s"::text
+			)
+		`, table, column, column, referencedTable, referencedColumn, column)
+	}
 
 	result := tx.Exec(sql)
 	if result.Error != nil {
@@ -607,7 +630,11 @@ func CleanOrphanedForeignKeys(tx *gorm.DB, table string, column string, referenc
 	}
 
 	if result.RowsAffected > 0 {
-		slog.Warn("Cleaned orphaned foreign keys", "table", table, "column", column, "referenced_table", referencedTable, "rows", result.RowsAffected)
+		action := "Cleaned"
+		if useDelete {
+			action = "Deleted rows with"
+		}
+		slog.Warn(action+" orphaned foreign keys", "table", table, "column", column, "referenced_table", referencedTable, "rows", result.RowsAffected)
 	}
 
 	return nil
