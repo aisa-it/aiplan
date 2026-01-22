@@ -316,16 +316,18 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 		}
 	}
 
-	if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
-		return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
-	}
+	if !cfg.LDAPForce {
+		if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
+			return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
+		}
 
-	if !user.IsActive {
-		return EErrorDefined(c, apierrors.ErrLoginTriesExceed)
-	}
+		if !user.IsActive {
+			return EErrorDefined(c, apierrors.ErrLoginTriesExceed)
+		}
 
-	if user.IsIntegration {
-		return EErrorDefined(c, apierrors.ErrIntegrationLogin)
+		if user.IsIntegration {
+			return EErrorDefined(c, apierrors.ErrIntegrationLogin)
+		}
 	}
 
 	sucessfullLogin := false
@@ -349,6 +351,10 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	}
 
 	if !sucessfullLogin {
+		if cfg.LDAPForce {
+			return EErrorDefined(c, apierrors.ErrFailedLogin)
+		}
+
 		user.LoginAttempts++
 		time.Sleep(time.Second * time.Duration(user.LoginAttempts))
 
