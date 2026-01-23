@@ -320,6 +320,10 @@ type SprintActivity struct {
 	ActivitySender
 }
 
+func (s SprintActivity) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
 // SprintActivityExtendFields
 // -migration
 type SprintActivityExtendFields struct {

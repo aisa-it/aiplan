@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
@@ -47,11 +48,13 @@ func (es *EmailService) EmailActivity() {
 		return
 	}
 
+	email.RunLayerPipeline(es.db, email.NewSprintPipeline())
+
 	newEmailNotifyWorkspace(es).Process()
 	newEmailNotifyProject(es).Process()
 	newEmailNotifyIssue(es).Process()
 	newEmailNotifyDoc(es).Process()
-	newEmailNotifySprint(es).Process()
+	//newEmailNotifySprint(es).Process()
 }
 
 type EmailService struct {

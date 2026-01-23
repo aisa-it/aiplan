@@ -1,0 +1,38 @@
+<tr>
+    <td></td>
+
+    <td class="task-table-left-col"
+        style="text-align: right;width: 124px;vertical-align: top;padding: 0 4px;letter-spacing: 0.5px;">
+        {{- .Key -}}:
+    </td>
+
+    <td class="task-table-right-col"
+        style="text-align: left;vertical-align: top;padding: 0 4px;letter-spacing: 0.5px;">
+
+        {{- $first := true -}}
+        {{- range .Views -}}
+        {{- if not $first }}, {{ end -}}
+
+        {{- if .IsNew -}}
+        <span class="new-status" style="color:#05bd8d">
+                    {{ .Title }}
+                </span>
+        {{- else if .IsGone -}}
+        <del style="color:#999999">
+            {{ .Title }}
+        </del>
+        {{- else -}}
+        {{ .Title }}
+        {{- end -}}
+
+        {{- $first = false -}}
+        {{- end -}}
+
+    </td>
+</tr>
+
+<tr>
+    <td class="task-table-separator" colspan="3"
+        style="height: 8px;padding: 0;">
+    </td>
+</tr>

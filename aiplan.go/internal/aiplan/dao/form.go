@@ -3,13 +3,13 @@ package dao
 
 import (
 	"fmt"
+	"time"
 
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/lib/pq"
 
 	"html"
 	"net/url"
-	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
@@ -385,6 +385,10 @@ type FormActivity struct {
 	UnionCustomFields string `json:"-" gorm:"-"`
 	FormActivityExtendFields
 	ActivitySender
+}
+
+func (f FormActivity) GetCreatedAt() time.Time {
+	return f.CreatedAt
 }
 
 func (FormActivity) TableName() string { return "form_activities" }

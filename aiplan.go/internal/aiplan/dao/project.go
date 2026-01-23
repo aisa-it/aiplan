@@ -1197,6 +1197,10 @@ type ProjectActivity struct {
 	ActivitySender
 }
 
+func (p ProjectActivity) GetCreatedAt() time.Time {
+	return p.CreatedAt
+}
+
 func (pa ProjectActivity) GetCustomFields() string {
 	return pa.UnionCustomFields
 }

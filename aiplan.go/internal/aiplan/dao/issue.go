@@ -1957,6 +1957,10 @@ type IssueActivity struct {
 	//NewIssueComment *IssueComment `json:"-" gorm:"-" field:"comment" extensions:"x-nullable"`
 }
 
+func (i IssueActivity) GetCreatedAt() time.Time {
+	return i.CreatedAt
+}
+
 // IssueActivityExtendFields
 // -migration
 type IssueActivityExtendFields struct {

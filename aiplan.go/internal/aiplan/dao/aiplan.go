@@ -677,6 +677,10 @@ type RootActivity struct {
 	ActivitySender
 }
 
+func (ra RootActivity) GetCreatedAt() time.Time {
+	return ra.CreatedAt
+}
+
 // WorkspaceActivityExtendFields
 // -migration
 type RootActivityExtendFields struct {

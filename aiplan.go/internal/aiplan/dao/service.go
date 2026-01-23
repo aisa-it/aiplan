@@ -50,6 +50,7 @@ type ActivityI interface {
 	GetOldIdentifier() uuid.NullUUID
 	GetVerb() string
 	GetId() uuid.UUID
+	GetCreatedAt() time.Time
 	//SetAffectedUser(user *User)
 	//BuildActivity(entity E, tmpl TemplateActivity) (A, error)
 }
@@ -284,6 +285,10 @@ type FullActivity struct {
 	RootActivityExtendFields
 	SprintActivityExtendFields
 	ActivitySender
+}
+
+func (f FullActivity) GetCreatedAt() time.Time {
+	return f.CreatedAt
 }
 
 func AddCustomFields(activity UnionableTable, fields []string) []string {

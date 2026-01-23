@@ -643,6 +643,10 @@ type WorkspaceActivity struct {
 	ActivitySender
 }
 
+func (w WorkspaceActivity) GetCreatedAt() time.Time {
+	return w.CreatedAt
+}
+
 func (wa WorkspaceActivity) GetCustomFields() string {
 	return wa.UnionCustomFields
 }

@@ -664,6 +664,10 @@ type DocActivity struct {
 	ActivitySender
 }
 
+func (da DocActivity) GetCreatedAt() time.Time {
+	return da.CreatedAt
+}
+
 func (da DocActivity) GetCustomFields() string {
 	return da.UnionCustomFields
 }
