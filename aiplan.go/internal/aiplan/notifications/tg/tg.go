@@ -173,10 +173,14 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 		d.WriteString(fmt.Sprintf(" %d\\. *%s* ", count, bot.EscapeMarkdown(field.Label)))
 		switch field.Type {
 		case "checkbox":
-			if v := field.Val.(bool); v {
-				d.WriteString(" ☑️\n")
-			} else {
+			if field.Val == nil {
 				d.WriteString(" ❌\n")
+			} else {
+				if v := field.Val.(bool); v {
+					d.WriteString(" ☑️\n")
+				} else {
+					d.WriteString(" ❌\n")
+				}
 			}
 		case "numeric":
 			if field.Val == nil {
