@@ -1774,37 +1774,22 @@ func (ic *IssueComment) BeforeDelete(tx *gorm.DB) error {
 }
 
 type IssueProperty struct {
-	// created_at timestamp with time zone IS_NULL:NO
-	CreatedAt time.Time `json:"created_at"`
-	// updated_at timestamp with time zone IS_NULL:NO
-	UpdatedAt time.Time `json:"updated_at"`
-	// id uuid IS_NULL:NO
-	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	// properties jsonb IS_NULL:NO
-	Properties map[string]interface{} `json:"properties" gorm:"serializer:json"`
-	// created_by_id uuid IS_NULL:YES
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	CreatedById uuid.NullUUID `json:"created_by,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
-	// project_id uuid IS_NULL:NO
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	ProjectId uuid.UUID `json:"project" gorm:"index;type:uuid"`
-	// updated_by_id uuid IS_NULL:YES
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	// user_id uuid IS_NULL:NO
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	UserId uuid.UUID `json:"user" gorm:"type:uuid"`
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
+	Id          uuid.UUID ` gorm:"primaryKey;type:uuid"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	CreatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
+	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
 
-	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	User      *User      `json:"-" gorm:"foreignKey:UserId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	Properties  map[string]interface{} `gorm:"serializer:json"`
+	IssueId     uuid.UUID
+	ProjectId   uuid.UUID `gorm:"index;type:uuid"`
+	WorkspaceId uuid.UUID `gorm:"type:uuid"`
+
+	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
+	Issue     *Issue     `gorm:"foreignKey:IssueId"`
+	CreatedBy *User      `gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User      `gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.

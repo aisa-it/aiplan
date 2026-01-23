@@ -244,13 +244,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		},
 	}
 
-	if cfg.LDAPServerURL != nil {
-		jobRegistry["ldap_sync"] = cronmanager.Job{
-			Func:     maintenance.NewLdapSynchronizer(db, ldapProvider).SyncJob,
-			Schedule: "*/5 * * * *", // every 5 minutes
-		}
-	}
-
 	// Create CronManager
 	cronManager := cronmanager.NewCronManager(jobRegistry)
 	if err := cronManager.LoadJobs(); err != nil {

@@ -194,12 +194,12 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	projectGroup.GET("/stats/", s.getProjectStats)
 
-	/* Not in use
-	projectGroup.GET("/issue-properties/", s.issuePropertiesList)
-	projectGroup.POST("/issue-properties/", s.issuePropertyCreateOrUpdate)
-	projectGroup.GET("/issue-properties/:propertyId/", s.issuePropertiesList)
-	projectGroup.PATCH("/issue-properties/:propertyId/", s.issuePropertyCreateOrUpdate)
-	projectGroup.DELETE("/issue-properties/:propertyId/", s.issuePropertyDelete)
+	/*
+		projectGroup.GET("/issue-properties/", s.issuePropertiesList)
+		projectGroup.POST("/issue-properties/", s.issuePropertyCreateOrUpdate)
+		projectGroup.GET("/issue-properties/:propertyId/", s.issuePropertiesList)
+		projectGroup.PATCH("/issue-properties/:propertyId/", s.issuePropertyCreateOrUpdate)
+		projectGroup.DELETE("/issue-properties/:propertyId/", s.issuePropertyDelete)
 	*/
 }
 
