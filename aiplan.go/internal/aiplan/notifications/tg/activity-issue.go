@@ -190,7 +190,7 @@ func issueLinked(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 
 func issueSubIssue(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	subIssue := getExistEntity(act.NewSubIssue, act.OldSubIssue)
+	subIssue := GetFirstOrNil(act.NewSubIssue, act.OldSubIssue)
 	if subIssue == nil {
 		return msg
 	}

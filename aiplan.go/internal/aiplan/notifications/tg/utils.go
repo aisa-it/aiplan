@@ -87,10 +87,17 @@ func getExistUser(user ...*dao.User) *dao.User {
 	return nil
 }
 
-func getExistEntity[E dao.IDaoAct](in ...*E) *E {
-	for _, el := range in {
-		if el != nil {
-			return el
+// GetFirstOrNil возвращает первый ненулевой указатель из переданных аргументов.
+//
+// Параметры:
+//   - entities - вариативный список указателей на сущности реализующие интерфейс dao.IDaoAct
+//
+// Возвращает:
+//   - *E - первый ненулевой указатель или nil, если все аргументы равны nil
+func GetFirstOrNil[E dao.IDaoAct](entities ...*E) *E {
+	for _, entity := range entities {
+		if entity != nil {
+			return entity
 		}
 	}
 	return nil
