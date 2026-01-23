@@ -87,6 +87,15 @@ func getExistUser(user ...*dao.User) *dao.User {
 	return nil
 }
 
+func getExistEntity[E dao.IDaoAct](in ...*E) *E {
+	for _, el := range in {
+		if el != nil {
+			return el
+		}
+	}
+	return nil
+}
+
 func escapeCharacters(data string) string {
 	data = html.UnescapeString(data)
 	res := strings.ReplaceAll(data, "\\", "")

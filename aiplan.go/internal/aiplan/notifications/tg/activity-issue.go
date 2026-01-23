@@ -190,7 +190,10 @@ func issueLinked(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 
 func issueSubIssue(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-
+	subIssue := getExistEntity(act.NewSubIssue, act.OldSubIssue)
+	if subIssue == nil {
+		return msg
+	}
 	msg.title = "изменил(-a)"
 	format := "*Подзадача*: "
 
@@ -203,10 +206,7 @@ func issueSubIssue(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 		return NewTgMsg()
 	}
 
-	msg.body += Stelegramf(format,
-		act.NewSubIssue.FullIssueName(),
-		act.NewSubIssue.URL,
-	)
+	msg.body += Stelegramf(format, subIssue.FullIssueName(), subIssue.URL)
 	return msg
 }
 
