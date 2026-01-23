@@ -558,6 +558,7 @@ type ProjectMemberNS struct {
 	NotifyBeforeDeadline *int `json:"notify_before_deadline" extensions:"x-nullable"`
 	DisableIssueTransfer bool `json:"disable_issue_transfer"`
 	DisableIssueNew      bool `json:"disable_issue_new"`
+	DisableIssueSprint   bool `json:"disable_issue_sprint"`
 
 	DisableProjectName            bool `json:"disable_project_name"`
 	DisableProjectPublic          bool `json:"disable_project_public"`
@@ -761,6 +762,11 @@ func (ns ProjectMemberNS) IsNotify(field *string, entity actField.ActivityField,
 		if isPrAdmin {
 			return !ns.DisableProjectTemplate
 		}
+	case actField.Sprint.Field:
+		if isIssue {
+			return !ns.DisableIssueSprint
+		}
+
 	}
 	return false
 }
