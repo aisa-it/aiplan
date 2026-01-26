@@ -161,3 +161,49 @@ type IssueLockResponse struct {
 type NewIssueID struct {
 	Id uuid.UUID `json:"id"`
 }
+
+// IssueProperty - значение кастомного поля для задачи
+type IssueProperty struct {
+	Id          uuid.UUID `json:"id,omitempty"`
+	IssueId     uuid.UUID `json:"issue_id"`
+	TemplateId  uuid.UUID `json:"template_id"`
+	ProjectId   uuid.UUID `json:"project_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Value       any       `json:"value"`
+}
+
+// ProjectPropertyTemplate - шаблон кастомного поля проекта
+type ProjectPropertyTemplate struct {
+	Id          uuid.UUID `json:"id"`
+	ProjectId   uuid.UUID `json:"project_id"`
+	WorkspaceId uuid.UUID `json:"workspace_id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	OnlyAdmin   bool      `json:"only_admin"`
+	SortOrder   int       `json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// CreatePropertyTemplateRequest - запрос на создание шаблона поля
+type CreatePropertyTemplateRequest struct {
+	Name      string `json:"name" validate:"required,min=1,max=255"`
+	Type      string `json:"type" validate:"required,oneof=string boolean"`
+	OnlyAdmin bool   `json:"only_admin"`
+	SortOrder int    `json:"sort_order"`
+}
+
+// UpdatePropertyTemplateRequest - запрос на обновление шаблона поля
+type UpdatePropertyTemplateRequest struct {
+	Name      *string `json:"name,omitempty"`
+	Type      *string `json:"type,omitempty"`
+	OnlyAdmin *bool   `json:"only_admin,omitempty"`
+	SortOrder *int    `json:"sort_order,omitempty"`
+}
+
+// SetIssuePropertyRequest - запрос на установку значения поля задачи
+type SetIssuePropertyRequest struct {
+	Value any `json:"value"`
+}

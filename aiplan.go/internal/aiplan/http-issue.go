@@ -44,6 +44,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -122,6 +123,10 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	issueGroup.POST("/unpin/", s.issueUnpin)
 
 	g.Any("attachments/tus/*", s.storage.GetTUSHandler(cfg, "/api/auth/attachments/tus/", s.attachmentsUploadValidator, s.attachmentsPostUploadHook))
+
+	// Issue Properties (значения полей задачи)
+	issueGroup.GET("/properties/", s.getIssueProperties)
+	issueGroup.POST("/properties/:templateId/", s.setIssueProperty)
 }
 
 func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error) {
@@ -3333,6 +3338,225 @@ func (s *Services) issueUnpin(c echo.Context) error {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+// ############# Issue Properties methods ###################
+
+// getIssueProperties godoc
+// @id getIssueProperties
+// @Summary Свойства задачи: получение всех полей
+// @Description Возвращает все шаблоны полей проекта с их значениями для задачи.
+// Если значение не установлено, возвращается дефолтное значение для типа поля.
+// @Tags IssueProperties
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Success 200 {array} dto.IssueProperty "Список свойств задачи"
+// @Failure 403 {object} apierrors.DefinedError "Нет доступа к задаче"
+// @Failure 404 {object} apierrors.DefinedError "Задача не найдена"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/ [get]
+func (s *Services) getIssueProperties(c echo.Context) error {
+	issue := c.(IssueContext).Issue
+	projectMember := c.(IssueContext).ProjectMember
+
+	// Получаем все шаблоны полей проекта
+	var templates []dao.ProjectPropertyTemplate
+	if err := s.db.Where("project_id = ?", issue.ProjectId).
+		Where("admin_only = ? or admin_only = ?", false, projectMember.Role == types.AdminRole).
+		Order("sort_order, created_at").
+		Find(&templates).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Получаем существующие значения для задачи
+	var existingProps []dao.IssueProperty
+	if err := s.db.Where("issue_id = ?", issue.ID).
+		Find(&existingProps).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Создаем map для быстрого поиска
+	propsMap := make(map[uuid.UUID]dao.IssueProperty)
+	for _, p := range existingProps {
+		propsMap[p.TemplateId] = p
+	}
+
+	// Собираем результат: все шаблоны с значениями или дефолтами
+	result := make([]dto.IssueProperty, 0, len(templates))
+	for _, tmpl := range templates {
+		// Пропускаем OnlyAdmin поля для не-админов
+		if tmpl.OnlyAdmin && projectMember.Role < types.AdminRole {
+			continue
+		}
+
+		prop := dto.IssueProperty{
+			TemplateId:  tmpl.Id,
+			IssueId:     issue.ID,
+			ProjectId:   issue.ProjectId,
+			WorkspaceId: issue.WorkspaceId,
+			Name:        tmpl.Name,
+			Type:        tmpl.Type,
+			Value:       getDefaultPropertyValue(tmpl.Type),
+		}
+
+		if existing, ok := propsMap[tmpl.Id]; ok {
+			prop.Id = existing.Id
+			prop.Value = parsePropertyValue(tmpl.Type, existing.Value)
+		}
+
+		result = append(result, prop)
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
+// setIssueProperty godoc
+// @id setIssueProperty
+// @Summary Свойства задачи: установка значения
+// @Description Устанавливает или обновляет значение кастомного поля для задачи.
+// @Tags IssueProperties
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Param templateId path string true "ID шаблона поля"
+// @Param request body dto.SetIssuePropertyRequest true "Данные свойства"
+// @Success 200 {object} dto.IssueProperty "Установленное свойство"
+// @Success 201 {object} dto.IssueProperty "Созданное свойство"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на установку"
+// @Failure 404 {object} apierrors.DefinedError "Задача или шаблон не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/ [post]
+func (s *Services) setIssueProperty(c echo.Context) error {
+	user := c.(IssueContext).User
+	issue := c.(IssueContext).Issue
+	projectMember := c.(IssueContext).ProjectMember
+
+	templateId := c.Param("templateId")
+	templateUUID, err := uuid.FromString(templateId)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	var request dto.SetIssuePropertyRequest
+	if err := c.Bind(&request); err != nil {
+		return EError(c, err)
+	}
+
+	// Проверяем существование шаблона
+	var template dao.ProjectPropertyTemplate
+	if err := s.db.Where("id = ? AND project_id = ?", templateUUID, issue.ProjectId).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+		}
+		return EError(c, err)
+	}
+
+	// Проверяем права на OnlyAdmin поля
+	if template.OnlyAdmin && projectMember.Role < types.AdminRole {
+		return EErrorDefined(c, apierrors.ErrPropertyOnlyAdminCanSet)
+	}
+
+	// Валидируем значение через JSON Schema
+	if err := validatePropertyValue(template, request.Value); err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyValueValidationFailed)
+	}
+
+	// Сериализуем значение для хранения
+	valueStr := serializePropertyValue(request.Value)
+
+	// Проверяем существование значения
+	var existingProp dao.IssueProperty
+	err = s.db.Where("issue_id = ? AND template_id = ?", issue.ID, templateUUID).First(&existingProp).Error
+
+	status := http.StatusOK
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Создаем новое значение
+		existingProp = dao.IssueProperty{
+			Id:          dao.GenUUID(),
+			IssueId:     issue.ID,
+			TemplateId:  templateUUID,
+			ProjectId:   issue.ProjectId,
+			WorkspaceId: issue.WorkspaceId,
+			Value:       valueStr,
+			CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+			UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		}
+
+		if err := s.db.Create(&existingProp).Error; err != nil {
+			return EError(c, err)
+		}
+		status = http.StatusCreated
+	} else if err != nil {
+		return EError(c, err)
+	} else {
+		// Обновляем существующее значение
+		existingProp.Value = valueStr
+		existingProp.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+		if err := s.db.Save(&existingProp).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	// Загружаем шаблон для ответа
+	existingProp.Template = &template
+
+	return c.JSON(status, existingProp.ToDTO())
+}
+
+// getDefaultPropertyValue возвращает дефолтное значение для типа поля
+func getDefaultPropertyValue(propType string) any {
+	switch propType {
+	case "string":
+		return ""
+	case "boolean":
+		return false
+	default:
+		return nil
+	}
+}
+
+// parsePropertyValue парсит строковое значение в соответствии с типом
+func parsePropertyValue(propType, value string) any {
+	switch propType {
+	case "string":
+		return value
+	case "boolean":
+		return value == "true"
+	default:
+		return value
+	}
+}
+
+// validatePropertyValue валидирует значение через JSON Schema
+func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) error {
+	schema := types.GenValueSchema(template.Type)
+
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", schema); err != nil {
+		return err
+	}
+
+	sch, err := compiler.Compile("schema.json")
+	if err != nil {
+		return err
+	}
+
+	return sch.Validate(value)
+}
+
+// serializePropertyValue сериализует значение в строку для хранения в БД
+func serializePropertyValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprint(value)
 }
 
 // LinkedIssuesIds представляет собой структуру для передачи связанных задач

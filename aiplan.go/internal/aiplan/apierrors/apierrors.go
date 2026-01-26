@@ -248,6 +248,15 @@ var (
 	ErrIssueTargetDateExp              = DefinedError{Code: 4024, StatusCode: http.StatusBadRequest, Err: "the date has already passed", RuErr: "Заданная дата уже прошла"}
 	ErrIssueCommentEmpty               = DefinedError{Code: 4025, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
 
+	// 45** - property template errors
+	ErrPropertyTemplateNotFound      = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
+	ErrPropertyTemplateNameRequired  = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
+	ErrPropertyTemplateTypeInvalid   = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean", RuErr: "Недопустимый тип поля, допустимы: string, boolean"}
+	ErrPropertyAlreadyExists         = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
+	ErrPropertyNotFound              = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
+	ErrPropertyOnlyAdminCanSet       = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
+	ErrPropertyValueValidationFailed = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
+
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email"}
 	ErrLimitTooHigh         = DefinedError{Code: 5002, StatusCode: http.StatusBadRequest, Err: "limit must be less than 100", RuErr: "Запрашиваемый список задач должен состоящий не более чем из 100 элементов"}

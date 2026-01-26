@@ -194,13 +194,11 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	projectGroup.GET("/stats/", s.getProjectStats)
 
-	/*
-		projectGroup.GET("/issue-properties/", s.issuePropertiesList)
-		projectGroup.POST("/issue-properties/", s.issuePropertyCreateOrUpdate)
-		projectGroup.GET("/issue-properties/:propertyId/", s.issuePropertiesList)
-		projectGroup.PATCH("/issue-properties/:propertyId/", s.issuePropertyCreateOrUpdate)
-		projectGroup.DELETE("/issue-properties/:propertyId/", s.issuePropertyDelete)
-	*/
+	// Property Templates (шаблоны полей проекта)
+	projectGroup.GET("/property-templates/", s.getPropertyTemplateList)
+	projectAdminGroup.POST("/property-templates/", s.createPropertyTemplate)
+	projectAdminGroup.PATCH("/property-templates/:templateId/", s.updatePropertyTemplate)
+	projectAdminGroup.DELETE("/property-templates/:templateId/", s.deletePropertyTemplate)
 }
 
 // getProjectList godoc
@@ -3304,84 +3302,215 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-/*
-// ############# Issue properties methods ###################
+// ############# Property Templates methods ###################
 
-// Получение параметров задач
-func (s *Services) issuePropertiesList(c echo.Context) error {
-	user := *c.(AuthContext).User
-	slug := c.Param("workspaceSlug")
-	projectId := c.Param("projectId")
+// getPropertyTemplateList godoc
+// @id getPropertyTemplateList
+// @Summary Шаблоны полей: получение списка
+// @Description Возвращает список всех шаблонов кастомных полей для проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {array} dto.ProjectPropertyTemplate "Список шаблонов полей"
+// @Failure 403 {object} apierrors.DefinedError "Нет доступа к проекту"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/ [get]
+func (s *Services) getPropertyTemplateList(c echo.Context) error {
+	project := c.(ProjectContext).Project
 
-	var issueProperty dao.IssueProperty
-	if err := s.db.Joins("Workspace").
-		Where("slug = ?", slug).
-		Where("project_id = ?", projectId).
-		Where("user_id = ?", user.ID).Find(&issueProperty).Error; err != nil {
+	var templates []dao.ProjectPropertyTemplate
+	if err := s.db.Where("project_id = ?", project.ID).
+		Order("sort_order, created_at").
+		Find(&templates).Error; err != nil {
 		return EError(c, err)
 	}
-	if issueProperty.Id == "" {
-		res := make([]string, 0)
-		return c.JSON(http.StatusOK, res)
+
+	result := make([]dto.ProjectPropertyTemplate, 0, len(templates))
+	for _, t := range templates {
+		result = append(result, *t.ToDTO())
 	}
 
-	return c.JSON(http.StatusOK, issueProperty)
+	return c.JSON(http.StatusOK, result)
 }
 
-// Создание параметров задач
-func (s *Services) issuePropertyCreateOrUpdate(c echo.Context) error {
-	user := *c.(AuthContext).User
-	slug := c.Param("workspaceSlug")
-	projectId := c.Param("projectId")
+// createPropertyTemplate godoc
+// @id createPropertyTemplate
+// @Summary Шаблоны полей: создание
+// @Description Создает новый шаблон кастомного поля для проекта. Доступно только для админов проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param request body dto.CreatePropertyTemplateRequest true "Данные шаблона поля"
+// @Success 201 {object} dto.ProjectPropertyTemplate "Созданный шаблон поля"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на создание"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/ [post]
+func (s *Services) createPropertyTemplate(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
 
-	var project dao.Project
-	if err := s.db.Where("projects.id = ?", projectId).
-		Where("slug = ?", slug).
-		Joins("Workspace").Find(&project).Error; err != nil {
+	var request dto.CreatePropertyTemplateRequest
+	if err := c.Bind(&request); err != nil {
 		return EError(c, err)
 	}
 
-	status := http.StatusOK
+	// Валидация имени
+	if strings.TrimSpace(request.Name) == "" {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNameRequired)
+	}
 
-	var issueProperty dao.IssueProperty
-	if err := s.db.Joins("Workspace").
-		Where("slug = ?", slug).
-		Where("project_id = ?", projectId).
-		Where("user_id = ?", user.ID).Find(&issueProperty).Error; err != nil {
+	// Валидация типа
+	validTypes := map[string]bool{"string": true, "boolean": true}
+	if !validTypes[request.Type] {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
+	}
+
+	template := dao.ProjectPropertyTemplate{
+		Id:          dao.GenUUID(),
+		ProjectId:   project.ID,
+		WorkspaceId: project.WorkspaceId,
+		Name:        strings.TrimSpace(request.Name),
+		Type:        request.Type,
+		OnlyAdmin:   request.OnlyAdmin,
+		SortOrder:   request.SortOrder,
+		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+	}
+
+	if err := s.db.Create(&template).Error; err != nil {
 		return EError(c, err)
 	}
-	if issueProperty.Id == "" {
-		issueProperty = dao.IssueProperty{
-			Id:          dao.GenID(),
-			CreatedById: &user.ID,
-			CreatedAt:   time.Now(),
-			UpdatedById: &user.ID,
-			UpdatedAt:   time.Now(),
-			ProjectId:   projectId,
-			WorkspaceId: project.WorkspaceId,
-			UserId:      user.ID,
+
+	return c.JSON(http.StatusCreated, template.ToDTO())
+}
+
+// updatePropertyTemplate godoc
+// @id updatePropertyTemplate
+// @Summary Шаблоны полей: обновление
+// @Description Обновляет шаблон кастомного поля. Доступно только для админов проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param templateId path string true "ID шаблона поля"
+// @Param request body dto.UpdatePropertyTemplateRequest true "Данные для обновления"
+// @Success 200 {object} dto.ProjectPropertyTemplate "Обновленный шаблон поля"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на обновление"
+// @Failure 404 {object} apierrors.DefinedError "Шаблон не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/{templateId}/ [patch]
+func (s *Services) updatePropertyTemplate(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+	templateId := c.Param("templateId")
+
+	templateUUID, err := uuid.FromString(templateId)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	var template dao.ProjectPropertyTemplate
+	if err := s.db.Where("id = ? AND project_id = ?", templateUUID, project.ID).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
 		}
-		status = http.StatusCreated
-	}
-
-	if err := c.Bind(&issueProperty); err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Omit(clause.Associations).Save(&issueProperty).Error; err != nil {
+	var request dto.UpdatePropertyTemplateRequest
+	if err := c.Bind(&request); err != nil {
 		return EError(c, err)
 	}
-	return c.JSON(status, issueProperty)
+
+	// Применяем обновления
+	updates := make(map[string]interface{})
+	if request.Name != nil {
+		name := strings.TrimSpace(*request.Name)
+		if name == "" {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNameRequired)
+		}
+		updates["name"] = name
+	}
+	if request.Type != nil {
+		validTypes := map[string]bool{"string": true, "boolean": true}
+		if !validTypes[*request.Type] {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
+		}
+		updates["type"] = *request.Type
+	}
+	if request.OnlyAdmin != nil {
+		updates["only_admin"] = *request.OnlyAdmin
+	}
+	if request.SortOrder != nil {
+		updates["sort_order"] = *request.SortOrder
+	}
+
+	if len(updates) > 0 {
+		updates["updated_by_id"] = user.ID
+		updates["updated_at"] = time.Now()
+
+		if err := s.db.Model(&template).Updates(updates).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	// Перезагружаем для актуальных данных
+	if err := s.db.First(&template, templateUUID).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, template.ToDTO())
 }
 
-// Удаление параметров задачи
-func (s *Services) issuePropertyDelete(c echo.Context) error {
-	projectId := c.Param("projectId")
-	propertyId := c.Param("propertyId")
+// deletePropertyTemplate godoc
+// @id deletePropertyTemplate
+// @Summary Шаблоны полей: удаление
+// @Description Удаляет шаблон кастомного поля и все связанные значения. Доступно только для админов проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param templateId path string true "ID шаблона поля"
+// @Success 204 "Шаблон успешно удален"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на удаление"
+// @Failure 404 {object} apierrors.DefinedError "Шаблон не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/{templateId}/ [delete]
+func (s *Services) deletePropertyTemplate(c echo.Context) error {
+	project := c.(ProjectContext).Project
+	templateId := c.Param("templateId")
 
-	if err := s.db.Where("project_id = ?", projectId).Where("id = ?", propertyId).Delete(&dao.IssueProperty{}).Error; err != nil {
+	templateUUID, err := uuid.FromString(templateId)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	// Проверяем существование
+	var template dao.ProjectPropertyTemplate
+	if err := s.db.Where("id = ? AND project_id = ?", templateUUID, project.ID).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+		}
 		return EError(c, err)
 	}
-	return c.NoContent(http.StatusOK)
+
+	// Удаляем все значения для этого шаблона
+	if err := s.db.Where("template_id = ?", templateUUID).Delete(&dao.IssueProperty{}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Удаляем шаблон
+	if err := s.db.Delete(&template).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.NoContent(http.StatusNoContent)
 }
-*/
