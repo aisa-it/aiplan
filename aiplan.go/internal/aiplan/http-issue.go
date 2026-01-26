@@ -3365,7 +3365,7 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 	// Получаем все шаблоны полей проекта
 	var templates []dao.ProjectPropertyTemplate
 	if err := s.db.Where("project_id = ?", issue.ProjectId).
-		Where("admin_only = ? or admin_only = ?", false, projectMember.Role == types.AdminRole).
+		Where("only_admin = ? OR only_admin = ?", false, projectMember.Role == types.AdminRole).
 		Order("sort_order, created_at").
 		Find(&templates).Error; err != nil {
 		return EError(c, err)
