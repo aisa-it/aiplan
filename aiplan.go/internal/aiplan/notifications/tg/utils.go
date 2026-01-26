@@ -78,31 +78,6 @@ func getUserName(user *dao.User) string {
 	return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
 }
 
-func getExistUser(user ...*dao.User) *dao.User {
-	for _, u := range user {
-		if u != nil {
-			return u
-		}
-	}
-	return nil
-}
-
-// GetFirstOrNil возвращает первый ненулевой указатель из переданных аргументов.
-//
-// Параметры:
-//   - entities - вариативный список указателей на сущности реализующие интерфейс dao.IDaoAct
-//
-// Возвращает:
-//   - *E - первый ненулевой указатель или nil, если все аргументы равны nil
-func GetFirstOrNil[E dao.IDaoAct](entities ...*E) *E {
-	for _, entity := range entities {
-		if entity != nil {
-			return entity
-		}
-	}
-	return nil
-}
-
 func escapeCharacters(data string) string {
 	data = html.UnescapeString(data)
 	res := strings.ReplaceAll(data, "\\", "")
