@@ -30,4 +30,3 @@ func GenValueSchema(propType string) map[string]any {
 		return map[string]any{}
 	}
 }
-
