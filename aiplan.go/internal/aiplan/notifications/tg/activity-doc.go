@@ -145,7 +145,7 @@ func docDoc(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 func docMember(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
-	user := getExistUser(act.NewDocEditor, act.NewDocReader, act.NewDocWatcher, act.OldDocEditor, act.OldDocReader, act.OldDocWatcher)
+	user := utils.GetFirstOrNil(act.NewDocEditor, act.NewDocReader, act.NewDocWatcher, act.OldDocEditor, act.OldDocReader, act.OldDocWatcher)
 	if user == nil {
 		return msg
 	}
