@@ -34,6 +34,7 @@ var (
 		actField.Parent.Field:      issueParent,
 		actField.TargetDate.Field:  issueTargetDate,
 		actField.Project.Field:     issueProject,
+		actField.Sprint.Field:      issueSprint,
 	}
 )
 
@@ -238,7 +239,11 @@ func issueLink(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	case actField.VerbUpdated:
 		if act.OldValue != nil {
 			format = "~%s~ " + format
-			values = append([]any{*act.OldValue}, values...)
+			if af == actField.LinkUrl.Field {
+				values = append([]any{*act.OldValue}, values[1], values[1])
+			} else {
+				values = append([]any{*act.OldValue}, values...)
+			}
 		}
 	}
 
@@ -377,5 +382,25 @@ func issueProject(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 		fmt.Sprint(act.OldProject.Name),
 		act.NewProject.Name,
 	)
+	return msg
+}
+
+func issueSprint(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+	msg := NewTgMsg()
+
+	switch act.Verb {
+	case actField.VerbAdded:
+		msg.title = "добавил(-a) в спринт задачу"
+		if act.NewIssueSprint != nil {
+			act.NewIssueSprint.SetUrl()
+			msg.body = Stelegramf("*спринт*: [%s](%s)", act.NewIssueSprint.GetFullName(), act.NewIssueSprint.URL)
+		}
+	case actField.VerbRemoved:
+		msg.title = "убрал(-a) из спринта задачу"
+		if act.OldIssueSprint != nil {
+			act.OldIssueSprint.SetUrl()
+			msg.body = Stelegramf("*спринт*: [~%s~](%s)", act.OldIssueSprint.GetFullName(), act.OldIssueSprint.URL)
+		}
+	}
 	return msg
 }
