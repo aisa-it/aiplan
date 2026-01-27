@@ -23,13 +23,13 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/altcha-org/altcha-lib-go"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
@@ -43,7 +43,7 @@ type Authentication struct {
 	secret          []byte
 	memDB           *mem.AIPlanMemAPI
 	telegramService *tg.TgService
-	emailService    *notifications.EmailService
+	emailService    *email.EmailService
 	ldapProvider    *authprovider.LdapProvider
 }
 
@@ -238,7 +238,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 	}
 }
 
-func AddAuthenticationServices(db *gorm.DB, g *echo.Echo, secret []byte, memDB *mem.AIPlanMemAPI, telegramService *tg.TgService, emailService *notifications.EmailService, ldapProvider *authprovider.LdapProvider) *Authentication {
+func AddAuthenticationServices(db *gorm.DB, g *echo.Echo, secret []byte, memDB *mem.AIPlanMemAPI, telegramService *tg.TgService, emailService *email.EmailService, ldapProvider *authprovider.LdapProvider) *Authentication {
 	ret := &Authentication{db, secret, memDB, telegramService, emailService, ldapProvider}
 
 	g.POST("api/sign-in/", ret.emailLogin)
