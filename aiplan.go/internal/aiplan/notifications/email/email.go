@@ -1,183 +1,253 @@
 package email
 
 import (
+	"bytes"
+	"embed"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	memNotify "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/gofrs/uuid"
+	"github.com/microcosm-cc/bluemonday"
+	"gopkg.in/gomail.v2"
 	"gorm.io/gorm"
+
+	"github.com/tdewolff/minify/v2"
+	"github.com/tdewolff/minify/v2/html"
 )
 
-//type NotifyMailPlan struct {
-//	LayerName     string                   // спринт, задача, документ
-//	Settings      memNotify.MemberSettings // project/workspace/doc settings
-//	Entity        actField.ActivityField   // тип сущности для фильтрации
-//	AuthorRole    memNotify.Role           // роль автора
-//	PerLayerSteps []memNotify.UsersStep    // общие Step’ы для слоя
-//}
+var htmlStripPolicy *bluemonday.Policy = bluemonday.StrictPolicy()
+var minifier *minify.M = minify.New()
 
-//type LayerNotification struct {
-//	LayerID    uuid.UUID
-//	Recipients []Recipient
-//	Title      string
-//}
+//go:embed templates/*
+var defaultTemplates embed.FS
 
-type Recipient struct {
-	Email        string
-	MemberNotify *memNotify.MemberNotify
+type EmailNotification interface {
+	Process()
 }
 
-// ----------
-func buildRecipient(u *dao.User, m *memNotify.MemberNotify) (*Recipient, bool) {
-	if u.Email == "" {
-		return nil, false
-	}
-	if u.Settings.EmailNotificationMute {
-		return nil, false
-	}
+type EmailMessage struct {
+	To      string
+	Subject string
+	HTML    string
+	Text    string
 
-	return &Recipient{
-		Email:        u.Email,
-		MemberNotify: m,
-	}, true
+	replace map[string]any
 }
 
-func buildRecipients(users memNotify.UserRegistry) []Recipient {
-	res := make([]Recipient, 0, len(users))
-	for _, m := range users {
-		if mail, ok := buildRecipient(m.GetUser(), m); ok {
-			res = append(res, *mail)
-		}
-	}
-	return res
-}
-
-//----------
-
-type activityFieldCollector[T dao.ActivityI] func(T, map[string][]T)
-
-func collectLast[T dao.ActivityI](act T, m map[string][]T) {
-	key := act.GetField()
-
-	if v, ok := m[key]; ok && len(v) > 0 && !v[0].GetCreatedAt().Before(act.GetCreatedAt()) {
+func (es *EmailService) EmailActivity() {
+	if es.cfg.EmailActivityDisabled {
 		return
 	}
 
-	m[key] = []T{act}
+	if es.sending {
+		return
+	}
+	es.ProcessSprint()
 }
 
-func collectAll[T dao.ActivityI](act T, m map[string][]T) {
-	key := act.GetField()
-	m[key] = append(m[key], act)
+type EmailService struct {
+	d           *gomail.Dialer
+	cfg         *config.Config
+	db          *gorm.DB
+	monitorExit chan bool
+	sending     bool
+	disabled    bool
+
+	emailChan chan EmailMessage
+	eg        errgroup.Group
 }
 
-func CollectActivitiesByField[T dao.ActivityI](
-	acts []T,
-	collectors map[actField.ActivityField]activityFieldCollector[T],
-) map[string][]T {
+func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
+	minifier.AddFunc("text/html", html.Minify)
 
-	result := make(map[string][]T)
-
-	for _, act := range acts {
-		key := act.GetField()
-
-		collector, ok := collectors[actField.ActivityField(key)]
-		if !ok {
-			continue
-		}
-
-		collector(act, result)
+	es := &EmailService{
+		gomail.NewDialer(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPassword),
+		cfg,
+		db,
+		make(chan bool),
+		false,
+		cfg.EmailActivityDisabled,
+		make(chan EmailMessage, cfg.EmailWorkers*50),
+		errgroup.Group{}}
+	if cfg.EmailActivityDisabled {
+		slog.Warn("Email activity notifications disabled")
+	}
+	// insert default templates if not exists
+	for i := 0; i < cfg.EmailWorkers; i++ {
+		es.eg.Go(func() error {
+			return es.worker(es.emailChan)
+		})
 	}
 
-	return result
+	es.CreateNewTemplates(db)
+
+	return es
 }
 
-type DigestView struct {
-	Title  string
-	IsNew  bool
-	IsGone bool
-}
-
-type TransitionFlags struct {
-	Added   bool
-	Removed bool
-}
-
-func BuildEntityChangeDigest[A dao.ActivityI, E dao.IDaoAct](
-	tx *gorm.DB, activities []A, currentEntities []E,
-	entityID func(A) uuid.UUID,
-	isAdded func(A) bool,
-	isRemoved func(A) bool,
-	entityTitle func(E) string,
-	loadRemoved func(*gorm.DB, []uuid.UUID) map[uuid.UUID]string,
-) (views []DigestView, changesCount int) {
-
-	current := make(map[uuid.UUID]E, len(currentEntities))
-	for _, e := range currentEntities {
-		current[e.GetId()] = e
-	}
-
-	changes := make(map[uuid.UUID]*TransitionFlags)
-
-	for _, act := range activities {
-		t := changes[entityID(act)]
-		if t == nil {
-			t = &TransitionFlags{}
-			changes[entityID(act)] = t
-		}
-
-		if isAdded(act) {
-			t.Added = true
-		}
-		if isRemoved(act) {
-			t.Removed = true
-		}
-	}
-
-	views = make([]DigestView, 0, len(currentEntities))
-
-	for _, e := range currentEntities {
-		t := changes[e.GetId()]
-		view := DigestView{
-			Title: entityTitle(e),
-		}
-
-		if t != nil && t.Added && !t.Removed {
-			view.IsNew = true
-			changesCount++
-		}
-
-		views = append(views, view)
-	}
-
-	removedIDs := make([]uuid.UUID, 0)
-
-	for id, t := range changes {
-		if _, exists := current[id]; exists {
-			continue
-		}
-		if t.Removed && !t.Added {
-			removedIDs = append(removedIDs, id)
-		}
-	}
-
-	if len(removedIDs) > 0 {
-		removedTitles := loadRemoved(tx, removedIDs)
-
-		for _, id := range removedIDs {
-			title, ok := removedTitles[id]
-			if !ok {
-				title = "unknown"
+func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
+	dir, err := defaultTemplates.ReadDir("templates")
+	if err == nil {
+		for _, file := range dir {
+			var exist bool
+			name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+			if err := tx.Model(&dao.Template{}).
+				Select("EXISTS(?)",
+					tx.Model(&dao.Template{}).
+						Select("1").
+						Where("name = ?", name),
+				).
+				Find(&exist).Error; err != nil {
+				slog.Warn("Error check template in db", slog.String("name", name), "err", err)
+				continue
+			}
+			if exist {
+				continue
 			}
 
-			views = append(views, DigestView{
-				Title:  title,
-				IsGone: true,
-			})
+			data, err := defaultTemplates.ReadFile(filepath.Join("templates", file.Name()))
+			if err != nil {
+				slog.Warn("Read embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
+				continue
+			}
 
-			changesCount++
+			data, err = minifier.Bytes("text/html", data)
+			if err != nil {
+				slog.Warn("Error minify embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
+			}
+
+			if err := tx.Create(&dao.Template{
+				Id:       dao.GenUUID(),
+				Name:     name,
+				Template: string(data),
+			}).Error; err != nil {
+				slog.Warn("Error insert default template", slog.String("name", name), "err", err)
+			}
 		}
 	}
+}
 
-	return views, changesCount
+func (es *EmailService) Close() {
+	es.monitorExit <- true
+}
+
+func (es *EmailService) Stop() {
+	slog.Info("Closing email workers")
+	es.disabled = true
+	close(es.emailChan)
+
+	if err := es.eg.Wait(); err != nil {
+		slog.Error("Worker err:", err)
+	}
+
+	slog.Info("Email workers successfully stopped")
+}
+
+func (es *EmailService) sendEmail(e EmailMessage) error {
+	m := gomail.NewMessage()
+	m.SetHeader("From", es.cfg.EmailFrom)
+	m.SetHeader("To", e.To)
+	m.SetHeader("Subject", e.Subject)
+	m.SetBody("text/plain", e.Text)
+	m.AddAlternative("text/html", e.HTML)
+
+	return es.d.DialAndSend(m)
+}
+
+func (es *EmailService) Send(e EmailMessage) error {
+	if es.disabled {
+		return fmt.Errorf("email service stop")
+	}
+	es.emailChan <- e
+	return nil
+}
+
+func (es *EmailService) worker(emailChan <-chan EmailMessage) error {
+	for e := range emailChan {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("panic in email worker", "recover", r)
+				}
+			}()
+
+			if err := es.sendEmail(e); err != nil {
+				slog.Error("email send failed", "to", e.To, "err", err)
+			} else {
+				slog.Info("email sent successfully", "to", e.To)
+			}
+		}()
+	}
+	return nil
+}
+
+func (es *EmailService) UserBlockedUntil(user dao.User, until time.Time) error {
+	subject := "Подозрительная активность учетной записи"
+
+	var template dao.Template
+	if err := es.db.Where("name = ?", "blocked_until").First(&template).Error; err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	if err := template.ParsedTemplate.Execute(&buf, struct {
+		Until time.Time
+	}{
+		Until: until,
+	}); err != nil {
+		return err
+	}
+
+	content, err := es.getHTML("Блокировка учетной записи", buf.String())
+	if err != nil {
+		return err
+	}
+
+	textContent := htmlStripPolicy.Sanitize(content)
+
+	return es.Send(EmailMessage{
+		To:      user.Email,
+		Subject: subject,
+		HTML:    content,
+		Text:    textContent,
+	})
+}
+
+// /----
+func (es *EmailService) getHTML(title string, body string) (string, error) {
+	return es.getHTMLWithParams(title, body, nil, nil, 0, 0)
+}
+
+func (es *EmailService) getHTMLWithParams(title string, body string, issue *dao.Issue, project *dao.Project, commentCount int, activityCount int) (string, error) {
+	var template dao.Template
+	if err := es.db.Where("name = ?", "body").First(&template).Error; err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := template.ParsedTemplate.Execute(&buf, struct {
+		Issue         *dao.Issue
+		Title         string
+		CreatedAt     time.Time
+		Body          string
+		CommentCount  int
+		ActivityCount int
+		Project       *dao.Project
+	}{
+		Title:         title,
+		CreatedAt:     time.Now(), //TODO: timezone
+		Body:          body,
+		Issue:         issue,
+		CommentCount:  commentCount,
+		ActivityCount: activityCount,
+		Project:       project,
+	}); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
