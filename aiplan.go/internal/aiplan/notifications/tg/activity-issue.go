@@ -1,6 +1,7 @@
 package tg
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
+
+var ErrEmptyActivity = errors.New("activity is empty")
 
 type funcIssueMsgFormat func(act *dao.IssueActivity, af actField.ActivityField) TgMsg
 
