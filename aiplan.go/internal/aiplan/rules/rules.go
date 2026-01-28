@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	lua "github.com/yuin/gopher-lua"
@@ -104,6 +105,9 @@ func callEventFunction(fnName string, state *lua.LState, issuer dao.User, curren
 	go func() {
 		if err := state.DoString(*currentIssue.Project.RulesScript); err != nil {
 			luaErr := strings.TrimSpace(err.Error())
+			if !utf8.ValidString(luaErr) {
+				luaErr = strings.ToValidUTF8(luaErr, "?")
+			}
 			errFull.ErrMsg = errParseScript
 			errFull.LuaError = &luaErr
 			errChan <- newErr(errScript)
