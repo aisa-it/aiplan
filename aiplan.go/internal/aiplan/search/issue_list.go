@@ -366,7 +366,7 @@ func GetIssueListData(
 	sprint *dao.Sprint,
 	globalSearch bool,
 	searchParams *types.SearchParams,
-	streamCallback types.StreamCallback,
+	streamCallback StreamCallback,
 ) (any, error) {
 	// Валидация
 	if searchParams.Limit > 100 {
@@ -689,9 +689,9 @@ func GetIssueListData(
 			return nil, err
 		}
 
-		var groupMap []types.IssuesGroupResponse
+		var groupMap []dto.IssuesGroupResponse
 
-		totalCount, err := FetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group types.IssuesGroupResponse) error {
+		totalCount, err := FetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group dto.IssuesGroupResponse) error {
 			if streamCallback != nil {
 				return streamCallback(group)
 			}
@@ -707,10 +707,12 @@ func GetIssueListData(
 			return nil, nil
 		}
 
-		return types.IssuesGroupedResponse{
-			Count:   totalCount,
-			Offset:  searchParams.Offset,
-			Limit:   searchParams.Limit,
+		return dto.IssuesGroupedResponse{
+			PaginationMeta: dto.PaginationMeta{
+				Count:  totalCount,
+				Offset: searchParams.Offset,
+				Limit:  searchParams.Limit,
+			},
 			GroupBy: searchParams.GroupByParam,
 			Issues:  groupMap,
 		}, nil
@@ -722,21 +724,23 @@ func GetIssueListData(
 		return nil, err
 	}
 
+	paginationMeta := dto.PaginationMeta{
+		Count:  count,
+		Offset: searchParams.Offset,
+		Limit:  searchParams.Limit,
+	}
+
 	// Преобразование в map с DTO
 	if searchParams.LightSearch {
-		return map[string]any{
-			"count":  count,
-			"offset": searchParams.Offset,
-			"limit":  searchParams.Limit,
-			"issues": utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.SearchLightweightResponse { return iwc.ToSearchLightDTO() }),
+		return dto.IssuesLightSearchResponse{
+			PaginationMeta: paginationMeta,
+			Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.SearchLightweightIssue { return iwc.ToSearchLightDTO() }),
 		}, nil
 	}
 
-	return map[string]any{
-		"count":  count,
-		"offset": searchParams.Offset,
-		"limit":  searchParams.Limit,
-		"issues": utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
+	return dto.IssuesSearchResponse{
+		PaginationMeta: paginationMeta,
+		Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
 	}, nil
 }
 
