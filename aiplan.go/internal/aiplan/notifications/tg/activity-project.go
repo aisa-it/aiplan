@@ -147,7 +147,7 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 			assignees = append(assignees, getUserName(&assignee))
 		}
 		format += "\n*Исполнители*: %s"
-		values = append(values, strings.Join(assignees, "*, *"))
+		values = append(values, strings.Join(assignees, ", "))
 	}
 
 	msg.body += Stelegramf(format, values...)
@@ -164,20 +164,20 @@ func projectTemplate(act *dao.ProjectActivity, af actField.ActivityField) TgMsg 
 	case actField.VerbCreated:
 		msg.title = "создал(-a) шаблон задачи в"
 		format += "%s\n```\n%s```"
-		values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template)
+		values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template.StripTags())
 	case actField.VerbUpdated:
 		msg.title = "изменил(-a) шаблон задачи в"
 		switch af {
 		case actField.TemplateTemplate.Field:
 			format += "%s\n```\n%s```"
-			values = append(values, act.NewIssueTemplate.Name, act.NewValue)
+			values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template.StripTags())
 		case actField.TemplateName.Field:
 			format += "~%s~ %s"
 			values = append(values, fmt.Sprint(*act.OldValue), act.NewValue)
 		default:
 			if act.NewIssueTemplate != nil {
 				format += "%s\n```\n%s```"
-				values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template)
+				values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template.StripTags())
 			}
 		}
 	case actField.VerbDeleted:
