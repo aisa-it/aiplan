@@ -52,6 +52,7 @@ require (
 )
 
 require (
+	github.com/AlexJarrah/go-ods v1.0.7 // indirect
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
