@@ -867,7 +867,7 @@ func DeepDepend(field types2.FormFields, idx int, answers types2.FormFieldsSlice
 	}
 
 	if idx <= field.DependOn.IndexField {
-		return fmt.Errorf("wrong depend_on struct")
+		return fmt.Errorf("invalid depend_on order: %d must be greater than %d", idx, field.DependOn.IndexField)
 	}
 
 	answer := answers[field.DependOn.IndexField]
@@ -1027,24 +1027,24 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 
 		if field.DependOn != nil {
 			if i <= field.DependOn.IndexField {
-				return fmt.Errorf("wrong depend_on struct")
+				return fmt.Errorf("invalid depend_on order: %d must be greater than %d", i, field.DependOn.IndexField)
 			}
 			f := (*fields)[field.DependOn.IndexField]
 			switch f.Type {
 			case formFieldCheckbox:
 				if field.DependOn.IndexOpt != nil {
-					return fmt.Errorf("wrong depend_on struct")
+					return fmt.Errorf("invalid depend_on config")
 				}
 			case formFieldSelect, formFieldMultiselect:
-				if field.DependOn.IndexOpt != nil {
-					if f.Validate == nil || f.Validate.Opt == nil && len(f.Validate.Opt) < *field.DependOn.IndexOpt {
-						return fmt.Errorf("wrong depend_on struct")
-					}
-				} else {
-					return fmt.Errorf("wrong depend_on struct")
+				if field.DependOn.IndexOpt == nil {
+					return fmt.Errorf("depend_on option index required")
+				}
+				if f.Validate == nil || f.Validate.Opt == nil ||
+					*field.DependOn.IndexOpt >= len(f.Validate.Opt) {
+					return fmt.Errorf("depend_on option index out of range")
 				}
 			default:
-				return fmt.Errorf("wrong field type for depend_on")
+				return fmt.Errorf("unsupported depend_on field type")
 			}
 
 		}
