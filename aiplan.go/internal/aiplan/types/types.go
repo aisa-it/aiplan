@@ -333,9 +333,16 @@ type FormFieldsSlice []FormFields
 type FormFields struct {
 	Type     string          `json:"type"`
 	Label    string          `json:"label,omitempty"`
-	Val      interface{}     `json:"value,omitempty"`
+	Val      interface{}     `json:"value"`
 	Required bool            `json:"required"`
 	Validate *ValidationRule `json:"validate,omitempty" extensions:"x-nullable"`
+	DependOn *DependOn       `json:"depend_on,omitempty" extensions:"x-nullable"`
+}
+
+type DependOn struct {
+	IndexField int  `json:"field_index"`
+	IndexOpt   *int `json:"opt_index" extensions:"x-nullable"`
+	Val        bool `json:"value"`
 }
 
 type ValidationRule struct {
