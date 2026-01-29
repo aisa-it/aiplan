@@ -539,6 +539,9 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 
 	resultAnswers, err := formAnswer(userAnswer, &form)
 	if err != nil {
+		if errors.Is(err, apierrors.ErrFormAnswerDependOn) {
+			return EErrorDefined(c, apierrors.ErrFormDependOn)
+		}
 		return EErrorDefined(c, apierrors.ErrFormCheckAnswers)
 	}
 	if len(resultAnswers) == 0 {
@@ -858,12 +861,74 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+func DeepDepend(field types2.FormFields, idx int, answers types2.FormFieldsSlice, formFields types2.FormFieldsSlice, currentVal interface{}) error {
+	if field.DependOn == nil {
+		return nil
+	}
+
+	if idx <= field.DependOn.IndexField {
+		return fmt.Errorf("wrong depend_on struct")
+	}
+
+	answer := answers[field.DependOn.IndexField]
+	originalField := formFields[field.DependOn.IndexField]
+
+	if err := DeepDepend(answer, field.DependOn.IndexField, answers, formFields, answer.Val); err != nil {
+		return err
+	}
+	var check bool
+	switch answer.Type {
+	case formFieldCheckbox:
+		if answer.Val == nil && !field.DependOn.Val {
+			check = true
+		} else {
+			check = field.DependOn.Val == answer.Val.(bool)
+		}
+	case formFieldMultiselect:
+		if field.DependOn.IndexOpt != nil {
+			if originalField.Validate != nil && originalField.Validate.Opt != nil {
+				check = !field.DependOn.Val
+				for _, r := range answer.Val.([]interface{}) {
+					if originalField.Validate.Opt[*field.DependOn.IndexOpt].(string) == r.(string) {
+						check = field.DependOn.Val
+						break
+					}
+				}
+			}
+			if currentVal == nil {
+				check = true
+			}
+		}
+
+	case formFieldSelect:
+		if field.DependOn.IndexOpt != nil {
+			if originalField.Validate != nil && originalField.Validate.Opt != nil {
+				check = !field.DependOn.Val
+				if originalField.Validate.Opt[*field.DependOn.IndexOpt].(string) == answer.Val.(string) {
+					check = field.DependOn.Val
+				}
+			}
+			if currentVal == nil {
+				check = true
+			}
+		}
+	}
+	if !check {
+		return apierrors.ErrFormAnswerDependOn
+	}
+
+	return nil
+}
+
 func formAnswer(answers types2.FormFieldsSlice, form *dao.Form) (types2.FormFieldsSlice, error) {
 
 	validator := FormValidator()
 	var resultAnswer types2.FormFieldsSlice
 
 	for i, field := range form.Fields {
+		if err := DeepDepend(field, i, resultAnswer, form.Fields, answers[i].Val); err != nil {
+			return nil, err
+		}
 		validFunc := validator[field.Type]
 		checkVal := validFunc(answers[i].Val, field.Required, field.Validate)
 		if !checkVal {
@@ -958,6 +1023,30 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 			(*fields)[i].Validate.ValueType = "select"
 		case "multiselect":
 			(*fields)[i].Validate.ValueType = "multiselect"
+		}
+
+		if field.DependOn != nil {
+			if i <= field.DependOn.IndexField {
+				return fmt.Errorf("wrong depend_on struct")
+			}
+			f := (*fields)[field.DependOn.IndexField]
+			switch f.Type {
+			case formFieldCheckbox:
+				if field.DependOn.IndexOpt != nil {
+					return fmt.Errorf("wrong depend_on struct")
+				}
+			case formFieldSelect, formFieldMultiselect:
+				if field.DependOn.IndexOpt != nil {
+					if f.Validate == nil || f.Validate.Opt == nil && len(f.Validate.Opt) < *field.DependOn.IndexOpt {
+						return fmt.Errorf("wrong depend_on struct")
+					}
+				} else {
+					return fmt.Errorf("wrong depend_on struct")
+				}
+			default:
+				return fmt.Errorf("wrong field type for depend_on")
+			}
+
 		}
 	}
 	return nil
