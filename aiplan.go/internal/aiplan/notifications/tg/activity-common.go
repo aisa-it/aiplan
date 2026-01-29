@@ -38,10 +38,10 @@ func genAttachment(oldV *string, newV, verb, titleCreate, titleDelete string) Tg
 	switch verb {
 	case actField.VerbCreated:
 		msg.title = titleCreate
-		msg.body += Stelegramf("*файл*: %s", newV)
+		msg.body += Stelegramf("*Файл*: %s", newV)
 	case actField.VerbDeleted:
 		msg.title = titleDelete
-		msg.body += Stelegramf("*файл*: ~%s~", *oldV)
+		msg.body += Stelegramf("*Файл*: ~%s~", *oldV)
 	}
 	return msg
 }
