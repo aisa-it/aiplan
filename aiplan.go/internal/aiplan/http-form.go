@@ -861,36 +861,49 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func DeepDepend(field types2.FormFields, idx int, answers types2.FormFieldsSlice, formFields types2.FormFieldsSlice, currentVal interface{}) error {
+// ValidateFieldDependency рекурсивно проверяет выполнение условий depend_on(зависимостей) поля формы.
+// Используется для проверки пользовательских ответов
+//
+// Параметры:
+//   - field — текущее поле формы, для которого выполняется проверка зависимостей
+//   - idx — индекс текущего поля в списке полей формы
+//   - answers — список ответов пользователя на поля формы
+//   - formFields — список исходных полей формы с правилами валидации
+//   - currentVal — текущее значение поля (используется для проверки пустого значения)
+//
+// Возвращает:
+//   - error — ошибку, если порядок зависимостей некорректен или если условия depend_on не выполнены; иначе nil
+func ValidateFieldDependency(field types2.FormFields, idx int, answers types2.FormFieldsSlice, formFields types2.FormFieldsSlice, currentVal interface{}) error {
 	if field.DependOn == nil {
 		return nil
 	}
 
-	if idx <= field.DependOn.IndexField {
-		return fmt.Errorf("invalid depend_on order: %d must be greater than %d", idx, field.DependOn.IndexField)
+	// зависимое поле должно идти после поля, от которого оно зависит
+	if idx <= field.DependOn.FieldIndex {
+		return fmt.Errorf("invalid depend_on order: %d must be greater than %d", idx, field.DependOn.FieldIndex)
 	}
 
-	answer := answers[field.DependOn.IndexField]
-	originalField := formFields[field.DependOn.IndexField]
+	answer := answers[field.DependOn.FieldIndex]
+	originalField := formFields[field.DependOn.FieldIndex]
 
-	if err := DeepDepend(answer, field.DependOn.IndexField, answers, formFields, answer.Val); err != nil {
+	if err := ValidateFieldDependency(answer, field.DependOn.FieldIndex, answers, formFields, answer.Val); err != nil {
 		return err
 	}
 	var check bool
 	switch answer.Type {
 	case formFieldCheckbox:
-		if answer.Val == nil && !field.DependOn.Val {
+		if answer.Val == nil && !field.DependOn.ExpectedValue {
 			check = true
 		} else {
-			check = field.DependOn.Val == answer.Val.(bool)
+			check = field.DependOn.ExpectedValue == answer.Val.(bool)
 		}
 	case formFieldMultiselect:
-		if field.DependOn.IndexOpt != nil {
+		if field.DependOn.OptionIndex != nil {
 			if originalField.Validate != nil && originalField.Validate.Opt != nil {
-				check = !field.DependOn.Val
+				check = !field.DependOn.ExpectedValue
 				for _, r := range answer.Val.([]interface{}) {
-					if originalField.Validate.Opt[*field.DependOn.IndexOpt].(string) == r.(string) {
-						check = field.DependOn.Val
+					if originalField.Validate.Opt[*field.DependOn.OptionIndex].(string) == r.(string) {
+						check = field.DependOn.ExpectedValue
 						break
 					}
 				}
@@ -901,11 +914,11 @@ func DeepDepend(field types2.FormFields, idx int, answers types2.FormFieldsSlice
 		}
 
 	case formFieldSelect:
-		if field.DependOn.IndexOpt != nil {
+		if field.DependOn.OptionIndex != nil {
 			if originalField.Validate != nil && originalField.Validate.Opt != nil {
-				check = !field.DependOn.Val
-				if originalField.Validate.Opt[*field.DependOn.IndexOpt].(string) == answer.Val.(string) {
-					check = field.DependOn.Val
+				check = !field.DependOn.ExpectedValue
+				if originalField.Validate.Opt[*field.DependOn.OptionIndex].(string) == answer.Val.(string) {
+					check = field.DependOn.ExpectedValue
 				}
 			}
 			if currentVal == nil {
@@ -926,7 +939,7 @@ func formAnswer(answers types2.FormFieldsSlice, form *dao.Form) (types2.FormFiel
 	var resultAnswer types2.FormFieldsSlice
 
 	for i, field := range form.Fields {
-		if err := DeepDepend(field, i, resultAnswer, form.Fields, answers[i].Val); err != nil {
+		if err := ValidateFieldDependency(field, i, resultAnswer, form.Fields, answers[i].Val); err != nil {
 			return nil, err
 		}
 		validFunc := validator[field.Type]
@@ -1025,22 +1038,22 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 			(*fields)[i].Validate.ValueType = "multiselect"
 		}
 
-		if field.DependOn != nil {
-			if i <= field.DependOn.IndexField {
-				return fmt.Errorf("invalid depend_on order: %d must be greater than %d", i, field.DependOn.IndexField)
+		if field.DependOn != nil { // проверка корректности конфигурации depend_on при создании/обновлении формы
+			if i <= field.DependOn.FieldIndex { // зависимое поле должно идти после поля, от которого оно зависит
+				return fmt.Errorf("invalid depend_on order: %d must be greater than %d", i, field.DependOn.FieldIndex)
 			}
-			f := (*fields)[field.DependOn.IndexField]
+			f := (*fields)[field.DependOn.FieldIndex]
 			switch f.Type {
 			case formFieldCheckbox:
-				if field.DependOn.IndexOpt != nil {
+				if field.DependOn.OptionIndex != nil {
 					return fmt.Errorf("invalid depend_on config")
 				}
 			case formFieldSelect, formFieldMultiselect:
-				if field.DependOn.IndexOpt == nil {
+				if field.DependOn.OptionIndex == nil {
 					return fmt.Errorf("depend_on option index required")
 				}
 				if f.Validate == nil || f.Validate.Opt == nil ||
-					*field.DependOn.IndexOpt >= len(f.Validate.Opt) {
+					*field.DependOn.OptionIndex >= len(f.Validate.Opt) {
 					return fmt.Errorf("depend_on option index out of range")
 				}
 			default:
