@@ -3961,6 +3961,125 @@
                 }
             }
         },
+        "/api/auth/issues/search/export/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Экспортирует задачи в ZIP архив с CSV файлами. При группировке создаётся отдельный CSV файл для каждой группы.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "Issues"
+                ],
+                "summary": "Задачи: экспорт задач в CSV",
+                "operationId": "exportIssueList",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Выключить подзадачи",
+                        "name": "hide_sub_issues",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "\"sequence_id\"",
+                        "description": "Поле для сортировки",
+                        "name": "order_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "\"\"",
+                        "description": "Поле для группировки результатов",
+                        "name": "group_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": -1,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Лимит записей",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Сортировка по убыванию",
+                        "name": "desc",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Вернуть только активные задачи",
+                        "name": "only_active",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Вернуть только закрепленные задачи",
+                        "name": "only_pinned",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Фильтры для поиска задач",
+                        "name": "filters",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/types.IssuesListFilters"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ZIP архив с CSV файлами",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/notification-bot-link/": {
             "get": {
                 "description": "Возвращает ссылку для подключения к Telegram боту уведомлений, если он доступен",

@@ -193,8 +193,8 @@ func (i Issue) GetIssueId() uuid.UUID {
 //
 // Возвращает:
 //   - dto.SearchLightweightResponse: структура, содержащая преобразованные данные Issue для поиска.
-func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightResponse {
-	ii := dto.SearchLightweightResponse{
+func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightIssue {
+	ii := dto.SearchLightweightIssue{
 		ID:          i.ID,
 		WorkspaceId: i.WorkspaceId,
 		Workspace:   i.Workspace.ToLightDTO(),
