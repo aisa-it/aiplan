@@ -14,7 +14,7 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-type SearchLightweightResponse struct {
+type SearchLightweightIssue struct {
 	ID uuid.UUID `json:"id"`
 
 	WorkspaceId uuid.UUID       `json:"workspace"`
@@ -42,4 +42,34 @@ type SearchLightweightResponse struct {
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
 	DescHighlighted string `json:"desc_highlighted,omitempty"`
+}
+
+type PaginationMeta struct {
+	Count  int `json:"count"`
+	Offset int `json:"offset"`
+	Limit  int `json:"limit"`
+}
+
+// IssuesGroupedResponse - ответ с группированными задачами
+type IssuesGroupedResponse struct {
+	PaginationMeta
+	GroupBy string                `json:"group_by"`
+	Issues  []IssuesGroupResponse `json:"issues"`
+}
+
+type IssuesLightSearchResponse struct {
+	PaginationMeta
+	Issues []SearchLightweightIssue `json:"issues"`
+}
+
+type IssuesSearchResponse struct {
+	PaginationMeta
+	Issues []IssueWithCount `json:"issues"`
+}
+
+// IssuesGroupResponse - одна группа в группированном ответе
+type IssuesGroupResponse struct {
+	Entity any   `json:"entity"`
+	Count  int   `json:"count"`
+	Issues []any `json:"issues"`
 }
