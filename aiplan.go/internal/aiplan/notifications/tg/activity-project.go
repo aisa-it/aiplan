@@ -164,20 +164,20 @@ func projectTemplate(act *dao.ProjectActivity, af actField.ActivityField) TgMsg 
 	case actField.VerbCreated:
 		msg.title = "создал(-a) шаблон задачи в"
 		format += "%s\n```\n%s```"
-		values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template.StripTags())
+		values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 	case actField.VerbUpdated:
 		msg.title = "изменил(-a) шаблон задачи в"
 		switch af {
 		case actField.TemplateTemplate.Field:
 			format += "%s\n```\n%s```"
-			values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template.StripTags())
+			values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 		case actField.TemplateName.Field:
 			format += "~%s~ %s"
 			values = append(values, fmt.Sprint(*act.OldValue), act.NewValue)
 		default:
 			if act.NewIssueTemplate != nil {
 				format += "%s\n```\n%s```"
-				values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template.StripTags())
+				values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 			}
 		}
 	case actField.VerbDeleted:
