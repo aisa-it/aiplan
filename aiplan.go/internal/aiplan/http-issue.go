@@ -518,7 +518,7 @@ func (s *Services) exportIssueList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	f, err := os.CreateTemp("search-export", "export-*.zip")
+	f, err := os.CreateTemp("", "export-*.zip")
 	if err != nil {
 		return EError(c, err)
 	}
