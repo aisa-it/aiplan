@@ -788,7 +788,6 @@ type WorkspaceMemberNS struct {
 	DisableWorkspaceForm        bool `json:"disable_workspace_form"`
 	DisableWorkspaceDoc         bool `json:"disable_workspace_doc"`
 	DisableWorkspaceName        bool `json:"disable_workspace_name"`
-	DisableWorkspaceOwner       bool `json:"disable_workspace_owner"`
 	DisableWorkspaceDesc        bool `json:"disable_workspace_desc"`
 	DisableWorkspaceToken       bool `json:"disable_workspace_token"`
 	DisableWorkspaceLogo        bool `json:"disable_workspace_logo"`
@@ -935,17 +934,14 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityFiel
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceMember
 		}
-	case actField.Role.Field:
+	case actField.Role.Field,
+		actField.WorkspaceOwner.Field:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceRole
 		}
 	case actField.Integration.Field:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceIntegration
-		}
-	case actField.WorkspaceOwner.Field:
-		if isWorkspaceAdmin {
-			return !ns.DisableWorkspaceOwner
 		}
 	case actField.Issue.Field:
 		if isSprint {
