@@ -797,6 +797,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if newState.Group == "completed" && issue.State.Group != "completed" {
 			data["completed_at"] = &types.TargetDate{Time: time.Now()}
 		} else if newState.Group != "completed" {
+			if newState.Group == "started" {
+				data["start_date"] = &types.TargetDate{Time: time.Now()}
+			}
 			// Reset completed at date on open status
 			data["completed_at"] = nil
 		} else {
