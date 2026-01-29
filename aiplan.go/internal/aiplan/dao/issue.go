@@ -1082,8 +1082,8 @@ type IssueDescriptionLock struct {
 }
 
 type LinkedIssues struct {
-	Id1 uuid.UUID `json:"-" gorm:"primaryKey;autoIncrement:false;type:uuid;check:id1 < id2"`
-	Id2 uuid.UUID `json:"-" gorm:"primaryKey;autoIncrement:false;type:uuid;index:,type:hash"`
+	Id1 uuid.UUID `json:"-" gorm:"primaryKey;type:uuid;check:id1 < id2"`
+	Id2 uuid.UUID `json:"-" gorm:"primaryKey;type:uuid;index:,type:hash"`
 
 	Issue1 Issue `json:"-" gorm:"foreignKey:Id1"`
 	Issue2 Issue `json:"-" gorm:"foreignKey:Id2"`
