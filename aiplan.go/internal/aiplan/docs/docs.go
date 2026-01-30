@@ -7007,6 +7007,12 @@ const docTemplate = `{
                         "description": "Вложения для документа",
                         "name": "files",
                         "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "применить повышение роли (при необходимости) к дочерним документам",
+                        "name": "cascade_roles",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -22436,9 +22442,35 @@ const docTemplate = `{
                 }
             }
         },
+        "types.FormFieldDependency": {
+            "type": "object",
+            "properties": {
+                "field_index": {
+                    "description": "Индекс поля от которого зависит",
+                    "type": "integer"
+                },
+                "option_index": {
+                    "description": "Индекс варианта ответа (для select/multiselect)",
+                    "type": "integer",
+                    "x-nullable": true
+                },
+                "value": {
+                    "description": "Ожидаемое значение зависимого поля (или варианта ответа)",
+                    "type": "boolean"
+                }
+            }
+        },
         "types.FormFields": {
             "type": "object",
             "properties": {
+                "depend_on": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FormFieldDependency"
+                        }
+                    ],
+                    "x-nullable": true
+                },
                 "label": {
                     "type": "string"
                 },
@@ -22480,6 +22512,18 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "completed_at_from": {
+                    "type": "string"
+                },
+                "completed_at_to": {
+                    "type": "string"
+                },
+                "created_at_from": {
+                    "type": "string"
+                },
+                "created_at_to": {
+                    "type": "string"
+                },
                 "labels": {
                     "type": "array",
                     "items": {
@@ -22510,11 +22554,29 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "start_date_from": {
+                    "type": "string"
+                },
+                "start_date_to": {
+                    "type": "string"
+                },
                 "states": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
+                },
+                "target_date_from": {
+                    "type": "string"
+                },
+                "target_date_to": {
+                    "type": "string"
+                },
+                "updated_at_from": {
+                    "type": "string"
+                },
+                "updated_at_to": {
+                    "type": "string"
                 },
                 "watched_by_me": {
                     "type": "boolean"
@@ -22894,9 +22956,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "disable_workspace_name": {
-                    "type": "boolean"
-                },
-                "disable_workspace_owner": {
                     "type": "boolean"
                 },
                 "disable_workspace_project": {
