@@ -331,11 +331,18 @@ func RemoveInvisibleChars(s string) string {
 type FormFieldsSlice []FormFields
 
 type FormFields struct {
-	Type     string          `json:"type"`
-	Label    string          `json:"label,omitempty"`
-	Val      interface{}     `json:"value,omitempty"`
-	Required bool            `json:"required"`
-	Validate *ValidationRule `json:"validate,omitempty" extensions:"x-nullable"`
+	Type     string               `json:"type"`
+	Label    string               `json:"label,omitempty"`
+	Val      interface{}          `json:"value"`
+	Required bool                 `json:"required"`
+	Validate *ValidationRule      `json:"validate,omitempty" extensions:"x-nullable"`
+	DependOn *FormFieldDependency `json:"depend_on,omitempty" extensions:"x-nullable"`
+}
+
+type FormFieldDependency struct {
+	FieldIndex    int  `json:"field_index"`                          // Индекс поля от которого зависит
+	OptionIndex   *int `json:"option_index" extensions:"x-nullable"` // Индекс варианта ответа (для select/multiselect)
+	ExpectedValue bool `json:"value"`                                // Ожидаемое значение зависимого поля (или варианта ответа)
 }
 
 type ValidationRule struct {
