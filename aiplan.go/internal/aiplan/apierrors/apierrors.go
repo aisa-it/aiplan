@@ -198,20 +198,20 @@ var (
 	ErrAttachmentInUse        = DefinedError{Code: 3215, StatusCode: http.StatusConflict, Err: "cannot delete file: it is linked to a form answer", RuErr: "Невозможно удалить файл — он привязан к ответу формы"}
 
 	// 34** - doc errors
-	ErrDocNotFound           = DefinedError{Code: 3401, StatusCode: http.StatusNotFound, Err: "doc not found", RuErr: "Документ не найден"}
-	ErrDocUpdateForbidden    = DefinedError{Code: 3402, StatusCode: http.StatusForbidden, Err: "insufficient permissions or not the author", RuErr: "У вас недостаточно прав для изменения документа"}
-	ErrDocDeleteHasChild     = DefinedError{Code: 3403, StatusCode: http.StatusForbidden, Err: "doc has child", RuErr: "Невозможно удалить, есть дочерние документы"}
-	ErrDocBadRequest         = DefinedError{Code: 3404, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
-	ErrDocCommentNotFound    = DefinedError{Code: 3405, StatusCode: http.StatusNotFound, Err: "doc comment not found", RuErr: "Не найден комментарий"}
-	ErrDocRequestValidate    = DefinedError{Code: 3406, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
-	ErrDocForbidden          = DefinedError{Code: 3407, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}
-	ErrDocCommentBadRequest  = DefinedError{Code: 3408, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
-	ErrDocAttachmentNotFound = DefinedError{Code: 3409, StatusCode: http.StatusNotFound, Err: "doc attachment not found", RuErr: "Не найдено вложение"}
-	ErrDocOrderBadRequest    = DefinedError{Code: 3410, StatusCode: http.StatusBadRequest, Err: "there is a document sequence error in the request", RuErr: "ошибка последовательности документов"}
-	ErrDocChildRoleTooLow    = DefinedError{Code: 3411, StatusCode: http.StatusBadRequest, Err: "child doc role must not be lower than parent's", RuErr: "Роль дочернего документа не может быть ниже родительского"}
-	ErrDocParentRoleTooLow   = DefinedError{Code: 3412, StatusCode: http.StatusBadRequest, Err: "parent doc role must not be lower than any child", RuErr: "Роль родительского документа не может быть ниже дочернего"}
-	ErrDocMoveIntoOwnChild   = DefinedError{Code: 3413, StatusCode: http.StatusBadRequest, Err: "cannot move document into its own child", RuErr: "Невозможно переместить документ в его же дочерний"}
-	ErrDocCommentEmpty       = DefinedError{Code: 3414, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
+	ErrDocNotFound            = DefinedError{Code: 3401, StatusCode: http.StatusNotFound, Err: "doc not found", RuErr: "Документ не найден"}
+	ErrDocUpdateForbidden     = DefinedError{Code: 3402, StatusCode: http.StatusForbidden, Err: "insufficient permissions or not the author", RuErr: "У вас недостаточно прав для изменения документа"}
+	ErrDocDeleteHasChild      = DefinedError{Code: 3403, StatusCode: http.StatusForbidden, Err: "doc has child", RuErr: "Невозможно удалить, есть дочерние документы"}
+	ErrDocBadRequest          = DefinedError{Code: 3404, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
+	ErrDocCommentNotFound     = DefinedError{Code: 3405, StatusCode: http.StatusNotFound, Err: "doc comment not found", RuErr: "Не найден комментарий"}
+	ErrDocRequestValidate     = DefinedError{Code: 3406, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
+	ErrDocForbidden           = DefinedError{Code: 3407, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}
+	ErrDocCommentBadRequest   = DefinedError{Code: 3408, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
+	ErrDocAttachmentNotFound  = DefinedError{Code: 3409, StatusCode: http.StatusNotFound, Err: "doc attachment not found", RuErr: "Не найдено вложение"}
+	ErrDocOrderBadRequest     = DefinedError{Code: 3410, StatusCode: http.StatusBadRequest, Err: "there is a document sequence error in the request", RuErr: "ошибка последовательности документов"}
+	ErrDocRoleLowerThanParent = DefinedError{Code: 3411, StatusCode: http.StatusBadRequest, Err: "current document role must not be lower than parent document role", RuErr: "Роль доступа к текущему документу не может быть ниже родительского документа"}
+	ErrDocRoleHigherThanChild = DefinedError{Code: 3412, StatusCode: http.StatusBadRequest, Err: "current document role must not be higher than child document role", RuErr: "Роль доступа к текущему документу не может быть выше чем у дочернего документа"}
+	ErrDocMoveIntoOwnChild    = DefinedError{Code: 3413, StatusCode: http.StatusBadRequest, Err: "cannot move document into its own child", RuErr: "Невозможно переместить документ в его же дочерний"}
+	ErrDocCommentEmpty        = DefinedError{Code: 3414, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
 
 	// 36** - sprint errors
 	ErrSprintNotFound          = DefinedError{Code: 3601, StatusCode: http.StatusNotFound, Err: "sprint not found", RuErr: "Спринт не найден"}
