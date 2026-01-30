@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -400,10 +401,21 @@ type IssuesListFilters struct {
 	WatchedByMe  bool `json:"watched_by_me"`
 	AuthoredByMe bool `json:"authored_by_me"`
 
+	CreatedAtFrom   JSONTime `json:"created_at_from"`
+	CreatedAtTo     JSONTime `json:"created_at_to"`
+	UpdatedAtFrom   JSONTime `json:"updated_at_from"`
+	UpdatedAtTo     JSONTime `json:"updated_at_to"`
+	StartDateFrom   JSONTime `json:"start_date_from"`
+	StartDateTo     JSONTime `json:"start_date_to"`
+	TargetDateFrom  JSONTime `json:"target_date_from"`
+	TargetDateTo    JSONTime `json:"target_date_to"`
+	CompletedAtFrom JSONTime `json:"completed_at_from"`
+	CompletedAtTo   JSONTime `json:"completed_at_to"`
+
 	SearchQuery string `json:"search_query"`
 }
 
-func (filter *IssuesListFilters) Scan(value interface{}) error {
+func (filter *IssuesListFilters) Scan(value any) error {
 	if value == nil {
 		*filter = IssuesListFilters{}
 		return nil
@@ -1082,4 +1094,62 @@ func formatDate(dateStr string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("unsuported date format")
+}
+
+// JSON time in unix seconds
+type JSONTime time.Time
+
+func (d *JSONTime) UnmarshalJSON(b []byte) error {
+	ms, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
+		return err
+	}
+	*d = JSONTime(time.Unix(ms, 0))
+	return nil
+}
+
+func (d JSONTime) MarshalJSON() ([]byte, error) {
+	return fmt.Append([]byte{}, time.Time(d).Unix()), nil
+}
+
+func (d *JSONTime) Value() (driver.Value, error) {
+	if d == nil {
+		return nil, nil
+	}
+	return time.Time(*d), nil
+}
+
+func (d *JSONTime) Scan(value any) error {
+	t, ok := value.(time.Time)
+	if !ok {
+		return fmt.Errorf("error unmarshal time: %v", value)
+	}
+	*d = JSONTime(t)
+	return nil
+}
+
+func (d *JSONTime) IsNil() bool {
+	return d == nil || time.Time(*d).IsZero()
+}
+
+func (d JSONTime) Time() time.Time {
+	return time.Time(d)
+}
+
+// FilterQuery добавляет условие фильтрации по времени к запросу GORM.
+// Если время d не является нулевым, добавляется условие сравнения с полем field.
+// Параметр bigger определяет направление сравнения:
+//   - если bigger == true, добавляется условие field >= d (больше или равно)
+//   - если bigger == false, добавляется условие field <= d (меньше или равно)
+//
+// Если время d нулевое, запрос возвращается без изменений.
+func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.DB {
+	if !d.IsNil() {
+		s := ">="
+		if !bigger {
+			s = "<="
+		}
+		return query.Where(fmt.Sprintf("%s %s ?", field, s), d)
+	}
+	return query
 }
