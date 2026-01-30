@@ -462,6 +462,11 @@ func (s *Services) getIssueList(c echo.Context) error {
 		}
 	}
 
+	// Валидация
+	if searchParams.Limit > 100 {
+		return EErrorDefined(c, apierrors.ErrLimitTooHigh)
+	}
+
 	result, err := search.GetIssueListData(s.db, user, projectMember, sprint, globalSearch, searchParams, streamCallback)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
@@ -509,8 +514,10 @@ func (s *Services) exportIssueList(c echo.Context) error {
 		return EError(c, err)
 	}
 	searchParams.LightSearch = false
+	searchParams.Offset = 0
+	searchParams.Limit = 1_000_000
 
-	result, err := search.GetIssueListData(s.db, *user, dao.ProjectMember{}, &dao.Sprint{}, true, searchParams, nil)
+	result, err := search.GetIssueListData(s.db, *user, dao.ProjectMember{}, nil, true, searchParams, nil)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
 			return EErrorDefined(c, definedErr)
@@ -564,6 +571,7 @@ func (s *Services) exportIssueList(c echo.Context) error {
 			return EError(c, err)
 		}
 		w := csv.NewWriter(entry)
+		w.Comma = ';'
 
 		if err := w.Write(csvExportHeader()); err != nil {
 			return EError(c, err)
