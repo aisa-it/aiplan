@@ -27,11 +27,6 @@ func BuildIssueListQuery(
 	globalSearch bool,
 	searchParams *types.SearchParams,
 ) ([]dao.IssueWithCount, int, error) {
-	// Валидация
-	if searchParams.Limit > 100 {
-		return nil, 0, apierrors.ErrLimitTooHigh
-	}
-
 	if searchParams.GroupByParam != "" {
 		return nil, 0, apierrors.ErrUnsupportedGroup
 	}
@@ -368,11 +363,6 @@ func GetIssueListData(
 	searchParams *types.SearchParams,
 	streamCallback StreamCallback,
 ) (any, error) {
-	// Валидация
-	if searchParams.Limit > 100 {
-		return nil, apierrors.ErrLimitTooHigh
-	}
-
 	if searchParams.GroupByParam != "" && !slices.Contains(types.IssueGroupFields, searchParams.GroupByParam) {
 		return nil, apierrors.ErrUnsupportedGroup
 	}
