@@ -15,6 +15,17 @@ const (
 	ruleMinMax  = "min_max"
 	ruleLen     = "len_str"
 	ruleOnlyInt = "only_integer"
+	ruleDepends = "depends_on"
+
+	formFieldNumeric     = "numeric"
+	formFieldCheckbox    = "checkbox"
+	formFieldInput       = "input"
+	formFieldTextarea    = "textarea"
+	formFieldColor       = "color"
+	formFieldDate        = "date"
+	formFieldAttachment  = "attachment"
+	formFieldSelect      = "select"
+	formFieldMultiselect = "multiselect"
 )
 
 type FormValidateStruct struct {
@@ -28,9 +39,9 @@ type FormValidateStruct struct {
 
 var (
 	formTypeValidator = map[string]FormValidateStruct{
-		ruleMinMax:  {Name: ruleMinMax, CountOpt: 2, TypeOpt: types.Float64, Func: validateTypeMinMax, Pattern: nil, FieldTypeSupport: []string{"numeric"}},
-		ruleLen:     {Name: ruleLen, CountOpt: 2, TypeOpt: types.Float64, Func: validateTypeLenStr, Pattern: nil, FieldTypeSupport: []string{"input", "textarea"}},
-		ruleOnlyInt: {Name: ruleOnlyInt, CountOpt: 0, Func: validateTypeRegular, Pattern: strPtr("^[-+]?\\d+$"), FieldTypeSupport: []string{"numeric", "date"}},
+		ruleMinMax:  {Name: ruleMinMax, CountOpt: 2, TypeOpt: types.Float64, Func: validateTypeMinMax, Pattern: nil, FieldTypeSupport: []string{formFieldNumeric}},
+		ruleLen:     {Name: ruleLen, CountOpt: 2, TypeOpt: types.Float64, Func: validateTypeLenStr, Pattern: nil, FieldTypeSupport: []string{formFieldInput, formFieldTextarea}},
+		ruleOnlyInt: {Name: ruleOnlyInt, CountOpt: 0, Func: validateTypeRegular, Pattern: strPtr("^[-+]?\\d+$"), FieldTypeSupport: []string{formFieldNumeric, formFieldDate}},
 	}
 )
 
@@ -39,15 +50,15 @@ type validateFunc func(val interface{}, required bool, custom *types2.Validation
 
 func FormValidator() map[string]validateFunc {
 	validMap := make(map[string]validateFunc)
-	validMap["numeric"] = validateNumeric
-	validMap["checkbox"] = validateCheckbox
-	validMap["input"] = validateString
-	validMap["textarea"] = validateString
-	validMap["color"] = validateColor
-	validMap["date"] = validateTimestamp
-	validMap["attachment"] = validateUuid
-	validMap["select"] = validateSelect
-	validMap["multiselect"] = validateMultiSelect
+	validMap[formFieldNumeric] = validateNumeric
+	validMap[formFieldCheckbox] = validateCheckbox
+	validMap[formFieldInput] = validateString
+	validMap[formFieldTextarea] = validateString
+	validMap[formFieldColor] = validateColor
+	validMap[formFieldDate] = validateTimestamp
+	validMap[formFieldAttachment] = validateUuid
+	validMap[formFieldSelect] = validateSelect
+	validMap[formFieldMultiselect] = validateMultiSelect
 	return validMap
 }
 
