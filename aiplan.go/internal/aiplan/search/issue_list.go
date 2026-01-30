@@ -216,6 +216,21 @@ func BuildIssueListQuery(
 				Where("p.deleted_at IS NULL").
 				Where(dao.Issue{}.FullTextSearch(db, searchParams.Filters.SearchQuery))
 		}
+
+		query = searchParams.Filters.CreatedAtFrom.FilterQuery(query, "issues.created_at", true)
+		query = searchParams.Filters.CreatedAtTo.FilterQuery(query, "issues.created_at", false)
+
+		query = searchParams.Filters.UpdatedAtFrom.FilterQuery(query, "issues.updated_at", true)
+		query = searchParams.Filters.UpdatedAtTo.FilterQuery(query, "issues.updated_at", false)
+
+		query = searchParams.Filters.StartDateFrom.FilterQuery(query, "issues.start_date", true)
+		query = searchParams.Filters.StartDateTo.FilterQuery(query, "issues.start_date", false)
+
+		query = searchParams.Filters.TargetDateFrom.FilterQuery(query, "issues.target_date", true)
+		query = searchParams.Filters.TargetDateTo.FilterQuery(query, "issues.target_date", false)
+
+		query = searchParams.Filters.CompletedAtFrom.FilterQuery(query, "issues.completed_at", true)
+		query = searchParams.Filters.CompletedAtTo.FilterQuery(query, "issues.completed_at", false)
 	}
 
 	// Ignore slave issues
