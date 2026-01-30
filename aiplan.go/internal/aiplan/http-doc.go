@@ -2,6 +2,7 @@
 package aiplan
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -289,11 +290,11 @@ func (s *Services) createDoc(c echo.Context) error {
 		}
 
 		if doc.ReaderRole < parentDoc.ReaderRole {
-			return apierrors.ErrDocChildRoleTooLow
+			return apierrors.ErrDocRoleLowerThanParent
 		}
 
 		if doc.EditorRole < parentDoc.EditorRole {
-			return apierrors.ErrDocChildRoleTooLow
+			return apierrors.ErrDocRoleLowerThanParent
 		}
 
 		fileAsset := dao.FileAsset{
@@ -343,6 +344,7 @@ func (s *Services) createDoc(c echo.Context) error {
 // @Param docId path string true "Id документа"
 // @Param doc formData string true "документ в формате JSON" example({"title": "title text", "content": "<p>HTML-контент</p>", "reader_role": 5, "editor_role":10, "seq_id": 0, "draft": false})
 // @Param files formData file false "Вложения для документа"
+// @Param cascade_roles query bool false "применить повышение роли (при необходимости) к дочерним документам"
 // @Success 200 {object} dto.Doc "документ"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -355,6 +357,14 @@ func (s *Services) updateDoc(c echo.Context) error {
 	user := c.(DocContext).User
 	workspace := c.(DocContext).Workspace
 	workspaceMember := c.(DocContext).WorkspaceMember
+
+	cascadeRoles := false
+
+	if err := echo.QueryParamsBinder(c).
+		Bool("cascade_roles", &cascadeRoles).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
 
 	oldDocMap := StructToJSONMap(doc)
 
@@ -470,31 +480,41 @@ func (s *Services) updateDoc(c echo.Context) error {
 
 				switch field {
 				case "editor_role", "reader_role":
+					var newRole int
+
 					if field == "reader_role" {
-						if newDoc.ParentDoc != nil && newDoc.ReaderRole < newDoc.ParentDoc.ReaderRole {
-							return apierrors.ErrDocChildRoleTooLow
+						newRole = newDoc.ReaderRole
+						if newDoc.ParentDoc != nil && newRole < newDoc.ParentDoc.ReaderRole {
+							return apierrors.ErrDocRoleLowerThanParent
 						}
 					}
 					if field == "editor_role" {
-						if newDoc.ParentDoc != nil && newDoc.EditorRole < newDoc.ParentDoc.EditorRole {
-							return apierrors.ErrDocChildRoleTooLow
+						newRole = newDoc.EditorRole
+						if newDoc.ParentDoc != nil && newRole < newDoc.ParentDoc.EditorRole {
+							return apierrors.ErrDocRoleLowerThanParent
 						}
 					}
 
-					var childDocs []dao.Doc
-					if err := tx.Where("parent_doc_id = ?", newDoc.ID).Find(&childDocs).Error; err != nil {
-						return err
-					}
+					if cascadeRoles {
+						if err := CascadeUpdateChildDocsRole(tx, newDoc.ID, field, newRole); err != nil {
+							return err
+						}
+					} else {
+						var childDocs []dao.Doc
+						if err := tx.Where("parent_doc_id = ?", newDoc.ID).Find(&childDocs).Error; err != nil {
+							return err
+						}
 
-					for _, childDoc := range childDocs {
-						if field == "reader_role" {
-							if childDoc.ReaderRole < newDoc.ReaderRole {
-								return apierrors.ErrDocParentRoleTooLow
+						for _, childDoc := range childDocs {
+							if field == "reader_role" {
+								if childDoc.ReaderRole < newRole {
+									return apierrors.ErrDocRoleHigherThanChild
+								}
 							}
-						}
-						if field == "editor_role" {
-							if childDoc.EditorRole < newDoc.EditorRole {
-								return apierrors.ErrDocParentRoleTooLow
+							if field == "editor_role" {
+								if childDoc.EditorRole < newRole {
+									return apierrors.ErrDocRoleHigherThanChild
+								}
 							}
 						}
 					}
@@ -637,6 +657,44 @@ func calculateChanges(newIds, oldIds []uuid.UUID) (added []uuid.UUID, removed []
 	}
 
 	return added, removed
+}
+
+// CascadeUpdateChildDocsRole каскадно обновляет роль (reader_role или editor_role)
+// у всех дочерних документов у которых текущее значение роли меньше переданного.
+//
+// Параметры:
+//   - tx - транзакция
+//   - parentID - идентификатор родительского документа
+//   - roleField - поле изменения ("reader_role" или "editor_role")
+//   - roleValue - значение роли
+//
+// Возвращает:
+//   - error - ошибку выполнения sql или ошибку валидации входных параметров
+func CascadeUpdateChildDocsRole(tx *gorm.DB, parentID uuid.UUID, roleField string, roleValue int) error {
+
+	if roleField != "reader_role" && roleField != "editor_role" {
+		return fmt.Errorf("invalid role field: %s", roleField)
+	}
+
+	query := fmt.Sprintf(`
+		WITH RECURSIVE doc_tree AS (
+			SELECT id
+			FROM docs
+			WHERE parent_doc_id = @parent_id
+
+			UNION ALL
+
+			SELECT d.id
+			FROM docs d
+			JOIN doc_tree dt ON d.parent_doc_id = dt.id
+		)
+		UPDATE docs
+		SET %s = @role_value
+		WHERE id IN (SELECT id FROM doc_tree)
+		  AND %s < @role_value;
+	`, roleField, roleField)
+
+	return tx.Exec(query, sql.Named("parent_id", parentID), sql.Named("role_value", roleValue)).Error
 }
 
 // deleteDoc godoc
