@@ -9,22 +9,22 @@ import (
 	"gorm.io/gorm"
 )
 
-type memberSettings struct {
+type MemberSettings struct {
 	EntityID uuid.UUID
 	Load     funcLoadSettings
 	Notify   isNotifyFunc
 }
 
-func fromProject(id uuid.UUID) memberSettings {
-	return memberSettings{
+func fromProject(id uuid.UUID) MemberSettings {
+	return MemberSettings{
 		EntityID: id,
 		Load:     LoadProjectSettings,
 		Notify:   shouldProjectNotify,
 	}
 }
 
-func fromWorkspace(id uuid.UUID) memberSettings {
-	return memberSettings{
+func fromWorkspace(id uuid.UUID) MemberSettings {
+	return MemberSettings{
 		EntityID: id,
 		Load:     loadWorkspaceSettings,
 		Notify:   shouldWorkspaceNotify,

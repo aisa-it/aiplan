@@ -9,6 +9,14 @@ import (
 	"gorm.io/gorm"
 )
 
+type notifySetting int
+
+const (
+	TgSettings notifySetting = iota
+	EmailSettings
+	AppSettings
+)
+
 type MemberSettings struct {
 	EntityID uuid.UUID
 	Load     funcLoadSettings
@@ -99,9 +107,9 @@ func (u *MemberNotify) getWorkspaceRole() int {
 }
 
 // Load member notify settings
-type funcLoadSettings func(tx *gorm.DB, workspaceId uuid.UUID, r Role, ur UserRegistry) error
+type funcLoadSettings func(tx *gorm.DB, workspaceId uuid.UUID, r Role, ur UserRegistry, settings notifySetting) error
 
-func loadProjectSettings(tx *gorm.DB, projectID uuid.UUID, r Role, ur UserRegistry) error {
+func loadProjectSettings(tx *gorm.DB, projectID uuid.UUID, r Role, ur UserRegistry, settings notifySetting) error {
 	if len(ur) == 0 {
 		return nil
 	}
@@ -120,18 +128,32 @@ func loadProjectSettings(tx *gorm.DB, projectID uuid.UUID, r Role, ur UserRegist
 	for _, member := range members {
 		user := ur[member.MemberId]
 
-		if user.Has(r) {
-			user.authorProjectSettings = &member.NotificationAuthorSettingsTG
-		} else {
-			user.memberProjectSettings = &member.NotificationSettingsTG
+		var authorSettings, memberSettings *types.ProjectMemberNS
+		switch settings {
+		case TgSettings:
+			authorSettings = &member.NotificationAuthorSettingsTG
+			memberSettings = &member.NotificationSettingsTG
+		case EmailSettings:
+			authorSettings = &member.NotificationAuthorSettingsEmail
+			memberSettings = &member.NotificationSettingsEmail
+		case AppSettings:
+			authorSettings = &member.NotificationAuthorSettingsApp
+			memberSettings = &member.NotificationSettingsApp
 		}
+
+		if user.Has(r) {
+			user.authorProjectSettings = authorSettings
+		} else {
+			user.memberProjectSettings = memberSettings
+		}
+
 		ur[member.MemberId] = user
 	}
 
 	return nil
 }
 
-func loadWorkspaceSettings(tx *gorm.DB, workspaceId uuid.UUID, r Role, ur UserRegistry) error {
+func loadWorkspaceSettings(tx *gorm.DB, workspaceId uuid.UUID, r Role, ur UserRegistry, settings notifySetting) error {
 	if len(ur) == 0 {
 		return nil
 	}
