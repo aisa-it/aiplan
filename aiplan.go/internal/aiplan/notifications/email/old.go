@@ -11,7 +11,10 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/microcosm-cc/bluemonday"
 )
+
+var htmlStripPolicy *bluemonday.Policy = bluemonday.StrictPolicy()
 
 type MessageNotifyCtx struct {
 	WebUrl     string
@@ -485,4 +488,36 @@ func (es *EmailService) ProjectInvitation(projectMember dao.ProjectMember) {
 	}); err != nil {
 		slog.Error("Send project invitation email", "err", err)
 	}
+}
+
+func (es *EmailService) UserBlockedUntil(user dao.User, until time.Time) error {
+	subject := "Подозрительная активность учетной записи"
+
+	var template dao.Template
+	if err := es.db.Where("name = ?", "blocked_until").First(&template).Error; err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	if err := template.ParsedTemplate.Execute(&buf, struct {
+		Until time.Time
+	}{
+		Until: until,
+	}); err != nil {
+		return err
+	}
+
+	content, err := es.getHTML("Блокировка учетной записи", buf.String())
+	if err != nil {
+		return err
+	}
+
+	textContent := htmlStripPolicy.Sanitize(content)
+
+	return es.Send(EmailMessage{
+		To:      user.Email,
+		Subject: subject,
+		HTML:    content,
+		Text:    textContent,
+	})
 }

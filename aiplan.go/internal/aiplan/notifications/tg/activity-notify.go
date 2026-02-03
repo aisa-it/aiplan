@@ -115,7 +115,7 @@ func NewActivityTgNotification(tx *gorm.DB, act dao.ActivityI, msg TgMsg, plan N
 
 type NotifyPlan struct {
 	TableName      string
-	settings       memberSettings
+	settings       MemberSettings
 	ActivitySender int64
 	Entity         actField.ActivityField
 	AuthorRole     role

@@ -79,6 +79,24 @@ func (u *MemberNotify) GetUser() *dao.User {
 	return u.user
 }
 
+//func (u *MemberNotify) I(field string, verb string, entity actField.ActivityField, f isNotifyFunc, authorRole Role)  {
+//  u.
+//  if f(u, field, verb, entity, u.Has(authorRole)){
+//
+//  }
+//}
+
+func (u *MemberNotify) Allowed(
+	field string,
+	verb string,
+	entity actField.ActivityField,
+	authorRole Role,
+	settings *MemberSettings,
+) bool {
+	isAuthor := u.Has(authorRole)
+	return settings.Notify(u, field, verb, entity, isAuthor)
+}
+
 //func (ur UserRegistry) AddUser(user *dao.User, roles ...Role) bool {
 //	if user == nil {
 //		return false

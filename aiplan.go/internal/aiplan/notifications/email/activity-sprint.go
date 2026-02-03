@@ -1,12 +1,8 @@
 package email
 
 import (
-	"bytes"
 	"fmt"
-	"log/slog"
 	"strings"
-	"text/template"
-	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
@@ -15,70 +11,80 @@ import (
 	"gorm.io/gorm"
 )
 
-var sprintCollectors = map[actField.ActivityField]activityFieldCollector[dao.SprintActivity]{
-	actField.Watchers.Field:    collectAll[dao.SprintActivity],
-	actField.Issue.Field:       collectAll[dao.SprintActivity],
-	actField.Description.Field: collectOne[dao.SprintActivity],
-	actField.Name.Field:        collectOne[dao.SprintActivity],
-	actField.StartDate.Field:   collectOne[dao.SprintActivity],
-	actField.EndDate.Field:     collectOne[dao.SprintActivity],
-}
+// pipeline
+//func NewSprintPipeline( /*steps []member_role.UsersStep*/ templates *EmailTemplates) LayerPipeline[dao.SprintActivity, *dao.Sprint] {
+//
+//	return LayerPipeline[dao.SprintActivity, *dao.Sprint]{
+//		Load:  loadSprintActivities,
+//		Group: groupSprint,
+//
+//		BuildRecipients: func(tx *gorm.DB, acts []dao.SprintActivity, entity *dao.Sprint) []member_role.MemberNotify {
+//			steps := []member_role.UsersStep{
+//				member_role.AddWorkspaceAdmins(entity.WorkspaceId),
+//			}
+//			plan := emailPlan{
+//				TableName:  dao.SprintActivity{}.TableName(),
+//				settings:   member_role.FromWorkspace(entity.WorkspaceId),
+//				AuthorRole: member_role.WorkspaceAdminRole,
+//				Steps:      steps,
+//			}
+//			return BuildRecipientsFromActivities(tx, acts, getSprintActivityAuthor, plan)
+//		},
+//
+//		BuildDigest: func(tx *gorm.DB, acts []dao.SprintActivity, sprint *dao.Sprint) (map[string]fieldPrerender, int) {
+//			return renderDigest(tx, templates, acts, sprint, sprintFieldRenderMap, sprintCollectors)
+//		},
+//
+//		Subject: func(s *dao.Sprint) string {
+//			return fmt.Sprintf("Обновления спринта %s", s.GetFullName())
+//		},
+//
+//		BuildMessage: buildSprintDigest(emailPlan{
+//			settings:   member_role.FromWorkspace(uuid.Nil), // будет перезаписан при реальном использовании
+//			AuthorRole: member_role.WorkspaceAdminRole,
+//		}),
+//		FilterEmpty: true,
+//	}
+//}
 
-func (s *EmailService) ProcessSprint() {
-	s.sending = true
+func NewSprintPipeline(templates *EmailTemplates) LayerPipeline[dao.SprintActivity, *dao.Sprint] {
 
-	defer func() {
-		s.sending = false
-	}()
-
-	pipeline := NewSprintPipeline()
-	buckets := RunLayerPipeline(s.db, pipeline)
-	if len(buckets) == 0 {
-		return
+	plan := &emailPlan{
+		TableName:  dao.SprintActivity{}.TableName(),
+		AuthorRole: member_role.ActionAuthor,
 	}
-	messages := BuildEmailMessages(buckets, pipeline)
-	if len(messages) == 0 {
-		return
-	}
 
-	for _, m := range messages {
-		if err := s.Send(m); err != nil {
-			slog.Error("send email", "to", m.To, "err", err)
-		}
-	}
-
-	return
-}
-
-func NewSprintPipeline( /*steps []member_role.UsersStep*/ ) LayerPipeline[dao.SprintActivity, *dao.Sprint] {
 	return LayerPipeline[dao.SprintActivity, *dao.Sprint]{
+		Plan:  plan,
 		Load:  loadSprintActivities,
 		Group: groupSprint,
 
-		BuildRecipients: func(tx *gorm.DB, acts []dao.SprintActivity, entity *dao.Sprint) []member_role.MemberNotify {
-			steps := []member_role.UsersStep{
-				member_role.AddWorkspaceAdmins(entity.WorkspaceId),
+		BuildRecipients: func(tx *gorm.DB, acts []dao.SprintActivity, sprint *dao.Sprint) []member_role.MemberNotify {
+			plan.settings = member_role.FromWorkspace(sprint.WorkspaceId)
+			plan.Steps = []member_role.UsersStep{
+				member_role.AddWorkspaceAdmins(sprint.WorkspaceId),
 			}
-			return BuildRecipientsFromActivities(tx, acts, steps, getSprintActivityAuthor)
+			return BuildRecipientsFromActivities(tx, acts, getSprintActivityAuthor, plan)
 		},
 
 		BuildDigest: func(tx *gorm.DB, acts []dao.SprintActivity, sprint *dao.Sprint) (map[string]fieldPrerender, int) {
-			templates := LoadTemplates(tx)
-			return renderSprintDigest(tx, templates, acts, sprint)
+			return renderDigest(tx, templates, acts, sprint, sprintFieldRenderMap, sprintCollectors)
 		},
+
+		//BuildMessage: func(b *ActivityBucket[dao.SprintActivity, *dao.Sprint], r Recipient) EmailMessage {
+		//  buildSprintDigest(emailPlan{
+		//    			settings:   member_role.FromWorkspace(uuid.Nil), // будет перезаписан при реальном использовании
+		//    			AuthorRole: member_role.WorkspaceAdminRole,
+		//    		}),
+		//return buildMessageWithPlan(b, r, plan.(b.Entity.WorkspaceId))
+		//},
 
 		Subject: func(s *dao.Sprint) string {
 			return fmt.Sprintf("Обновления спринта %s", s.GetFullName())
 		},
 
-		BuildMessage: buildSprintDigest,
-
 		FilterEmpty: true,
 	}
-}
-
-func getSprintActivityAuthor(act dao.SprintActivity) *dao.User {
-	return act.Actor
 }
 
 func groupSprint(acts []dao.SprintActivity) ActivityBuckets[dao.SprintActivity, *dao.Sprint] {
@@ -89,11 +95,30 @@ func groupSprint(acts []dao.SprintActivity) ActivityBuckets[dao.SprintActivity, 
 	)
 }
 
+func getSprintActivityAuthor(act dao.SprintActivity) *dao.User {
+	return act.Actor
+}
+
+// collectors
+var sprintCollectors = map[actField.ActivityField]activityFieldCollector[dao.SprintActivity]{
+	actField.Watchers.Field:    collectAll[dao.SprintActivity],
+	actField.Issue.Field:       collectAll[dao.SprintActivity],
+	actField.Description.Field: collectOne[dao.SprintActivity],
+	actField.Name.Field:        collectOne[dao.SprintActivity],
+	actField.StartDate.Field:   collectOne[dao.SprintActivity],
+	actField.EndDate.Field:     collectOne[dao.SprintActivity],
+}
+
 func buildSprintDigest(b *ActivityBucket[dao.SprintActivity, *dao.Sprint], r Recipient) EmailMessage {
 
 	var parts []string
 	var cnt int
-	for _, html := range b.Prepared {
+	for field, html := range b.Prepared {
+		r.MemberNotify.Allowed(field, "", actField.Sprint.Field, member_role.ActionAuthor)
+		//html.
+		//if r.MemberNotify.I()
+		//r.
+		//r.MemberNotify
 		//if !r.MemberNotify.Allowed(field) {
 		//	continue
 		//}
@@ -111,22 +136,39 @@ func buildSprintDigest(b *ActivityBucket[dao.SprintActivity, *dao.Sprint], r Rec
 		To:   r.Email,
 		HTML: body,
 	}
-
 }
 
-// type SprintActivityBuckets map[uuid.UUID]ActivityBucket
-type ActivityBuckets[A dao.ActivityI, E dao.IDaoAct] map[uuid.UUID]*ActivityBucket[A, E]
-
-type ActivityBucket[A dao.ActivityI, E dao.IDaoAct] struct {
-	Entity     E
-	Activities []A
-
-	MemberNotify []member_role.MemberNotify
-	Prepared     map[string]fieldPrerender
-
-	FirstAt time.Time
-	LastAt  time.Time
+var sprintFieldRenderMap = map[actField.ActivityField]FuncFieldRender[dao.SprintActivity, *dao.Sprint]{
+	actField.Issue.Field: renderSprintIssue,
+	actField.Name.Field:  renderSprintName,
 }
+
+func renderSprintIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, sprint *dao.Sprint) (string, int) {
+	spec := entitySpec[dao.SprintActivity, dao.Issue]{
+		entityID:    getIssueIdFromSprintActivity,
+		entityTitle: func(i dao.Issue) string { return i.FullIssueName() },
+		loadRemoved: getRemovedIssues,
+	}
+
+	views, count := BuildEntityChangeDigest(tx, acts, sprint.Issues, spec)
+
+	ctx := collectAllCtx{
+		Key:   "Задачи",
+		Views: views,
+	}
+
+	return t.RenderCollectAll(ctx, count)
+}
+
+func renderSprintName(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) (string, int) {
+	return t.RenderCollectOne(collectOneCtx{
+		Key: "Название",
+		New: toValueCtx(&acts[0].NewValue, nil),
+		Old: toValueCtx(acts[0].OldValue, nil),
+	})
+}
+
+//
 
 func loadSprintActivities(tx *gorm.DB) []dao.SprintActivity {
 	var activities []dao.SprintActivity
@@ -146,89 +188,6 @@ func loadSprintActivities(tx *gorm.DB) []dao.SprintActivity {
 	return activities
 }
 
-type fieldPrerender struct {
-	Value string
-	Count int
-}
-
-func renderSprintDigest(
-	tx *gorm.DB,
-	templates EmailTemplates,
-	activities []dao.SprintActivity,
-	sprint *dao.Sprint,
-) (map[string]fieldPrerender, int) {
-
-	result := make(map[string]fieldPrerender)
-	totalChanges := 0
-
-	digest := CollectActivitiesByField(activities, sprintCollectors)
-
-	for field, acts := range digest {
-		switch field {
-		case actField.Issue.Field.String():
-			if val, cnt := templates.sprintIssueRender(tx, acts, sprint); cnt > 0 {
-				result[field] = fieldPrerender{
-					Value: val,
-					Count: cnt,
-				}
-				totalChanges += cnt
-			}
-		case actField.Name.Field.String():
-			if val, cnt := templates.sprintNameRender(tx, acts, sprint); cnt > 0 {
-				result[field] = fieldPrerender{
-					Value: val,
-					Count: cnt,
-				}
-				totalChanges += cnt
-			}
-		}
-	}
-	return result, totalChanges
-}
-
-func (t *EmailTemplates) sprintIssueRender(tx *gorm.DB, acts []dao.SprintActivity, sprint *dao.Sprint) (string, int) {
-	f := entitySpec[dao.SprintActivity, dao.Issue]{
-		entityID:    getIssueIdFromSprintActivity,
-		isAdded:     defaultIsAdded[dao.SprintActivity],
-		isRemoved:   defaultActIsRemoved[dao.SprintActivity],
-		entityTitle: func(i dao.Issue) string { return i.FullIssueName() },
-		loadRemoved: getRemovedIssues,
-	}
-
-	views, count := BuildEntityChangeDigest(tx, acts, sprint.Issues, f)
-	context := collectAllCtx{
-		"Задачи",
-		views,
-	}
-	var buf bytes.Buffer
-	if err := t.CollectAll.Execute(&buf, context); err != nil {
-		return "", 0
-	}
-	return buf.String(), count
-}
-
-func (t *EmailTemplates) sprintNameRender(tx *gorm.DB, acts []dao.SprintActivity, sprint *dao.Sprint) (string, int) {
-	ff := func(s *string) *actValueCtx {
-		if s != nil {
-			return &actValueCtx{
-				Value: s,
-				Body:  nil,
-			}
-		}
-		return nil
-	}
-	context := collectOneCtx{
-		Key: "Название",
-		New: ff(&acts[0].NewValue),
-		Old: ff(acts[0].OldValue),
-	}
-	var buf bytes.Buffer
-	if err := t.CollectOne.Execute(&buf, context); err != nil {
-		return "", 0
-	}
-	return buf.String(), 1
-}
-
 func getRemovedIssues(tx *gorm.DB, ids []uuid.UUID) map[uuid.UUID]string {
 	var issues []dao.Issue
 	res := make(map[uuid.UUID]string)
@@ -246,33 +205,6 @@ func getRemovedIssues(tx *gorm.DB, ids []uuid.UUID) map[uuid.UUID]string {
 	return res
 }
 
-type EmailTemplates struct {
-	CollectAll *template.Template
-	CollectOne *template.Template
-}
-
-func LoadTemplates(tx *gorm.DB) EmailTemplates {
-	names := []string{
-		"v2_collect_all",
-		"v2_collect_one",
-	}
-	var templates []dao.Template
-	if err := tx.Where("name in (?)", names).Find(&templates).Error; err != nil {
-		return EmailTemplates{}
-	}
-
-	var res EmailTemplates
-	for _, t := range templates {
-		switch t.Name {
-		case "v2_collect_all":
-			res.CollectAll = t.ParsedTemplate
-		case "v2_collect_one":
-			res.CollectOne = t.ParsedTemplate
-		}
-	}
-	return res
-}
-
 func getIssueIdFromSprintActivity(a dao.SprintActivity) uuid.UUID {
 	switch a.Verb {
 	case actField.VerbAdded:
@@ -282,12 +214,4 @@ func getIssueIdFromSprintActivity(a dao.SprintActivity) uuid.UUID {
 	default:
 		return uuid.Nil
 	}
-}
-
-func defaultIsAdded[A dao.ActivityI](a A) bool {
-	return a.GetVerb() == actField.VerbAdded
-}
-
-func defaultActIsRemoved[A dao.ActivityI](a A) bool {
-	return a.GetVerb() == actField.VerbRemoved
 }
