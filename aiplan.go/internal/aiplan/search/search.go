@@ -3,6 +3,7 @@
 package search
 
 import (
+	"fmt"
 	"log/slog"
 	"slices"
 
@@ -229,7 +230,8 @@ func FetchIssuesByGroups(
 				entity = label.ToLightDTO()
 			}
 		case "assignees":
-			if len(searchParams.Filters.AssigneeIds) > 0 && !slices.Contains(searchParams.Filters.AssigneeIds, group.Key) {
+			if !searchParams.Filters.AssigneeIds.IsEmpty() && !searchParams.Filters.AssigneeIds.Contains(group.Key) {
+				fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
 				continue
 			}
 			if group.Key == "" {
@@ -245,7 +247,7 @@ func FetchIssuesByGroups(
 				entity = u.ToLightDTO()
 			}
 		case "watchers":
-			if len(searchParams.Filters.WatcherIds) > 0 && !slices.Contains(searchParams.Filters.WatcherIds, group.Key) {
+			if !searchParams.Filters.WatcherIds.IsEmpty() && !searchParams.Filters.WatcherIds.Contains(group.Key) {
 				continue
 			}
 			if group.Key == "" {

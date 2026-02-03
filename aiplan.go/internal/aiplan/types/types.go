@@ -382,11 +382,87 @@ func (f *FormFieldsSlice) Scan(value interface{}) error {
 	return nil
 }
 
+// FilterUUIDs представляет фильтр для работы с массивом UUID.
+// Используется для фильтрации по списку идентификаторов с поддержкой пустых значений.
+// Поля:
+//   - Array: основной массив UUID для фильтрации
+//   - IncludeEmpty: флаг, указывающий на необходимость включения пустых значений (например, NULL в базе данных)
+//
+// Методы типа обеспечивают сериализацию/десериализацию в JSON, работу с базой данных и проверку наличия значений.
+type FilterUUIDs struct {
+	Array        []uuid.UUID
+	IncludeEmpty bool
+}
+
+func (fa *FilterUUIDs) UnmarshalJSON(data []byte) error {
+	var ids []string
+	if err := json.Unmarshal(data, &ids); err != nil {
+		return err
+	}
+
+	fa.Array = make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			fa.IncludeEmpty = true
+			continue
+		}
+		parsedId, err := uuid.FromString(id)
+		if err != nil {
+			return err
+		}
+		fa.Array = append(fa.Array, parsedId)
+	}
+	return nil
+}
+
+func (fa FilterUUIDs) MarshalJSON() ([]byte, error) {
+	ss := make([]string, 0, len(fa.Array)+1)
+	if fa.IncludeEmpty {
+		ss = append(ss, "")
+	}
+	for _, id := range fa.Array {
+		ss = append(ss, id.String())
+	}
+	return json.Marshal(ss)
+}
+
+func (fa FilterUUIDs) IsEmpty() bool {
+	return len(fa.Array) == 0 && !fa.IncludeEmpty
+}
+
+func (filter *FilterUUIDs) Scan(value any) error {
+	if value == nil {
+		*filter = FilterUUIDs{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	return json.Unmarshal(bytes, filter)
+}
+
+func (filter *FilterUUIDs) Contains(str string) bool {
+	for _, id := range filter.Array {
+		if id.String() == str {
+			return true
+		}
+	}
+	return false
+}
+
 // IssuesListFilters type
 type IssuesListFilters struct {
-	AuthorIds   []string `json:"authors"`
-	AssigneeIds []string `json:"assignees"`
-	WatcherIds  []string `json:"watchers"`
+	AuthorIds   []string    `json:"authors"`
+	AssigneeIds FilterUUIDs `json:"assignees,omitempty"`
+	WatcherIds  FilterUUIDs `json:"watchers,omitempty"`
 
 	StateIds       []uuid.UUID `json:"states"`
 	Priorities     []string    `json:"priorities"`

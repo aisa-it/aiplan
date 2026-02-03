@@ -74,12 +74,12 @@ func BuildIssueListQuery(
 			query = query.Where("issues.created_by_id in (?)", searchParams.Filters.AuthorIds)
 		}
 
-		if len(searchParams.Filters.AssigneeIds) > 0 {
+		if !searchParams.Filters.AssigneeIds.IsEmpty() {
 			q := db.Where("issues.id in (?)",
 				db.Select("issue_id").
-					Where("assignee_id in (?)", searchParams.Filters.AssigneeIds).
+					Where("assignee_id in (?)", searchParams.Filters.AssigneeIds.Array).
 					Model(&dao.IssueAssignee{}))
-			if slices.Contains(searchParams.Filters.AssigneeIds, "") {
+			if searchParams.Filters.AssigneeIds.IncludeEmpty {
 				q = q.Or("issues.id not in (?)", db.
 					Select("issue_id").
 					Model(&dao.IssueAssignee{}))
@@ -87,12 +87,12 @@ func BuildIssueListQuery(
 			query = query.Where(q)
 		}
 
-		if len(searchParams.Filters.WatcherIds) > 0 {
+		if !searchParams.Filters.WatcherIds.IsEmpty() {
 			q := db.Where("issues.id in (?)",
 				db.Select("issue_id").
-					Where("watcher_id in (?)", searchParams.Filters.WatcherIds).
+					Where("watcher_id in (?)", searchParams.Filters.WatcherIds.Array).
 					Model(&dao.IssueWatcher{}))
-			if slices.Contains(searchParams.Filters.WatcherIds, "") {
+			if searchParams.Filters.WatcherIds.IncludeEmpty {
 				q = q.Or("issues.id not in (?)", db.
 					Select("issue_id").
 					Model(&dao.IssueWatcher{}))
@@ -440,12 +440,12 @@ func GetIssueListData(
 				query = query.Where("issues.created_by_id in (?)", searchParams.Filters.AuthorIds)
 			}
 
-			if len(searchParams.Filters.AssigneeIds) > 0 {
+			if !searchParams.Filters.AssigneeIds.IsEmpty() {
 				q := db.Where("issues.id in (?)",
 					db.Select("issue_id").
-						Where("assignee_id in (?)", searchParams.Filters.AssigneeIds).
+						Where("assignee_id in (?)", searchParams.Filters.AssigneeIds.Array).
 						Model(&dao.IssueAssignee{}))
-				if slices.Contains(searchParams.Filters.AssigneeIds, "") {
+				if searchParams.Filters.AssigneeIds.IncludeEmpty {
 					q = q.Or("issues.id not in (?)", db.
 						Select("issue_id").
 						Model(&dao.IssueAssignee{}))
@@ -453,12 +453,12 @@ func GetIssueListData(
 				query = query.Where(q)
 			}
 
-			if len(searchParams.Filters.WatcherIds) > 0 {
+			if !searchParams.Filters.WatcherIds.IsEmpty() {
 				q := db.Where("issues.id in (?)",
 					db.Select("issue_id").
-						Where("watcher_id in (?)", searchParams.Filters.WatcherIds).
+						Where("watcher_id in (?)", searchParams.Filters.WatcherIds.Array).
 						Model(&dao.IssueWatcher{}))
-				if slices.Contains(searchParams.Filters.WatcherIds, "") {
+				if searchParams.Filters.WatcherIds.IncludeEmpty {
 					q = q.Or("issues.id not in (?)", db.
 						Select("issue_id").
 						Model(&dao.IssueWatcher{}))
