@@ -81,6 +81,7 @@ func preloadIssueActivity(tx *gorm.DB, id uuid.UUID) *dao.Issue {
 		Preload("Assignees").
 		Preload("Watchers").
 		Preload("Parent.Project").
+		Preload("Links").
 		Where("issues.id = ?", id).
 		First(&issue).Error; err != nil {
 		slog.Error("Get IssueActivity", "err", err)

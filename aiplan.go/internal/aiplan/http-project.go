@@ -1732,21 +1732,17 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add blockers
 		if len(issue.BlockersList) > 0 {
-			var newBlockers []dao.IssueBlocker
-			for _, blocker := range issue.BlockersList {
-				blockerUUID, err := uuid.FromString(fmt.Sprint(blocker))
-				if err != nil {
-					return err
-				}
-				newBlockers = append(newBlockers, dao.IssueBlocker{
+			newBlockers := make([]dao.IssueBlocker, len(issue.BlockersList))
+			for i, blocker := range issue.BlockersList {
+				newBlockers[i] = dao.IssueBlocker{
 					Id:          dao.GenUUID(),
-					BlockedById: blockerUUID,
+					BlockedById: blocker,
 					BlockId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
 				return err
@@ -1756,9 +1752,9 @@ func (s *Services) createIssue(c echo.Context) error {
 		// Add assignees
 		if len(issue.AssigneesList) > 0 {
 			issue.AssigneesList = utils.SetToSlice(utils.SliceToSet(issue.AssigneesList))
-			var newAssignees []dao.IssueAssignee
-			for _, assignee := range issue.AssigneesList {
-				newAssignees = append(newAssignees, dao.IssueAssignee{
+			newAssignees := make([]dao.IssueAssignee, len(issue.AssigneesList))
+			for i, assignee := range issue.AssigneesList {
+				newAssignees[i] = dao.IssueAssignee{
 					Id:          dao.GenUUID(),
 					AssigneeId:  assignee,
 					IssueId:     issueNew.ID,
@@ -1766,7 +1762,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
 				return err
@@ -1776,9 +1772,9 @@ func (s *Services) createIssue(c echo.Context) error {
 		// Add watchers
 		if len(issue.WatchersList) > 0 {
 			issue.WatchersList = utils.SetToSlice(utils.SliceToSet(issue.WatchersList))
-			var newWatchers []dao.IssueWatcher
-			for _, watcher := range issue.WatchersList {
-				newWatchers = append(newWatchers, dao.IssueWatcher{
+			newWatchers := make([]dao.IssueWatcher, len(issue.WatchersList))
+			for i, watcher := range issue.WatchersList {
+				newWatchers[i] = dao.IssueWatcher{
 					Id:          dao.GenUUID(),
 					WatcherId:   watcher,
 					IssueId:     issueNew.ID,
@@ -1786,7 +1782,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
 				return err
@@ -1795,9 +1791,9 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add labels
 		if len(issue.LabelsList) > 0 {
-			var newLabels []dao.IssueLabel
-			for _, label := range issue.LabelsList {
-				newLabels = append(newLabels, dao.IssueLabel{
+			newLabels := make([]dao.IssueLabel, len(issue.LabelsList))
+			for i, label := range issue.LabelsList {
+				newLabels[i] = dao.IssueLabel{
 					Id:          dao.GenUUID(),
 					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issueNew.ID,
@@ -1805,7 +1801,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
 				return err
@@ -1814,23 +1810,38 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add blocked
 		if len(issue.BlocksList) > 0 {
-			var newBlocked []dao.IssueBlocker
-			for _, block := range issue.BlocksList {
-				blockUUID, err := uuid.FromString(fmt.Sprint(block))
-				if err != nil {
-					return err
-				}
-				newBlocked = append(newBlocked, dao.IssueBlocker{
+			newBlocked := make([]dao.IssueBlocker, len(issue.BlocksList))
+			for i, block := range issue.BlocksList {
+				newBlocked[i] = dao.IssueBlocker{
 					Id:          dao.GenUUID(),
-					BlockId:     blockUUID,
+					BlockId:     block,
 					BlockedById: issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newBlocked, 10).Error; err != nil {
+				return err
+			}
+		}
+		if issue.Links != nil && len(issue.Links) > 0 {
+			newLinks := make([]dao.IssueLink, len(issue.Links))
+			for i, link := range issue.Links {
+				newLinks[i] = dao.IssueLink{
+					Id:          dao.GenUUID(),
+					Title:       link.Title,
+					Url:         link.Url,
+					CreatedById: userID,
+					UpdatedById: userID,
+					IssueId:     issueNew.ID,
+					ProjectId:   project.ID,
+					WorkspaceId: project.WorkspaceId,
+				}
+			}
+
+			if err := tx.CreateInBatches(newLinks, 10).Error; err != nil {
 				return err
 			}
 		}
