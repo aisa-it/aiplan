@@ -6,6 +6,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	memNotify "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/html"
 	"golang.org/x/sync/errgroup"
@@ -118,10 +119,13 @@ func (es *EmailService) worker(emailChan <-chan EmailMessage) error {
 }
 
 type emailPlan struct {
-	TableName string
-	settings  memNotify.MemberSettings
-	//Entity         actField.ActivityField
+	TableName  string
+	Entity     actField.ActivityField
 	AuthorRole memNotify.Role
+}
 
-	Steps []memNotify.UsersStep
+type EmailContext struct {
+	Settings memNotify.MemberSettings
+	Steps    []memNotify.UsersStep
+	Plan     *emailPlan
 }

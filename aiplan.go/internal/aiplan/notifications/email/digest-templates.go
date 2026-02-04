@@ -2,10 +2,18 @@ package email
 
 import (
 	"bytes"
+	"log/slog"
 	"text/template"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"gorm.io/gorm"
+)
+
+const (
+	templateCollectAll = "v2_collect_all"
+	templateCollectOne = "v2_collect_one"
+	templateBody       = "v2_body"
+	templateActivity   = "v2_activity"
 )
 
 type actValueCtx struct {
@@ -34,15 +42,24 @@ type collectAllCtx struct {
 	Views []DigestView
 }
 
+type bodyCtx struct {
+	Title string
+	Body  string
+}
+
 type EmailTemplates struct {
 	CollectAll *template.Template
 	CollectOne *template.Template
+	Body       *template.Template
+	Activity   *template.Template
 }
 
 func LoadTemplates(tx *gorm.DB) EmailTemplates {
 	names := []string{
-		"v2_collect_all",
-		"v2_collect_one",
+		templateCollectAll,
+		templateCollectOne,
+		templateBody,
+		templateActivity,
 	}
 	var templates []dao.Template
 	if err := tx.Where("name in (?)", names).Find(&templates).Error; err != nil {
@@ -52,10 +69,14 @@ func LoadTemplates(tx *gorm.DB) EmailTemplates {
 	var res EmailTemplates
 	for _, t := range templates {
 		switch t.Name {
-		case "v2_collect_all":
+		case templateCollectAll:
 			res.CollectAll = t.ParsedTemplate
-		case "v2_collect_one":
+		case templateCollectOne:
 			res.CollectOne = t.ParsedTemplate
+		case templateBody:
+			res.Body = t.ParsedTemplate
+		case templateActivity:
+			res.Activity = t.ParsedTemplate
 		}
 	}
 	return res
@@ -79,4 +100,30 @@ func (t *EmailTemplates) RenderCollectAll(c collectAllCtx, count int) (string, i
 		return "", 0
 	}
 	return buf.String(), count
+}
+
+func (t *EmailTemplates) RenderActivity(c bodyCtx) string {
+	//if count == 0 {
+	//  return "", 0
+	//}
+
+	var buf bytes.Buffer
+	if err := t.Activity.Execute(&buf, c); err != nil {
+		slog.Error("err", err.Error())
+		return ""
+	}
+	return buf.String()
+}
+
+func (t *EmailTemplates) RenderBody(c bodyCtx) string {
+	//if count == 0 {
+	//  return "", 0
+	//}
+
+	var buf bytes.Buffer
+	if err := t.Body.Execute(&buf, c); err != nil {
+		slog.Error("err", err.Error())
+		return ""
+	}
+	return buf.String()
 }
