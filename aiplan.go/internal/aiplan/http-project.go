@@ -2090,6 +2090,20 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	var issueExists bool
+	if err := s.db.Model(&dao.IssueLabel{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.IssueLabel{}).
+				Select("1").
+				Where("label_id = ?", label.ID),
+		).
+		Find(&issueExists).Error; err != nil {
+		return EError(c, err)
+	}
+	if issueExists {
+		return EErrorDefined(c, apierrors.ErrLabelNotEmptyCannotDelete)
+	}
+
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, label, &user)
 		if err != nil {
