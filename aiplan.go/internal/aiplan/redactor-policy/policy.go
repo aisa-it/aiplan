@@ -64,6 +64,7 @@ func init() {
 
 	UgcPolicy.AllowAttrs("class").Matching(classRegexp).OnElements("span")
 	UgcPolicy.AllowAttrs("data-issue-table-params", "style", "class").OnElements("table")
+	UgcPolicy.AllowAttrs("contenteditable").OnElements("td", "th")
 
 	UgcPolicy.AllowAttrs("spellcheck", "class").OnElements("pre")
 	UgcPolicy.AllowAttrs("data-color", "style").OnElements("mark")
