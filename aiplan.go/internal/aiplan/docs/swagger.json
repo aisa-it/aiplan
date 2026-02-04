@@ -19262,6 +19262,12 @@
                 "only_admin": {
                     "type": "boolean"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "sort_order": {
                     "type": "integer"
                 },
@@ -19269,7 +19275,8 @@
                     "type": "string",
                     "enum": [
                         "string",
-                        "boolean"
+                        "boolean",
+                        "select"
                     ]
                 }
             }
@@ -20290,6 +20297,12 @@
                 "name": {
                     "type": "string"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "project_id": {
                     "type": "string"
                 },
@@ -21043,6 +21056,12 @@
                 "only_admin": {
                     "type": "boolean"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "project_id": {
                     "type": "string"
                 },
@@ -21607,6 +21626,12 @@
                 },
                 "only_admin": {
                     "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "sort_order": {
                     "type": "integer"
@@ -22476,6 +22501,9 @@
                         }
                     ],
                     "x-nullable": true
+                },
+                "issue_name_field": {
+                    "type": "boolean"
                 },
                 "label": {
                     "type": "string"

@@ -19270,6 +19270,12 @@ const docTemplate = `{
                 "only_admin": {
                     "type": "boolean"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "sort_order": {
                     "type": "integer"
                 },
@@ -19277,7 +19283,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "string",
-                        "boolean"
+                        "boolean",
+                        "select"
                     ]
                 }
             }
@@ -20298,6 +20305,12 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "project_id": {
                     "type": "string"
                 },
@@ -21051,6 +21064,12 @@ const docTemplate = `{
                 "only_admin": {
                     "type": "boolean"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "project_id": {
                     "type": "string"
                 },
@@ -21615,6 +21634,12 @@ const docTemplate = `{
                 },
                 "only_admin": {
                     "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "sort_order": {
                     "type": "integer"
@@ -22484,6 +22509,9 @@ const docTemplate = `{
                         }
                     ],
                     "x-nullable": true
+                },
+                "issue_name_field": {
+                    "type": "boolean"
                 },
                 "label": {
                     "type": "string"

@@ -3379,9 +3379,18 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 	}
 
 	// Валидация типа
-	validTypes := map[string]bool{"string": true, "boolean": true}
+	validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
 	if !validTypes[request.Type] {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
+	}
+
+	// Для типа select требуются опции
+	var options []string
+	if request.Type == "select" {
+		if len(request.Options) == 0 {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
+		}
+		options = request.Options
 	}
 
 	template := dao.ProjectPropertyTemplate{
@@ -3390,6 +3399,7 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		WorkspaceId: project.WorkspaceId,
 		Name:        strings.TrimSpace(request.Name),
 		Type:        request.Type,
+		Options:     options,
 		OnlyAdmin:   request.OnlyAdmin,
 		SortOrder:   request.SortOrder,
 		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -3452,13 +3462,36 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		}
 		updates["name"] = name
 	}
+
+	// Определяем тип для валидации options
+	newType := template.Type
 	if request.Type != nil {
-		validTypes := map[string]bool{"string": true, "boolean": true}
+		validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
 		if !validTypes[*request.Type] {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 		}
+		newType = *request.Type
 		updates["type"] = *request.Type
 	}
+
+	// Обработка options
+	if request.Options != nil {
+		updates["options"] = *request.Options
+	}
+
+	// Для типа select проверяем наличие options
+	if newType == "select" {
+		var finalOptions []string
+		if request.Options != nil {
+			finalOptions = *request.Options
+		} else {
+			finalOptions = template.Options
+		}
+		if len(finalOptions) == 0 {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
+		}
+	}
+
 	if request.OnlyAdmin != nil {
 		updates["only_admin"] = *request.OnlyAdmin
 	}
