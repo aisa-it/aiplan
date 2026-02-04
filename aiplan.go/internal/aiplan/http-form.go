@@ -550,7 +550,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 
 	var uuidAttach string
 	for _, field := range resultAnswers {
-		if field.Type == "attachment" {
+		if field.Type == "attachment" && field.Val != nil {
 			uuidAttach = fmt.Sprint(field.Val)
 		}
 	}
