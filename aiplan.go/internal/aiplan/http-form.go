@@ -1031,7 +1031,19 @@ func formAnswer(answers types2.FormFieldsSlice, form *dao.Form) (types2.FormFiel
 
 func checkFormFields(fields *types2.FormFieldsSlice) error {
 	validator := FormValidator()
+	var checkIssueNameField bool
 	for i, field := range *fields {
+		if field.IssueNameField {
+			if field.Type != formFieldInput {
+				return fmt.Errorf("issue_name_field only input type")
+			}
+			if checkIssueNameField {
+				return fmt.Errorf("issue_name_field duplicate")
+			}
+			checkIssueNameField = true
+			(*fields)[i].Required = true
+			(*fields)[i].DependOn = nil
+		}
 		if _, ok := validator[field.Type]; !ok {
 			return fmt.Errorf("unknown field type")
 		}
@@ -1087,25 +1099,25 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 		}
 
 		switch field.Type {
-		case "numeric":
+		case formFieldNumeric:
 			(*fields)[i].Validate.ValueType = "numeric"
-		case "checkbox":
+		case formFieldCheckbox:
 			(*fields)[i].Validate.ValueType = "bool"
-		case "input":
+		case formFieldInput:
 			(*fields)[i].Validate.ValueType = "string"
-		case "textarea":
+		case formFieldTextarea:
 			(*fields)[i].Validate.ValueType = "string"
-		case "color":
+		case formFieldColor:
 			(*fields)[i].Validate.ValueType = "string"
-		case "date":
+		case formFieldDate:
 			(*fields)[i].Validate.ValidationType = "only_integer min_max"
 			(*fields)[i].Validate.Opt = []interface{}{math.MinInt64, math.MaxInt64}
 			(*fields)[i].Validate.ValueType = "numeric"
-		case "attachment":
+		case formFieldAttachment:
 			(*fields)[i].Validate.ValueType = "uuid"
-		case "select":
+		case formFieldSelect:
 			(*fields)[i].Validate.ValueType = "select"
-		case "multiselect":
+		case formFieldMultiselect:
 			(*fields)[i].Validate.ValueType = "multiselect"
 		}
 
