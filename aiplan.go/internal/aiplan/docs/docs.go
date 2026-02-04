@@ -22428,6 +22428,20 @@ const docTemplate = `{
                 }
             }
         },
+        "types.FilterUUIDs": {
+            "type": "object",
+            "properties": {
+                "array": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "include_empty": {
+                    "type": "boolean"
+                }
+            }
+        },
         "types.FormAnswerNotify": {
             "type": "object",
             "properties": {
@@ -22498,10 +22512,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "assignees": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "authored_by_me": {
                     "type": "boolean"
@@ -22582,10 +22593,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "watchers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "workspace_slugs": {
                     "type": "array",
