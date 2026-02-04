@@ -150,6 +150,19 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 		values = append(values, strings.Join(assignees, ", "))
 	}
 
+	if act.NewIssue.Links != nil && len(*act.NewIssue.Links) > 0 {
+		format += "\n*Ссылки*: "
+		first := true
+		for _, link := range *act.NewIssue.Links {
+			if !first {
+				format += ", "
+			}
+			format += "[%s](%s)"
+			values = append(values, link.Title, link.Url)
+			first = false
+		}
+	}
+
 	msg.body += Stelegramf(format, values...)
 
 	return msg
