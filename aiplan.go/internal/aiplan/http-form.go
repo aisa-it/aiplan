@@ -688,16 +688,23 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		//DescriptionStripped: issue.DescriptionStripped,
 	}
 
+	var createWatcher bool
+	if user != nil {
+		if err := s.db.Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
+			return err
+		}
+	}
+
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
 		systemUserID := uuid.NullUUID{UUID: systemUser.ID, Valid: true}
-		var newAssignees []dao.IssueAssignee
-		for _, watcher := range defaultAssignees {
+		newAssignees := make([]dao.IssueAssignee, 0, len(defaultAssignees))
+		for _, assignee := range defaultAssignees {
 			newAssignees = append(newAssignees, dao.IssueAssignee{
 				Id:          dao.GenUUID(),
-				AssigneeId:  watcher,
+				AssigneeId:  assignee,
 				IssueId:     issue.ID,
 				ProjectId:   issue.ProjectId,
 				WorkspaceId: issue.WorkspaceId,
@@ -705,6 +712,21 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 				UpdatedById: systemUserID,
 			})
 		}
+
+		if createWatcher {
+			if err := tx.Create(&dao.IssueWatcher{
+				Id:          dao.GenUUID(),
+				WatcherId:   user.ID,
+				IssueId:     issue.ID,
+				ProjectId:   issue.ProjectId,
+				WorkspaceId: issue.WorkspaceId,
+				CreatedById: systemUserID,
+				UpdatedById: systemUserID,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
 		return tx.CreateInBatches(&newAssignees, 10).Error
 	})
 }
