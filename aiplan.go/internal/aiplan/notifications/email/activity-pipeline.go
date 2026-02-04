@@ -2,9 +2,12 @@ package email
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -13,16 +16,15 @@ type LayerPipeline[A dao.ActivityI, E dao.IDaoAct] struct {
 
 	Load            func(tx *gorm.DB) []A
 	Group           func([]A) ActivityBuckets[A, E]
-	BuildRecipients func(tx *gorm.DB, acts []A, entity E) []member_role.MemberNotify
+	BuildRecipients func(tx *gorm.DB, acts []A, entity E) ([]member_role.MemberNotify, EmailContext)
 	BuildDigest     func(tx *gorm.DB, acts []A, entity E) (map[string]fieldPrerender, int)
 
-	Subject      func(entity E) string
-	BuildMessage func(bucket *ActivityBucket[A, E], r Recipient) EmailMessage
+	Subject func(entity E) string
 
 	FilterEmpty bool
 }
 
-func ProcessLayer[A dao.ActivityI, E dao.IDaoAct](es *EmailService, p LayerPipeline[A, E]) {
+func ProcessLayer[A dao.ActivityI, E dao.IDaoAct](es *EmailService, p LayerPipeline[A, E], template EmailTemplates) {
 	if es.sending {
 		return
 	}
@@ -35,7 +37,7 @@ func ProcessLayer[A dao.ActivityI, E dao.IDaoAct](es *EmailService, p LayerPipel
 		return
 	}
 
-	messages := BuildEmailMessages(buckets, p)
+	messages := BuildEmailMessages(buckets, p, template)
 	if len(messages) == 0 {
 		return
 	}
@@ -44,6 +46,23 @@ func ProcessLayer[A dao.ActivityI, E dao.IDaoAct](es *EmailService, p LayerPipel
 		if err := es.Send(m); err != nil {
 			slog.Error("send email", "to", m.To, "err", err)
 		}
+	}
+
+	ee(es.db, buckets)
+}
+
+func ee[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, buckets ActivityBuckets[A, E]) {
+	var t string
+	var ids []uuid.UUID
+	for _, e := range buckets {
+
+		t = (*e).Ctx.Plan.TableName
+		ids = append(ids,
+			utils.SliceToSlice(utils.ToPtr((*e).Activities), func(t *A) uuid.UUID { return (*t).GetId() })...)
+	}
+
+	if err := tx.Table(t).Where("id IN (?)", ids).Update("notified", true).Error; err != nil {
+		slog.Error(err.Error())
 	}
 }
 
@@ -57,7 +76,8 @@ func RunLayerPipeline[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, p LayerPipeli
 	buckets := p.Group(acts)
 
 	for id, b := range buckets {
-		b.MemberNotify = p.BuildRecipients(tx, b.Activities, b.Entity)
+
+		b.MemberNotify, b.Ctx = p.BuildRecipients(tx, b.Activities, b.Entity)
 		prepared, changes := p.BuildDigest(tx, b.Activities, b.Entity)
 		if p.FilterEmpty && changes == 0 {
 			delete(buckets, id)
@@ -70,24 +90,70 @@ func RunLayerPipeline[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, p LayerPipeli
 	return buckets
 }
 
-func BuildEmailMessages[A dao.ActivityI, E dao.IDaoAct](buckets ActivityBuckets[A, E], p LayerPipeline[A, E]) []EmailMessage {
+func BuildEmailMessages[A dao.ActivityI, E dao.IDaoAct](
+	buckets ActivityBuckets[A, E],
+	p LayerPipeline[A, E],
+	template EmailTemplates,
+) []EmailMessage {
 
 	var res []EmailMessage
 
 	for _, b := range buckets {
-		subject := p.Subject(b.Entity)
+		subject := p.Subject(b.Entity) // берем subject из pipeline
 
 		for _, m := range b.MemberNotify {
-			if r, ok := buildRecipient(&m); ok {
-				msg := p.BuildMessage(b, *r)
-				if msg.To == "" {
-					continue
-				}
-				msg.Subject = subject
-				res = append(res, msg)
+			r, ok := buildRecipient(&m)
+			if !ok {
+				continue
 			}
+
+			msg := BuildEmailMessage(b, *r, &b.Ctx, template) // ctx из bucket для Allowed()
+			if msg.To == "" {
+				continue
+			}
+
+			msg.Subject = subject
+			res = append(res, msg)
 		}
 	}
 
 	return res
+}
+
+func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
+	b *ActivityBucket[A, E],
+	r Recipient,
+	ctx *EmailContext,
+	template EmailTemplates,
+) EmailMessage {
+
+	var parts []string
+	var cnt int
+
+	for field, html := range b.Prepared {
+		if !r.MemberNotify.Allowed(field, html.Verb, ctx.Plan.Entity, ctx.Plan.AuthorRole, &ctx.Settings) {
+			continue
+		}
+		parts = append(parts, html.Value)
+		cnt += html.Count
+	}
+
+	if len(parts) == 0 {
+		return EmailMessage{}
+	}
+
+	body := bodyCtx{
+		Body: strings.Join(parts, "\n"),
+	}
+
+	d := template.RenderActivity(body)
+	ff := bodyCtx{
+		Title: "eeee",
+		Body:  d,
+	}
+	ffff := template.RenderBody(ff)
+	return EmailMessage{
+		To:   r.Email,
+		HTML: ffff,
+	}
 }

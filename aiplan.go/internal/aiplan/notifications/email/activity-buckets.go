@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
+	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
 	"github.com/gofrs/uuid"
 )
 
@@ -19,4 +19,5 @@ type ActivityBucket[A dao.ActivityI, E dao.IDaoAct] struct {
 
 	FirstAt time.Time
 	LastAt  time.Time
+	Ctx     EmailContext
 }

@@ -34,13 +34,13 @@ func buildRecipient(m *memNotify.MemberNotify) (*Recipient, bool) {
 }
 
 func BuildRecipientsFromActivities[A dao.ActivityI](
-	tx *gorm.DB, acts []A, actor func(A) *dao.User, plan *emailPlan,
-) []memNotify.MemberNotify {
+	tx *gorm.DB, acts []A, actor func(A) *dao.User, ctx *EmailContext,
+) ([]memNotify.MemberNotify, EmailContext) {
 
 	users := make(memNotify.UserRegistry)
 
 	// добавляем пользователей в зависимости от потребностей слоя
-	for _, step := range plan.Steps {
+	for _, step := range ctx.Steps {
 		if err := step(tx, users); err != nil {
 			slog.Error("step", "err", err)
 		}
@@ -53,12 +53,12 @@ func BuildRecipientsFromActivities[A dao.ActivityI](
 		}
 	}
 
-	if err := plan.settings.Load(tx, plan.settings.EntityID, plan.AuthorRole, users, memNotify.EmailSettings); err != nil {
-		slog.Error("Get user emailActivity LoadSettings", "entityId", plan.settings.EntityID, "err", err)
-		return []memNotify.MemberNotify{}
+	if err := ctx.Settings.Load(tx, ctx.Settings.EntityID, ctx.Plan.AuthorRole, users, memNotify.EmailSettings); err != nil {
+		slog.Error("Get user emailActivity LoadSettings", "entityId", ctx.Settings.EntityID, "err", err)
+		return []memNotify.MemberNotify{}, *ctx
 	}
 
 	return utils.MapToSlice(users, func(k uuid.UUID, t *memNotify.MemberNotify) memNotify.MemberNotify {
 		return *t
-	})
+	}), *ctx
 }

@@ -12,6 +12,7 @@ type TransitionFlags struct {
 }
 
 type fieldPrerender struct {
+	Verb  string
 	Value string
 	Count int
 }

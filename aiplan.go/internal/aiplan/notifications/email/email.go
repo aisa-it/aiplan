@@ -22,7 +22,7 @@ func (es *EmailService) EmailActivity() {
 
 	templates := LoadTemplates(es.db)
 
-	ProcessLayer(es, NewSprintPipeline(&templates))
+	ProcessLayer(es, NewSprintPipeline(&templates), templates)
 }
 
 // /----
