@@ -200,7 +200,7 @@ func validateTypeRegular(val interface{}, opt []interface{}, pattern *string) bo
 func validateUuid(val interface{}, required bool, custom *types2.ValidationRule) bool {
 	_, ok := val.(string)
 	if !ok {
-		return false
+		return !required
 	}
 
 	strVal := fmt.Sprintf("%v", val)
