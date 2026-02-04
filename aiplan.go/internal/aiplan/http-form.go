@@ -662,7 +662,6 @@ func (s *Services) createAnswerNoAuth(c echo.Context) error {
 }
 
 func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, user *dao.User) error {
-
 	res, err := business.GenBodyAnswer(answer, user)
 	if err != nil {
 		return err
@@ -686,6 +685,12 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		WorkspaceId:     form.WorkspaceId,
 		DescriptionHtml: res,
 		//DescriptionStripped: issue.DescriptionStripped,
+	}
+
+	for _, field := range form.Fields {
+		if field.IssueNameField {
+			issue.Name = fmt.Sprint(field.Val)
+		}
 	}
 
 	var createWatcher bool
