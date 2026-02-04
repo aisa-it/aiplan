@@ -383,6 +383,47 @@ func (f *FormFieldsSlice) Scan(value interface{}) error {
 	return nil
 }
 
+// HideFields type
+type HideFields []string
+
+func (f HideFields) Value() (driver.Value, error) {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (f *HideFields) Scan(value interface{}) error {
+	if value == nil {
+		*f = HideFields{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, f); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f HideFields) MarshalJSON() ([]byte, error) {
+	if f == nil {
+		return []byte("[]"), nil
+	}
+	type hf HideFields
+	return json.Marshal(hf(f))
+}
+
 // FilterUUIDs представляет фильтр для работы с массивом UUID.
 // Используется для фильтрации по списку идентификаторов с поддержкой пустых значений.
 // Поля:
