@@ -94,7 +94,7 @@ func identifierValidator(fl validator.FieldLevel) bool {
 	if !isValidLatinUpperDigit(value) {
 		return false
 	}
-	return lenStr >= 3 && lenStr <= 10
+	return lenStr >= 3 && lenStr <= 15
 }
 
 func slugValidator(fl validator.FieldLevel) bool {
