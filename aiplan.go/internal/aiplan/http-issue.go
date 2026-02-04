@@ -3643,7 +3643,7 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 // getDefaultPropertyValue возвращает дефолтное значение для типа поля
 func getDefaultPropertyValue(propType string) any {
 	switch propType {
-	case "string":
+	case "string", "select":
 		return ""
 	case "boolean":
 		return false
@@ -3655,8 +3655,6 @@ func getDefaultPropertyValue(propType string) any {
 // parsePropertyValue парсит строковое значение в соответствии с типом
 func parsePropertyValue(propType, value string) any {
 	switch propType {
-	case "string":
-		return value
 	case "boolean":
 		return value == "true"
 	default:
@@ -3666,7 +3664,7 @@ func parsePropertyValue(propType, value string) any {
 
 // validatePropertyValue валидирует значение через JSON Schema
 func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) error {
-	schema := types.GenValueSchema(template.Type)
+	schema := types.GenValueSchema(template.Type, template.Options)
 
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("schema.json", schema); err != nil {

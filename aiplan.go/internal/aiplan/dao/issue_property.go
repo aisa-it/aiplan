@@ -19,10 +19,11 @@ type ProjectPropertyTemplate struct {
 	WorkspaceId uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:1;type:uuid"`
 	ProjectId   uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:2;type:uuid"`
 
-	Name      string `gorm:"not null"`
-	Type      string `gorm:"not null"` // "string", "boolean"
-	OnlyAdmin bool   `gorm:"default:false"`
-	SortOrder int    `gorm:"default:0"`
+	Name      string   `gorm:"not null"`
+	Type      string   `gorm:"not null"` // "string", "boolean", "select"
+	Options   []string `gorm:"serializer:json"`
+	OnlyAdmin bool     `gorm:"default:false"`
+	SortOrder int      `gorm:"default:0"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
@@ -43,6 +44,7 @@ func (t *ProjectPropertyTemplate) ToDTO() *dto.ProjectPropertyTemplate {
 		WorkspaceId: t.WorkspaceId,
 		Name:        t.Name,
 		Type:        t.Type,
+		Options:     t.Options,
 		OnlyAdmin:   t.OnlyAdmin,
 		SortOrder:   t.SortOrder,
 		CreatedAt:   t.CreatedAt,
@@ -93,6 +95,7 @@ func (p *IssueProperty) ToDTO() *dto.IssueProperty {
 	if p.Template != nil {
 		result.Name = p.Template.Name
 		result.Type = p.Template.Type
+		result.Options = p.Template.Options
 	}
 
 	return result

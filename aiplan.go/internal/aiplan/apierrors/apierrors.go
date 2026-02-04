@@ -252,13 +252,14 @@ var (
 	ErrLabelNotEmptyCannotDelete       = DefinedError{Code: 4026, StatusCode: http.StatusBadRequest, Err: "the label is not empty, only empty label can be deleted", RuErr: "Удаление тега, установленного для задачи, невозможно"}
 
 	// 45** - property template errors
-	ErrPropertyTemplateNotFound      = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
-	ErrPropertyTemplateNameRequired  = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
-	ErrPropertyTemplateTypeInvalid   = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean", RuErr: "Недопустимый тип поля, допустимы: string, boolean"}
-	ErrPropertyAlreadyExists         = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
-	ErrPropertyNotFound              = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
-	ErrPropertyOnlyAdminCanSet       = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
-	ErrPropertyValueValidationFailed = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
+	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
+	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select"}
+	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
+	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
+	ErrPropertyOnlyAdminCanSet         = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
+	ErrPropertyValueValidationFailed   = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
+	ErrPropertyTemplateOptionsRequired = DefinedError{Code: 4508, StatusCode: http.StatusBadRequest, Err: "options are required for select type", RuErr: "Для типа select требуются варианты выбора"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}

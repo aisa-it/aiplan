@@ -20,12 +20,17 @@ type SchemaProperties struct {
 }
 
 // GenValueSchema создаёт JSON Schema для валидации значения по типу свойства
-func GenValueSchema(propType string) map[string]any {
+func GenValueSchema(propType string, options []string) map[string]any {
 	switch propType {
 	case "string":
 		return map[string]any{"type": "string"}
 	case "boolean":
 		return map[string]any{"type": "boolean"}
+	case "select":
+		if len(options) == 0 {
+			return map[string]any{"type": "string"}
+		}
+		return map[string]any{"type": "string", "enum": options}
 	default:
 		return map[string]any{}
 	}
