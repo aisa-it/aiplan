@@ -862,7 +862,7 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 }
 
 // ValidateFieldDependency рекурсивно проверяет выполнение условий depend_on(зависимостей) поля формы.
-// Используется для проверки пользовательских ответов
+// Используется для проверки пользовательских ответов и допустимо ли его текущее значение относительно родительского поля
 //
 // Параметры:
 //   - field — текущее поле формы, для которого выполняется проверка зависимостей
@@ -872,65 +872,105 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 //   - currentVal — текущее значение поля (используется для проверки пустого значения)
 //
 // Возвращает:
+//   - bool — признак необходимости пропустить дальнейшую валидацию поля
 //   - error — ошибку, если порядок зависимостей некорректен или если условия depend_on не выполнены; иначе nil
-func ValidateFieldDependency(field types2.FormFields, idx int, answers types2.FormFieldsSlice, formFields types2.FormFieldsSlice, currentVal interface{}) error {
+func ValidateFieldDependency(field types2.FormFields, idx int, answers types2.FormFieldsSlice, formFields types2.FormFieldsSlice, currentVal interface{}) (bool, error) {
+
 	if field.DependOn == nil {
-		return nil
+		return false, nil
 	}
 
-	// зависимое поле должно идти после поля, от которого оно зависит
-	if idx <= field.DependOn.FieldIndex {
-		return fmt.Errorf("invalid depend_on order: %d must be greater than %d", idx, field.DependOn.FieldIndex)
+	dep := field.DependOn
+
+	if idx <= dep.FieldIndex {
+		return false, fmt.Errorf("invalid depend_on order: %d must be greater than %d", idx, dep.FieldIndex)
 	}
 
-	answer := answers[field.DependOn.FieldIndex]
-	originalField := formFields[field.DependOn.FieldIndex]
+	parentAnswer := answers[dep.FieldIndex]
+	parentField := formFields[dep.FieldIndex]
 
-	if err := ValidateFieldDependency(answer, field.DependOn.FieldIndex, answers, formFields, answer.Val); err != nil {
-		return err
+	if skip, err := ValidateFieldDependency(parentAnswer, dep.FieldIndex, answers, formFields, parentAnswer.Val); err != nil {
+		return skip, err
 	}
-	var check bool
+
+	ok := isParentCondition(parentAnswer, parentField, dep)
+
+	if !ok {
+		if currentVal == nil {
+			return true, nil
+		}
+		return false, apierrors.ErrFormAnswerDependOn
+	}
+
+	return false, nil
+}
+
+// isParentCondition проверяет, выполнено ли условие depend_on
+// для родительского поля в зависимости от его типа и ожидаемого значения.
+//
+// Параметры:
+//   - answer — ответ пользователя на родительское поле
+//   - field — описание родительского поля с правилами валидации
+//   - dep — описание зависимости depend_on текущего поля
+//
+// Возвращает:
+//   - bool — true, если условие depend_on выполнено; иначе false
+func isParentCondition(answer types2.FormFields, field types2.FormFields, dep *types2.FormFieldDependency) bool {
+
 	switch answer.Type {
+
 	case formFieldCheckbox:
-		if answer.Val == nil && !field.DependOn.ExpectedValue {
-			check = true
-		} else {
-			check = field.DependOn.ExpectedValue == answer.Val.(bool)
+		val, ok := answer.Val.(bool)
+		if !ok {
+			return false
 		}
-	case formFieldMultiselect:
-		if field.DependOn.OptionIndex != nil {
-			if originalField.Validate != nil && originalField.Validate.Opt != nil {
-				check = !field.DependOn.ExpectedValue
-				for _, r := range answer.Val.([]interface{}) {
-					if originalField.Validate.Opt[*field.DependOn.OptionIndex].(string) == r.(string) {
-						check = field.DependOn.ExpectedValue
-						break
-					}
-				}
-			}
-			if currentVal == nil {
-				check = true
-			}
-		}
+		return val == dep.ExpectedValue
 
 	case formFieldSelect:
-		if field.DependOn.OptionIndex != nil {
-			if originalField.Validate != nil && originalField.Validate.Opt != nil {
-				check = !field.DependOn.ExpectedValue
-				if originalField.Validate.Opt[*field.DependOn.OptionIndex].(string) == answer.Val.(string) {
-					check = field.DependOn.ExpectedValue
-				}
-			}
-			if currentVal == nil {
-				check = true
+		if dep.OptionIndex == nil {
+			return false
+		}
+
+		val, ok := answer.Val.(string)
+		if !ok {
+			return false
+		}
+
+		if field.Validate == nil || field.Validate.Opt == nil {
+			return false
+		}
+
+		optionSelected := field.Validate.Opt[*dep.OptionIndex] == val
+		return optionSelected == dep.ExpectedValue
+
+	case formFieldMultiselect:
+		if dep.OptionIndex == nil {
+			return false
+		}
+
+		values, ok := answer.Val.([]interface{})
+		if !ok {
+			return false
+		}
+
+		if field.Validate == nil || field.Validate.Opt == nil {
+			return false
+		}
+
+		expected := field.Validate.Opt[*dep.OptionIndex]
+
+		optionSelected := false
+		for _, v := range values {
+			if v == expected {
+				optionSelected = true
+				break
 			}
 		}
-	}
-	if !check {
-		return apierrors.ErrFormAnswerDependOn
+
+		return optionSelected == dep.ExpectedValue
 	}
 
-	return nil
+	return false
 }
 
 func formAnswer(answers types2.FormFieldsSlice, form *dao.Form) (types2.FormFieldsSlice, error) {
@@ -939,13 +979,17 @@ func formAnswer(answers types2.FormFieldsSlice, form *dao.Form) (types2.FormFiel
 	var resultAnswer types2.FormFieldsSlice
 
 	for i, field := range form.Fields {
-		if err := ValidateFieldDependency(field, i, resultAnswer, form.Fields, answers[i].Val); err != nil {
+		skip, err := ValidateFieldDependency(field, i, resultAnswer, form.Fields, answers[i].Val)
+		if err != nil {
 			return nil, err
 		}
-		validFunc := validator[field.Type]
-		checkVal := validFunc(answers[i].Val, field.Required, field.Validate)
-		if !checkVal {
-			return nil, fmt.Errorf("field missing or wrong type")
+
+		if !skip {
+			validFunc := validator[field.Type]
+			checkVal := validFunc(answers[i].Val, field.Required, field.Validate)
+			if !checkVal {
+				return nil, fmt.Errorf("field missing or wrong type")
+			}
 		}
 
 		resultAnswer = append(resultAnswer,
