@@ -20785,6 +20785,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "0"
                 },
+                "hide_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
