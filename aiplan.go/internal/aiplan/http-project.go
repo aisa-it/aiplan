@@ -3354,6 +3354,9 @@ func (s *Services) getPropertyTemplateList(c echo.Context) error {
 
 	result := make([]dto.ProjectPropertyTemplate, 0, len(templates))
 	for _, t := range templates {
+		if t.Type != "select" {
+			t.Options = nil
+		}
 		result = append(result, *t.ToDTO())
 	}
 

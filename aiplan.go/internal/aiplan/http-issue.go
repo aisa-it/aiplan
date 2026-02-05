@@ -3532,6 +3532,11 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 			Value:       getDefaultPropertyValue(tmpl.Type),
 		}
 
+		// Добавляем options только для select полей
+		if tmpl.Type == "select" {
+			prop.Options = tmpl.Options
+		}
+
 		if existing, ok := propsMap[tmpl.Id]; ok {
 			prop.Id = existing.Id
 			prop.Value = parsePropertyValue(tmpl.Type, existing.Value)
