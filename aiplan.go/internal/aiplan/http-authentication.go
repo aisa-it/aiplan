@@ -70,6 +70,13 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				return c.NoContent(http.StatusOK)
 			}
 
+			if strings.Contains(c.Path(), "/tus/") &&
+				(c.Request().Method == http.MethodPatch ||
+					c.Request().Method == http.MethodGet ||
+					c.Request().Method == http.MethodDelete) {
+				return next(c)
+			}
+
 			if config.Skipper != nil && config.Skipper(c) {
 				return next(c)
 			}
