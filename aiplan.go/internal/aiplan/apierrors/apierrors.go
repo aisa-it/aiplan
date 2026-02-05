@@ -23,6 +23,7 @@ package apierrors
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -163,11 +164,11 @@ var (
 	ErrRoleAndMemberIDRequired           = DefinedError{Code: 3012, StatusCode: http.StatusBadRequest, Err: "role and member ID are required", RuErr: "Необходимо указать роль и ID пользователя"}
 	ErrUserNotInWorkspace                = DefinedError{Code: 3013, StatusCode: http.StatusBadRequest, Err: "user is not a member of the workspace. Invite the user to the workspace to add them to the project", RuErr: "Пользователь не является участником рабочего пространства. Необходимо добавить пользователя в рабочее пространство, а затем добавить его в проект"}
 	ErrUserAlreadyInProject              = DefinedError{Code: 3014, StatusCode: http.StatusBadRequest, Err: "user is already a member of the project", RuErr: "Пользователь уже является участником проекта"}
-	ErrProjectIsPrivate                  = DefinedError{Code: 3015, StatusCode: http.StatusForbidden, Err: "this is a private project %s", RuErr: "У вас недостаточно прав доступа к выбранному проекту"}
+	ErrProjectIsPrivate                  = DefinedError{Code: 3015, StatusCode: http.StatusForbidden, Err: "this is a private project %s", RuErr: "У вас недостаточно прав доступа к выбранному проекту %s"}
 	ErrTagAlreadyExists                  = DefinedError{Code: 3016, StatusCode: http.StatusConflict, Err: "tag already exists in this project", RuErr: "Тег с таким именем и цветом уже создан в проекте"}
 	ErrAlreadyImportingProject           = DefinedError{Code: 3017, StatusCode: http.StatusConflict, Err: "you are already importing another project", RuErr: "Вы уже импортируете другой проект"}
 	ErrEstimatePointsRequired            = DefinedError{Code: 3018, StatusCode: http.StatusBadRequest, Err: "estimate points are required", RuErr: "Необходимо указать оценочные баллы"}
-	ErrInvalidProjectViewProps           = DefinedError{Code: 3019, StatusCode: http.StatusBadRequest, Err: "invalid project view properties %s", RuErr: "Указаны некорректные параметры настроек проекта"}
+	ErrInvalidProjectViewProps           = DefinedError{Code: 3019, StatusCode: http.StatusBadRequest, Err: "invalid project view properties %s", RuErr: "Указаны некорректные параметры настроек проекта (%s)"}
 	ErrProjectMemberNotFound             = DefinedError{Code: 3020, StatusCode: http.StatusBadRequest, Err: "project member not found", RuErr: "Участник проекта не найден"}
 	ErrProjectNotFound                   = DefinedError{Code: 3021, StatusCode: http.StatusNotFound, Err: "project not found", RuErr: "Проект не найден"}
 	ErrProjectLimitExceed                = DefinedError{Code: 3022, StatusCode: http.StatusPaymentRequired, Err: "project limit exceed", RuErr: "Количество ваших проектов достигло лимита бесплатной версии"}
@@ -187,7 +188,7 @@ var (
 	ErrFormBadConvertRequest  = DefinedError{Code: 3204, StatusCode: http.StatusBadRequest, Err: "bad request, field: '%s'", RuErr: "При создании/обновлении формы передан неверный тип поля: '%s'"}
 	ErrFormBadRequest         = DefinedError{Code: 3205, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
 	ErrFormRequestValidate    = DefinedError{Code: 3206, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
-	ErrFormCheckFields        = DefinedError{Code: 3207, StatusCode: http.StatusBadRequest, Err: "fields request error: '%s'", RuErr: "При создании формы задан неподдерживаемый тип поля"}
+	ErrFormCheckFields        = DefinedError{Code: 3207, StatusCode: http.StatusBadRequest, Err: "fields request error: '%s'", RuErr: "При создании формы задан неподдерживаемый тип поля: '%s"}
 	ErrFormCheckAnswers       = DefinedError{Code: 3208, StatusCode: http.StatusBadRequest, Err: "required field missing or wrong type", RuErr: "При отправке ответа на форму не заполнены обязательные поля или выбран не соответствующий тип значения"}
 	ErrFormEmptyAnswers       = DefinedError{Code: 3209, StatusCode: http.StatusBadRequest, Err: "empty answers", RuErr: "Для сохранения формы необходимо заполнить поля с ответами"}
 	ErrFormAnswerNotFound     = DefinedError{Code: 3210, StatusCode: http.StatusNotFound, Err: "answer not found", RuErr: "Ответ не найден"}
@@ -196,22 +197,23 @@ var (
 	ErrFormEndDate            = DefinedError{Code: 3213, StatusCode: http.StatusBadRequest, Err: "the form cannot be created with a closed date", RuErr: "Форма не может быть создана с завершенной датой"}
 	ErrFormAttachmentNotFound = DefinedError{Code: 3214, StatusCode: http.StatusBadRequest, Err: "file not found by the provided UUID", RuErr: "Файл по указанному UUID не найден"}
 	ErrAttachmentInUse        = DefinedError{Code: 3215, StatusCode: http.StatusConflict, Err: "cannot delete file: it is linked to a form answer", RuErr: "Невозможно удалить файл — он привязан к ответу формы"}
+	ErrFormDependOn           = DefinedError{Code: 3216, StatusCode: http.StatusBadRequest, Err: "depend_on field has invalid value", RuErr: "Значение зависимого поля не соответствует требованиям"}
 
 	// 34** - doc errors
-	ErrDocNotFound           = DefinedError{Code: 3401, StatusCode: http.StatusNotFound, Err: "doc not found", RuErr: "Документ не найден"}
-	ErrDocUpdateForbidden    = DefinedError{Code: 3402, StatusCode: http.StatusForbidden, Err: "insufficient permissions or not the author", RuErr: "У вас недостаточно прав для изменения документа"}
-	ErrDocDeleteHasChild     = DefinedError{Code: 3403, StatusCode: http.StatusForbidden, Err: "doc has child", RuErr: "Невозможно удалить, есть дочерние документы"}
-	ErrDocBadRequest         = DefinedError{Code: 3404, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
-	ErrDocCommentNotFound    = DefinedError{Code: 3405, StatusCode: http.StatusNotFound, Err: "doc comment not found", RuErr: "Не найден комментарий"}
-	ErrDocRequestValidate    = DefinedError{Code: 3406, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
-	ErrDocForbidden          = DefinedError{Code: 3407, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}
-	ErrDocCommentBadRequest  = DefinedError{Code: 3408, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
-	ErrDocAttachmentNotFound = DefinedError{Code: 3409, StatusCode: http.StatusNotFound, Err: "doc attachment not found", RuErr: "Не найдено вложение"}
-	ErrDocOrderBadRequest    = DefinedError{Code: 3410, StatusCode: http.StatusBadRequest, Err: "there is a document sequence error in the request", RuErr: "ошибка последовательности документов"}
-	ErrDocChildRoleTooLow    = DefinedError{Code: 3411, StatusCode: http.StatusBadRequest, Err: "child doc role must not be lower than parent's", RuErr: "Роль дочернего документа не может быть ниже родительского"}
-	ErrDocParentRoleTooLow   = DefinedError{Code: 3412, StatusCode: http.StatusBadRequest, Err: "parent doc role must not be lower than any child", RuErr: "Роль родительского документа не может быть ниже дочернего"}
-	ErrDocMoveIntoOwnChild   = DefinedError{Code: 3413, StatusCode: http.StatusBadRequest, Err: "cannot move document into its own child", RuErr: "Невозможно переместить документ в его же дочерний"}
-	ErrDocCommentEmpty       = DefinedError{Code: 3414, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
+	ErrDocNotFound            = DefinedError{Code: 3401, StatusCode: http.StatusNotFound, Err: "doc not found", RuErr: "Документ не найден"}
+	ErrDocUpdateForbidden     = DefinedError{Code: 3402, StatusCode: http.StatusForbidden, Err: "insufficient permissions or not the author", RuErr: "У вас недостаточно прав для изменения документа"}
+	ErrDocDeleteHasChild      = DefinedError{Code: 3403, StatusCode: http.StatusForbidden, Err: "doc has child", RuErr: "Невозможно удалить, есть дочерние документы"}
+	ErrDocBadRequest          = DefinedError{Code: 3404, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
+	ErrDocCommentNotFound     = DefinedError{Code: 3405, StatusCode: http.StatusNotFound, Err: "doc comment not found", RuErr: "Не найден комментарий"}
+	ErrDocRequestValidate     = DefinedError{Code: 3406, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
+	ErrDocForbidden           = DefinedError{Code: 3407, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}
+	ErrDocCommentBadRequest   = DefinedError{Code: 3408, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
+	ErrDocAttachmentNotFound  = DefinedError{Code: 3409, StatusCode: http.StatusNotFound, Err: "doc attachment not found", RuErr: "Не найдено вложение"}
+	ErrDocOrderBadRequest     = DefinedError{Code: 3410, StatusCode: http.StatusBadRequest, Err: "there is a document sequence error in the request", RuErr: "ошибка последовательности документов"}
+	ErrDocRoleLowerThanParent = DefinedError{Code: 3411, StatusCode: http.StatusBadRequest, Err: "current document role must not be lower than parent document role", RuErr: "Роль доступа к текущему документу не может быть ниже родительского документа"}
+	ErrDocRoleHigherThanChild = DefinedError{Code: 3412, StatusCode: http.StatusBadRequest, Err: "current document role must not be higher than child document role", RuErr: "Роль доступа к текущему документу не может быть выше чем у дочернего документа"}
+	ErrDocMoveIntoOwnChild    = DefinedError{Code: 3413, StatusCode: http.StatusBadRequest, Err: "cannot move document into its own child", RuErr: "Невозможно переместить документ в его же дочерний"}
+	ErrDocCommentEmpty        = DefinedError{Code: 3414, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
 
 	// 36** - sprint errors
 	ErrSprintNotFound          = DefinedError{Code: 3601, StatusCode: http.StatusNotFound, Err: "sprint not found", RuErr: "Спринт не найден"}
@@ -219,7 +221,7 @@ var (
 	ErrSprintForbidden         = DefinedError{Code: 3603, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}
 	ErrSprintBadRequest        = DefinedError{Code: 3604, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
 	ErrSprintRequestValidate   = DefinedError{Code: 3605, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
-	ErrInvalidSprintViewProps  = DefinedError{Code: 3606, StatusCode: http.StatusBadRequest, Err: "invalid sprint view properties %s", RuErr: "Указаны некорректные параметры настроек спринта"}
+	ErrInvalidSprintViewProps  = DefinedError{Code: 3606, StatusCode: http.StatusBadRequest, Err: "invalid sprint view properties %s", RuErr: "Указаны некорректные параметры настроек спринта (%s)"}
 	ErrInvalidSprintTimeWindow = DefinedError{Code: 3607, StatusCode: http.StatusBadRequest, Err: "invalid sprint time window", RuErr: "Некорректный период спринта"}
 	// 4*** - issue errors
 	ErrIssueNotFound                   = DefinedError{Code: 4001, StatusCode: http.StatusNotFound, Err: "issue not found", RuErr: "Задача не найдена"}
@@ -247,14 +249,25 @@ var (
 	ErrUnsupportedGroup                = DefinedError{Code: 4023, StatusCode: http.StatusBadRequest, Err: "unsupported grouping param", RuErr: "Данный параметр не поддерживается для группировки"}
 	ErrIssueTargetDateExp              = DefinedError{Code: 4024, StatusCode: http.StatusBadRequest, Err: "the date has already passed", RuErr: "Заданная дата уже прошла"}
 	ErrIssueCommentEmpty               = DefinedError{Code: 4025, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
+	ErrLabelNotEmptyCannotDelete       = DefinedError{Code: 4026, StatusCode: http.StatusBadRequest, Err: "the label is not empty, only empty label can be deleted", RuErr: "Удаление тега, установленного для задачи, невозможно"}
+
+	// 45** - property template errors
+	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
+	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select"}
+	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
+	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
+	ErrPropertyOnlyAdminCanSet         = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
+	ErrPropertyValueValidationFailed   = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
+	ErrPropertyTemplateOptionsRequired = DefinedError{Code: 4508, StatusCode: http.StatusBadRequest, Err: "options are required for select type", RuErr: "Для типа select требуются варианты выбора"}
 
 	// 5*** - validation and other errors
-	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email"}
+	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}
 	ErrLimitTooHigh         = DefinedError{Code: 5002, StatusCode: http.StatusBadRequest, Err: "limit must be less than 100", RuErr: "Запрашиваемый список задач должен состоящий не более чем из 100 элементов"}
 	ErrUnsupportedSortParam = DefinedError{Code: 5003, StatusCode: http.StatusBadRequest, Err: "unsupported sort parameter %s", RuErr: "Неподдерживаемый параметр сортировки"}
 	ErrURLAndTitleRequired  = DefinedError{Code: 5004, StatusCode: http.StatusBadRequest, Err: "URL and Title are required", RuErr: "Необходимо ввести URL и заголовок"}
 	ErrIssueIDsRequired     = DefinedError{Code: 5005, StatusCode: http.StatusBadRequest, Err: "issue IDs are required", RuErr: "Необходимо ввести ID задачи"}
-	ErrUnsupportedRole      = DefinedError{Code: 5006, StatusCode: http.StatusBadRequest, Err: "unsupported role %s", RuErr: "При добавлении пользователя в пространство указана некорректная роль"}
+	ErrUnsupportedRole      = DefinedError{Code: 5006, StatusCode: http.StatusBadRequest, Err: "unsupported role %s", RuErr: "При добавлении пользователя в пространство указана некорректная роль (%s)"}
 	ErrDeleteSuperUser      = DefinedError{Code: 5007, StatusCode: http.StatusBadRequest, Err: "you cannot delete superuser", RuErr: "У вас недостаточно прав на удаление суперпользователя"}
 	ErrGeneric              = DefinedError{Code: 5000, StatusCode: http.StatusBadRequest, Err: "Something went wrong. Please try again later or contact the support team.", RuErr: "Что-то пошло не так. Повторите попытку позже или обратитесь в службу поддержки"}
 	ErrInvalidDayFormat     = DefinedError{Code: 5008, StatusCode: http.StatusBadRequest, Err: "day must be in ddmmyyyy format", RuErr: "Необходимо указать дату в формате: ддммгггг"}
@@ -318,3 +331,5 @@ var (
 	ErrSSHDisabled          = DefinedError{Code: 11006, StatusCode: http.StatusForbidden, Err: "SSH access is disabled", RuErr: "SSH доступ отключен"}
 	ErrSSHRateLimitExceeded = DefinedError{Code: 11007, StatusCode: http.StatusTooManyRequests, Err: "SSH rate limit exceeded", RuErr: "Превышен лимит SSH запросов"}
 )
+
+var ErrFormAnswerDependOn = errors.New("depend_on field has invalid value")

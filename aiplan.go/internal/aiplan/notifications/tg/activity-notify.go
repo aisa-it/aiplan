@@ -1,6 +1,7 @@
 package tg
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -58,7 +59,7 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 		return nil
 	}
 
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrEmptyActivity) {
 		slog.Error("Telegram handle activity", "error", err)
 	}
 
@@ -177,7 +178,7 @@ func formatByField[T dao.ActivityI, F ~func(*T, actField.ActivityField) TgMsg](
 	}
 
 	if res.IsEmpty() {
-		return res, fmt.Errorf("%s activity is empty, verb: %s, field: %s, id: %s", (*act).GetEntity(), (*act).GetVerb(), (*act).GetField(), (*act).GetId())
+		return res, fmt.Errorf("%s %w, verb: %s, field: %s, id: %s", (*act).GetEntity(), ErrEmptyActivity, (*act).GetVerb(), (*act).GetField(), (*act).GetId())
 	}
 
 	return res, nil

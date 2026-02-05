@@ -738,7 +738,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	// Транзакция: обновление задачи и связей
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&issue).Error; err != nil {
+		if err := tx.Omit(clause.Associations).Save(&issue).Error; err != nil {
 			return err
 		}
 

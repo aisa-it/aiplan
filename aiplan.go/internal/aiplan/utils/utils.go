@@ -288,3 +288,19 @@ func CheckEmbedSPA(fs embed.FS) bool {
 	d, err := fs.ReadFile("spa/index.html")
 	return len(d) > 0 && err == nil
 }
+
+// GetFirstOrNil возвращает первый ненулевой указатель из переданных аргументов.
+//
+// Параметры:
+//   - entities - вариативный список указателей на сущности
+//
+// Возвращает:
+//   - *E - первый ненулевой указатель или nil, если все аргументы равны nil
+func GetFirstOrNil[E any](entities ...*E) *E {
+	for _, entity := range entities {
+		if entity != nil {
+			return entity
+		}
+	}
+	return nil
+}

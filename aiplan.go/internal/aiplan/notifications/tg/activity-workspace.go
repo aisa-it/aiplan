@@ -161,7 +161,7 @@ func workspaceOwner(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) владельца пространства"
+	msg.title = "изменил(-a) лидера пространства"
 	msg.body += Stelegramf("~%s~ %s", getUserName(act.OldOwner), getUserName(act.NewOwner))
 	return msg
 }

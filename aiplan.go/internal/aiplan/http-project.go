@@ -194,13 +194,11 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	projectGroup.GET("/stats/", s.getProjectStats)
 
-	/*
-		projectGroup.GET("/issue-properties/", s.issuePropertiesList)
-		projectGroup.POST("/issue-properties/", s.issuePropertyCreateOrUpdate)
-		projectGroup.GET("/issue-properties/:propertyId/", s.issuePropertiesList)
-		projectGroup.PATCH("/issue-properties/:propertyId/", s.issuePropertyCreateOrUpdate)
-		projectGroup.DELETE("/issue-properties/:propertyId/", s.issuePropertyDelete)
-	*/
+	// Property Templates (шаблоны полей проекта)
+	projectGroup.GET("/property-templates/", s.getPropertyTemplateList)
+	projectAdminGroup.POST("/property-templates/", s.createPropertyTemplate)
+	projectAdminGroup.PATCH("/property-templates/:templateId/", s.updatePropertyTemplate)
+	projectAdminGroup.DELETE("/property-templates/:templateId/", s.deletePropertyTemplate)
 }
 
 // getProjectList godoc
@@ -262,7 +260,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
 }
 
-var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script"}
+var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields"}
 
 // updateProject godoc
 // @id updateProject
@@ -1734,21 +1732,17 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add blockers
 		if len(issue.BlockersList) > 0 {
-			var newBlockers []dao.IssueBlocker
-			for _, blocker := range issue.BlockersList {
-				blockerUUID, err := uuid.FromString(fmt.Sprint(blocker))
-				if err != nil {
-					return err
-				}
-				newBlockers = append(newBlockers, dao.IssueBlocker{
+			newBlockers := make([]dao.IssueBlocker, len(issue.BlockersList))
+			for i, blocker := range issue.BlockersList {
+				newBlockers[i] = dao.IssueBlocker{
 					Id:          dao.GenUUID(),
-					BlockedById: blockerUUID,
+					BlockedById: blocker,
 					BlockId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
 				return err
@@ -1758,9 +1752,9 @@ func (s *Services) createIssue(c echo.Context) error {
 		// Add assignees
 		if len(issue.AssigneesList) > 0 {
 			issue.AssigneesList = utils.SetToSlice(utils.SliceToSet(issue.AssigneesList))
-			var newAssignees []dao.IssueAssignee
-			for _, assignee := range issue.AssigneesList {
-				newAssignees = append(newAssignees, dao.IssueAssignee{
+			newAssignees := make([]dao.IssueAssignee, len(issue.AssigneesList))
+			for i, assignee := range issue.AssigneesList {
+				newAssignees[i] = dao.IssueAssignee{
 					Id:          dao.GenUUID(),
 					AssigneeId:  assignee,
 					IssueId:     issueNew.ID,
@@ -1768,7 +1762,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
 				return err
@@ -1778,9 +1772,9 @@ func (s *Services) createIssue(c echo.Context) error {
 		// Add watchers
 		if len(issue.WatchersList) > 0 {
 			issue.WatchersList = utils.SetToSlice(utils.SliceToSet(issue.WatchersList))
-			var newWatchers []dao.IssueWatcher
-			for _, watcher := range issue.WatchersList {
-				newWatchers = append(newWatchers, dao.IssueWatcher{
+			newWatchers := make([]dao.IssueWatcher, len(issue.WatchersList))
+			for i, watcher := range issue.WatchersList {
+				newWatchers[i] = dao.IssueWatcher{
 					Id:          dao.GenUUID(),
 					WatcherId:   watcher,
 					IssueId:     issueNew.ID,
@@ -1788,7 +1782,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
 				return err
@@ -1797,9 +1791,9 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add labels
 		if len(issue.LabelsList) > 0 {
-			var newLabels []dao.IssueLabel
-			for _, label := range issue.LabelsList {
-				newLabels = append(newLabels, dao.IssueLabel{
+			newLabels := make([]dao.IssueLabel, len(issue.LabelsList))
+			for i, label := range issue.LabelsList {
+				newLabels[i] = dao.IssueLabel{
 					Id:          dao.GenUUID(),
 					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issueNew.ID,
@@ -1807,7 +1801,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
 				return err
@@ -1816,23 +1810,38 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add blocked
 		if len(issue.BlocksList) > 0 {
-			var newBlocked []dao.IssueBlocker
-			for _, block := range issue.BlocksList {
-				blockUUID, err := uuid.FromString(fmt.Sprint(block))
-				if err != nil {
-					return err
-				}
-				newBlocked = append(newBlocked, dao.IssueBlocker{
+			newBlocked := make([]dao.IssueBlocker, len(issue.BlocksList))
+			for i, block := range issue.BlocksList {
+				newBlocked[i] = dao.IssueBlocker{
 					Id:          dao.GenUUID(),
-					BlockId:     blockUUID,
+					BlockId:     block,
 					BlockedById: issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newBlocked, 10).Error; err != nil {
+				return err
+			}
+		}
+		if issue.Links != nil && len(issue.Links) > 0 {
+			newLinks := make([]dao.IssueLink, len(issue.Links))
+			for i, link := range issue.Links {
+				newLinks[i] = dao.IssueLink{
+					Id:          dao.GenUUID(),
+					Title:       link.Title,
+					Url:         link.Url,
+					CreatedById: userID,
+					UpdatedById: userID,
+					IssueId:     issueNew.ID,
+					ProjectId:   project.ID,
+					WorkspaceId: project.WorkspaceId,
+				}
+			}
+
+			if err := tx.CreateInBatches(newLinks, 10).Error; err != nil {
 				return err
 			}
 		}
@@ -2090,6 +2099,20 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 		Where("project_id = ?", project.ID).
 		Find(&label).Error; err != nil {
 		return EError(c, err)
+	}
+
+	var issueExists bool
+	if err := s.db.Model(&dao.IssueLabel{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.IssueLabel{}).
+				Select("1").
+				Where("label_id = ?", label.ID),
+		).
+		Find(&issueExists).Error; err != nil {
+		return EError(c, err)
+	}
+	if issueExists {
+		return EErrorDefined(c, apierrors.ErrLabelNotEmptyCannotDelete)
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -3304,84 +3327,248 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-/*
-// ############# Issue properties methods ###################
+// ############# Property Templates methods ###################
 
-// Получение параметров задач
-func (s *Services) issuePropertiesList(c echo.Context) error {
-	user := *c.(AuthContext).User
-	slug := c.Param("workspaceSlug")
-	projectId := c.Param("projectId")
+// getPropertyTemplateList godoc
+// @id getPropertyTemplateList
+// @Summary Шаблоны полей: получение списка
+// @Description Возвращает список всех шаблонов кастомных полей для проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {array} dto.ProjectPropertyTemplate "Список шаблонов полей"
+// @Failure 403 {object} apierrors.DefinedError "Нет доступа к проекту"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/ [get]
+func (s *Services) getPropertyTemplateList(c echo.Context) error {
+	project := c.(ProjectContext).Project
 
-	var issueProperty dao.IssueProperty
-	if err := s.db.Joins("Workspace").
-		Where("slug = ?", slug).
-		Where("project_id = ?", projectId).
-		Where("user_id = ?", user.ID).Find(&issueProperty).Error; err != nil {
+	var templates []dao.ProjectPropertyTemplate
+	if err := s.db.Where("project_id = ?", project.ID).
+		Order("sort_order, created_at").
+		Find(&templates).Error; err != nil {
 		return EError(c, err)
 	}
-	if issueProperty.Id == "" {
-		res := make([]string, 0)
-		return c.JSON(http.StatusOK, res)
+
+	result := make([]dto.ProjectPropertyTemplate, 0, len(templates))
+	for _, t := range templates {
+		result = append(result, *t.ToDTO())
 	}
 
-	return c.JSON(http.StatusOK, issueProperty)
+	return c.JSON(http.StatusOK, result)
 }
 
-// Создание параметров задач
-func (s *Services) issuePropertyCreateOrUpdate(c echo.Context) error {
-	user := *c.(AuthContext).User
-	slug := c.Param("workspaceSlug")
-	projectId := c.Param("projectId")
+// createPropertyTemplate godoc
+// @id createPropertyTemplate
+// @Summary Шаблоны полей: создание
+// @Description Создает новый шаблон кастомного поля для проекта. Доступно только для админов проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param request body dto.CreatePropertyTemplateRequest true "Данные шаблона поля"
+// @Success 201 {object} dto.ProjectPropertyTemplate "Созданный шаблон поля"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на создание"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/ [post]
+func (s *Services) createPropertyTemplate(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
 
-	var project dao.Project
-	if err := s.db.Where("projects.id = ?", projectId).
-		Where("slug = ?", slug).
-		Joins("Workspace").Find(&project).Error; err != nil {
+	var request dto.CreatePropertyTemplateRequest
+	if err := c.Bind(&request); err != nil {
 		return EError(c, err)
 	}
 
-	status := http.StatusOK
-
-	var issueProperty dao.IssueProperty
-	if err := s.db.Joins("Workspace").
-		Where("slug = ?", slug).
-		Where("project_id = ?", projectId).
-		Where("user_id = ?", user.ID).Find(&issueProperty).Error; err != nil {
-		return EError(c, err)
+	// Валидация имени
+	if strings.TrimSpace(request.Name) == "" {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNameRequired)
 	}
-	if issueProperty.Id == "" {
-		issueProperty = dao.IssueProperty{
-			Id:          dao.GenID(),
-			CreatedById: &user.ID,
-			CreatedAt:   time.Now(),
-			UpdatedById: &user.ID,
-			UpdatedAt:   time.Now(),
-			ProjectId:   projectId,
-			WorkspaceId: project.WorkspaceId,
-			UserId:      user.ID,
+
+	// Валидация типа
+	validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
+	if !validTypes[request.Type] {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
+	}
+
+	// Для типа select требуются опции
+	var options []string
+	if request.Type == "select" {
+		if len(request.Options) == 0 {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
 		}
-		status = http.StatusCreated
+		options = request.Options
 	}
 
-	if err := c.Bind(&issueProperty); err != nil {
+	template := dao.ProjectPropertyTemplate{
+		Id:          dao.GenUUID(),
+		ProjectId:   project.ID,
+		WorkspaceId: project.WorkspaceId,
+		Name:        strings.TrimSpace(request.Name),
+		Type:        request.Type,
+		Options:     options,
+		OnlyAdmin:   request.OnlyAdmin,
+		SortOrder:   request.SortOrder,
+		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+	}
+
+	if err := s.db.Create(&template).Error; err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Omit(clause.Associations).Save(&issueProperty).Error; err != nil {
-		return EError(c, err)
-	}
-	return c.JSON(status, issueProperty)
+	return c.JSON(http.StatusCreated, template.ToDTO())
 }
 
-// Удаление параметров задачи
-func (s *Services) issuePropertyDelete(c echo.Context) error {
-	projectId := c.Param("projectId")
-	propertyId := c.Param("propertyId")
+// updatePropertyTemplate godoc
+// @id updatePropertyTemplate
+// @Summary Шаблоны полей: обновление
+// @Description Обновляет шаблон кастомного поля. Доступно только для админов проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param templateId path string true "ID шаблона поля"
+// @Param request body dto.UpdatePropertyTemplateRequest true "Данные для обновления"
+// @Success 200 {object} dto.ProjectPropertyTemplate "Обновленный шаблон поля"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на обновление"
+// @Failure 404 {object} apierrors.DefinedError "Шаблон не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/{templateId}/ [patch]
+func (s *Services) updatePropertyTemplate(c echo.Context) error {
+	user := c.(ProjectContext).User
+	project := c.(ProjectContext).Project
+	templateId := c.Param("templateId")
 
-	if err := s.db.Where("project_id = ?", projectId).Where("id = ?", propertyId).Delete(&dao.IssueProperty{}).Error; err != nil {
+	templateUUID, err := uuid.FromString(templateId)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	var template dao.ProjectPropertyTemplate
+	if err := s.db.Where("id = ? AND project_id = ?", templateUUID, project.ID).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+		}
 		return EError(c, err)
 	}
-	return c.NoContent(http.StatusOK)
+
+	var request dto.UpdatePropertyTemplateRequest
+	if err := c.Bind(&request); err != nil {
+		return EError(c, err)
+	}
+
+	// Применяем обновления
+	updates := make(map[string]interface{})
+	if request.Name != nil {
+		name := strings.TrimSpace(*request.Name)
+		if name == "" {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNameRequired)
+		}
+		updates["name"] = name
+	}
+
+	// Определяем тип для валидации options
+	newType := template.Type
+	if request.Type != nil {
+		validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
+		if !validTypes[*request.Type] {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
+		}
+		newType = *request.Type
+		updates["type"] = *request.Type
+	}
+
+	// Обработка options
+	if request.Options != nil {
+		updates["options"] = *request.Options
+	}
+
+	// Для типа select проверяем наличие options
+	if newType == "select" {
+		var finalOptions []string
+		if request.Options != nil {
+			finalOptions = *request.Options
+		} else {
+			finalOptions = template.Options
+		}
+		if len(finalOptions) == 0 {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
+		}
+	}
+
+	if request.OnlyAdmin != nil {
+		updates["only_admin"] = *request.OnlyAdmin
+	}
+	if request.SortOrder != nil {
+		updates["sort_order"] = *request.SortOrder
+	}
+
+	if len(updates) > 0 {
+		updates["updated_by_id"] = user.ID
+		updates["updated_at"] = time.Now()
+
+		if err := s.db.Model(&template).Updates(updates).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	// Перезагружаем для актуальных данных
+	if err := s.db.First(&template, templateUUID).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, template.ToDTO())
 }
-*/
+
+// deletePropertyTemplate godoc
+// @id deletePropertyTemplate
+// @Summary Шаблоны полей: удаление
+// @Description Удаляет шаблон кастомного поля и все связанные значения. Доступно только для админов проекта.
+// @Tags PropertyTemplates
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param templateId path string true "ID шаблона поля"
+// @Success 204 "Шаблон успешно удален"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на удаление"
+// @Failure 404 {object} apierrors.DefinedError "Шаблон не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/{templateId}/ [delete]
+func (s *Services) deletePropertyTemplate(c echo.Context) error {
+	project := c.(ProjectContext).Project
+	templateId := c.Param("templateId")
+
+	templateUUID, err := uuid.FromString(templateId)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	// Проверяем существование
+	var template dao.ProjectPropertyTemplate
+	if err := s.db.Where("id = ? AND project_id = ?", templateUUID, project.ID).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+		}
+		return EError(c, err)
+	}
+
+	// Удаляем все значения для этого шаблона
+	if err := s.db.Where("template_id = ?", templateUUID).Delete(&dao.IssueProperty{}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Удаляем шаблон
+	if err := s.db.Delete(&template).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}

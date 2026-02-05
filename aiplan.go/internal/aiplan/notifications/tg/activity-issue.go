@@ -1,6 +1,7 @@
 package tg
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
+
+var ErrEmptyActivity = errors.New("activity is empty")
 
 type funcIssueMsgFormat func(act *dao.IssueActivity, af actField.ActivityField) TgMsg
 
@@ -34,6 +37,7 @@ var (
 		actField.Parent.Field:      issueParent,
 		actField.TargetDate.Field:  issueTargetDate,
 		actField.Project.Field:     issueProject,
+		actField.Sprint.Field:      issueSprint,
 	}
 )
 
@@ -77,6 +81,7 @@ func preloadIssueActivity(tx *gorm.DB, id uuid.UUID) *dao.Issue {
 		Preload("Assignees").
 		Preload("Watchers").
 		Preload("Parent.Project").
+		Preload("Links").
 		Where("issues.id = ?", id).
 		First(&issue).Error; err != nil {
 		slog.Error("Get IssueActivity", "err", err)
@@ -190,7 +195,10 @@ func issueLinked(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 
 func issueSubIssue(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-
+	subIssue := utils.GetFirstOrNil(act.NewSubIssue, act.OldSubIssue)
+	if subIssue == nil {
+		return msg
+	}
 	msg.title = "изменил(-a)"
 	format := "*Подзадача*: "
 
@@ -203,10 +211,7 @@ func issueSubIssue(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 		return NewTgMsg()
 	}
 
-	msg.body += Stelegramf(format,
-		act.NewSubIssue.FullIssueName(),
-		act.NewSubIssue.URL,
-	)
+	msg.body += Stelegramf(format, subIssue.FullIssueName(), subIssue.URL)
 	return msg
 }
 
@@ -238,7 +243,11 @@ func issueLink(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	case actField.VerbUpdated:
 		if act.OldValue != nil {
 			format = "~%s~ " + format
-			values = append([]any{*act.OldValue}, values...)
+			if af == actField.LinkUrl.Field {
+				values = append([]any{*act.OldValue}, values[1], values[1])
+			} else {
+				values = append([]any{*act.OldValue}, values...)
+			}
 		}
 	}
 
@@ -377,5 +386,25 @@ func issueProject(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 		fmt.Sprint(act.OldProject.Name),
 		act.NewProject.Name,
 	)
+	return msg
+}
+
+func issueSprint(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+	msg := NewTgMsg()
+
+	switch act.Verb {
+	case actField.VerbAdded:
+		msg.title = "добавил(-a) в спринт задачу"
+		if act.NewIssueSprint != nil {
+			act.NewIssueSprint.SetUrl()
+			msg.body = Stelegramf("*спринт*: [%s](%s)", act.NewIssueSprint.GetFullName(), act.NewIssueSprint.URL)
+		}
+	case actField.VerbRemoved:
+		msg.title = "убрал(-a) из спринта задачу"
+		if act.OldIssueSprint != nil {
+			act.OldIssueSprint.SetUrl()
+			msg.body = Stelegramf("*спринт*: [~%s~](%s)", act.OldIssueSprint.GetFullName(), act.OldIssueSprint.URL)
+		}
+	}
 	return msg
 }

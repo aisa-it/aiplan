@@ -193,8 +193,8 @@ func (i Issue) GetIssueId() uuid.UUID {
 //
 // Возвращает:
 //   - dto.SearchLightweightResponse: структура, содержащая преобразованные данные Issue для поиска.
-func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightResponse {
-	ii := dto.SearchLightweightResponse{
+func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightIssue {
+	ii := dto.SearchLightweightIssue{
 		ID:          i.ID,
 		WorkspaceId: i.WorkspaceId,
 		Workspace:   i.Workspace.ToLightDTO(),
@@ -1082,8 +1082,8 @@ type IssueDescriptionLock struct {
 }
 
 type LinkedIssues struct {
-	Id1 uuid.UUID `json:"-" gorm:"primaryKey;autoIncrement:false;type:uuid;check:id1 < id2"`
-	Id2 uuid.UUID `json:"-" gorm:"primaryKey;autoIncrement:false;type:uuid;index:,type:hash"`
+	Id1 uuid.UUID `json:"-" gorm:"primaryKey;type:uuid;check:id1 < id2"`
+	Id2 uuid.UUID `json:"-" gorm:"primaryKey;type:uuid;index:,type:hash"`
 
 	Issue1 Issue `json:"-" gorm:"foreignKey:Id1"`
 	Issue2 Issue `json:"-" gorm:"foreignKey:Id2"`
@@ -1772,35 +1772,6 @@ func (ic *IssueComment) BeforeDelete(tx *gorm.DB) error {
 	}
 	return nil
 }
-
-type IssueProperty struct {
-	Id          uuid.UUID ` gorm:"primaryKey;type:uuid"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CreatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
-	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
-
-	Properties  map[string]interface{} `gorm:"serializer:json"`
-	IssueId     uuid.UUID
-	ProjectId   uuid.UUID `gorm:"index;type:uuid"`
-	WorkspaceId uuid.UUID `gorm:"type:uuid"`
-
-	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	Issue     *Issue     `gorm:"foreignKey:IssueId"`
-	CreatedBy *User      `gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
-}
-
-// TableName возвращает имя таблицы, соответствующее текущему типу сущности.
-// Используется для правильной работы с ORM и определения имени таблицы в базе данных.
-//
-// Параметры:
-//   - Нет
-//
-// Возвращает:
-//   - string: имя таблицы.
-func (IssueProperty) TableName() string { return "issue_properties" }
 
 // CreateIssue создает новую задачу в базе данных. Функция принимает объект задачи, объект базы данных, пользователя, текст комментария, комментарий для базы данных, ID задачи для ответа на комментарий и дополнительные метаданные.  Функция заполняет поля задачи, такие как состояние, ID последовательности и порядок сортировки. Также устанавливает начальные значения для полей состояния (start/complete).  Возвращает ошибку, если при создании задачи произошла ошибка, или nil в противном случае.
 //

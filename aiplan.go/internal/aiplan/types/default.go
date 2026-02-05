@@ -108,7 +108,6 @@ var DefaultWorkspaceMemberNS = WorkspaceMemberNS{
 	DisableWorkspaceForm:        true,
 	DisableWorkspaceDoc:         true,
 	DisableWorkspaceName:        true,
-	DisableWorkspaceOwner:       true,
 	DisableWorkspaceDesc:        true,
 	DisableWorkspaceToken:       true,
 	DisableWorkspaceLogo:        true,
