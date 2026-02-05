@@ -27,11 +27,6 @@ func BuildIssueListQuery(
 	globalSearch bool,
 	searchParams *types.SearchParams,
 ) ([]dao.IssueWithCount, int, error) {
-	// Валидация
-	if searchParams.Limit > 100 {
-		return nil, 0, apierrors.ErrLimitTooHigh
-	}
-
 	if searchParams.GroupByParam != "" {
 		return nil, 0, apierrors.ErrUnsupportedGroup
 	}
@@ -79,12 +74,12 @@ func BuildIssueListQuery(
 			query = query.Where("issues.created_by_id in (?)", searchParams.Filters.AuthorIds)
 		}
 
-		if len(searchParams.Filters.AssigneeIds) > 0 {
+		if !searchParams.Filters.AssigneeIds.IsEmpty() {
 			q := db.Where("issues.id in (?)",
 				db.Select("issue_id").
-					Where("assignee_id in (?)", searchParams.Filters.AssigneeIds).
+					Where("assignee_id in (?)", searchParams.Filters.AssigneeIds.Array).
 					Model(&dao.IssueAssignee{}))
-			if slices.Contains(searchParams.Filters.AssigneeIds, "") {
+			if searchParams.Filters.AssigneeIds.IncludeEmpty {
 				q = q.Or("issues.id not in (?)", db.
 					Select("issue_id").
 					Model(&dao.IssueAssignee{}))
@@ -92,12 +87,12 @@ func BuildIssueListQuery(
 			query = query.Where(q)
 		}
 
-		if len(searchParams.Filters.WatcherIds) > 0 {
+		if !searchParams.Filters.WatcherIds.IsEmpty() {
 			q := db.Where("issues.id in (?)",
 				db.Select("issue_id").
-					Where("watcher_id in (?)", searchParams.Filters.WatcherIds).
+					Where("watcher_id in (?)", searchParams.Filters.WatcherIds.Array).
 					Model(&dao.IssueWatcher{}))
-			if slices.Contains(searchParams.Filters.WatcherIds, "") {
+			if searchParams.Filters.WatcherIds.IncludeEmpty {
 				q = q.Or("issues.id not in (?)", db.
 					Select("issue_id").
 					Model(&dao.IssueWatcher{}))
@@ -221,6 +216,21 @@ func BuildIssueListQuery(
 				Where("p.deleted_at IS NULL").
 				Where(dao.Issue{}.FullTextSearch(db, searchParams.Filters.SearchQuery))
 		}
+
+		query = searchParams.Filters.CreatedAtFrom.FilterQuery(query, "issues.created_at", true)
+		query = searchParams.Filters.CreatedAtTo.FilterQuery(query, "issues.created_at", false)
+
+		query = searchParams.Filters.UpdatedAtFrom.FilterQuery(query, "issues.updated_at", true)
+		query = searchParams.Filters.UpdatedAtTo.FilterQuery(query, "issues.updated_at", false)
+
+		query = searchParams.Filters.StartDateFrom.FilterQuery(query, "issues.start_date", true)
+		query = searchParams.Filters.StartDateTo.FilterQuery(query, "issues.start_date", false)
+
+		query = searchParams.Filters.TargetDateFrom.FilterQuery(query, "issues.target_date", true)
+		query = searchParams.Filters.TargetDateTo.FilterQuery(query, "issues.target_date", false)
+
+		query = searchParams.Filters.CompletedAtFrom.FilterQuery(query, "issues.completed_at", true)
+		query = searchParams.Filters.CompletedAtTo.FilterQuery(query, "issues.completed_at", false)
 	}
 
 	// Ignore slave issues
@@ -366,13 +376,8 @@ func GetIssueListData(
 	sprint *dao.Sprint,
 	globalSearch bool,
 	searchParams *types.SearchParams,
-	streamCallback types.StreamCallback,
+	streamCallback StreamCallback,
 ) (any, error) {
-	// Валидация
-	if searchParams.Limit > 100 {
-		return nil, apierrors.ErrLimitTooHigh
-	}
-
 	if searchParams.GroupByParam != "" && !slices.Contains(types.IssueGroupFields, searchParams.GroupByParam) {
 		return nil, apierrors.ErrUnsupportedGroup
 	}
@@ -435,12 +440,12 @@ func GetIssueListData(
 				query = query.Where("issues.created_by_id in (?)", searchParams.Filters.AuthorIds)
 			}
 
-			if len(searchParams.Filters.AssigneeIds) > 0 {
+			if !searchParams.Filters.AssigneeIds.IsEmpty() {
 				q := db.Where("issues.id in (?)",
 					db.Select("issue_id").
-						Where("assignee_id in (?)", searchParams.Filters.AssigneeIds).
+						Where("assignee_id in (?)", searchParams.Filters.AssigneeIds.Array).
 						Model(&dao.IssueAssignee{}))
-				if slices.Contains(searchParams.Filters.AssigneeIds, "") {
+				if searchParams.Filters.AssigneeIds.IncludeEmpty {
 					q = q.Or("issues.id not in (?)", db.
 						Select("issue_id").
 						Model(&dao.IssueAssignee{}))
@@ -448,12 +453,12 @@ func GetIssueListData(
 				query = query.Where(q)
 			}
 
-			if len(searchParams.Filters.WatcherIds) > 0 {
+			if !searchParams.Filters.WatcherIds.IsEmpty() {
 				q := db.Where("issues.id in (?)",
 					db.Select("issue_id").
-						Where("watcher_id in (?)", searchParams.Filters.WatcherIds).
+						Where("watcher_id in (?)", searchParams.Filters.WatcherIds.Array).
 						Model(&dao.IssueWatcher{}))
-				if slices.Contains(searchParams.Filters.WatcherIds, "") {
+				if searchParams.Filters.WatcherIds.IncludeEmpty {
 					q = q.Or("issues.id not in (?)", db.
 						Select("issue_id").
 						Model(&dao.IssueWatcher{}))
@@ -689,9 +694,9 @@ func GetIssueListData(
 			return nil, err
 		}
 
-		var groupMap []types.IssuesGroupResponse
+		var groupMap []dto.IssuesGroupResponse
 
-		totalCount, err := FetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group types.IssuesGroupResponse) error {
+		totalCount, err := FetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group dto.IssuesGroupResponse) error {
 			if streamCallback != nil {
 				return streamCallback(group)
 			}
@@ -707,10 +712,12 @@ func GetIssueListData(
 			return nil, nil
 		}
 
-		return types.IssuesGroupedResponse{
-			Count:   totalCount,
-			Offset:  searchParams.Offset,
-			Limit:   searchParams.Limit,
+		return dto.IssuesGroupedResponse{
+			PaginationMeta: dto.PaginationMeta{
+				Count:  totalCount,
+				Offset: searchParams.Offset,
+				Limit:  searchParams.Limit,
+			},
 			GroupBy: searchParams.GroupByParam,
 			Issues:  groupMap,
 		}, nil
@@ -722,21 +729,23 @@ func GetIssueListData(
 		return nil, err
 	}
 
+	paginationMeta := dto.PaginationMeta{
+		Count:  count,
+		Offset: searchParams.Offset,
+		Limit:  searchParams.Limit,
+	}
+
 	// Преобразование в map с DTO
 	if searchParams.LightSearch {
-		return map[string]any{
-			"count":  count,
-			"offset": searchParams.Offset,
-			"limit":  searchParams.Limit,
-			"issues": utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.SearchLightweightResponse { return iwc.ToSearchLightDTO() }),
+		return dto.IssuesLightSearchResponse{
+			PaginationMeta: paginationMeta,
+			Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.SearchLightweightIssue { return iwc.ToSearchLightDTO() }),
 		}, nil
 	}
 
-	return map[string]any{
-		"count":  count,
-		"offset": searchParams.Offset,
-		"limit":  searchParams.Limit,
-		"issues": utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
+	return dto.IssuesSearchResponse{
+		PaginationMeta: paginationMeta,
+		Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
 	}, nil
 }
 

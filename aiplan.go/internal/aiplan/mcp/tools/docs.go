@@ -435,7 +435,7 @@ func handleParentDoc(db *gorm.DB, parentDocIdStr string, workspace *dao.Workspac
 
 	// Проверка иерархии ролей
 	if readerRole < parentDoc.ReaderRole || editorRole < parentDoc.EditorRole {
-		return uuid.NullUUID{}, 0, 0, apierrors.ErrDocChildRoleTooLow.MCPError()
+		return uuid.NullUUID{}, 0, 0, apierrors.ErrDocRoleLowerThanParent.MCPError()
 	}
 
 	return uuid.NullUUID{UUID: parentDocId, Valid: true}, readerRole, editorRole, nil

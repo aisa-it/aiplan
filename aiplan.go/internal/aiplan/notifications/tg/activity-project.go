@@ -147,7 +147,20 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 			assignees = append(assignees, getUserName(&assignee))
 		}
 		format += "\n*Исполнители*: %s"
-		values = append(values, strings.Join(assignees, "*, *"))
+		values = append(values, strings.Join(assignees, ", "))
+	}
+
+	if act.NewIssue.Links != nil && len(*act.NewIssue.Links) > 0 {
+		format += "\n*Ссылки*: "
+		first := true
+		for _, link := range *act.NewIssue.Links {
+			if !first {
+				format += ", "
+			}
+			format += "[%s](%s)"
+			values = append(values, link.Title, link.Url)
+			first = false
+		}
 	}
 
 	msg.body += Stelegramf(format, values...)
@@ -164,20 +177,20 @@ func projectTemplate(act *dao.ProjectActivity, af actField.ActivityField) TgMsg 
 	case actField.VerbCreated:
 		msg.title = "создал(-a) шаблон задачи в"
 		format += "%s\n```\n%s```"
-		values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template)
+		values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 	case actField.VerbUpdated:
 		msg.title = "изменил(-a) шаблон задачи в"
 		switch af {
 		case actField.TemplateTemplate.Field:
 			format += "%s\n```\n%s```"
-			values = append(values, act.NewIssueTemplate.Name, act.NewValue)
+			values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 		case actField.TemplateName.Field:
 			format += "~%s~ %s"
 			values = append(values, fmt.Sprint(*act.OldValue), act.NewValue)
 		default:
 			if act.NewIssueTemplate != nil {
 				format += "%s\n```\n%s```"
-				values = append(values, act.NewIssueTemplate.Name, act.NewIssueTemplate.Template)
+				values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 			}
 		}
 	case actField.VerbDeleted:
@@ -337,7 +350,7 @@ func projectLogo(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 
 func projectDefaultMember(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	user := getExistUser(act.NewDefaultWatcher, act.NewDefaultAssignee, act.OldDefaultWatcher, act.OldDefaultAssignee)
+	user := utils.GetFirstOrNil(act.NewDefaultWatcher, act.NewDefaultAssignee, act.OldDefaultWatcher, act.OldDefaultAssignee)
 	if user == nil {
 		return msg
 	}

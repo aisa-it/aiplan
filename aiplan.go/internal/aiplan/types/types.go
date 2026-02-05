@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -331,11 +332,19 @@ func RemoveInvisibleChars(s string) string {
 type FormFieldsSlice []FormFields
 
 type FormFields struct {
-	Type     string          `json:"type"`
-	Label    string          `json:"label,omitempty"`
-	Val      interface{}     `json:"value,omitempty"`
-	Required bool            `json:"required"`
-	Validate *ValidationRule `json:"validate,omitempty" extensions:"x-nullable"`
+	Type           string               `json:"type"`
+	Label          string               `json:"label,omitempty"`
+	Val            interface{}          `json:"value"`
+	Required       bool                 `json:"required"`
+	IssueNameField bool                 `json:"issue_name_field"`
+	Validate       *ValidationRule      `json:"validate,omitempty" extensions:"x-nullable"`
+	DependOn       *FormFieldDependency `json:"depend_on,omitempty" extensions:"x-nullable"`
+}
+
+type FormFieldDependency struct {
+	FieldIndex    int  `json:"field_index"`                          // Индекс поля от которого зависит
+	OptionIndex   *int `json:"option_index" extensions:"x-nullable"` // Индекс варианта ответа (для select/multiselect)
+	ExpectedValue bool `json:"value"`                                // Ожидаемое значение зависимого поля (или варианта ответа)
 }
 
 type ValidationRule struct {
@@ -374,11 +383,128 @@ func (f *FormFieldsSlice) Scan(value interface{}) error {
 	return nil
 }
 
+// HideFields type
+type HideFields []string
+
+func (f HideFields) Value() (driver.Value, error) {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (f *HideFields) Scan(value interface{}) error {
+	if value == nil {
+		*f = HideFields{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, f); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f HideFields) MarshalJSON() ([]byte, error) {
+	if f == nil {
+		return []byte("[]"), nil
+	}
+	type hf HideFields
+	return json.Marshal(hf(f))
+}
+
+// FilterUUIDs представляет фильтр для работы с массивом UUID.
+// Используется для фильтрации по списку идентификаторов с поддержкой пустых значений.
+// Поля:
+//   - Array: основной массив UUID для фильтрации
+//   - IncludeEmpty: флаг, указывающий на необходимость включения пустых значений (например, NULL в базе данных)
+//
+// Методы типа обеспечивают сериализацию/десериализацию в JSON, работу с базой данных и проверку наличия значений.
+type FilterUUIDs struct {
+	Array        []uuid.UUID
+	IncludeEmpty bool
+}
+
+func (fa *FilterUUIDs) UnmarshalJSON(data []byte) error {
+	var ids []string
+	if err := json.Unmarshal(data, &ids); err != nil {
+		return err
+	}
+
+	fa.Array = make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			fa.IncludeEmpty = true
+			continue
+		}
+		parsedId, err := uuid.FromString(id)
+		if err != nil {
+			return err
+		}
+		fa.Array = append(fa.Array, parsedId)
+	}
+	return nil
+}
+
+func (fa FilterUUIDs) MarshalJSON() ([]byte, error) {
+	ss := make([]string, 0, len(fa.Array)+1)
+	if fa.IncludeEmpty {
+		ss = append(ss, "")
+	}
+	for _, id := range fa.Array {
+		ss = append(ss, id.String())
+	}
+	return json.Marshal(ss)
+}
+
+func (fa FilterUUIDs) IsEmpty() bool {
+	return len(fa.Array) == 0 && !fa.IncludeEmpty
+}
+
+func (filter *FilterUUIDs) Scan(value any) error {
+	if value == nil {
+		*filter = FilterUUIDs{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	return json.Unmarshal(bytes, filter)
+}
+
+func (filter *FilterUUIDs) Contains(str string) bool {
+	for _, id := range filter.Array {
+		if id.String() == str {
+			return true
+		}
+	}
+	return false
+}
+
 // IssuesListFilters type
 type IssuesListFilters struct {
-	AuthorIds   []string `json:"authors"`
-	AssigneeIds []string `json:"assignees"`
-	WatcherIds  []string `json:"watchers"`
+	AuthorIds   []string    `json:"authors"`
+	AssigneeIds FilterUUIDs `json:"assignees,omitempty"`
+	WatcherIds  FilterUUIDs `json:"watchers,omitempty"`
 
 	StateIds       []uuid.UUID `json:"states"`
 	Priorities     []string    `json:"priorities"`
@@ -393,10 +519,21 @@ type IssuesListFilters struct {
 	WatchedByMe  bool `json:"watched_by_me"`
 	AuthoredByMe bool `json:"authored_by_me"`
 
+	CreatedAtFrom   JSONTime `json:"created_at_from"`
+	CreatedAtTo     JSONTime `json:"created_at_to"`
+	UpdatedAtFrom   JSONTime `json:"updated_at_from"`
+	UpdatedAtTo     JSONTime `json:"updated_at_to"`
+	StartDateFrom   JSONTime `json:"start_date_from"`
+	StartDateTo     JSONTime `json:"start_date_to"`
+	TargetDateFrom  JSONTime `json:"target_date_from"`
+	TargetDateTo    JSONTime `json:"target_date_to"`
+	CompletedAtFrom JSONTime `json:"completed_at_from"`
+	CompletedAtTo   JSONTime `json:"completed_at_to"`
+
 	SearchQuery string `json:"search_query"`
 }
 
-func (filter *IssuesListFilters) Scan(value interface{}) error {
+func (filter *IssuesListFilters) Scan(value any) error {
 	if value == nil {
 		*filter = IssuesListFilters{}
 		return nil
@@ -558,6 +695,7 @@ type ProjectMemberNS struct {
 	NotifyBeforeDeadline *int `json:"notify_before_deadline" extensions:"x-nullable"`
 	DisableIssueTransfer bool `json:"disable_issue_transfer"`
 	DisableIssueNew      bool `json:"disable_issue_new"`
+	DisableIssueSprint   bool `json:"disable_issue_sprint"`
 
 	DisableProjectName            bool `json:"disable_project_name"`
 	DisableProjectPublic          bool `json:"disable_project_public"`
@@ -761,6 +899,11 @@ func (ns ProjectMemberNS) IsNotify(field *string, entity actField.ActivityField,
 		if isPrAdmin {
 			return !ns.DisableProjectTemplate
 		}
+	case actField.Sprint.Field:
+		if isIssue {
+			return !ns.DisableIssueSprint
+		}
+
 	}
 	return false
 }
@@ -782,7 +925,6 @@ type WorkspaceMemberNS struct {
 	DisableWorkspaceForm        bool `json:"disable_workspace_form"`
 	DisableWorkspaceDoc         bool `json:"disable_workspace_doc"`
 	DisableWorkspaceName        bool `json:"disable_workspace_name"`
-	DisableWorkspaceOwner       bool `json:"disable_workspace_owner"`
 	DisableWorkspaceDesc        bool `json:"disable_workspace_desc"`
 	DisableWorkspaceToken       bool `json:"disable_workspace_token"`
 	DisableWorkspaceLogo        bool `json:"disable_workspace_logo"`
@@ -929,17 +1071,14 @@ func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityFiel
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceMember
 		}
-	case actField.Role.Field:
+	case actField.Role.Field,
+		actField.WorkspaceOwner.Field:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceRole
 		}
 	case actField.Integration.Field:
 		if isWorkspaceAdmin {
 			return !ns.DisableWorkspaceIntegration
-		}
-	case actField.WorkspaceOwner.Field:
-		if isWorkspaceAdmin {
-			return !ns.DisableWorkspaceOwner
 		}
 	case actField.Issue.Field:
 		if isSprint {
@@ -1073,4 +1212,62 @@ func formatDate(dateStr string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("unsuported date format")
+}
+
+// JSON time in unix seconds
+type JSONTime time.Time
+
+func (d *JSONTime) UnmarshalJSON(b []byte) error {
+	ms, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
+		return err
+	}
+	*d = JSONTime(time.Unix(ms, 0))
+	return nil
+}
+
+func (d JSONTime) MarshalJSON() ([]byte, error) {
+	return fmt.Append([]byte{}, time.Time(d).Unix()), nil
+}
+
+func (d *JSONTime) Value() (driver.Value, error) {
+	if d == nil {
+		return nil, nil
+	}
+	return time.Time(*d), nil
+}
+
+func (d *JSONTime) Scan(value any) error {
+	t, ok := value.(time.Time)
+	if !ok {
+		return fmt.Errorf("error unmarshal time: %v", value)
+	}
+	*d = JSONTime(t)
+	return nil
+}
+
+func (d *JSONTime) IsNil() bool {
+	return d == nil || time.Time(*d).IsZero()
+}
+
+func (d JSONTime) Time() time.Time {
+	return time.Time(d)
+}
+
+// FilterQuery добавляет условие фильтрации по времени к запросу GORM.
+// Если время d не является нулевым, добавляется условие сравнения с полем field.
+// Параметр bigger определяет направление сравнения:
+//   - если bigger == true, добавляется условие field >= d (больше или равно)
+//   - если bigger == false, добавляется условие field <= d (меньше или равно)
+//
+// Если время d нулевое, запрос возвращается без изменений.
+func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.DB {
+	if !d.IsNil() {
+		s := ">="
+		if !bigger {
+			s = "<="
+		}
+		return query.Where(fmt.Sprintf("%s %s ?", field, s), d)
+	}
+	return query
 }

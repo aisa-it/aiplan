@@ -26,10 +26,14 @@ func GenBodyAnswer(answer *dao.FormAnswer, user *dao.User) (string, error) {
 		"getValString": func(t string, val interface{}) template.HTML {
 			switch t {
 			case "checkbox":
-				if v := val.(bool); v {
-					return template.HTML("Да")
-				} else {
+				if val == nil {
 					return template.HTML("Нет")
+				} else {
+					if v := val.(bool); v {
+						return template.HTML("Да")
+					} else {
+						return template.HTML("Нет")
+					}
 				}
 			case "date":
 				return template.HTML(time.UnixMilli(int64(val.(float64))).Format("02.01.2006"))

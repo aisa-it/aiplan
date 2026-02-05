@@ -15,26 +15,6 @@ type SearchGroupSize struct {
 	Key   string
 }
 
-// IssuesGroupedResponse - ответ с группированными задачами
-type IssuesGroupedResponse struct {
-	Count   int                   `json:"count"`
-	Offset  int                   `json:"offset"`
-	Limit   int                   `json:"limit"`
-	GroupBy string                `json:"group_by"`
-	Issues  []IssuesGroupResponse `json:"issues"`
-}
-
-// IssuesGroupResponse - одна группа в группированном ответе
-type IssuesGroupResponse struct {
-	Entity any   `json:"entity"`
-	Count  int   `json:"count"`
-	Issues []any `json:"issues"`
-}
-
-// StreamCallback - callback для streaming группированных результатов
-// Если nil - результаты собираются в массив и возвращаются целиком
-type StreamCallback func(group IssuesGroupResponse) error
-
 type SearchParams struct {
 	HideSubIssues bool
 	Draft         bool
@@ -176,7 +156,11 @@ func ParseSearchParamsMCP(args map[string]any) (*SearchParams, error) {
 	if v, ok := args["assignee_ids"].([]interface{}); ok {
 		for _, s := range v {
 			if str, ok := s.(string); ok {
-				sp.Filters.AssigneeIds = append(sp.Filters.AssigneeIds, str)
+				if str == "" {
+					sp.Filters.WatcherIds.IncludeEmpty = true
+					continue
+				}
+				sp.Filters.WatcherIds.Array = append(sp.Filters.WatcherIds.Array, uuid.FromStringOrNil(str))
 			}
 		}
 	}
@@ -184,7 +168,11 @@ func ParseSearchParamsMCP(args map[string]any) (*SearchParams, error) {
 	if v, ok := args["watcher_ids"].([]interface{}); ok {
 		for _, s := range v {
 			if str, ok := s.(string); ok {
-				sp.Filters.WatcherIds = append(sp.Filters.WatcherIds, str)
+				if str == "" {
+					sp.Filters.WatcherIds.IncludeEmpty = true
+					continue
+				}
+				sp.Filters.WatcherIds.Array = append(sp.Filters.WatcherIds.Array, uuid.FromStringOrNil(str))
 			}
 		}
 	}

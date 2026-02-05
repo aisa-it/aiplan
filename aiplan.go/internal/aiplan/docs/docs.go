@@ -3969,6 +3969,125 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/issues/search/export/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Экспортирует задачи в ZIP архив с CSV файлами. При группировке создаётся отдельный CSV файл для каждой группы.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "Issues"
+                ],
+                "summary": "Задачи: экспорт задач в CSV",
+                "operationId": "exportIssueList",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Выключить подзадачи",
+                        "name": "hide_sub_issues",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "\"sequence_id\"",
+                        "description": "Поле для сортировки",
+                        "name": "order_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "\"\"",
+                        "description": "Поле для группировки результатов",
+                        "name": "group_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": -1,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Лимит записей",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Сортировка по убыванию",
+                        "name": "desc",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Вернуть только активные задачи",
+                        "name": "only_active",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Вернуть только закрепленные задачи",
+                        "name": "only_pinned",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Фильтры для поиска задач",
+                        "name": "filters",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/types.IssuesListFilters"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ZIP архив с CSV файлами",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/notification-bot-link/": {
             "get": {
                 "description": "Возвращает ссылку для подключения к Telegram боту уведомлений, если он доступен",
@@ -6888,6 +7007,12 @@ const docTemplate = `{
                         "description": "Вложения для документа",
                         "name": "files",
                         "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "применить повышение роли (при необходимости) к дочерним документам",
+                        "name": "cascade_roles",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -13527,6 +13652,165 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает все шаблоны полей проекта с их значениями для задачи.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueProperties"
+                ],
+                "summary": "Свойства задачи: получение всех полей",
+                "operationId": "getIssueProperties",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список свойств задачи",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.IssueProperty"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к задаче",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Устанавливает или обновляет значение кастомного поля для задачи.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueProperties"
+                ],
+                "summary": "Свойства задачи: установка значения",
+                "operationId": "setIssueProperty",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID шаблона поля",
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные свойства",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SetIssuePropertyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Установленное свойство",
+                        "schema": {
+                            "$ref": "#/definitions/dto.IssueProperty"
+                        }
+                    },
+                    "201": {
+                        "description": "Созданное свойство",
+                        "schema": {
+                            "$ref": "#/definitions/dto.IssueProperty"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на установку",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача или шаблон не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/sub-issues": {
             "get": {
                 "security": [
@@ -14733,6 +15017,262 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список всех шаблонов кастомных полей для проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "PropertyTemplates"
+                ],
+                "summary": "Шаблоны полей: получение списка",
+                "operationId": "getPropertyTemplateList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список шаблонов полей",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.ProjectPropertyTemplate"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к проекту",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Создает новый шаблон кастомного поля для проекта. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "PropertyTemplates"
+                ],
+                "summary": "Шаблоны полей: создание",
+                "operationId": "createPropertyTemplate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные шаблона поля",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreatePropertyTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Созданный шаблон поля",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProjectPropertyTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на создание",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/{templateId}/": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет шаблон кастомного поля и все связанные значения. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "PropertyTemplates"
+                ],
+                "summary": "Шаблоны полей: удаление",
+                "operationId": "deletePropertyTemplate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID шаблона поля",
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Шаблон успешно удален"
+                    },
+                    "403": {
+                        "description": "Нет прав на удаление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Шаблон не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет шаблон кастомного поля. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "PropertyTemplates"
+                ],
+                "summary": "Шаблоны полей: обновление",
+                "operationId": "updatePropertyTemplate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID шаблона поля",
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные для обновления",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatePropertyTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленный шаблон поля",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProjectPropertyTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на обновление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Шаблон не найден",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -18715,6 +19255,40 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreatePropertyTemplateRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "type"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                },
+                "only_admin": {
+                    "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "boolean",
+                        "select"
+                    ]
+                }
+            }
+        },
         "dto.DeleteGitRepositoryRequest": {
             "type": "object",
             "required": [
@@ -19719,6 +20293,39 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.IssueProperty": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "issue_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {},
+                "workspace_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.IssueSearchResult": {
             "type": "object",
             "properties": {
@@ -20442,6 +21049,44 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ProjectPropertyTemplate": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "only_admin": {
+                    "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "workspace_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ProjectStats": {
             "type": "object",
             "properties": {
@@ -20754,6 +21399,12 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SetIssuePropertyRequest": {
+            "type": "object",
+            "properties": {
+                "value": {}
+            }
+        },
         "dto.Sprint": {
             "type": "object",
             "properties": {
@@ -20972,6 +21623,29 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.MonthlyCount"
                     }
+                }
+            }
+        },
+        "dto.UpdatePropertyTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "only_admin": {
+                    "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },
@@ -21779,6 +22453,20 @@ const docTemplate = `{
                 }
             }
         },
+        "types.FilterUUIDs": {
+            "type": "object",
+            "properties": {
+                "array": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "include_empty": {
+                    "type": "boolean"
+                }
+            }
+        },
         "types.FormAnswerNotify": {
             "type": "object",
             "properties": {
@@ -21793,9 +22481,38 @@ const docTemplate = `{
                 }
             }
         },
+        "types.FormFieldDependency": {
+            "type": "object",
+            "properties": {
+                "field_index": {
+                    "description": "Индекс поля от которого зависит",
+                    "type": "integer"
+                },
+                "option_index": {
+                    "description": "Индекс варианта ответа (для select/multiselect)",
+                    "type": "integer",
+                    "x-nullable": true
+                },
+                "value": {
+                    "description": "Ожидаемое значение зависимого поля (или варианта ответа)",
+                    "type": "boolean"
+                }
+            }
+        },
         "types.FormFields": {
             "type": "object",
             "properties": {
+                "depend_on": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FormFieldDependency"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "issue_name_field": {
+                    "type": "boolean"
+                },
                 "label": {
                     "type": "string"
                 },
@@ -21823,10 +22540,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "assignees": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "authored_by_me": {
                     "type": "boolean"
@@ -21836,6 +22550,18 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "completed_at_from": {
+                    "type": "string"
+                },
+                "completed_at_to": {
+                    "type": "string"
+                },
+                "created_at_from": {
+                    "type": "string"
+                },
+                "created_at_to": {
+                    "type": "string"
                 },
                 "labels": {
                     "type": "array",
@@ -21867,20 +22593,35 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "start_date_from": {
+                    "type": "string"
+                },
+                "start_date_to": {
+                    "type": "string"
+                },
                 "states": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
+                "target_date_from": {
+                    "type": "string"
+                },
+                "target_date_to": {
+                    "type": "string"
+                },
+                "updated_at_from": {
+                    "type": "string"
+                },
+                "updated_at_to": {
+                    "type": "string"
+                },
                 "watched_by_me": {
                     "type": "boolean"
                 },
                 "watchers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "workspace_slugs": {
                     "type": "array",
@@ -21921,6 +22662,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "disable_issue_new": {
+                    "type": "boolean"
+                },
+                "disable_issue_sprint": {
                     "type": "boolean"
                 },
                 "disable_issue_transfer": {
@@ -22248,9 +22992,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "disable_workspace_name": {
-                    "type": "boolean"
-                },
-                "disable_workspace_owner": {
                     "type": "boolean"
                 },
                 "disable_workspace_project": {

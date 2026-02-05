@@ -11,6 +11,8 @@ package aiplan
 import (
 	"archive/zip"
 	"bytes"
+	"compress/flate"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -44,6 +47,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -71,6 +75,7 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	)
 
 	g.POST("issues/search/", s.getIssueList)
+	g.POST("issues/search/export/", s.exportIssueList)
 
 	issueGroup.GET("/", s.getIssue)
 	issueGroup.PATCH("/", s.updateIssue)
@@ -122,6 +127,10 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	issueGroup.POST("/unpin/", s.issueUnpin)
 
 	g.Any("attachments/tus/*", s.storage.GetTUSHandler(cfg, "/api/auth/attachments/tus/", s.attachmentsUploadValidator, s.attachmentsPostUploadHook))
+
+	// Issue Properties (значения полей задачи)
+	issueGroup.GET("/properties/", s.getIssueProperties)
+	issueGroup.POST("/properties/:templateId/", s.setIssueProperty)
 }
 
 func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error) {
@@ -438,19 +447,24 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	// Для streaming режима создаем callback
-	var streamCallback types.StreamCallback
+	var streamCallback search.StreamCallback
 	if searchParams.Stream && searchParams.GroupByParam != "" {
 		c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		c.Response().WriteHeader(http.StatusOK)
 		enc := json.NewEncoder(c.Response())
 
-		streamCallback = func(group types.IssuesGroupResponse) error {
+		streamCallback = func(group dto.IssuesGroupResponse) error {
 			if err := enc.Encode(group); err != nil {
 				return err
 			}
 			c.Response().Flush()
 			return nil
 		}
+	}
+
+	// Валидация
+	if searchParams.Limit > 100 {
+		return EErrorDefined(c, apierrors.ErrLimitTooHigh)
 	}
 
 	result, err := search.GetIssueListData(s.db, user, projectMember, sprint, globalSearch, searchParams, streamCallback)
@@ -467,6 +481,124 @@ func (s *Services) getIssueList(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, result)
+}
+
+// exportIssueList godoc
+// @id exportIssueList
+// @Summary Задачи: экспорт задач в CSV
+// @Description Экспортирует задачи в ZIP архив с CSV файлами. При группировке создаётся отдельный CSV файл для каждой группы.
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce application/zip
+// @Param hide_sub_issues query bool false "Выключить подзадачи" default(false)
+// @Param order_by query string false "Поле для сортировки" default("sequence_id") enum(id, created_at, updated_at, name, priority, target_date, sequence_id, state, labels, sub_issues_count, link_count, attachment_count, linked_issues_count, assignees, watchers, author, search_rank)
+// @Param group_by query string false "Поле для группировки результатов" default("") enum(priority, author, state, labels, assignees, watchers, project)
+// @Param offset query int false "Смещение для пагинации" default(-1)
+// @Param limit query int false "Лимит записей" default(100)
+// @Param desc query bool false "Сортировка по убыванию" default(true)
+// @Param only_active query bool false "Вернуть только активные задачи" default(false)
+// @Param only_pinned query bool false "Вернуть только закрепленные задачи" default(false)
+// @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
+// @Success 200 {file} binary "ZIP архив с CSV файлами"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/issues/search/export/ [post]
+func (s *Services) exportIssueList(c echo.Context) error {
+	user := c.(AuthContext).User
+
+	searchParams, err := types.ParseSearchParams(c)
+	if err != nil {
+		return EError(c, err)
+	}
+	searchParams.LightSearch = false
+	searchParams.Offset = 0
+	searchParams.Limit = 1_000_000
+
+	result, err := search.GetIssueListData(s.db, *user, dao.ProjectMember{}, nil, true, searchParams, nil)
+	if err != nil {
+		if definedErr, ok := err.(apierrors.DefinedError); ok {
+			return EErrorDefined(c, definedErr)
+		}
+		return EError(c, err)
+	}
+
+	f, err := os.CreateTemp("", "export-*.zip")
+	if err != nil {
+		return EError(c, err)
+	}
+	defer os.Remove(f.Name())
+
+	z := zip.NewWriter(f)
+	z.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(w, flate.BestCompression)
+	})
+
+	switch res := result.(type) {
+	case dto.IssuesGroupedResponse:
+		for i, group := range res.Issues {
+			fileName := getGroupFileName(group.Entity, i)
+			entry, err := z.Create(fileName)
+			if err != nil {
+				return EError(c, err)
+			}
+			w := csv.NewWriter(entry)
+
+			if err := w.Write(csvExportHeader()); err != nil {
+				return EError(c, err)
+			}
+
+			for _, item := range group.Issues {
+				issue, ok := item.(*dto.IssueWithCount)
+				if !ok {
+					continue
+				}
+				if err := w.Write(issueToCSVRow(issue)); err != nil {
+					return EError(c, err)
+				}
+			}
+
+			w.Flush()
+			if err := w.Error(); err != nil {
+				return EError(c, err)
+			}
+		}
+	case dto.IssuesSearchResponse:
+		entry, err := z.Create("issues.csv")
+		if err != nil {
+			return EError(c, err)
+		}
+		w := csv.NewWriter(entry)
+		w.Comma = ';'
+
+		if err := w.Write(csvExportHeader()); err != nil {
+			return EError(c, err)
+		}
+
+		for _, issue := range res.Issues {
+			if err := w.Write(issueToCSVRow(&issue)); err != nil {
+				return EError(c, err)
+			}
+		}
+
+		w.Flush()
+		if err := w.Error(); err != nil {
+			return EError(c, err)
+		}
+	}
+
+	if err := z.Close(); err != nil {
+		return EError(c, err)
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return EError(c, err)
+	}
+
+	c.Response().Header().Set("Content-Disposition", "attachment; filename=issues-export.zip")
+	return c.Stream(http.StatusOK, "application/zip", f)
 }
 
 // getIssue godoc
@@ -673,6 +805,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if newState.Group == "completed" && issue.State.Group != "completed" {
 			data["completed_at"] = &types.TargetDate{Time: time.Now()}
 		} else if newState.Group != "completed" {
+			if newState.Group == "started" {
+				data["start_date"] = &types.TargetDate{Time: time.Now()}
+			}
 			// Reset completed at date on open status
 			data["completed_at"] = nil
 		} else {
@@ -3335,6 +3470,223 @@ func (s *Services) issueUnpin(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+// ############# Issue Properties methods ###################
+
+// getIssueProperties godoc
+// @id getIssueProperties
+// @Summary Свойства задачи: получение всех полей
+// @Description Возвращает все шаблоны полей проекта с их значениями для задачи.
+// Если значение не установлено, возвращается дефолтное значение для типа поля.
+// @Tags IssueProperties
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Success 200 {array} dto.IssueProperty "Список свойств задачи"
+// @Failure 403 {object} apierrors.DefinedError "Нет доступа к задаче"
+// @Failure 404 {object} apierrors.DefinedError "Задача не найдена"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/ [get]
+func (s *Services) getIssueProperties(c echo.Context) error {
+	issue := c.(IssueContext).Issue
+	projectMember := c.(IssueContext).ProjectMember
+
+	// Получаем все шаблоны полей проекта
+	var templates []dao.ProjectPropertyTemplate
+	if err := s.db.Where("project_id = ?", issue.ProjectId).
+		Where("only_admin = ? OR only_admin = ?", false, projectMember.Role == types.AdminRole).
+		Order("sort_order, created_at").
+		Find(&templates).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Получаем существующие значения для задачи
+	var existingProps []dao.IssueProperty
+	if err := s.db.Where("issue_id = ?", issue.ID).
+		Find(&existingProps).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Создаем map для быстрого поиска
+	propsMap := make(map[uuid.UUID]dao.IssueProperty)
+	for _, p := range existingProps {
+		propsMap[p.TemplateId] = p
+	}
+
+	// Собираем результат: все шаблоны с значениями или дефолтами
+	result := make([]dto.IssueProperty, 0, len(templates))
+	for _, tmpl := range templates {
+		// Пропускаем OnlyAdmin поля для не-админов
+		if tmpl.OnlyAdmin && projectMember.Role < types.AdminRole {
+			continue
+		}
+
+		prop := dto.IssueProperty{
+			TemplateId:  tmpl.Id,
+			IssueId:     issue.ID,
+			ProjectId:   issue.ProjectId,
+			WorkspaceId: issue.WorkspaceId,
+			Name:        tmpl.Name,
+			Type:        tmpl.Type,
+			Value:       getDefaultPropertyValue(tmpl.Type),
+		}
+
+		if existing, ok := propsMap[tmpl.Id]; ok {
+			prop.Id = existing.Id
+			prop.Value = parsePropertyValue(tmpl.Type, existing.Value)
+		}
+
+		result = append(result, prop)
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
+// setIssueProperty godoc
+// @id setIssueProperty
+// @Summary Свойства задачи: установка значения
+// @Description Устанавливает или обновляет значение кастомного поля для задачи.
+// @Tags IssueProperties
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Param templateId path string true "ID шаблона поля"
+// @Param request body dto.SetIssuePropertyRequest true "Данные свойства"
+// @Success 200 {object} dto.IssueProperty "Установленное свойство"
+// @Success 201 {object} dto.IssueProperty "Созданное свойство"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на установку"
+// @Failure 404 {object} apierrors.DefinedError "Задача или шаблон не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/ [post]
+func (s *Services) setIssueProperty(c echo.Context) error {
+	user := c.(IssueContext).User
+	issue := c.(IssueContext).Issue
+	projectMember := c.(IssueContext).ProjectMember
+
+	templateId := c.Param("templateId")
+	templateUUID, err := uuid.FromString(templateId)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	var request dto.SetIssuePropertyRequest
+	if err := c.Bind(&request); err != nil {
+		return EError(c, err)
+	}
+
+	// Проверяем существование шаблона
+	var template dao.ProjectPropertyTemplate
+	if err := s.db.Where("id = ? AND project_id = ?", templateUUID, issue.ProjectId).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+		}
+		return EError(c, err)
+	}
+
+	// Проверяем права на OnlyAdmin поля
+	if template.OnlyAdmin && projectMember.Role < types.AdminRole {
+		return EErrorDefined(c, apierrors.ErrPropertyOnlyAdminCanSet)
+	}
+
+	// Валидируем значение через JSON Schema
+	if err := validatePropertyValue(template, request.Value); err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyValueValidationFailed)
+	}
+
+	// Сериализуем значение для хранения
+	valueStr := serializePropertyValue(request.Value)
+
+	// Проверяем существование значения
+	var existingProp dao.IssueProperty
+	err = s.db.Where("issue_id = ? AND template_id = ?", issue.ID, templateUUID).First(&existingProp).Error
+
+	status := http.StatusOK
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Создаем новое значение
+		existingProp = dao.IssueProperty{
+			Id:          dao.GenUUID(),
+			IssueId:     issue.ID,
+			TemplateId:  templateUUID,
+			ProjectId:   issue.ProjectId,
+			WorkspaceId: issue.WorkspaceId,
+			Value:       valueStr,
+			CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+			UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		}
+
+		if err := s.db.Create(&existingProp).Error; err != nil {
+			return EError(c, err)
+		}
+		status = http.StatusCreated
+	} else if err != nil {
+		return EError(c, err)
+	} else {
+		// Обновляем существующее значение
+		existingProp.Value = valueStr
+		existingProp.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+		if err := s.db.Save(&existingProp).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	// Загружаем шаблон для ответа
+	existingProp.Template = &template
+
+	return c.JSON(status, existingProp.ToDTO())
+}
+
+// getDefaultPropertyValue возвращает дефолтное значение для типа поля
+func getDefaultPropertyValue(propType string) any {
+	switch propType {
+	case "string", "select":
+		return ""
+	case "boolean":
+		return false
+	default:
+		return nil
+	}
+}
+
+// parsePropertyValue парсит строковое значение в соответствии с типом
+func parsePropertyValue(propType, value string) any {
+	switch propType {
+	case "boolean":
+		return value == "true"
+	default:
+		return value
+	}
+}
+
+// validatePropertyValue валидирует значение через JSON Schema
+func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) error {
+	schema := types.GenValueSchema(template.Type, template.Options)
+
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", schema); err != nil {
+		return err
+	}
+
+	sch, err := compiler.Compile("schema.json")
+	if err != nil {
+		return err
+	}
+
+	return sch.Validate(value)
+}
+
+// serializePropertyValue сериализует значение в строку для хранения в БД
+func serializePropertyValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprint(value)
+}
+
 // LinkedIssuesIds представляет собой структуру для передачи связанных задач
 type LinkedIssuesIds struct {
 	IssueIDs []uuid.UUID `json:"issue_ids"`
@@ -3348,4 +3700,171 @@ type SubIssuesIds struct {
 type IssueLinkRequest struct {
 	Url   string `json:"url"`
 	Title string `json:"title"`
+}
+
+// formatUserName форматирует имя пользователя для CSV экспорта
+func formatUserName(u dto.UserLight) string {
+	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+	if name == "" {
+		return u.Email
+	}
+	return name
+}
+
+// formatTargetDate форматирует дату для CSV экспорта
+func formatTargetDate(d *types.TargetDateTimeZ) string {
+	if d == nil {
+		return ""
+	}
+	return d.Time.Format(time.RFC3339)
+}
+
+// csvExportHeader возвращает заголовок CSV для экспорта задач
+func csvExportHeader() []string {
+	return []string{
+		"ID",
+		"Номер",
+		"Название",
+		"Приоритет",
+		"Статус",
+		"Дата начала",
+		"Срок исполнения",
+		"Дата завершения",
+		"Дата создания",
+		"Последнее изменение",
+		"Автор",
+		"Исполнители",
+		"Наблюдатели",
+		"Теги",
+		"Проект",
+		"Рабочее пространство",
+		"Черновик",
+		"Закреплено",
+		"Подзадач",
+		"Ссылок",
+		"Вложений",
+		"Связанных задач",
+		"Комментариев",
+		"Спринты",
+	}
+}
+
+// issueToCSVRow преобразует задачу в строку CSV
+func issueToCSVRow(issue *dto.IssueWithCount) []string {
+	assignees := make([]string, 0, len(issue.Assignees))
+	for _, a := range issue.Assignees {
+		assignees = append(assignees, formatUserName(a))
+	}
+
+	watchers := make([]string, 0, len(issue.Watchers))
+	for _, w := range issue.Watchers {
+		watchers = append(watchers, formatUserName(w))
+	}
+
+	labels := make([]string, 0, len(issue.Labels))
+	for _, l := range issue.Labels {
+		labels = append(labels, l.Name)
+	}
+
+	sprints := make([]string, 0, len(issue.Sprints))
+	for _, sp := range issue.Sprints {
+		sprints = append(sprints, sp.Name)
+	}
+
+	stateName := ""
+	if issue.State != nil {
+		stateName = issue.State.Name
+	}
+
+	authorName := ""
+	if issue.Author != nil {
+		authorName = formatUserName(*issue.Author)
+	}
+
+	projectName := ""
+	if issue.Project != nil {
+		projectName = issue.Project.Name
+	}
+
+	workspaceName := ""
+	if issue.Workspace != nil {
+		workspaceName = issue.Workspace.Name
+	}
+
+	priority := ""
+	if issue.Priority != nil {
+		priority = *issue.Priority
+	}
+
+	return []string{
+		issue.Id.String(),
+		strconv.Itoa(issue.SequenceId),
+		issue.Name,
+		priority,
+		stateName,
+		formatTargetDate(issue.StartDate),
+		formatTargetDate(issue.TargetDate),
+		formatTargetDate(issue.CompletedAt),
+		issue.CreatedAt.Format(time.RFC3339),
+		issue.UpdatedAt.Format(time.RFC3339),
+		authorName,
+		strings.Join(assignees, ", "),
+		strings.Join(watchers, ", "),
+		strings.Join(labels, ", "),
+		projectName,
+		workspaceName,
+		strconv.FormatBool(issue.Draft),
+		strconv.FormatBool(issue.Pinned),
+		strconv.Itoa(issue.SubIssuesCount),
+		strconv.Itoa(issue.LinkCount),
+		strconv.Itoa(issue.AttachmentCount),
+		strconv.Itoa(issue.LinkedIssuesCount),
+		strconv.Itoa(issue.CommentsCount),
+		strings.Join(sprints, ", "),
+	}
+}
+
+// getGroupFileName возвращает имя файла для группы в ZIP архиве
+func getGroupFileName(entity any, index int) string {
+	var name string
+	switch e := entity.(type) {
+	case dto.UserLight:
+		name = formatUserName(e)
+	case *dto.UserLight:
+		if e != nil {
+			name = formatUserName(*e)
+		}
+	case dto.StateLight:
+		name = e.Name
+	case *dto.StateLight:
+		if e != nil {
+			name = e.Name
+		}
+	case dto.LabelLight:
+		name = e.Name
+	case *dto.LabelLight:
+		if e != nil {
+			name = e.Name
+		}
+	case dto.ProjectLight:
+		name = e.Name
+	case *dto.ProjectLight:
+		if e != nil {
+			name = e.Name
+		}
+	}
+
+	if name == "" {
+		name = fmt.Sprintf("group_%d", index+1)
+	}
+
+	// Очищаем имя от недопустимых символов для имени файла
+	name = strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+			return '_'
+		}
+		return r
+	}, name)
+
+	return name + ".csv"
 }

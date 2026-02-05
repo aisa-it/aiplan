@@ -3,10 +3,12 @@
 package search
 
 import (
+	"fmt"
 	"log/slog"
 	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
@@ -159,13 +161,17 @@ func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.
 	return count, nil
 }
 
+// StreamCallback - callback для streaming группированных результатов
+// Если nil - результаты собираются в массив и возвращаются целиком
+type StreamCallback func(group dto.IssuesGroupResponse) error
+
 // FetchIssuesByGroups выполняет поиск задач по группам и вызывает callback для каждой группы
 func FetchIssuesByGroups(
 	db *gorm.DB,
 	groupSize []types.SearchGroupSize,
 	groupSelectQuery *gorm.DB,
 	searchParams *types.SearchParams,
-	iterFunc func(group types.IssuesGroupResponse) error,
+	iterFunc StreamCallback,
 ) (int, error) {
 	totalCount := 0
 
@@ -224,7 +230,8 @@ func FetchIssuesByGroups(
 				entity = label.ToLightDTO()
 			}
 		case "assignees":
-			if len(searchParams.Filters.AssigneeIds) > 0 && !slices.Contains(searchParams.Filters.AssigneeIds, group.Key) {
+			if !searchParams.Filters.AssigneeIds.IsEmpty() && !searchParams.Filters.AssigneeIds.Contains(group.Key) {
+				fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
 				continue
 			}
 			if group.Key == "" {
@@ -240,7 +247,7 @@ func FetchIssuesByGroups(
 				entity = u.ToLightDTO()
 			}
 		case "watchers":
-			if len(searchParams.Filters.WatcherIds) > 0 && !slices.Contains(searchParams.Filters.WatcherIds, group.Key) {
+			if !searchParams.Filters.WatcherIds.IsEmpty() && !searchParams.Filters.WatcherIds.Contains(group.Key) {
 				continue
 			}
 			if group.Key == "" {
@@ -270,7 +277,7 @@ func FetchIssuesByGroups(
 		}
 
 		if group.Count == 0 {
-			if err := iterFunc(types.IssuesGroupResponse{
+			if err := iterFunc(dto.IssuesGroupResponse{
 				Entity: entity,
 				Count:  group.Count,
 			}); err != nil {
@@ -302,7 +309,7 @@ func FetchIssuesByGroups(
 			entity = issues[0].Project.ToLightDTO()
 		}
 
-		if err := iterFunc(types.IssuesGroupResponse{
+		if err := iterFunc(dto.IssuesGroupResponse{
 			Entity: entity,
 			Count:  group.Count,
 			Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) any { return i.ToDTO() }),

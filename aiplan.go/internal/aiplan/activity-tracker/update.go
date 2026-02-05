@@ -413,6 +413,10 @@ func entityStartDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrac
 }
 
 func entityCompletedAtUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
+	if v, ok := requestedData[actField.CompletedAt.Field.String()]; ok && v == nil {
+		return make([]A, 0), nil
+	}
+
 	format := func(str string) string {
 		if v, err := FormatDate(str, "02.01.2006 15:04 MST", nil); err != nil {
 			return ""

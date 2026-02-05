@@ -78,15 +78,6 @@ func getUserName(user *dao.User) string {
 	return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
 }
 
-func getExistUser(user ...*dao.User) *dao.User {
-	for _, u := range user {
-		if u != nil {
-			return u
-		}
-	}
-	return nil
-}
-
 func escapeCharacters(data string) string {
 	data = html.UnescapeString(data)
 	res := strings.ReplaceAll(data, "\\", "")

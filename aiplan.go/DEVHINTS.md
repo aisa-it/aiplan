@@ -227,3 +227,50 @@ POST /api/workspaces/:workspaceSlug/issues/migrate/byLabel/
 - `source watchers that not a members of target project`
 - `source state that does not exist in target project`
 - `source labels that does not exist in target project`
+
+## Кастомные поля задач (Property Templates)
+
+Система дополнительных полей для задач на уровне проекта.
+
+### Архитектура
+
+Двухуровневая модель:
+
+```
+Project 1--* ProjectPropertyTemplate 1--* IssueProperty *--1 Issue
+```
+
+- **ProjectPropertyTemplate** — шаблон поля на уровне проекта (определяет какие поля доступны)
+- **IssueProperty** — значение поля для конкретной задачи
+
+### Поддерживаемые типы
+
+| Тип       | Описание        | Значение по умолчанию |
+| --------- | --------------- | --------------------- |
+| `string`  | Текстовое поле  | `""`                  |
+| `boolean` | Логическое поле | `false`               |
+
+### API эндпоинты
+
+**Шаблоны (ProjectPropertyTemplate):**
+
+```
+GET    /api/auth/workspaces/:ws/projects/:proj/property-templates/
+POST   /api/auth/workspaces/:ws/projects/:proj/property-templates/       (только админ)
+PATCH  /api/auth/workspaces/:ws/projects/:proj/property-templates/:id/   (только админ)
+DELETE /api/auth/workspaces/:ws/projects/:proj/property-templates/:id/   (только админ)
+```
+
+**Значения (IssueProperty):**
+
+```
+GET    /api/auth/workspaces/:ws/projects/:proj/issues/:issueId/properties/
+POST   /api/auth/workspaces/:ws/projects/:proj/issues/:issueId/properties/:templateId/
+```
+
+### Особенности
+
+- **GET properties** возвращает ВСЕ шаблоны проекта со значениями (или дефолтами если не установлено)
+- **POST property** — upsert: создаёт или обновляет значение
+- **OnlyAdmin** — поля с этим флагом могут редактировать только админы проекта
+- Валидация значений через JSON Schema
