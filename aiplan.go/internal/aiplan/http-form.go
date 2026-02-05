@@ -700,6 +700,11 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		}
 	}
 
+	var formAttachments []dao.FormAttachment
+	if err := s.db.Where("form_id = ?", form.ID).Find(&formAttachments).Error; err != nil {
+		return err
+	}
+
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
@@ -722,6 +727,20 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 			if err := tx.Create(&dao.IssueWatcher{
 				Id:          dao.GenUUID(),
 				WatcherId:   user.ID,
+				IssueId:     issue.ID,
+				ProjectId:   issue.ProjectId,
+				WorkspaceId: issue.WorkspaceId,
+				CreatedById: systemUserID,
+				UpdatedById: systemUserID,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		for _, formAttachment := range formAttachments {
+			if err := tx.Create(&dao.IssueAttachment{
+				Id:          dao.GenUUID(),
+				AssetId:     formAttachment.AssetId,
 				IssueId:     issue.ID,
 				ProjectId:   issue.ProjectId,
 				WorkspaceId: issue.WorkspaceId,
