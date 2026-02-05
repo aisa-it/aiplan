@@ -4,3 +4,6 @@ build:
 
 docsgen:
 	cd aiplan.go; go generate ./...
+
+fetch-front:
+	cd aiplan-front; git pull; yarn && yarn build && cd .. && git add aiplan-front && git commit -m "front"
