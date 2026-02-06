@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/lib/pq"
 
 	"html"
@@ -258,6 +259,8 @@ type FormAnswer struct {
 
 	AttachmentId uuid.NullUUID   `json:"attachment_id" gorm:"type:uuid" extensions:"x-nullable"`
 	Attachment   *FormAttachment `json:"attachment_detail" gorm:"foreignKey:AttachmentId" extensions:"x-nullable"`
+
+	Attachments []FormAttachment `json:"attachments" gorm:"foreignKey:AnswerId;references:ID"`
 }
 
 // TableName возвращает имя таблицы для сущности Form. Используется GORM для определения имени таблицы в базе данных.
@@ -288,7 +291,7 @@ func (f FormAnswer) GetFormId() uuid.UUID {
 
 // ToDTO преобразует FormAnswer в dto.FormAnswer для удобной передачи данных в интерфейс.
 //
-// Парамметры:
+// Параметры:
 //   - None
 //
 // Возвращает:
@@ -298,13 +301,13 @@ func (fa *FormAnswer) ToDTO() *dto.FormAnswer {
 		return nil
 	}
 	return &dto.FormAnswer{
-		ID:         fa.ID,
-		SeqId:      fa.SeqId,
-		CreatedAt:  fa.CreatedAt,
-		Responder:  fa.Responder.ToLightDTO(),
-		Form:       fa.Form.ToDTO(),
-		Fields:     fa.Fields,
-		Attachment: fa.Attachment.ToDTO(),
+		ID:          fa.ID,
+		SeqId:       fa.SeqId,
+		CreatedAt:   fa.CreatedAt,
+		Responder:   fa.Responder.ToLightDTO(),
+		Form:        fa.Form.ToDTO(),
+		Fields:      fa.Fields,
+		Attachments: utils.SliceToSlice(utils.ToPtr(fa.Attachments), func(u *FormAttachment) dto.FormAttachmentLight { return *u.ToDTO() }),
 	}
 }
 
@@ -491,12 +494,14 @@ type FormAttachment struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"updated_by_id,omitempty" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
+	WorkspaceId uuid.UUID     `json:"workspace" gorm:"type:uuid"`
+	AnswerId    uuid.NullUUID `json:"answer_id" gorm:"type:uuid"`
 
-	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Asset     *FileAsset `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	Workspace *Workspace  `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	Asset     *FileAsset  `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
+	Answer    *FormAnswer `json:"answer_detail" gorm:"foreignKey:AnswerId" extensions:"x-nullable"`
+	CreatedBy *User       `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	UpdatedBy *User       `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы для сущности Form. Используется GORM для определения имени таблицы в базе данных.
@@ -546,18 +551,18 @@ func (f *FormAttachment) GetFormId() uuid.UUID {
 	return f.FormId
 }
 
-// ToDTO преобразует FormAttachment в dto.Attachment для удобной передачи данных в интерфейс.
+// ToDTO преобразует FormAttachment в dto.FormAttachmentLight для удобной передачи данных в интерфейс.
 //
 // Парамметры:
 //   - None
 //
 // Возвращает:
-//   - *dto.Attachment: новая структура dto.Attachment, с содержащая данные из FormAttachment.
-func (fa *FormAttachment) ToDTO() *dto.Attachment {
+//   - *dto.FormAttachmentLight: новая структура dto.FormAttachmentLight, с содержащая данные из FormAttachment.
+func (fa *FormAttachment) ToDTO() *dto.FormAttachmentLight {
 	if fa == nil {
 		return nil
 	}
-	return &dto.Attachment{
+	return &dto.FormAttachmentLight{
 		Id:        fa.Id,
 		CreatedAt: fa.CreatedAt,
 		Asset:     fa.Asset.ToDTO(),
