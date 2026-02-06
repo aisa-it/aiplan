@@ -6,14 +6,17 @@ import (
 	"text/template"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"gorm.io/gorm"
 )
 
 const (
-	templateCollectAll = "v2_collect_all"
-	templateCollectOne = "v2_collect_one"
-	templateBody       = "v2_body"
-	templateActivity   = "v2_activity"
+	templateCollectAll     = "v2_collect_all"
+	templateCollectOne     = "v2_collect_one"
+	templateBody           = "v2_body"
+	templateActivity       = "v2_activity"
+	templateAuthorActivity = "v2_author_activity"
 )
 
 type actValueCtx struct {
@@ -31,27 +34,13 @@ func toValueCtx(value, body *string) *actValueCtx {
 	}
 }
 
-type collectOneCtx struct {
-	Key string
-	New *actValueCtx
-	Old *actValueCtx
-}
-
-type collectAllCtx struct {
-	Key   string
-	Views []DigestView
-}
-
-type bodyCtx struct {
-	Title string
-	Body  string
-}
-
 type EmailTemplates struct {
-	CollectAll *template.Template
-	CollectOne *template.Template
-	Body       *template.Template
-	Activity   *template.Template
+	ReplaceTxtToSvg func(string) string
+	CollectAll      *template.Template
+	CollectOne      *template.Template
+	Body            *template.Template
+	Activity        *template.Template
+	AuthorActivity  *template.Template
 }
 
 func LoadTemplates(tx *gorm.DB) EmailTemplates {
@@ -60,6 +49,7 @@ func LoadTemplates(tx *gorm.DB) EmailTemplates {
 		templateCollectOne,
 		templateBody,
 		templateActivity,
+		templateAuthorActivity,
 	}
 	var templates []dao.Template
 	if err := tx.Where("name in (?)", names).Find(&templates).Error; err != nil {
@@ -67,6 +57,7 @@ func LoadTemplates(tx *gorm.DB) EmailTemplates {
 	}
 
 	var res EmailTemplates
+	res.ReplaceTxtToSvg = templates[0].ReplaceTxtToSvg
 	for _, t := range templates {
 		switch t.Name {
 		case templateCollectAll:
@@ -77,36 +68,64 @@ func LoadTemplates(tx *gorm.DB) EmailTemplates {
 			res.Body = t.ParsedTemplate
 		case templateActivity:
 			res.Activity = t.ParsedTemplate
+		case templateAuthorActivity:
+			res.AuthorActivity = t.ParsedTemplate
 		}
 	}
 	return res
 }
 
-func (t *EmailTemplates) RenderCollectOne(c collectOneCtx) (string, int) {
-	var buf bytes.Buffer
-	if err := t.CollectOne.Execute(&buf, c); err != nil {
-		return "", 0
-	}
-	return buf.String(), 1
+type collectOneCtx struct {
+  Key string
+  New *actValueCtx
+  Old *actValueCtx
 }
 
-func (t *EmailTemplates) RenderCollectAll(c collectAllCtx, count int) (string, int) {
+func (c *collectOneCtx) Replace() {
+  replacer := func(s *string) *string {
+    if s == nil {
+      return nil
+    }
+    tmp := replaceTablesToText(replaceImageToText(*s))
+    tmp = policy.ProcessCustomHtmlTag(tmp)
+    return utils.ToPtr(prepareToMail(prepareHtmlBody(policy.StripTagsPolicy, tmp)))
+  }
+  c.Old.Body = replacer(c.Old.Body)
+  c.New.Body = replacer(c.New.Body)
+}
+
+func (t *EmailTemplates) RenderCollectOne(c collectOneCtx) FieldPrerender {
+	c.Replace()
+	var buf bytes.Buffer
+	if err := t.CollectOne.Execute(&buf, c); err != nil {
+		return FieldPrerender{}
+	}
+	return FieldPrerender{Value: t.ReplaceTxtToSvg(buf.String()), Count: 1}
+}
+
+type collectAllCtx struct {
+  Key   string
+  Views []DigestView
+}
+
+func (t *EmailTemplates) RenderCollectAll(c collectAllCtx, count int) FieldPrerender {
 	if count == 0 {
-		return "", 0
+		return FieldPrerender{}
 	}
 
 	var buf bytes.Buffer
 	if err := t.CollectAll.Execute(&buf, c); err != nil {
-		return "", 0
+    return FieldPrerender{}
 	}
-	return buf.String(), count
+	return FieldPrerender{Value: buf.String(),Count: count}
+}
+
+type bodyCtx struct {
+  Title string
+  Body  string
 }
 
 func (t *EmailTemplates) RenderActivity(c bodyCtx) string {
-	//if count == 0 {
-	//  return "", 0
-	//}
-
 	var buf bytes.Buffer
 	if err := t.Activity.Execute(&buf, c); err != nil {
 		slog.Error("err", err.Error())
@@ -116,10 +135,6 @@ func (t *EmailTemplates) RenderActivity(c bodyCtx) string {
 }
 
 func (t *EmailTemplates) RenderBody(c bodyCtx) string {
-	//if count == 0 {
-	//  return "", 0
-	//}
-
 	var buf bytes.Buffer
 	if err := t.Body.Execute(&buf, c); err != nil {
 		slog.Error("err", err.Error())

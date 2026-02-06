@@ -6,7 +6,8 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/gofrs/uuid"
+  "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+  "github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -56,7 +57,7 @@ func NewSprintPipeline(templates *EmailTemplates) LayerPipeline[dao.SprintActivi
 			return BuildRecipientsFromActivities(tx, acts, getSprintActivityAuthor, &ctx)
 		},
 
-		BuildDigest: func(tx *gorm.DB, acts []dao.SprintActivity, sprint *dao.Sprint) (map[string]fieldPrerender, int) {
+		BuildDigest: func(tx *gorm.DB, acts []dao.SprintActivity, sprint *dao.Sprint) (map[string]FieldPrerender, int) {
 			return renderDigest(tx, templates, acts, sprint, sprintFieldRenderMap, sprintCollectors)
 		},
 
@@ -91,12 +92,15 @@ var sprintCollectors = map[actField.ActivityField]activityFieldCollector[dao.Spr
 }
 
 var sprintFieldRenderMap = map[actField.ActivityField]FuncFieldRender[dao.SprintActivity, *dao.Sprint]{
-	actField.Issue.Field:    renderSprintIssue,
-	actField.Name.Field:     renderSprintName,
-	actField.Watchers.Field: renderSprintWatcher,
+	actField.Issue.Field:       renderSprintIssue,
+	actField.Name.Field:        renderSprintName,
+	actField.Description.Field: renderSprintDescription,
+	actField.Watchers.Field:    renderSprintWatcher,
+	actField.EndDate.Field:     renderSprintEndDate,
+	actField.StartDate.Field:   renderSprintStartDate,
 }
 
-func renderSprintIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, sprint *dao.Sprint) (string, int) {
+func renderSprintIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, sprint *dao.Sprint) FieldPrerender {
 	spec := entitySpec[dao.SprintActivity, dao.Issue]{
 		entityID:    getIssueIdFromSprintActivity,
 		entityTitle: func(i dao.Issue) string { return i.FullIssueName() },
@@ -113,7 +117,7 @@ func renderSprintIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity
 	return t.RenderCollectAll(ctx, count)
 }
 
-func renderSprintWatcher(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, sprint *dao.Sprint) (string, int) {
+func renderSprintWatcher(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, sprint *dao.Sprint) FieldPrerender {
 	spec := entitySpec[dao.SprintActivity, dao.User]{
 		entityID:    getWatcherIdFromSprintActivity,
 		entityTitle: func(i dao.User) string { return i.GetName() },
@@ -130,7 +134,7 @@ func renderSprintWatcher(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivi
 	return t.RenderCollectAll(ctx, count)
 }
 
-func renderSprintName(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) (string, int) {
+func renderSprintName(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) FieldPrerender {
 	return t.RenderCollectOne(collectOneCtx{
 		Key: "Название",
 		New: toValueCtx(&acts[0].NewValue, nil),
@@ -138,24 +142,41 @@ func renderSprintName(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, 
 	})
 }
 
+func renderSprintDescription(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) FieldPrerender {
+	return t.RenderCollectOne(collectOneCtx{
+		Key: "Описание",
+		New: toValueCtx(nil, &acts[0].NewValue),
+		Old: toValueCtx(nil, acts[0].OldValue),
+	})
+}
+
+func renderSprintEndDate(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) FieldPrerender {
+	return t.RenderCollectOne(collectOneCtx{
+		Key: "Конец",
+		New: toValueCtx(&acts[0].NewValue, nil),
+		Old: toValueCtx(acts[0].OldValue, nil),
+	})
+}
+
+func renderSprintStartDate(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) FieldPrerender {
+	return t.RenderCollectOne(collectOneCtx{
+		Key: "Начало",
+		New: toValueCtx(&acts[0].NewValue, nil),
+		Old: toValueCtx(acts[0].OldValue, nil),
+	})
+}
+
 func getIssueIdFromSprintActivity(a dao.SprintActivity) uuid.UUID {
-	switch a.Verb {
-	case actField.VerbAdded:
-		return a.NewSprintIssue.ID
-	case actField.VerbRemoved:
-		return a.OldSprintIssue.ID
-	default:
-		return uuid.Nil
-	}
+	return getUUIDFromActivity(a, uuidPtrFrom(a.NewSprintIssue), uuidPtrFrom(a.OldSprintIssue), nil, nil)
 }
 
 func getWatcherIdFromSprintActivity(a dao.SprintActivity) uuid.UUID {
-	switch a.Verb {
-	case actField.VerbAdded:
-		return a.NewSprintWatcher.ID
-	case actField.VerbRemoved:
-		return a.OldSprintWatcher.ID
-	default:
-		return uuid.Nil
+	return getUUIDFromActivity(a, uuidPtrFrom(a.NewSprintWatcher), uuidPtrFrom(a.OldSprintWatcher), nil, nil)
+}
+
+func uuidPtrFrom[T dao.IDaoAct](v *T) *uuid.UUID {
+	if v == nil {
+		return nil
 	}
+	return utils.ToPtr((*v).GetId())
 }
