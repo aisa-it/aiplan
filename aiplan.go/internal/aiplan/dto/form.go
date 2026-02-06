@@ -45,7 +45,8 @@ type FormAnswer struct {
 
 	Fields types.FormFieldsSlice `json:"fields"`
 
-	Attachment *Attachment `json:"attachment,omitempty" extensions:"x-nullable"`
+	Attachment  *Attachment           `json:"attachment,omitempty" extensions:"x-nullable"`
+	Attachments []FormAttachmentLight `json:"attachments,omitempty" extensions:"x-nullable"`
 }
 
 type FormAttachmentLight struct {
