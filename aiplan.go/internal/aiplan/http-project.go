@@ -3467,57 +3467,55 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Применяем обновления
-	updates := make(map[string]interface{})
+	// Применяем обновления напрямую к структуре
+	updated := false
+
 	if request.Name != nil {
 		name := strings.TrimSpace(*request.Name)
 		if name == "" {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateNameRequired)
 		}
-		updates["name"] = name
+		template.Name = name
+		updated = true
 	}
 
 	// Определяем тип для валидации options
-	newType := template.Type
 	if request.Type != nil {
 		validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
 		if !validTypes[*request.Type] {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 		}
-		newType = *request.Type
-		updates["type"] = *request.Type
+		template.Type = *request.Type
+		updated = true
 	}
 
 	// Обработка options
 	if request.Options != nil {
-		updates["options"] = *request.Options
+		template.Options = *request.Options
+		updated = true
 	}
 
 	// Для типа select проверяем наличие options
-	if newType == "select" {
-		var finalOptions []string
-		if request.Options != nil {
-			finalOptions = *request.Options
-		} else {
-			finalOptions = template.Options
-		}
-		if len(finalOptions) == 0 {
+	if template.Type == "select" {
+		if len(template.Options) == 0 {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
 		}
 	}
 
 	if request.OnlyAdmin != nil {
-		updates["only_admin"] = *request.OnlyAdmin
+		template.OnlyAdmin = *request.OnlyAdmin
+		updated = true
 	}
 	if request.SortOrder != nil {
-		updates["sort_order"] = *request.SortOrder
+		template.SortOrder = *request.SortOrder
+		updated = true
 	}
 
-	if len(updates) > 0 {
-		updates["updated_by_id"] = user.ID
-		updates["updated_at"] = time.Now()
+	if updated {
+		template.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+		template.UpdatedAt = time.Now()
 
-		if err := s.db.Model(&template).Updates(updates).Error; err != nil {
+		if err := s.db.Save(&template).Error; err != nil {
 			return EError(c, err)
 		}
 	}
