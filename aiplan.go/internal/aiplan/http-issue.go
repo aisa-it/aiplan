@@ -3648,8 +3648,10 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 // getDefaultPropertyValue возвращает дефолтное значение для типа поля
 func getDefaultPropertyValue(propType string) any {
 	switch propType {
-	case "string", "select":
+	case "string":
 		return ""
+	case "select":
+		return nil
 	case "boolean":
 		return false
 	default:
@@ -3662,6 +3664,11 @@ func parsePropertyValue(propType, value string) any {
 	switch propType {
 	case "boolean":
 		return value == "true"
+	case "select":
+		if value == "" {
+			return nil
+		}
+		return value
 	default:
 		return value
 	}
