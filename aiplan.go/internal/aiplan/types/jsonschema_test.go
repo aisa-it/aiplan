@@ -20,7 +20,5 @@ func TestValidateOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value := "22222"
-
-	fmt.Println(sch.Validate(value))
+	fmt.Println(sch.Validate(nil))
 }
