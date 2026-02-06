@@ -222,6 +222,12 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 				d.WriteString("```\n%s\n```\n")
 				out = append(out, fmt.Sprint(field.Val))
 			}
+		case "attachment":
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				d.WriteString("\n 🖼\n")
+			}
 		}
 	}
 	msg.body = Stelegramf(d.String(), out...)
