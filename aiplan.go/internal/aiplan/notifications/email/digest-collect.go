@@ -28,7 +28,6 @@ func CollectActivitiesByField[T dao.ActivityI](acts []T, collectors map[actField
 
 	for _, act := range acts {
 		key := act.GetField()
-
 		collector, ok := collectors[actField.ActivityField(key)]
 		if !ok {
 			continue

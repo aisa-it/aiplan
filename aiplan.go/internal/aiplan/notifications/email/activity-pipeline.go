@@ -6,6 +6,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
+	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -17,7 +18,7 @@ type LayerPipeline[A dao.ActivityI, E dao.IDaoAct] struct {
 	Load            func(tx *gorm.DB) []A
 	Group           func([]A) ActivityBuckets[A, E]
 	BuildRecipients func(tx *gorm.DB, acts []A, entity E) ([]member_role.MemberNotify, EmailContext)
-	BuildDigest     func(tx *gorm.DB, acts []A, entity E) (map[string]fieldPrerender, int)
+	BuildDigest     func(tx *gorm.DB, acts []A, entity E) (map[string]FieldPrerender, int)
 
 	Subject func(entity E) string
 
@@ -153,7 +154,9 @@ func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
 	}
 	ffff := template.RenderBody(ff)
 	return EmailMessage{
-		To:   r.Email,
-		HTML: ffff,
+		To:      r.Email,
+		HTML:    ffff,
+		Text:    policy.StripTagsPolicy.Sanitize(ffff),
+		replace: make(map[string]any),
 	}
 }

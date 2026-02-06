@@ -11,13 +11,12 @@
 
         {{- if .Old -}}
         {{- if .Old.Body -}}
-        {{ .Old.Body }}
+        <del style="color:#999999">{{ .Old.Body }}</del><br>
         {{- else if .Old.Value -}}
         <del style="color:#999999">{{ .Old.Value }}</del>
-        {{- end -}}
-        {{- end -}}
-
         {{- if and .Old .New -}}, {{ end -}}
+        {{- end -}}
+        {{- end -}}
 
         {{- if .New -}}
         {{- if .New.Body -}}

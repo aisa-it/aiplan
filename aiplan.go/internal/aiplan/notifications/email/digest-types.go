@@ -11,7 +11,7 @@ type TransitionFlags struct {
 	Removed bool
 }
 
-type fieldPrerender struct {
+type FieldPrerender struct {
 	Verb  string
 	Value string
 	Count int

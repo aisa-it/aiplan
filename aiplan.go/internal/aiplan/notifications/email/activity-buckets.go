@@ -15,7 +15,7 @@ type ActivityBucket[A dao.ActivityI, E dao.IDaoAct] struct {
 	Activities []A
 
 	MemberNotify []member_role.MemberNotify
-	Prepared     map[string]fieldPrerender
+	Prepared     map[string]FieldPrerender
 
 	FirstAt time.Time
 	LastAt  time.Time
