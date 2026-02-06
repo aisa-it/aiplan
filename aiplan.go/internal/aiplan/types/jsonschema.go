@@ -30,7 +30,12 @@ func GenValueSchema(propType string, options []string) map[string]any {
 		if len(options) == 0 {
 			return map[string]any{"type": "string"}
 		}
-		return map[string]any{"type": "string", "enum": options}
+		// Конвертируем []string в []any для корректной работы с jsonschema
+		enumValues := make([]any, len(options))
+		for i, opt := range options {
+			enumValues[i] = opt
+		}
+		return map[string]any{"type": "string", "enum": enumValues}
 	default:
 		return map[string]any{}
 	}
