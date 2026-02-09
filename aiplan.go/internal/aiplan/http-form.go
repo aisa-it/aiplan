@@ -683,9 +683,9 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		//DescriptionStripped: issue.DescriptionStripped,
 	}
 
-	for _, field := range form.Fields {
+	for i, field := range form.Fields {
 		if field.IssueNameField {
-			issue.Name = fmt.Sprint(field.Val)
+			issue.Name = fmt.Sprint(answer.Fields[i].Val)
 		}
 	}
 
