@@ -443,6 +443,7 @@ func (s *Services) getAnswers(c echo.Context) error {
 	query := s.db.
 		Joins("Form").
 		Joins("Responder").
+		Preload("Attachments.Asset").
 		Where("form_answers.workspace_id = ?", workspace.ID).
 		Where("form_answers.form_id = ?", form.ID)
 
@@ -605,6 +606,12 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	}
 	if user == nil {
 		if err := s.db.Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	if len(attachmentUUIDs) > 0 {
+		if err := s.db.Preload("Asset").Where("answer_id = ?", answer.ID).Find(&answer.Attachments).Error; err != nil {
 			return EError(c, err)
 		}
 	}
