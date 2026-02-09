@@ -102,6 +102,7 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	issueGroup.GET("/comments/", s.getIssueCommentList)
 	issueGroup.POST("/comments/", s.createIssueComment)
 	issueGroup.GET("/comments/:commentId/", s.getIssueComment)
+	issueGroup.GET("/comments/:commentId/history/", s.getIssueCommentUpdateList)
 	issueGroup.PATCH("/comments/:commentId/", s.updateIssueComment)
 	issueGroup.DELETE("/comments/:commentId/", s.deleteIssueComment)
 
@@ -2471,6 +2472,91 @@ func (s *Services) getIssueComment(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, comment.ToDTO())
+}
+
+// getIssueCommentUpdateList godoc
+// @id getIssueCommentUpdateList
+// @Summary Задачи (комментарии): получение истории изменения комментария к задаче
+// @Description Получает данные истории изменения комментария к задаче
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Param commentId path string true "ID комментария"
+// @Param offset query int false "Смещение для пагинации" default(0)
+// @Param limit query int false "Лимит записей" default(100)
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.CommentHistory} "Список с пагинацией"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId}/history [get]
+func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
+	project := c.(IssueContext).Project
+	issueId := c.(IssueContext).Issue.ID
+	commentId := c.Param("commentId")
+
+	offset := -1
+	limit := 100
+
+	if err := echo.QueryParamsBinder(c).
+		Int("offset", &offset).
+		Int("limit", &limit).BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	var comments []dao.IssueActivity
+	queryHistory := s.db.
+		Joins("Actor").
+		Where("issue_activities.project_id = ?", project.ID).
+		Where("issue_activities.issue_id = ?", issueId).
+		Where("issue_activities.new_identifier = ? ", commentId).
+		Order("issue_activities.created_at DESC")
+
+	resp, err := dao.PaginationRequest(
+		offset,
+		limit,
+		queryHistory,
+		&comments,
+	)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	commentHistory := utils.SliceToSlice(resp.Result.(*[]dao.IssueActivity),
+		func(i *dao.IssueActivity) dto.CommentHistory {
+
+			var commentUUId uuid.NullUUID
+			if i.NewIssueComment != nil {
+				commentUUId.UUID = i.NewIssueComment.Id
+				commentUUId.Valid = true
+			}
+
+			comment := types.RedactorHTML{Body: i.NewValue}
+
+			commentHistory := dto.CommentHistory{
+				CommentHtml:     comment,
+				CommentStripped: comment.StripTags(),
+				UpdatedById:     i.ActorId.UUID,
+				ActorUpdate:     i.Actor.ToLightDTO(),
+				CommentId:       commentUUId,
+				CreatedAt:       i.CreatedAt,
+				Attachments:     nil,
+			}
+
+			query := s.db.Where("workspace_id = ?", i.WorkspaceId).
+				Where("comment_id = ?", i.NewIssueComment.Id)
+
+			currentFiles, _ := dao.GetFileAssetFromDescription(query, &comment.Body)
+			commentHistory.Attachments = utils.SliceToSlice(&currentFiles, func(f *dao.FileAsset) dto.FileAsset { return *f.ToDTO() })
+			return commentHistory
+		})
+
+	resp.Result = commentHistory
+
+	return c.JSON(http.StatusOK, resp)
 }
 
 // updateIssueComment godoc
