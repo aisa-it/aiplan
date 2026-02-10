@@ -10,7 +10,10 @@ type activityFieldCollector[T dao.ActivityI] func(T, map[string][]T)
 func collectOne[T dao.ActivityI](act T, m map[string][]T) {
 	key := act.GetField()
 
-	if v, ok := m[key]; ok && len(v) > 0 && !v[0].GetCreatedAt().Before(act.GetCreatedAt()) {
+	if prev := m[key]; len(prev) > 0 {
+		if act.GetCreatedAt().After(prev[0].GetCreatedAt()) {
+			m[key] = []T{act}
+		}
 		return
 	}
 
@@ -22,7 +25,9 @@ func collectAll[T dao.ActivityI](act T, m map[string][]T) {
 	m[key] = append(m[key], act)
 }
 
-func CollectActivitiesByField[T dao.ActivityI](acts []T, collectors map[actField.ActivityField]activityFieldCollector[T]) map[string][]T {
+func CollectActivitiesByField[T dao.ActivityI](
+	acts []T, collectors map[actField.ActivityField]activityFieldCollector[T],
+) map[string][]T {
 
 	result := make(map[string][]T)
 

@@ -1,6 +1,9 @@
 package email
 
 import (
+	"database/sql"
+	"time"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
@@ -8,60 +11,111 @@ import (
 )
 
 type entitySpec[A dao.ActivityI, E dao.IDaoAct] struct {
-	entityID func(A) uuid.UUID
-	//isAdded     func(A) bool
-	//isRemoved   func(A) bool
+	entityID    func(A) uuid.UUID
 	entityTitle func(E) string
 	loadRemoved func(*gorm.DB, []uuid.UUID) map[uuid.UUID]string
+	getAuthor   func(A) *dao.User
 }
 
-func BuildEntityChangeDigest[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, activities []A, currentEntities []E, f entitySpec[A, E]) (views []DigestView, changesCount int) {
+type EntityChangeMeta struct {
+	Authors map[uuid.UUID]dao.User
+	Start   sql.NullTime
+	End     sql.NullTime
+}
 
-	current := make(map[uuid.UUID]E, len(currentEntities))
-	for _, e := range currentEntities {
-		current[e.GetId()] = e
+type transitionFlags struct {
+	Added   bool
+	Removed bool
+}
+
+func BuildEntityChangeDigest[A dao.ActivityI, E dao.IDaoAct](
+	tx *gorm.DB,
+	activities []A,
+	current []E,
+	spec entitySpec[A, E],
+) (
+	views []DigestView,
+	meta EntityChangeMeta,
+	count int,
+) {
+
+	// ---------- CURRENT ----------
+	currentMap := make(map[uuid.UUID]E, len(current))
+	for _, e := range current {
+		currentMap[e.GetId()] = e
 	}
 
-	changes := make(map[uuid.UUID]*TransitionFlags)
+	// ---------- TRANSITIONS ----------
+	changes := make(map[uuid.UUID]*transitionFlags)
+
+	// ---------- META ----------
+	authors := make(map[uuid.UUID]dao.User)
+
+	var (
+		start   time.Time
+		end     time.Time
+		hasTime bool
+	)
 
 	for _, act := range activities {
-		t := changes[f.entityID(act)]
+		id := spec.entityID(act)
+
+		t := changes[id]
 		if t == nil {
-			t = &TransitionFlags{}
-			changes[f.entityID(act)] = t
+			t = &transitionFlags{}
+			changes[id] = t
 		}
 
-		if act.GetVerb() == actField.VerbAdded {
+		switch act.GetVerb() {
+		case actField.VerbAdded:
 			t.Added = true
-		}
-
-		if act.GetVerb() == actField.VerbRemoved {
+		case actField.VerbRemoved:
 			t.Removed = true
 		}
-		//if f.isRemoved(act) {
-		//}
+
+		// AUTHOR
+		if spec.getAuthor != nil {
+			if u := spec.getAuthor(act); u != nil {
+				authors[u.ID] = *u
+			}
+		}
+
+		// TIME
+		at := act.GetCreatedAt() // time.Time
+		if !hasTime {
+			start = at
+			end = at
+			hasTime = true
+		} else {
+			if at.Before(start) {
+				start = at
+			}
+			if at.After(end) {
+				end = at
+			}
+		}
 	}
 
-	views = make([]DigestView, 0, len(currentEntities))
-
-	for _, e := range currentEntities {
+	// ---------- CURRENT VIEWS ----------
+	for _, e := range current {
 		t := changes[e.GetId()]
+
 		view := DigestView{
-			Title: f.entityTitle(e),
+			Title: spec.entityTitle(e),
 		}
 
 		if t != nil && t.Added && !t.Removed {
 			view.IsNew = true
-			changesCount++
+			count++
 		}
 
 		views = append(views, view)
 	}
 
-	removedIDs := make([]uuid.UUID, 0)
-
+	// ---------- REMOVED ----------
+	var removedIDs []uuid.UUID
 	for id, t := range changes {
-		if _, exists := current[id]; exists {
+		if _, ok := currentMap[id]; ok {
 			continue
 		}
 		if t.Removed && !t.Added {
@@ -70,11 +124,11 @@ func BuildEntityChangeDigest[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, activi
 	}
 
 	if len(removedIDs) > 0 {
-		removedTitles := f.loadRemoved(tx, removedIDs)
+		titles := spec.loadRemoved(tx, removedIDs)
 
 		for _, id := range removedIDs {
-			title, ok := removedTitles[id]
-			if !ok {
+			title := titles[id]
+			if title == "" {
 				title = "unknown"
 			}
 
@@ -83,9 +137,17 @@ func BuildEntityChangeDigest[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, activi
 				IsGone: true,
 			})
 
-			changesCount++
+			count++
 		}
 	}
 
-	return views, changesCount
+	// ---------- META FINAL ----------
+	meta.Authors = authors
+
+	if hasTime {
+		meta.Start = sql.NullTime{Time: start, Valid: true}
+		meta.End = sql.NullTime{Time: end, Valid: true}
+	}
+
+	return views, meta, count
 }

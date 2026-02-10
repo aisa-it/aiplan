@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"gorm.io/gorm"
@@ -12,6 +13,55 @@ import (
 
 //go:embed templates/*
 var defaultTemplates embed.FS
+
+const (
+	templateCollectAll     = "v2_collect_all"
+	templateCollectOne     = "v2_collect_one"
+	templateBody           = "v2_body"
+	templateActivity       = "v2_activity"
+	templateAuthorActivity = "v2_author_activity"
+)
+
+type EmailTemplates struct {
+	ReplaceTxtToSvg func(string) string
+	CollectAll      *template.Template
+	CollectOne      *template.Template
+	Body            *template.Template
+	Activity        *template.Template
+	AuthorActivity  *template.Template
+}
+
+func LoadTemplates(tx *gorm.DB) EmailTemplates {
+	names := []string{
+		templateCollectAll,
+		templateCollectOne,
+		templateBody,
+		templateActivity,
+		templateAuthorActivity,
+	}
+	var templates []dao.Template
+	if err := tx.Where("name in (?)", names).Find(&templates).Error; err != nil {
+		return EmailTemplates{}
+	}
+
+	var res EmailTemplates
+	res.ReplaceTxtToSvg = templates[0].ReplaceTxtToSvg
+	for _, t := range templates {
+		switch t.Name {
+		case templateCollectAll:
+			res.CollectAll = t.ParsedTemplate
+		case templateCollectOne:
+			res.CollectOne = t.ParsedTemplate
+		case templateBody:
+			res.Body = t.ParsedTemplate
+		case templateActivity:
+			res.Activity = t.ParsedTemplate
+		case templateAuthorActivity:
+			res.AuthorActivity = t.ParsedTemplate
+		}
+	}
+	return res
+}
 
 func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
 	dir, err := defaultTemplates.ReadDir("templates")

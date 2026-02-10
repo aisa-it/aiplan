@@ -7,14 +7,17 @@ import (
 	"strings"
 	"time"
 
-  member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
-  "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/gofrs/uuid"
 	"github.com/microcosm-cc/bluemonday"
 )
 
 const (
 	targetDateTimeZ = "TargetDateTimeZ"
+	targetDateZ     = "TargetDateZ"
 	userMentioned   = "UserMentioned"
 )
 
@@ -100,13 +103,8 @@ func FormatDate(dateStr, outFormat string, tz *types.TimeZone) (string, error) {
 	return t.Format(outFormat), err
 }
 
-func strReplace(in string) string {
-	out := strings.Split(in, "_")
-	return "$$$" + strings.Join(out, "$$$") + "$$$"
-}
-
-func msgReplace(user member_role.MemberNotify, msg EmailMessage) EmailMessage {
-	for k, v := range msg.replace {
+func msgReplace(user member_role.MemberNotify, msg FieldPrerender) FieldPrerender {
+	for k, v := range msg.Replace {
 		key := k
 		keys := strings.Split(k, "_")
 		if len(keys) > 1 {
@@ -115,15 +113,38 @@ func msgReplace(user member_role.MemberNotify, msg EmailMessage) EmailMessage {
 		switch key {
 		case targetDateTimeZ:
 			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006 15:04", &user.GetUser().UserTimezone); err == nil {
-				msg.HTML = strings.ReplaceAll(msg.HTML, strReplace(k), strNeW)
+				msg.Value = strings.ReplaceAll(msg.Value, strReplace(k), strNeW)
 			} else {
-				return EmailMessage{}
+				return FieldPrerender{}
 			}
-		//case userMentioned:
-		//	if user.Has(member_role.CommentMentioned) {
-		//		msg.title += Stelegramf("\n__%s__", "Вас упомянули в комментарии")
-		//	}
+		case targetDateZ:
+			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006", &user.GetUser().UserTimezone); err == nil {
+				msg.Value = strings.ReplaceAll(msg.Value, strReplace(k), strNeW)
+			} else {
+				return FieldPrerender{}
+			}
 		}
 	}
 	return msg
+}
+
+func collectDate(value *string, key string, replace map[string]any) *actValueCtx {
+	if value == nil || *value == "" {
+		return nil
+	}
+
+	replace[key] = utils.FormatDateToSqlNullTime(*value)
+	return toValueCtx(utils.ToPtr(strReplace(key)), nil)
+}
+
+func uuidPtrFrom[T dao.IDaoAct](v *T) *uuid.UUID {
+	if v == nil {
+		return nil
+	}
+	return utils.ToPtr((*v).GetId())
+}
+
+func strReplace(in string) string {
+	out := strings.Split(in, "_")
+	return "$$$" + strings.Join(out, "$$$") + "$$$"
 }
