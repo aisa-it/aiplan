@@ -2566,7 +2566,7 @@
                     "201": {
                         "description": "Созданное вложение",
                         "schema": {
-                            "$ref": "#/definitions/dto.Attachment"
+                            "$ref": "#/definitions/dto.FormAttachmentLight"
                         }
                     },
                     "400": {
@@ -7670,6 +7670,108 @@
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/history": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Получает данные истории изменения комментария к документу",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Docs"
+                ],
+                "summary": "Doc (комментарии): получение истории изменения комментария к документу",
+                "operationId": "getDocCommentUpdateList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Id документа",
+                        "name": "docId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID комментария",
+                        "name": "commentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Лимит записей",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список с пагинацией",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dao.PaginationResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/dto.CommentHistory"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/reactions/": {
             "post": {
                 "security": [
@@ -11991,6 +12093,115 @@
                         "description": "Обновленный комментарий",
                         "schema": {
                             "$ref": "#/definitions/dto.IssueComment"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId}/history": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Получает данные истории изменения комментария к задаче",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Issues"
+                ],
+                "summary": "Задачи (комментарии): получение истории изменения комментария к задаче",
+                "operationId": "getIssueCommentUpdateList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID комментария",
+                        "name": "commentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Лимит записей",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список с пагинацией",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dao.PaginationResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/dto.CommentHistory"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -19166,6 +19377,35 @@
                 }
             }
         },
+        "dto.CommentHistory": {
+            "type": "object",
+            "properties": {
+                "actor_update": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "comment_attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FileAsset"
+                    }
+                },
+                "comment_html": {
+                    "type": "string"
+                },
+                "comment_id": {
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                },
+                "comment_stripped": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "updated_by_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.CommentReaction": {
             "type": "object",
             "properties": {
@@ -19714,6 +19954,13 @@
                     ],
                     "x-nullable": true
                 },
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FormAttachmentLight"
+                    },
+                    "x-nullable": true
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -19744,6 +19991,20 @@
                 },
                 "seq_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.FormAttachmentLight": {
+            "type": "object",
+            "properties": {
+                "asset": {
+                    "$ref": "#/definitions/dto.FileAsset"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
                 }
             }
         },
