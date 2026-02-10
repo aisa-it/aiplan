@@ -13,6 +13,8 @@ import (
 )
 
 type LayerPipeline[A dao.ActivityI, E dao.IDaoAct] struct {
+	TableName string
+
 	Plan *emailPlan
 
 	Load            func(tx *gorm.DB) []A
@@ -49,22 +51,7 @@ func ProcessLayer[A dao.ActivityI, E dao.IDaoAct](es *EmailService, p LayerPipel
 		}
 	}
 
-	ee(es.db, buckets)
-}
-
-func ee[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, buckets ActivityBuckets[A, E]) {
-	var t string
-	var ids []uuid.UUID
-	for _, e := range buckets {
-
-		t = (*e).Ctx.Plan.TableName
-		ids = append(ids,
-			utils.SliceToSlice(utils.ToPtr((*e).Activities), func(t *A) uuid.UUID { return (*t).GetId() })...)
-	}
-
-	if err := tx.Table(t).Where("id IN (?)", ids).Update("notified", true).Error; err != nil {
-		slog.Error(err.Error())
-	}
+	updateNotified(es.db, p, buckets)
 }
 
 func RunLayerPipeline[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, p LayerPipeline[A, E]) ActivityBuckets[A, E] {
@@ -122,10 +109,7 @@ func BuildEmailMessages[A dao.ActivityI, E dao.IDaoAct](
 }
 
 func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
-	b *ActivityBucket[A, E],
-	r Recipient,
-	ctx *EmailContext,
-	template EmailTemplates,
+	b *ActivityBucket[A, E], r Recipient, ctx *EmailContext, template EmailTemplates,
 ) EmailMessage {
 
 	var parts []string
@@ -135,6 +119,7 @@ func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
 		if !r.MemberNotify.Allowed(field, html.Verb, ctx.Plan.Entity, ctx.Plan.AuthorRole, &ctx.Settings) {
 			continue
 		}
+		html = msgReplace(*r.MemberNotify, html)
 		parts = append(parts, html.Value)
 		cnt += html.Count
 	}
@@ -147,16 +132,32 @@ func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
 		Body: strings.Join(parts, "\n"),
 	}
 
-	d := template.RenderActivity(body)
-	ff := bodyCtx{
+	activity := template.RenderActivity(body)
+
+	html := bodyCtx{
 		Title: "eeee",
-		Body:  d,
+		Body:  activity,
 	}
-	ffff := template.RenderBody(ff)
+
+	msg := template.RenderBody(html)
+
 	return EmailMessage{
-		To:      r.Email,
-		HTML:    ffff,
-		Text:    policy.StripTagsPolicy.Sanitize(ffff),
-		replace: make(map[string]any),
+		To:   r.Email,
+		HTML: msg,
+		Text: policy.StripTagsPolicy.Sanitize(msg),
+	}
+}
+
+func updateNotified[A dao.ActivityI, E dao.IDaoAct](
+	tx *gorm.DB, p LayerPipeline[A, E], buckets ActivityBuckets[A, E]) {
+	var ids []uuid.UUID
+	for _, e := range buckets {
+
+		ids = append(ids,
+			utils.SliceToSlice(utils.ToPtr((*e).Activities), func(t *A) uuid.UUID { return (*t).GetId() })...)
+	}
+
+	if err := tx.Table(p.TableName).Where("id IN (?)", ids).Update("notified", true).Error; err != nil {
+		slog.Error(err.Error())
 	}
 }

@@ -5,16 +5,11 @@ import (
 	"log/slog"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
-	memNotify "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/html"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/gomail.v2"
 	"gorm.io/gorm"
 )
-
-var minifier *minify.M = minify.New()
 
 type EmailService struct {
 	d           *gomail.Dialer
@@ -55,20 +50,12 @@ func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
 	return es
 }
 
-func (es *EmailService) Close() {
-	es.monitorExit <- true
-}
-
-func (es *EmailService) Stop() {
-	slog.Info("Closing email workers")
-	es.disabled = true
-	close(es.emailChan)
-
-	if err := es.eg.Wait(); err != nil {
-		slog.Error("Worker err:", err)
+func (es *EmailService) Send(e EmailMessage) error {
+	if es.disabled {
+		return fmt.Errorf("email service stop")
 	}
-
-	slog.Info("Email workers successfully stopped")
+	es.emailChan <- e
+	return nil
 }
 
 func (es *EmailService) sendEmail(e EmailMessage) error {
@@ -80,23 +67,6 @@ func (es *EmailService) sendEmail(e EmailMessage) error {
 	m.AddAlternative("text/html", e.HTML)
 
 	return es.d.DialAndSend(m)
-}
-
-func (es *EmailService) Send(e EmailMessage) error {
-	if es.disabled {
-		return fmt.Errorf("email service stop")
-	}
-	es.emailChan <- e
-	return nil
-}
-
-type EmailMessage struct {
-	To      string
-	Subject string
-	HTML    string
-	Text    string
-
-	replace map[string]any
 }
 
 func (es *EmailService) worker(emailChan <-chan EmailMessage) error {
@@ -118,14 +88,25 @@ func (es *EmailService) worker(emailChan <-chan EmailMessage) error {
 	return nil
 }
 
-type emailPlan struct {
-	TableName  string
-	Entity     actField.ActivityField
-	AuthorRole memNotify.Role
+func (es *EmailService) Stop() {
+	slog.Info("Closing email workers")
+	es.disabled = true
+	close(es.emailChan)
+
+	if err := es.eg.Wait(); err != nil {
+		slog.Error("Worker err:", err)
+	}
+
+	slog.Info("Email workers successfully stopped")
 }
 
-type EmailContext struct {
-	Settings memNotify.MemberSettings
-	Steps    []memNotify.UsersStep
-	Plan     *emailPlan
+func (es *EmailService) Close() {
+	es.monitorExit <- true
+}
+
+type EmailMessage struct {
+	To      string
+	Subject string
+	HTML    string
+	Text    string
 }

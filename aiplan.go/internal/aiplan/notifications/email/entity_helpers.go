@@ -2,8 +2,8 @@ package email
 
 import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-  actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-  "github.com/gofrs/uuid"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
 
@@ -42,25 +42,25 @@ func getRemovedMember(tx *gorm.DB, ids []uuid.UUID) map[uuid.UUID]string {
 }
 
 func getUUIDFromActivity[A dao.ActivityI](act A, added, removed, created, deleted *uuid.UUID) uuid.UUID {
-  switch act.GetVerb() {
-  case actField.VerbAdded:
-    if added != nil {
-      return *added
-    }
-  case actField.VerbRemoved:
-    if removed != nil {
-      return *removed
-    }
-  case actField.VerbCreated:
-    if created != nil {
-      return *created
-    }
-  case actField.VerbDeleted:
-    if deleted != nil {
-      return *deleted
-    }
-  default:
-    return uuid.Nil
-  }
-  return uuid.Nil
+	switch act.GetVerb() {
+	case actField.VerbAdded:
+		if added != nil {
+			return *added
+		}
+	case actField.VerbRemoved:
+		if removed != nil {
+			return *removed
+		}
+	case actField.VerbCreated:
+		if created != nil {
+			return *created
+		}
+	case actField.VerbDeleted:
+		if deleted != nil {
+			return *deleted
+		}
+	default:
+		return uuid.Nil
+	}
+	return uuid.Nil
 }
