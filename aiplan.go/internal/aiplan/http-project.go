@@ -2426,12 +2426,16 @@ func (s *Services) updateState(c echo.Context) error {
 	fields = append(fields, "updated_by")
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if req.Default != nil && *req.Default {
-			// Change other states to false default
-			if err := tx.Model(&dao.State{}).
-				Where("project_id = ?", project.ID).
-				UpdateColumn("default", false).Error; err != nil {
-				return err
+		if req.Default != nil {
+			if *req.Default {
+				// Change other states to false default
+				if err := tx.Model(&dao.State{}).
+					Where("project_id = ?", project.ID).
+					UpdateColumn("default", false).Error; err != nil {
+					return err
+				}
+			} else {
+				return apierrors.ErrProjectDefaultStateRequired
 			}
 		}
 
