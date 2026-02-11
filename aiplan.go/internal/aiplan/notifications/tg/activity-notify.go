@@ -75,6 +75,10 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 				continue
 			}
 
+			if notify.Message.Skip != nil && notify.Message.Skip(u) {
+				continue
+			}
+
 			if id, err := t.Send(u.id, msgReplace(u, notify.Message)); err != nil {
 				slog.Error("tg send message", "error", err.Error())
 				continue

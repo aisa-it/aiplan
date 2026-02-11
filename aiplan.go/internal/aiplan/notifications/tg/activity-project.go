@@ -165,6 +165,17 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 
 	msg.body += Stelegramf(format, values...)
 
+	msg.Skip = func(u userTg) bool { // пропустить уведомления для всех кроме ролей из списка okRoles
+		var ok bool
+		okRoles := []role{actionAuthor, issueAuthor, projectDefaultWatcher, issueWatcher, issueAssigner}
+		for _, r := range okRoles {
+			if u.Has(r) {
+				ok = true
+			}
+		}
+		return !ok
+	}
+
 	return msg
 }
 
