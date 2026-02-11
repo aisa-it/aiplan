@@ -4,6 +4,7 @@ import (
 	"database/sql"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 )
 
 type DigestView struct {
@@ -14,10 +15,11 @@ type DigestView struct {
 
 type FieldPrerender struct {
 	Verb  string
+	Field actField.ActivityField
 	Value string
 	Count int
 
-	Author dao.User
+	Authors []dao.User
 
 	Start sql.NullTime
 	End   sql.NullTime

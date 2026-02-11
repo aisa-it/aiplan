@@ -20,6 +20,8 @@ const (
 	templateBody           = "v2_body"
 	templateActivity       = "v2_activity"
 	templateAuthorActivity = "v2_author_activity"
+	templateChangeCounter  = "v2_change_counter"
+	templateHeadEntity     = "v2_head_entity"
 )
 
 type EmailTemplates struct {
@@ -29,6 +31,8 @@ type EmailTemplates struct {
 	Body            *template.Template
 	Activity        *template.Template
 	AuthorActivity  *template.Template
+	ChangeCounter   *template.Template
+	HeadEntity      *template.Template
 }
 
 func LoadTemplates(tx *gorm.DB) EmailTemplates {
@@ -38,6 +42,8 @@ func LoadTemplates(tx *gorm.DB) EmailTemplates {
 		templateBody,
 		templateActivity,
 		templateAuthorActivity,
+		templateChangeCounter,
+		templateHeadEntity,
 	}
 	var templates []dao.Template
 	if err := tx.Where("name in (?)", names).Find(&templates).Error; err != nil {
@@ -58,6 +64,10 @@ func LoadTemplates(tx *gorm.DB) EmailTemplates {
 			res.Activity = t.ParsedTemplate
 		case templateAuthorActivity:
 			res.AuthorActivity = t.ParsedTemplate
+		case templateChangeCounter:
+			res.ChangeCounter = t.ParsedTemplate
+		case templateHeadEntity:
+			res.HeadEntity = t.ParsedTemplate
 		}
 	}
 	return res

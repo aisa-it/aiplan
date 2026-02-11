@@ -30,9 +30,26 @@ type collectAllCtx struct {
 	Author map[uuid.UUID]dao.User
 }
 
-type bodyCtx struct {
-	Title string
-	Body  string
+type activityBodyCtx struct {
+	Title          string
+	Body           string
+	ActivityActors string
+}
+
+type finalBodyCtx struct {
+	Title    string
+	Changes  string
+	HeadBody string
+	Body     string
+}
+
+type headEntityCtx struct {
+	WorkspaceName string
+	Layer         string
+	Identifier    string
+	Title         string
+	Url           string
+	UrlText       string
 }
 
 type actValueCtx struct {
@@ -56,7 +73,12 @@ func (t *EmailTemplates) RenderCollectOne(c collectOneCtx) FieldPrerender {
 	if err := t.CollectOne.Execute(&buf, c); err != nil {
 		return FieldPrerender{}
 	}
-	return FieldPrerender{Value: t.ReplaceTxtToSvg(buf.String()), Count: 1}
+	return FieldPrerender{
+		Value:   t.ReplaceTxtToSvg(buf.String()),
+		Count:   1,
+		Start:   c.Start,
+		End:     sql.NullTime{Time: c.Start.Time, Valid: c.Start.Valid},
+		Authors: []dao.User{c.Author}}
 }
 
 func (t *EmailTemplates) RenderCollectAll(c collectAllCtx, count int) FieldPrerender {
@@ -68,10 +90,12 @@ func (t *EmailTemplates) RenderCollectAll(c collectAllCtx, count int) FieldPrere
 	if err := t.CollectAll.Execute(&buf, c); err != nil {
 		return FieldPrerender{}
 	}
-	return FieldPrerender{Value: buf.String(), Count: count}
+
+	authors := utils.MapToSlice(c.Author, func(k uuid.UUID, t dao.User) dao.User { return t })
+	return FieldPrerender{Value: buf.String(), Count: count, Start: c.Start, End: c.End, Authors: authors}
 }
 
-func (t *EmailTemplates) RenderActivity(c bodyCtx) string {
+func (t *EmailTemplates) RenderActivity(c activityBodyCtx) string {
 	var buf bytes.Buffer
 	if err := t.Activity.Execute(&buf, c); err != nil {
 		slog.Error("err", err.Error())
@@ -80,7 +104,34 @@ func (t *EmailTemplates) RenderActivity(c bodyCtx) string {
 	return buf.String()
 }
 
-func (t *EmailTemplates) RenderBody(c bodyCtx) string {
+func (t *EmailTemplates) RenderChangesActivities(c ActivityActorView) string {
+	var buf bytes.Buffer
+	if err := t.ChangeCounter.Execute(&buf, c); err != nil {
+		slog.Error("err", err.Error())
+		return ""
+	}
+	return buf.String()
+}
+
+func (t *EmailTemplates) RenderHeadActivities(c headEntityCtx) string {
+	var buf bytes.Buffer
+	if err := t.HeadEntity.Execute(&buf, c); err != nil {
+		slog.Error("err", err.Error())
+		return ""
+	}
+	return buf.String()
+}
+
+func (t *EmailTemplates) RenderActivityAuthor(c ActivityActorView) string {
+	var buf bytes.Buffer
+	if err := t.AuthorActivity.Execute(&buf, c); err != nil {
+		slog.Error("err", err.Error())
+		return ""
+	}
+	return buf.String()
+}
+
+func (t *EmailTemplates) RenderBody(c finalBodyCtx) string {
 	var buf bytes.Buffer
 	if err := t.Body.Execute(&buf, c); err != nil {
 		slog.Error("err", err.Error())

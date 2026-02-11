@@ -21,6 +21,7 @@ type LayerPipeline[A dao.ActivityI, E dao.IDaoAct] struct {
 	Group           func([]A) ActivityBuckets[A, E]
 	BuildRecipients func(tx *gorm.DB, acts []A, entity E) ([]member_role.MemberNotify, EmailContext)
 	BuildDigest     func(tx *gorm.DB, acts []A, entity E) (map[string]FieldPrerender, int)
+	BuildHead       func(entity E) string
 
 	Subject func(entity E) string
 
@@ -73,10 +74,22 @@ func RunLayerPipeline[A dao.ActivityI, E dao.IDaoAct](tx *gorm.DB, p LayerPipeli
 		}
 
 		b.Prepared = prepared
+		b.HeadBody = p.BuildHead(b.Entity)
 	}
 
 	return buckets
 }
+
+//func ddd[A dao.ActivityI, E dao.IDaoAct](acts []A) string {
+//  res headEntityCtx{
+//    WorkspaceName: "",
+//    Layer:         "",
+//    Identifier:    "",
+//    Title:         "",
+//    Url:           "",
+//    UrlText:       "",
+//  }
+//}
 
 func BuildEmailMessages[A dao.ActivityI, E dao.IDaoAct](
 	buckets ActivityBuckets[A, E],
@@ -115,11 +128,16 @@ func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
 	var parts []string
 	var cnt int
 
+	var visible []FieldPrerender
+
 	for field, html := range b.Prepared {
 		if !r.MemberNotify.Allowed(field, html.Verb, ctx.Plan.Entity, ctx.Plan.AuthorRole, &ctx.Settings) {
 			continue
 		}
+
 		html = msgReplace(*r.MemberNotify, html)
+		visible = append(visible, html)
+
 		parts = append(parts, html.Value)
 		cnt += html.Count
 	}
@@ -128,15 +146,22 @@ func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
 		return EmailMessage{}
 	}
 
-	body := bodyCtx{
-		Body: strings.Join(parts, "\n"),
+	actorView := BuildActivityActorView(visible, &r.MemberNotify.GetUser().UserTimezone)
+	sss := template.RenderActivityAuthor(*actorView)
+	ccc := template.RenderChangesActivities(*actorView)
+
+	body := activityBodyCtx{
+		Body:           strings.Join(parts, "\n"),
+		ActivityActors: sss,
 	}
 
 	activity := template.RenderActivity(body)
 
-	html := bodyCtx{
-		Title: "eeee",
-		Body:  activity,
+	html := finalBodyCtx{
+		Title:    "eeee",
+		HeadBody: b.HeadBody,
+		Body:     activity,
+		Changes:  ccc,
 	}
 
 	msg := template.RenderBody(html)
