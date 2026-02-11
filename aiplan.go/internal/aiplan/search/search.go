@@ -3,7 +3,6 @@
 package search
 
 import (
-	"fmt"
 	"log/slog"
 	"slices"
 
@@ -231,7 +230,7 @@ func FetchIssuesByGroups(
 			}
 		case "assignees":
 			if !searchParams.Filters.AssigneeIds.IsEmpty() && !searchParams.Filters.AssigneeIds.Contains(group.Key) {
-				fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
+				//fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
 				continue
 			}
 			if group.Key == "" {

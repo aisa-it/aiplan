@@ -148,14 +148,34 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			c.NoContent(http.StatusNotFound)
 			return
 		}
-		slog.Error("Unhandled error in endpoint", "url", c.Request().URL, "err", err)
+		slog.Error("Unhandled error in endpoint", "handler", c.Path(), "url", c.Request().URL, "err", err)
 		EErrorMsgStatus(c, nil, code)
 	}
 
-	storage, err := filestorage.NewMinioStorage(cfg.AWSEndpoint, cfg.AWSAccessKey, cfg.AWSSecretKey, false, cfg.AWSBucketName)
-	if err != nil {
-		slog.Error("Fail init Minio connection", "err", err)
-		os.Exit(1)
+	var storage filestorage.FileStorage
+	var err error
+
+	if cfg.AssetsPath == "" {
+		slog.Warn("ASSETS_PATH param empty, fallback to ./assets dir")
+		cfg.AssetsPath = "assets"
+	}
+
+	if cfg.AWSEndpoint != "" {
+		storage, err = filestorage.NewMinioStorage(cfg.AWSEndpoint, cfg.AWSAccessKey, cfg.AWSSecretKey, false, cfg.AWSBucketName)
+		if err != nil {
+			slog.Warn("Fail init Minio connection, fallback to local file storage", "err", err)
+			storage, err = filestorage.NewLocalStorage(cfg.AssetsPath)
+			if err != nil {
+				slog.Error("Fail init local file storage", "path", cfg.AssetsPath, "err", err)
+				os.Exit(1)
+			}
+		}
+	} else {
+		storage, err = filestorage.NewLocalStorage(cfg.AssetsPath)
+		if err != nil {
+			slog.Error("Fail init local file storage", "path", cfg.AssetsPath, "err", err)
+			os.Exit(1)
+		}
 	}
 
 	dao.FileStorage = storage

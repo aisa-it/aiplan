@@ -3261,7 +3261,10 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 			return err
 		}
 
-		return s.db.Omit(clause.Associations).Delete(&attachment).Error
+		if err := s.db.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
+			return err
+		}
+		return s.db.Omit(clause.Associations).Delete(attachment.Asset).Error
 	}); err != nil {
 		return EError(c, err)
 	}

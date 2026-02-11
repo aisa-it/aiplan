@@ -32,7 +32,7 @@ func applyMarks(text *edtypes.Text, marks []TipTapMark) {
 		case "highlight":
 			applyHighlight(text, mark.Attrs)
 		default:
-			slog.Warn("Unknown mark type", "type", mark.Type)
+			slog.Debug("Unknown mark type", "type", mark.Type)
 		}
 	}
 }
