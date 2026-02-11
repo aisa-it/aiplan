@@ -1,6 +1,9 @@
 package email
 
 import (
+	"bytes"
+	"log/slog"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"gorm.io/gorm"
@@ -25,6 +28,7 @@ func renderDigest[A dao.ActivityI, E dao.IDaoAct](
 		if renderFunc, ok := fieldRenderMap[actField.ActivityField(field)]; ok {
 			fp := renderFunc(tx, templates, acts, entity)
 			if fp.Count > 0 {
+				fp.Field = actField.ActivityField(field)
 				result[field] = fp
 				totalChanges += fp.Count
 			}
@@ -49,4 +53,17 @@ func renderEntityChange[A dao.ActivityI, E dao.IDaoAct](
 	}
 
 	return t.RenderCollectAll(ctx, count)
+}
+
+func renderHead(
+	templates *EmailTemplates, ddd headEntityCtx,
+
+) string {
+
+	var buf bytes.Buffer
+	if err := templates.HeadEntity.Execute(&buf, ddd); err != nil {
+		slog.Error("err", err.Error())
+		return ""
+	}
+	return buf.String()
 }

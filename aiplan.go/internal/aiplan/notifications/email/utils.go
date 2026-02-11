@@ -104,6 +104,9 @@ func FormatDate(dateStr, outFormat string, tz *types.TimeZone) (string, error) {
 }
 
 func msgReplace(user member_role.MemberNotify, msg FieldPrerender) FieldPrerender {
+	if msg.Replace == nil {
+		return msg
+	}
 	for k, v := range msg.Replace {
 		key := k
 		keys := strings.Split(k, "_")

@@ -42,6 +42,18 @@ func NewSprintPipeline(templates *EmailTemplates) LayerPipeline[dao.SprintActivi
 			return renderDigest(tx, templates, acts, sprint, sprintFieldRenderMap, sprintCollectors)
 		},
 
+		BuildHead: func(sprint *dao.Sprint) string {
+			rr := headEntityCtx{
+				WorkspaceName: sprint.Workspace.Slug,
+				Layer:         "спринт",
+				Identifier:    fmt.Sprint(sprint.SequenceId),
+				Title:         sprint.GetFullName(),
+				Url:           sprint.URL.String(),
+				UrlText:       "Посмотреть спринт",
+			}
+			return renderHead(templates, rr)
+		},
+
 		Subject: func(s *dao.Sprint) string {
 			return fmt.Sprintf("Обновления спринта %s", s.GetFullName())
 		},
@@ -62,7 +74,6 @@ func loadSprintActivities(tx *gorm.DB) []dao.SprintActivity {
 		Where("notified = ?", false).
 		Limit(100).
 		Find(&activities).Error; err != nil {
-		//slog.Error("Get activities", slog.Int("interval", e.service.cfg.NotificationsSleep), "err", err)
 		return []dao.SprintActivity{}
 	}
 	return activities
@@ -72,7 +83,11 @@ func groupSprint(acts []dao.SprintActivity) ActivityBuckets[dao.SprintActivity, 
 	return GroupActivitiesByLayer(
 		acts,
 		func(a dao.SprintActivity) uuid.UUID { return a.SprintId },
-		func(a dao.SprintActivity) *dao.Sprint { return a.Sprint },
+		func(a dao.SprintActivity) *dao.Sprint {
+			a.Sprint.Workspace = a.Workspace
+			a.Sprint.SetUrl()
+			return a.Sprint
+		},
 	)
 }
 
@@ -120,35 +135,41 @@ func renderSprintIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity
 }
 
 func renderSprintWatcher(tx *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, sprint *dao.Sprint) FieldPrerender {
-	return renderEntityChange(tx, t, acts, sprint.Watchers,
+	fp := renderEntityChange(tx, t, acts, sprint.Watchers,
 		"Наблюдатели",
 		entitySpec[dao.SprintActivity, dao.User]{
 			entityID:    getWatcherIdFromSprintActivity,
 			entityTitle: func(i dao.User) string { return i.GetName() },
 			loadRemoved: getRemovedMember,
 			getAuthor:   getSprintActivityAuthor,
-		},
-	)
+		})
+	fp.Verb = acts[0].Verb
+	return fp
 }
 
 func renderSprintName(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) FieldPrerender {
-	return t.RenderCollectOne(collectOneCtx{
+	fp := t.RenderCollectOne(collectOneCtx{
 		Key:    "Название",
 		New:    toValueCtx(&acts[0].NewValue, nil),
 		Old:    toValueCtx(acts[0].OldValue, nil),
 		Start:  sql.NullTime{Time: acts[0].CreatedAt, Valid: true},
 		Author: *acts[0].Actor,
 	})
+	fp.Verb = acts[0].Verb
+	return fp
 }
 
 func renderSprintDescription(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) FieldPrerender {
-	return t.RenderCollectOne(collectOneCtx{
+	fp := t.RenderCollectOne(collectOneCtx{
 		Key:    "Описание",
 		New:    toValueCtx(nil, &acts[0].NewValue),
 		Old:    toValueCtx(nil, acts[0].OldValue),
 		Start:  sql.NullTime{Time: acts[0].CreatedAt, Valid: true},
 		Author: *acts[0].Actor,
 	})
+	fp.Verb = acts[0].Verb
+
+	return fp
 }
 
 func renderSprintEndDate(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivity, _ *dao.Sprint) FieldPrerender {
@@ -161,6 +182,7 @@ func renderSprintEndDate(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActivit
 		Author: *acts[0].Actor,
 	})
 	fp.Replace = replace
+	fp.Verb = acts[0].Verb
 
 	return fp
 }
@@ -176,6 +198,6 @@ func renderSprintStartDate(_ *gorm.DB, t *EmailTemplates, acts []dao.SprintActiv
 		Author: *acts[0].Actor,
 	})
 	fp.Replace = replace
-
+	fp.Verb = acts[0].Verb
 	return fp
 }
