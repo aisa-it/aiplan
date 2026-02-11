@@ -1230,11 +1230,8 @@ func (d JSONTime) MarshalJSON() ([]byte, error) {
 	return fmt.Append([]byte{}, time.Time(d).Unix()), nil
 }
 
-func (d *JSONTime) Value() (driver.Value, error) {
-	if d == nil {
-		return nil, nil
-	}
-	return time.Time(*d), nil
+func (d JSONTime) Value() (driver.Value, error) {
+	return time.Time(d), nil
 }
 
 func (d *JSONTime) Scan(value any) error {
