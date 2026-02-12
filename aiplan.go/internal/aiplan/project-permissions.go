@@ -69,10 +69,6 @@ func (s *Services) hasProjectPermissions(c echo.Context) (bool, error) {
 		return projectMember.Role > types.GuestRole, nil
 	}
 
-	if strings.HasSuffix(c.Path(), "/issue-labels/") && c.Request().Method == http.MethodPost {
-		return projectMember.Role > types.GuestRole, nil
-	}
-
 	// Allow search to all members
 	if strings.HasSuffix(c.Path(), "/issues/search/") && c.Request().Method == http.MethodPost {
 		return true, nil
