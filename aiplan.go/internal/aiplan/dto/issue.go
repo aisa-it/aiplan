@@ -72,6 +72,7 @@ type Issue struct {
 	EstimatePoint       int             `json:"estimate_point"`
 	Draft               bool            `json:"draft"`
 	Pinned              bool            `json:"pinned"`
+	LLMContent          bool            `json:"llm_content"`
 
 	Parent    *IssueLight      `json:"parent_detail"  extensions:"x-nullable"`
 	Workspace *WorkspaceLight  `json:"workspace_detail"  extensions:"x-nullable"`
