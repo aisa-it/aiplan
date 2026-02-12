@@ -2,6 +2,7 @@ package tg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,6 +17,11 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrInvalidTgId   = errors.New("error invalid Telegram Id")
+	ErrEmptyActivity = errors.New("activity is empty")
 )
 
 type TgService struct {
@@ -135,6 +141,9 @@ func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
 
 	message, err := t.bot.SendMessage(t.ctx, &smp)
 	if err != nil {
+		if isInvalidTelegramChat(err) {
+			return 0, fmt.Errorf("%w, msg: %s", ErrInvalidTgId, err.Error())
+		}
 		return 0, fmt.Errorf("send message error: %w", err)
 	}
 

@@ -210,14 +210,17 @@ func addDefaultWatchers(projectId uuid.UUID) UsersStep {
 	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
 
 		var defaultWatchers []struct {
-			ID           uuid.UUID
-			TelegramId   *int64
-			UserTimezone types.TimeZone
-			Settings     types.UserSettings
+			ID            uuid.UUID
+			TelegramId    *int64
+			UserTimezone  types.TimeZone
+			Settings      types.UserSettings
+			IsActive      bool
+			IsIntegration bool
+			IsBot         bool
 		}
 
 		err := tx.Model(&dao.ProjectMember{}).
-			Select("users.id, users.telegram_id, users.user_timezone, users.settings").
+			Select("users.id, users.telegram_id, users.user_timezone, users.settings, users.is_active, users.is_integration, users.is_bot").
 			Joins("JOIN users ON users.id = project_members.member_id").
 			Where("project_id = ? AND is_default_watcher = true", projectId).
 			Scan(&defaultWatchers).Error
@@ -228,10 +231,13 @@ func addDefaultWatchers(projectId uuid.UUID) UsersStep {
 
 		for _, w := range defaultWatchers {
 			user := &dao.User{
-				ID:           w.ID,
-				TelegramId:   w.TelegramId,
-				UserTimezone: w.UserTimezone,
-				Settings:     w.Settings,
+				ID:            w.ID,
+				TelegramId:    w.TelegramId,
+				UserTimezone:  w.UserTimezone,
+				Settings:      w.Settings,
+				IsActive:      w.IsActive,
+				IsIntegration: w.IsIntegration,
+				IsBot:         w.IsBot,
 			}
 
 			users.addUser(user, projectDefaultWatcher)
