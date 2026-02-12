@@ -2,6 +2,7 @@ package tg
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -76,6 +77,30 @@ func getUserName(user *dao.User) string {
 		return fmt.Sprintf("%s", user.Email)
 	}
 	return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
+}
+
+func isInvalidTelegramChat(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// 404
+	if errors.Is(err, bot.ErrorNotFound) {
+		return true
+	}
+
+	// 403
+	if errors.Is(err, bot.ErrorForbidden) {
+		return true
+	}
+
+	// 400 chat not found
+	if errors.Is(err, bot.ErrorBadRequest) &&
+		strings.Contains(err.Error(), "chat not found") {
+		return true
+	}
+
+	return false
 }
 
 func escapeCharacters(data string) string {
