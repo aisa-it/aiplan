@@ -258,7 +258,7 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 	if fieldLog, ok := requestedData[fmt.Sprintf("field_log_source")]; ok {
 		sourceField = fieldLog.(actField.ActivityField)
 	}
-	if fieldLog, ok := currentInstance[fmt.Sprintf("field_log_target")]; ok {
+	if fieldLog, ok := requestedData[fmt.Sprintf("field_log_target")]; ok {
 		targetField = fieldLog.(actField.ActivityField)
 	}
 

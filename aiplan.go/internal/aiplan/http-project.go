@@ -796,7 +796,10 @@ func (s *Services) getProjectMember(c echo.Context) error {
 		Joins("Member").
 		Preload(clause.Associations).
 		Preload("Workspace.Owner").
-		Find(&member).Error; err != nil {
+		First(&member).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EError(c, apierrors.ErrProjectMemberNotFound)
+		}
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusOK, member.ToLightDTO())
@@ -957,6 +960,9 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 		Where("project_id = ?", project.ID).
 		First(&requestedMember).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrProjectMemberNotFound)
+	}
+	if requestedMember.WorkspaceAdmin {
+		return EErrorDefined(c, apierrors.ErrCannotUpdateWorkspaceAdmin)
 	}
 
 	s.business.ProjectCtx(c, user, &project, &projectMember, &workspace, &workspaceMember)
