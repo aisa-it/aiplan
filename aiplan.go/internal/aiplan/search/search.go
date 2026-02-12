@@ -15,20 +15,23 @@ import (
 )
 
 // GetIssuesGroups возвращает группы задач с количеством в каждой группе
-func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.Sprint, searchParams *types.SearchParams) ([]types.SearchGroupSize, error) {
+func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *dao.Sprint, searchParams *types.SearchParams) ([]types.SearchGroupSize, error) {
 	query := db.Session(&gorm.Session{})
 
 	// Определение запроса для фильтрации по проектам
 	// Если указан спринт, выбираем project_id из таблицы SprintIssue для данного спринта
 	// Если указан конкретный projectId, используем его напрямую
-	// В противном случае используем список ProjectIds из параметров поиска
+	// Если указан список ProjectIds в параметрах поиска, используем его напрямую
+	// В противном случае используем список проектов в которых состоит пользователь
 	var projectQuery any
 	if sprint != nil {
 		projectQuery = db.Select("project_id").Where("sprint_id = ?", sprint.Id).Model(&dao.SprintIssue{})
-	} else if projectId != "" {
+	} else if !projectId.IsNil() {
 		projectQuery = projectId
-	} else {
+	} else if len(searchParams.Filters.ProjectIds) > 0 {
 		projectQuery = searchParams.Filters.ProjectIds
+	} else {
+		projectQuery = db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{})
 	}
 
 	switch searchParams.GroupByParam {

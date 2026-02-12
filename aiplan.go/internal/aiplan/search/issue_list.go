@@ -689,7 +689,7 @@ func GetIssueListData(
 		query = query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(searchParams.Limit).Offset(searchParams.Offset)
 
 		// Выполнение группировки
-		groupSize, err := GetIssuesGroups(db, &user, projectMember.ProjectId.String(), sprint, searchParams)
+		groupSize, err := GetIssuesGroups(db, &user, projectMember.ProjectId, sprint, searchParams)
 		if err != nil {
 			return nil, err
 		}
