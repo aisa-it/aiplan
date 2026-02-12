@@ -106,6 +106,8 @@ func formatProjectActivity(act *dao.ProjectActivity) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), entity, act.Project.URL), nil
 }
 
+var issueRolesNotified = []role{actionAuthor, issueAuthor, projectDefaultWatcher, issueWatcher, issueAssigner}
+
 func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
@@ -167,8 +169,7 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 
 	msg.Skip = func(u userTg) bool { // пропустить уведомления для всех кроме ролей из списка okRoles
 		var ok bool
-		okRoles := []role{actionAuthor, issueAuthor, projectDefaultWatcher, issueWatcher, issueAssigner}
-		for _, r := range okRoles {
+		for _, r := range issueRolesNotified {
 			if u.Has(r) {
 				ok = true
 			}
