@@ -42,6 +42,7 @@ type TgMsg struct {
 	body  string
 
 	replace map[string]any
+	Skip    func(u userTg) bool
 }
 
 func NewTgMsg() TgMsg {
