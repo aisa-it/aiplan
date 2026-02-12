@@ -22,3 +22,4 @@ services:
         required: false
     volumes:
       - ./git-data:/var/lib/aiplan/git-repositories
+    profiles: ["base"]

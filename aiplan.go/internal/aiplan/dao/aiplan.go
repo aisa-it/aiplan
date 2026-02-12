@@ -111,6 +111,9 @@ type FileAsset struct {
 // Возвращает:
 //   - error: ошибка, если при создании записи произошла ошибка.
 func (asset *FileAsset) BeforeDelete(tx *gorm.DB) error {
+	if asset == nil || asset.Id.IsNil() {
+		return nil
+	}
 	exist, err := FileStorage.Exist(asset.Id)
 	if err != nil {
 		return err

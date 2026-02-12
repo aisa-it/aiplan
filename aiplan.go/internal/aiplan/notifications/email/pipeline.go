@@ -147,6 +147,9 @@ func BuildEmailMessage[A dao.ActivityI, E dao.IDaoAct](
 	}
 
 	actorView := BuildActivityActorView(visible, &r.MemberNotify.GetUser().UserTimezone)
+	if actorView == nil {
+		return EmailMessage{}
+	}
 	sss := template.RenderActivityAuthor(*actorView)
 	ccc := template.RenderChangesActivities(*actorView)
 
