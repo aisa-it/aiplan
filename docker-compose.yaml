@@ -17,6 +17,7 @@ services:
       - ssh-host-key:/var/lib/aiplan:rw # SSH host key persistence
     networks:
       - aiplan-net
+    profiles: ["base"]
 
   db:
     image: postgres:17-alpine
@@ -36,6 +37,7 @@ services:
       start_period: 80s
     networks:
       - aiplan-net
+    profiles: ["base"]
 
   minio:
     image: minio/minio
@@ -50,6 +52,7 @@ services:
       - .env
     networks:
       - aiplan-net
+    profiles: ["minio"]
 
   createbuckets:
     image: minio/mc
@@ -61,6 +64,7 @@ services:
       - minio
     networks:
       - aiplan-net
+    profiles: ["minio"]
 
 volumes:
   db-data:

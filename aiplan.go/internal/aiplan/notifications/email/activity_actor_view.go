@@ -96,12 +96,6 @@ func BuildActivityActorView(
 		actors = append(actors, u)
 	}
 
-	// Сортировка по имени (очень рекомендую включить)
-	//sort.Slice(actors, func(i, j int) bool {
-	//  return actors[i].GetName() < actors[j].GetName()
-	//})
-
-	// Приведение к таймзоне
 	loc := (*time.Location)(tz)
 	start = start.In(loc)
 	end = end.In(loc)

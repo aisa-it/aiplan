@@ -167,6 +167,11 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 	formName := fmt.Sprintf("%s/%s", form.Workspace.Name, form.Title)
 	msg.title = fmt.Sprintf("*%s* прошел форму [%s](%s)\n", bot.EscapeMarkdown(user.GetName()), bot.EscapeMarkdown(formName), form.URL.String())
 
+	fileName := make(map[string]string, len(answer.Attachments))
+	for _, attachment := range answer.Attachments {
+		fileName[attachment.Id.String()] = attachment.Asset.Name
+	}
+
 	count := 0
 	for _, field := range answer.Fields {
 		count++
@@ -221,6 +226,17 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 			} else {
 				d.WriteString("```\n%s\n```\n")
 				out = append(out, fmt.Sprint(field.Val))
+			}
+		case "attachment":
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				if v, ok := fileName[fmt.Sprint(field.Val)]; ok {
+					d.WriteString("```\n%s\n```\n")
+					out = append(out, v)
+				} else {
+					d.WriteString("\n 🖼\n")
+				}
 			}
 		}
 	}

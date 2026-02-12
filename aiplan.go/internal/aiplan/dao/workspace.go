@@ -304,7 +304,7 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 
 	//delete sprint
 	var sprint []Sprint
-	if err := tx.Where("workspace_id = ?", workspace.ID).Find(&sprint).Error; err != nil {
+	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Find(&sprint).Error; err != nil {
 		return err
 	}
 

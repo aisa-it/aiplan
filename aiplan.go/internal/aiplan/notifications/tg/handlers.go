@@ -60,8 +60,10 @@ func (t *TgService) getUserMiddleware() bot.Middleware {
 }
 
 func (t *TgService) startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	userCtx := ctx.(*UserContext)
-
+	userCtx, ok := ctx.(*UserContext)
+	if !ok {
+		return
+	}
 	if userCtx.User == nil {
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,

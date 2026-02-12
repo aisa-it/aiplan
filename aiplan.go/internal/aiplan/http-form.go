@@ -443,6 +443,7 @@ func (s *Services) getAnswers(c echo.Context) error {
 	query := s.db.
 		Joins("Form").
 		Joins("Responder").
+		Preload("Attachments.Asset").
 		Where("form_answers.workspace_id = ?", workspace.ID).
 		Where("form_answers.form_id = ?", form.ID)
 
@@ -490,6 +491,7 @@ func (s *Services) getAnswer(c echo.Context) error {
 		Preload("Responder").
 		Preload("Attachment.Asset").
 		Preload("Form").
+		Preload("Attachments.Asset").
 		Where("workspace_id = ?", workspace.ID).
 		Where("form_id = ?", form.ID).
 		Where("seq_id = ?", answerSeq).
@@ -548,10 +550,10 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormEmptyAnswers)
 	}
 
-	var uuidAttach string
+	var attachmentUUIDs []string
 	for _, field := range resultAnswers {
 		if field.Type == "attachment" && field.Val != nil {
-			uuidAttach = fmt.Sprint(field.Val)
+			attachmentUUIDs = append(attachmentUUIDs, fmt.Sprint(field.Val))
 		}
 	}
 
@@ -584,24 +586,19 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		answer.SeqId = seqId
 		answer.FormDate = form.UpdatedAt
 
-		if len(uuidAttach) > 0 {
-			var formAttachment dao.FormAttachment
-			if err := tx.Where("workspace_id = ?", form.WorkspaceId).
-				Where("form_id = ?", form.ID).
-				Where("id = ?", uuidAttach).
-				First(&formAttachment).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
-					return apierrors.ErrFormAttachmentNotFound
-				}
-
-				return err
-			}
-			answer.AttachmentId = uuid.NullUUID{UUID: formAttachment.Id, Valid: true}
-		}
-
 		if err := tx.Model(&dao.FormAnswer{}).Create(&answer).Error; err != nil {
 			return err
 		}
+
+		if len(attachmentUUIDs) > 0 {
+			if err := tx.Model(&dao.FormAttachment{}).Where("workspace_id = ?", form.WorkspaceId).
+				Where("form_id = ?", form.ID).
+				Where("id IN (?)", attachmentUUIDs).
+				Update("answer_id", answer.ID).Error; err != nil {
+				return err
+			}
+		}
+
 		return nil
 
 	}); err != nil {
@@ -609,6 +606,12 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	}
 	if user == nil {
 		if err := s.db.Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
+			return EError(c, err)
+		}
+	}
+
+	if len(attachmentUUIDs) > 0 {
+		if err := s.db.Preload("Asset").Where("answer_id = ?", answer.ID).Find(&answer.Attachments).Error; err != nil {
 			return EError(c, err)
 		}
 	}
@@ -687,9 +690,9 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		//DescriptionStripped: issue.DescriptionStripped,
 	}
 
-	for _, field := range form.Fields {
+	for i, field := range form.Fields {
 		if field.IssueNameField {
-			issue.Name = fmt.Sprint(field.Val)
+			issue.Name = fmt.Sprint(answer.Fields[i].Val)
 		}
 	}
 
@@ -698,6 +701,13 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		if err := s.db.Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
 			return err
 		}
+	}
+
+	var formAttachments []dao.FormAttachment
+	if err := s.db.Where("form_id = ?", form.ID).
+		Where("answer_id = ?", answer.ID).
+		Find(&formAttachments).Error; err != nil {
+		return err
 	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
@@ -732,6 +742,20 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 			}
 		}
 
+		for _, formAttachment := range formAttachments {
+			if err := tx.Create(&dao.IssueAttachment{
+				Id:          dao.GenUUID(),
+				AssetId:     formAttachment.AssetId,
+				IssueId:     issue.ID,
+				ProjectId:   issue.ProjectId,
+				WorkspaceId: issue.WorkspaceId,
+				CreatedById: systemUserID,
+				UpdatedById: systemUserID,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
 		return tx.CreateInBatches(&newAssignees, 10).Error
 	})
 }
@@ -747,7 +771,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param formSlug path string true "Slug формы"
 // @Param asset formData file true "Файл для загрузки"
-// @Success 201 {object} dto.Attachment "Созданное вложение"
+// @Success 201 {object} dto.FormAttachmentLight "Созданное вложение"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
