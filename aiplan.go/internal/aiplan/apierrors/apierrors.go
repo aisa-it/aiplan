@@ -176,7 +176,7 @@ var (
 	ErrProjectStateNotFound              = DefinedError{Code: 3024, StatusCode: http.StatusBadRequest, Err: "state not found", RuErr: "Статус не найден"}
 	ErrProjectStateInvalidSeqId          = DefinedError{Code: 3025, StatusCode: http.StatusBadRequest, Err: "invalid state SeqId", RuErr: "Неверный порядковый номер статуса в группе"}
 	ErrProjectGroupNotFound              = DefinedError{Code: 3026, StatusCode: http.StatusNotFound, Err: "status group not found", RuErr: "Группа статусов не найдена"}
-	ErrChangeProjectLead                 = DefinedError{Code: 3027, StatusCode: http.StatusBadRequest, Err: "error change of project lead", RuErr: "Не получилось изменить владельца пространства"}
+	ErrChangeProjectLead                 = DefinedError{Code: 3027, StatusCode: http.StatusBadRequest, Err: "error change of project lead", RuErr: "Не получилось изменить владельца проекта"}
 	ErrIssueTemplateNotFound             = DefinedError{Code: 3028, StatusCode: http.StatusNotFound, Err: "issue template not found", RuErr: "Шаблон задачи не найден"}
 	ErrIssueTemplateDuplicatedName       = DefinedError{Code: 3029, StatusCode: http.StatusConflict, Err: "issue template name already exist", RuErr: "Шаблон задачи с таким именем уже существует"}
 	ErrAttachmentIsTooBig                = DefinedError{Code: 3030, StatusCode: http.StatusRequestEntityTooLarge, Err: "attachment size exceed 4GB size", RuErr: "Размер вложения не должен превышать 4ГБ"}
