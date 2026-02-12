@@ -63,12 +63,13 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 		slog.Error("Telegram handle activity", "error", err)
 	}
 
-	if notify == nil {
+	if notify == nil || len(notify.Users) == 0 {
 		return nil
 	}
 
 	go func() {
 		var msgIds []int64
+		var invalidTgIds []int64
 
 		for _, u := range notify.Users {
 			if notify.AuthorTgID == u.id {
@@ -76,7 +77,11 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 			}
 
 			if id, err := t.Send(u.id, msgReplace(u, notify.Message)); err != nil {
-				slog.Error("tg send message", "error", err.Error())
+				if errors.Is(err, ErrInvalidTgId) {
+					invalidTgIds = append(invalidTgIds, u.id)
+					continue
+				}
+				slog.Error("Send telegram message", "error", err.Error(), "activityId", notify.ActID, "table", notify.TableName)
 				continue
 			} else {
 				msgIds = append(msgIds, id)
@@ -88,6 +93,12 @@ func (t *TelegramNotification) Handle(activity dao.ActivityI) error {
 				Select("telegram_msg_ids").
 				Update("telegram_msg_ids", pq.Int64Array(msgIds)).Error; err != nil {
 				slog.Error("Update activity tg msg ids", "err", err)
+			}
+		}
+
+		if len(invalidTgIds) > 0 {
+			if err := t.db.Model(&dao.User{}).Where("telegram_id IN (?)", invalidTgIds).Update("telegram_id", nil).Error; err != nil {
+				slog.Error("Remove dead telegram ids", "err", err)
 			}
 		}
 
