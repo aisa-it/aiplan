@@ -72,6 +72,7 @@ type Issue struct {
 	EstimatePoint       int             `json:"estimate_point"`
 	Draft               bool            `json:"draft"`
 	Pinned              bool            `json:"pinned"`
+	LLMContent          bool            `json:"llm_content"`
 
 	Parent    *IssueLight      `json:"parent_detail"  extensions:"x-nullable"`
 	Workspace *WorkspaceLight  `json:"workspace_detail"  extensions:"x-nullable"`
@@ -171,6 +172,7 @@ type IssueProperty struct {
 	WorkspaceId uuid.UUID `json:"workspace_id"`
 	Name        string    `json:"name"`
 	Type        string    `json:"type"`
+	Options     []string  `json:"options,omitempty"`
 	Value       any       `json:"value"`
 }
 
@@ -181,6 +183,7 @@ type ProjectPropertyTemplate struct {
 	WorkspaceId uuid.UUID `json:"workspace_id"`
 	Name        string    `json:"name"`
 	Type        string    `json:"type"`
+	Options     []string  `json:"options,omitempty"`
 	OnlyAdmin   bool      `json:"only_admin"`
 	SortOrder   int       `json:"sort_order"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -189,18 +192,20 @@ type ProjectPropertyTemplate struct {
 
 // CreatePropertyTemplateRequest - запрос на создание шаблона поля
 type CreatePropertyTemplateRequest struct {
-	Name      string `json:"name" validate:"required,min=1,max=255"`
-	Type      string `json:"type" validate:"required,oneof=string boolean"`
-	OnlyAdmin bool   `json:"only_admin"`
-	SortOrder int    `json:"sort_order"`
+	Name      string   `json:"name" validate:"required,min=1,max=255"`
+	Type      string   `json:"type" validate:"required,oneof=string boolean select"`
+	Options   []string `json:"options,omitempty"`
+	OnlyAdmin bool     `json:"only_admin"`
+	SortOrder int      `json:"sort_order"`
 }
 
 // UpdatePropertyTemplateRequest - запрос на обновление шаблона поля
 type UpdatePropertyTemplateRequest struct {
-	Name      *string `json:"name,omitempty"`
-	Type      *string `json:"type,omitempty"`
-	OnlyAdmin *bool   `json:"only_admin,omitempty"`
-	SortOrder *int    `json:"sort_order,omitempty"`
+	Name      *string   `json:"name,omitempty"`
+	Type      *string   `json:"type,omitempty"`
+	Options   *[]string `json:"options,omitempty"`
+	OnlyAdmin *bool     `json:"only_admin,omitempty"`
+	SortOrder *int      `json:"sort_order,omitempty"`
 }
 
 // SetIssuePropertyRequest - запрос на установку значения поля задачи

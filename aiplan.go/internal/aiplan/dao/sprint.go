@@ -162,6 +162,10 @@ func (s *Sprint) BeforeDelete(tx *gorm.DB) (err error) {
 		Model(&IssueActivity{}).
 		Updates(cleanId)
 
+	if err := tx.Where("sprint_id = ?", s.Id).Delete(&SprintViews{}).Error; err != nil {
+		return err
+	}
+
 	if err := tx.Where("workspace_id = ?", s.WorkspaceId).
 		Where("sprint_id = ?", s.Id).Unscoped().Delete(&SprintActivity{}).Error; err != nil {
 		return err

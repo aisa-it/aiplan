@@ -2574,7 +2574,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Созданное вложение",
                         "schema": {
-                            "$ref": "#/definitions/dto.Attachment"
+                            "$ref": "#/definitions/dto.FormAttachmentLight"
                         }
                     },
                     "400": {
@@ -7678,6 +7678,108 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/history": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Получает данные истории изменения комментария к документу",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Docs"
+                ],
+                "summary": "Doc (комментарии): получение истории изменения комментария к документу",
+                "operationId": "getDocCommentUpdateList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Id документа",
+                        "name": "docId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID комментария",
+                        "name": "commentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Лимит записей",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список с пагинацией",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dao.PaginationResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/dto.CommentHistory"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/reactions/": {
             "post": {
                 "security": [
@@ -11999,6 +12101,115 @@ const docTemplate = `{
                         "description": "Обновленный комментарий",
                         "schema": {
                             "$ref": "#/definitions/dto.IssueComment"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId}/history": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Получает данные истории изменения комментария к задаче",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Issues"
+                ],
+                "summary": "Задачи (комментарии): получение истории изменения комментария к задаче",
+                "operationId": "getIssueCommentUpdateList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID комментария",
+                        "name": "commentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Лимит записей",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список с пагинацией",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dao.PaginationResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/dto.CommentHistory"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -18326,6 +18537,9 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "llm_content": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -19174,6 +19388,35 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CommentHistory": {
+            "type": "object",
+            "properties": {
+                "actor_update": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "comment_attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FileAsset"
+                    }
+                },
+                "comment_html": {
+                    "type": "string"
+                },
+                "comment_id": {
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                },
+                "comment_stripped": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "updated_by_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.CommentReaction": {
             "type": "object",
             "properties": {
@@ -19270,6 +19513,12 @@ const docTemplate = `{
                 "only_admin": {
                     "type": "boolean"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "sort_order": {
                     "type": "integer"
                 },
@@ -19277,7 +19526,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "string",
-                        "boolean"
+                        "boolean",
+                        "select"
                     ]
                 }
             }
@@ -19715,6 +19965,13 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FormAttachmentLight"
+                    },
+                    "x-nullable": true
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -19745,6 +20002,20 @@ const docTemplate = `{
                 },
                 "seq_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.FormAttachmentLight": {
+            "type": "object",
+            "properties": {
+                "asset": {
+                    "$ref": "#/definitions/dto.FileAsset"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
                 }
             }
         },
@@ -19966,6 +20237,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.LabelLight"
                     },
                     "x-nullable": true
+                },
+                "llm_content": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"
@@ -20298,6 +20572,12 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "project_id": {
                     "type": "string"
                 },
@@ -20458,6 +20738,9 @@ const docTemplate = `{
                 },
                 "linked_issues_count": {
                     "type": "integer"
+                },
+                "llm_content": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"
@@ -20772,6 +21055,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "0"
                 },
+                "hide_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -21050,6 +21339,12 @@ const docTemplate = `{
                 },
                 "only_admin": {
                     "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "project_id": {
                     "type": "string"
@@ -21615,6 +21910,12 @@ const docTemplate = `{
                 },
                 "only_admin": {
                     "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "sort_order": {
                     "type": "integer"
@@ -22428,6 +22729,20 @@ const docTemplate = `{
                 }
             }
         },
+        "types.FilterUUIDs": {
+            "type": "object",
+            "properties": {
+                "array": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "include_empty": {
+                    "type": "boolean"
+                }
+            }
+        },
         "types.FormAnswerNotify": {
             "type": "object",
             "properties": {
@@ -22471,6 +22786,9 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "issue_name_field": {
+                    "type": "boolean"
+                },
                 "label": {
                     "type": "string"
                 },
@@ -22498,10 +22816,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "assignees": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "authored_by_me": {
                     "type": "boolean"
@@ -22582,10 +22897,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "watchers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "workspace_slugs": {
                     "type": "array",

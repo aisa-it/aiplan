@@ -385,7 +385,7 @@ func GetFileAssetFromDescription(query *gorm.DB, description *string) ([]FileAss
 		return nil, fmt.Errorf("body empty")
 	}
 
-	re := regexp.MustCompile(`/api/file/([a-f0-9-]+-\d+)`)
+	re := regexp.MustCompile(`/api/auth/file/([a-f0-9-]+-\d+)`)
 	matches := re.FindAllStringSubmatch(*description, -1)
 	for _, match := range matches {
 		ids = append(ids, match[1])

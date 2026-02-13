@@ -72,6 +72,7 @@ type Issue struct {
 	DescriptionStripped *string         `json:"description_stripped" extensions:"x-nullable"`
 	DescriptionType     int             `json:"description_type" gorm:"default:0"`
 	DescriptionJSON     editor.Document `json:"description_json" gorm:"type:jsonb"`
+	LLMContent          bool            `gorm:"index;default:false"`
 
 	Tokens types.TsVector `json:"-" gorm:"index:tokens_gin,type:gin,where:deleted_at is not null;->:false"`
 
@@ -214,6 +215,7 @@ func (i IssueWithCount) ToSearchLightDTO() dto.SearchLightweightIssue {
 		State:           i.State.ToLightDTO(),
 		NameHighlighted: i.NameHighlighted,
 		DescHighlighted: i.DescHighlighted,
+		LLMContent:      i.LLMContent,
 	}
 
 	if i.Assignees != nil {
@@ -354,6 +356,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 		DescriptionType:     i.DescriptionType,
 		DescriptionJSON:     i.DescriptionJSON,
 		EstimatePoint:       i.EstimatePoint,
+		LLMContent:          i.LLMContent,
 		Draft:               i.Draft,
 		Pinned:              i.Pinned,
 		ParentId:            i.ParentId,

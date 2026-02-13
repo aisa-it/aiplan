@@ -12,16 +12,13 @@ import (
 )
 
 const answerIssueTmpl = `{{if .User}}<p>Пользователь: {{.User.GetName}}, {{.User.Email}}</p>{{else}}<p>Анонимный пользователь</p>{{end}}<ol>{{- range .Answers -}}<li><p><span style="font-size: 14px"><strong>{{- .Label -}}</strong></span><br><span style="font-size: 14px">{{- getValString .Type .Val -}}</span></p></li>{{- end -}}</ol>`
-const answerTelegramTmpl = `{{if .User}}👤 *Пользователь:* {{.User.GetName}} ({{.User.Email}})
-{{else}}👤 *Анонимный пользователь*
-{{end}}
-📋 *Ответы на форму:*
-{{- range $index, $answer := .Answers}}
-{{add $index 1}}. *{{$answer.Label}}*
-   {{- getValStringTelegram $answer.Type $answer.Val -}}
-{{- end}}`
 
 func GenBodyAnswer(answer *dao.FormAnswer, user *dao.User) (string, error) {
+	fileName := make(map[string]string, len(answer.Attachments))
+	for _, attachment := range answer.Attachments {
+		fileName[attachment.Id.String()] = attachment.Asset.Name
+	}
+
 	t, err := template.New("AnswerIssue").Funcs(template.FuncMap{
 		"getValString": func(t string, val interface{}) template.HTML {
 			switch t {
@@ -46,6 +43,12 @@ func GenBodyAnswer(answer *dao.FormAnswer, user *dao.User) (string, error) {
 					return template.HTML(strings.Join(stringValues, "<br>"))
 				}
 				return template.HTML(fmt.Sprint(val))
+			case "attachment":
+				if v, ok := fileName[fmt.Sprint(val)]; ok {
+					return template.HTML(v)
+				} else {
+					return template.HTML(fmt.Sprint(val))
+				}
 			}
 			return template.HTML(fmt.Sprint(val))
 		},

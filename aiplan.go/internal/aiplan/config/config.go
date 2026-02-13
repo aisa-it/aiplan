@@ -30,6 +30,8 @@ type Config struct {
 	AWSEndpoint   string `env:"AWS_S3_ENDPOINT_URL"`
 	AWSBucketName string `env:"AWS_S3_BUCKET_NAME"`
 
+	AssetsPath string `env:"ASSETS_PATH"`
+
 	DatabaseDSN string `env:"DATABASE_URL"`
 
 	DefaultUserEmail string `env:"DEFAULT_EMAIL"`

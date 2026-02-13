@@ -475,6 +475,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		WorkspaceId:     project.WorkspaceId,
 		DescriptionHtml: descriptionHtml,
 		Draft:           draft,
+		LLMContent:      true,
 	}
 
 	// Транзакция: создание задачи и связей
@@ -735,10 +736,11 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	issue.UpdatedById = userID
+	issue.LLMContent = true
 
 	// Транзакция: обновление задачи и связей
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&issue).Error; err != nil {
+		if err := tx.Omit(clause.Associations).Save(&issue).Error; err != nil {
 			return err
 		}
 

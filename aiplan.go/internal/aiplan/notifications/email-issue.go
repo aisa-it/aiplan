@@ -385,7 +385,7 @@ func newIssueActivity(issue *dao.Issue) *issueActivity {
 	{ // add default watchers
 		if res.issue.Project != nil {
 			for _, watcher := range res.issue.Project.DefaultWatchersDetails {
-				if im, ok := res.users[watcher.Member.Email]; ok {
+				if im, ok := res.users[watcher.Member.Email]; !ok {
 					res.users[watcher.Member.Email] = issueMember{
 						User:    *watcher.Member,
 						Watcher: true,

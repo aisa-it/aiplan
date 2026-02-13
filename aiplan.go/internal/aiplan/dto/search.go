@@ -42,6 +42,8 @@ type SearchLightweightIssue struct {
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
 	DescHighlighted string `json:"desc_highlighted,omitempty"`
+
+	LLMContent bool `gorm:"llm_content"`
 }
 
 type PaginationMeta struct {

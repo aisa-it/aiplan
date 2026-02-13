@@ -61,13 +61,14 @@ type Project struct {
 	DefaultWatchers  []uuid.UUID `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
 	ProjectLeadId    uuid.UUID   `json:"project_lead" gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	WorkspaceId uuid.UUID     `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
-	Emoji       int32         `json:"emoji,string" gorm:"default:127773"`
-	LogoId      uuid.NullUUID `json:"logo"`
-	CoverImage  *string       `json:"cover_image" extensions:"x-nullable"`
-	EstimateId  *string       `json:"estimate" extensions:"x-nullable"`
-	RulesScript *string       `json:"rules_script" extensions:"x-nullable"`
+	UpdatedById uuid.NullUUID    `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId uuid.UUID        `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
+	Emoji       int32            `json:"emoji,string" gorm:"default:127773"`
+	LogoId      uuid.NullUUID    `json:"logo"`
+	CoverImage  *string          `json:"cover_image" extensions:"x-nullable"`
+	EstimateId  *string          `json:"estimate" extensions:"x-nullable"`
+	RulesScript *string          `json:"rules_script" extensions:"x-nullable"`
+	HideFields  types.HideFields `json:"hide_fields" gorm:"type:jsonb"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
@@ -204,6 +205,7 @@ func (project *Project) ToDTO() *dto.Project {
 		ProjectLight: *project.ToLightDTO(),
 		CreatedAt:    project.CreatedAt,
 		UpdatedAt:    project.UpdatedAt,
+		HideFields:   project.HideFields,
 		ProjectLead:  project.ProjectLead.ToLightDTO(),
 		Workspace:    project.Workspace.ToLightDTO(),
 	}
