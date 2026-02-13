@@ -106,6 +106,8 @@ func formatProjectActivity(act *dao.ProjectActivity) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), entity, act.Project.URL), nil
 }
 
+var issueRolesNotified = []role{actionAuthor, issueAuthor, projectDefaultWatcher, issueWatcher, issueAssigner}
+
 func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
@@ -150,7 +152,30 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 		values = append(values, strings.Join(assignees, ", "))
 	}
 
+	if act.NewIssue.Links != nil && len(*act.NewIssue.Links) > 0 {
+		format += "\n*Ссылки*: "
+		first := true
+		for _, link := range *act.NewIssue.Links {
+			if !first {
+				format += ", "
+			}
+			format += "[%s](%s)"
+			values = append(values, link.Title, link.Url)
+			first = false
+		}
+	}
+
 	msg.body += Stelegramf(format, values...)
+
+	msg.Skip = func(u userTg) bool { // пропустить уведомления для всех кроме ролей из списка okRoles
+		var ok bool
+		for _, r := range issueRolesNotified {
+			if u.Has(r) {
+				ok = true
+			}
+		}
+		return !ok
+	}
 
 	return msg
 }

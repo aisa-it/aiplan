@@ -156,7 +156,11 @@ func ParseSearchParamsMCP(args map[string]any) (*SearchParams, error) {
 	if v, ok := args["assignee_ids"].([]interface{}); ok {
 		for _, s := range v {
 			if str, ok := s.(string); ok {
-				sp.Filters.AssigneeIds = append(sp.Filters.AssigneeIds, str)
+				if str == "" {
+					sp.Filters.WatcherIds.IncludeEmpty = true
+					continue
+				}
+				sp.Filters.WatcherIds.Array = append(sp.Filters.WatcherIds.Array, uuid.FromStringOrNil(str))
 			}
 		}
 	}
@@ -164,7 +168,11 @@ func ParseSearchParamsMCP(args map[string]any) (*SearchParams, error) {
 	if v, ok := args["watcher_ids"].([]interface{}); ok {
 		for _, s := range v {
 			if str, ok := s.(string); ok {
-				sp.Filters.WatcherIds = append(sp.Filters.WatcherIds, str)
+				if str == "" {
+					sp.Filters.WatcherIds.IncludeEmpty = true
+					continue
+				}
+				sp.Filters.WatcherIds.Array = append(sp.Filters.WatcherIds.Array, uuid.FromStringOrNil(str))
 			}
 		}
 	}

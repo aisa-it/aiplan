@@ -15,20 +15,23 @@ import (
 )
 
 // GetIssuesGroups возвращает группы задач с количеством в каждой группе
-func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId string, sprint *dao.Sprint, searchParams *types.SearchParams) ([]types.SearchGroupSize, error) {
+func GetIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *dao.Sprint, searchParams *types.SearchParams) ([]types.SearchGroupSize, error) {
 	query := db.Session(&gorm.Session{})
 
 	// Определение запроса для фильтрации по проектам
 	// Если указан спринт, выбираем project_id из таблицы SprintIssue для данного спринта
 	// Если указан конкретный projectId, используем его напрямую
-	// В противном случае используем список ProjectIds из параметров поиска
+	// Если указан список ProjectIds в параметрах поиска, используем его напрямую
+	// В противном случае используем список проектов в которых состоит пользователь
 	var projectQuery any
 	if sprint != nil {
 		projectQuery = db.Select("project_id").Where("sprint_id = ?", sprint.Id).Model(&dao.SprintIssue{})
-	} else if projectId != "" {
+	} else if !projectId.IsNil() {
 		projectQuery = projectId
-	} else {
+	} else if len(searchParams.Filters.ProjectIds) > 0 {
 		projectQuery = searchParams.Filters.ProjectIds
+	} else {
+		projectQuery = db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{})
 	}
 
 	switch searchParams.GroupByParam {
@@ -229,7 +232,8 @@ func FetchIssuesByGroups(
 				entity = label.ToLightDTO()
 			}
 		case "assignees":
-			if len(searchParams.Filters.AssigneeIds) > 0 && !slices.Contains(searchParams.Filters.AssigneeIds, group.Key) {
+			if !searchParams.Filters.AssigneeIds.IsEmpty() && !searchParams.Filters.AssigneeIds.Contains(group.Key) {
+				//fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
 				continue
 			}
 			if group.Key == "" {
@@ -245,7 +249,7 @@ func FetchIssuesByGroups(
 				entity = u.ToLightDTO()
 			}
 		case "watchers":
-			if len(searchParams.Filters.WatcherIds) > 0 && !slices.Contains(searchParams.Filters.WatcherIds, group.Key) {
+			if !searchParams.Filters.WatcherIds.IsEmpty() && !searchParams.Filters.WatcherIds.Contains(group.Key) {
 				continue
 			}
 			if group.Key == "" {

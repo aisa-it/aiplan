@@ -2,6 +2,7 @@ package tg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,6 +17,11 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrInvalidTgId   = errors.New("error invalid Telegram Id")
+	ErrEmptyActivity = errors.New("activity is empty")
 )
 
 type TgService struct {
@@ -36,6 +42,7 @@ type TgMsg struct {
 	body  string
 
 	replace map[string]any
+	Skip    func(u userTg) bool
 }
 
 func NewTgMsg() TgMsg {
@@ -135,6 +142,9 @@ func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
 
 	message, err := t.bot.SendMessage(t.ctx, &smp)
 	if err != nil {
+		if isInvalidTelegramChat(err) {
+			return 0, fmt.Errorf("%w, msg: %s", ErrInvalidTgId, err.Error())
+		}
 		return 0, fmt.Errorf("send message error: %w", err)
 	}
 
@@ -166,6 +176,11 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 	msg := NewTgMsg()
 	formName := fmt.Sprintf("%s/%s", form.Workspace.Name, form.Title)
 	msg.title = fmt.Sprintf("*%s* прошел форму [%s](%s)\n", bot.EscapeMarkdown(user.GetName()), bot.EscapeMarkdown(formName), form.URL.String())
+
+	fileName := make(map[string]string, len(answer.Attachments))
+	for _, attachment := range answer.Attachments {
+		fileName[attachment.Id.String()] = attachment.Asset.Name
+	}
 
 	count := 0
 	for _, field := range answer.Fields {
@@ -221,6 +236,17 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 			} else {
 				d.WriteString("```\n%s\n```\n")
 				out = append(out, fmt.Sprint(field.Val))
+			}
+		case "attachment":
+			if field.Val == nil {
+				d.WriteString("\n ✖️\n")
+			} else {
+				if v, ok := fileName[fmt.Sprint(field.Val)]; ok {
+					d.WriteString("```\n%s\n```\n")
+					out = append(out, v)
+				} else {
+					d.WriteString("\n 🖼\n")
+				}
 			}
 		}
 	}

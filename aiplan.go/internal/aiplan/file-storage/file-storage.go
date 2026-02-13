@@ -16,6 +16,9 @@ package filestorage
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,6 +38,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/tus/tusd/v2/pkg/filelocker"
+	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/s3store"
 
 	tusd "github.com/tus/tusd/v2/pkg/handler"
@@ -103,7 +108,33 @@ type LocalStorage struct {
 
 func (s *LocalStorage) GetTUSHandler(cfg *config.Config, baseUrl string, uploadValidator func(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error),
 	postUploadHook func(event tusd.HookEvent)) echo.HandlerFunc {
-	return nil
+	store := filestore.New(s.rootDir)
+	locker := filelocker.New(s.rootDir)
+	composer := tusd.NewStoreComposer()
+	store.UseIn(composer)
+	locker.UseIn(composer)
+
+	basePath, _ := url.Parse(baseUrl)
+	handler, err := tusd.NewHandler(tusd.Config{
+		BasePath:                cfg.WebURL.ResolveReference(basePath).String(),
+		StoreComposer:           composer,
+		DisableDownload:         true,
+		NotifyCompleteUploads:   true,
+		PreUploadCreateCallback: uploadValidator,
+		Logger:                  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	go func() {
+		for {
+			event := <-handler.CompleteUploads
+			postUploadHook(event)
+		}
+	}()
+
+	return echo.WrapHandler(http.StripPrefix(basePath.String(), handler))
 }
 
 func (s *LocalStorage) Save(data []byte, name uuid.UUID, contentType string, metadata *Metadata) error {
@@ -111,7 +142,7 @@ func (s *LocalStorage) Save(data []byte, name uuid.UUID, contentType string, met
 }
 
 func (s *LocalStorage) SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error {
-	f, err := os.Create(name.String())
+	f, err := os.Create(filepath.Join(s.rootDir, name.String()))
 	if err != nil {
 		return err
 	}
@@ -128,34 +159,88 @@ func (s *LocalStorage) Load(name uuid.UUID) ([]byte, error) {
 }
 
 func (s *LocalStorage) LoadReader(name uuid.UUID) (io.ReadCloser, error) {
-	return os.Open(name.String())
+	return os.Open(filepath.Join(s.rootDir, name.String()))
 }
 
 func (s *LocalStorage) Delete(name uuid.UUID) error {
-	return os.Remove(name.String())
+	return os.Remove(filepath.Join(s.rootDir, name.String()))
 }
 
 func (s *LocalStorage) Exist(name uuid.UUID) (bool, error) {
+	_, err := os.Stat(filepath.Join(s.rootDir, name.String()))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
 	return true, nil
 }
 
 func (s *LocalStorage) CopyOld(name string, newName uuid.UUID, newMeta *Metadata) error {
+	// Not in use
 	return nil
 }
 
 func (s *LocalStorage) ListRoot(fn func(FileInfo) error) error {
+	entries, err := os.ReadDir(s.rootDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if err := fn(FileInfo{
+			Name:      entry.Name(),
+			Size:      info.Size(),
+			CreatedAt: info.ModTime(),
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (s *LocalStorage) Move(old string, new string) error {
-	return nil
+	return os.Rename(filepath.Join(s.rootDir, old), filepath.Join(s.rootDir, new))
 }
 
 func (s *LocalStorage) GetFileInfo(name uuid.UUID) (*FileInfo, error) {
-	return nil, nil
+	path := filepath.Join(s.rootDir, name.String())
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	h := md5.New()
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if _, err := io.Copy(h, f); err != nil {
+		slog.Error("Read file error, cache disabled", "path", path, "err", err)
+		h = nil
+	}
+
+	hash := ""
+	if h != nil {
+		hash = hex.EncodeToString(h.Sum(nil))
+	}
+
+	return &FileInfo{
+		Name:      name.String(),
+		Size:      stat.Size(),
+		CreatedAt: stat.ModTime(),
+		ETag:      hash,
+	}, nil
 }
 
 func NewLocalStorage(rootPath string) (FileStorage, error) {
+	os.Mkdir(rootPath, os.ModePerm)
+
 	return &LocalStorage{rootPath}, nil
 }
 

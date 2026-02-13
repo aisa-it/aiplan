@@ -260,7 +260,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
 }
 
-var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script"}
+var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields"}
 
 // updateProject godoc
 // @id updateProject
@@ -796,7 +796,10 @@ func (s *Services) getProjectMember(c echo.Context) error {
 		Joins("Member").
 		Preload(clause.Associations).
 		Preload("Workspace.Owner").
-		Find(&member).Error; err != nil {
+		First(&member).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EError(c, apierrors.ErrProjectMemberNotFound)
+		}
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusOK, member.ToLightDTO())
@@ -957,6 +960,9 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 		Where("project_id = ?", project.ID).
 		First(&requestedMember).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrProjectMemberNotFound)
+	}
+	if requestedMember.WorkspaceAdmin {
+		return EErrorDefined(c, apierrors.ErrCannotUpdateWorkspaceAdmin)
 	}
 
 	s.business.ProjectCtx(c, user, &project, &projectMember, &workspace, &workspaceMember)
@@ -1732,21 +1738,17 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add blockers
 		if len(issue.BlockersList) > 0 {
-			var newBlockers []dao.IssueBlocker
-			for _, blocker := range issue.BlockersList {
-				blockerUUID, err := uuid.FromString(fmt.Sprint(blocker))
-				if err != nil {
-					return err
-				}
-				newBlockers = append(newBlockers, dao.IssueBlocker{
+			newBlockers := make([]dao.IssueBlocker, len(issue.BlockersList))
+			for i, blocker := range issue.BlockersList {
+				newBlockers[i] = dao.IssueBlocker{
 					Id:          dao.GenUUID(),
-					BlockedById: blockerUUID,
+					BlockedById: blocker,
 					BlockId:     issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
 				return err
@@ -1756,9 +1758,9 @@ func (s *Services) createIssue(c echo.Context) error {
 		// Add assignees
 		if len(issue.AssigneesList) > 0 {
 			issue.AssigneesList = utils.SetToSlice(utils.SliceToSet(issue.AssigneesList))
-			var newAssignees []dao.IssueAssignee
-			for _, assignee := range issue.AssigneesList {
-				newAssignees = append(newAssignees, dao.IssueAssignee{
+			newAssignees := make([]dao.IssueAssignee, len(issue.AssigneesList))
+			for i, assignee := range issue.AssigneesList {
+				newAssignees[i] = dao.IssueAssignee{
 					Id:          dao.GenUUID(),
 					AssigneeId:  assignee,
 					IssueId:     issueNew.ID,
@@ -1766,7 +1768,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
 				return err
@@ -1776,9 +1778,9 @@ func (s *Services) createIssue(c echo.Context) error {
 		// Add watchers
 		if len(issue.WatchersList) > 0 {
 			issue.WatchersList = utils.SetToSlice(utils.SliceToSet(issue.WatchersList))
-			var newWatchers []dao.IssueWatcher
-			for _, watcher := range issue.WatchersList {
-				newWatchers = append(newWatchers, dao.IssueWatcher{
+			newWatchers := make([]dao.IssueWatcher, len(issue.WatchersList))
+			for i, watcher := range issue.WatchersList {
+				newWatchers[i] = dao.IssueWatcher{
 					Id:          dao.GenUUID(),
 					WatcherId:   watcher,
 					IssueId:     issueNew.ID,
@@ -1786,7 +1788,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
 				return err
@@ -1795,9 +1797,9 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add labels
 		if len(issue.LabelsList) > 0 {
-			var newLabels []dao.IssueLabel
-			for _, label := range issue.LabelsList {
-				newLabels = append(newLabels, dao.IssueLabel{
+			newLabels := make([]dao.IssueLabel, len(issue.LabelsList))
+			for i, label := range issue.LabelsList {
+				newLabels[i] = dao.IssueLabel{
 					Id:          dao.GenUUID(),
 					LabelId:     uuid.Must(uuid.FromString(fmt.Sprint(label))),
 					IssueId:     issueNew.ID,
@@ -1805,7 +1807,7 @@ func (s *Services) createIssue(c echo.Context) error {
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
 				return err
@@ -1814,23 +1816,38 @@ func (s *Services) createIssue(c echo.Context) error {
 
 		// Add blocked
 		if len(issue.BlocksList) > 0 {
-			var newBlocked []dao.IssueBlocker
-			for _, block := range issue.BlocksList {
-				blockUUID, err := uuid.FromString(fmt.Sprint(block))
-				if err != nil {
-					return err
-				}
-				newBlocked = append(newBlocked, dao.IssueBlocker{
+			newBlocked := make([]dao.IssueBlocker, len(issue.BlocksList))
+			for i, block := range issue.BlocksList {
+				newBlocked[i] = dao.IssueBlocker{
 					Id:          dao.GenUUID(),
-					BlockId:     blockUUID,
+					BlockId:     block,
 					BlockedById: issueNew.ID,
 					ProjectId:   project.ID,
 					WorkspaceId: issueNew.WorkspaceId,
 					CreatedById: userID,
 					UpdatedById: userID,
-				})
+				}
 			}
 			if err := tx.CreateInBatches(&newBlocked, 10).Error; err != nil {
+				return err
+			}
+		}
+		if issue.Links != nil && len(issue.Links) > 0 {
+			newLinks := make([]dao.IssueLink, len(issue.Links))
+			for i, link := range issue.Links {
+				newLinks[i] = dao.IssueLink{
+					Id:          dao.GenUUID(),
+					Title:       link.Title,
+					Url:         link.Url,
+					CreatedById: userID,
+					UpdatedById: userID,
+					IssueId:     issueNew.ID,
+					ProjectId:   project.ID,
+					WorkspaceId: project.WorkspaceId,
+				}
+			}
+
+			if err := tx.CreateInBatches(newLinks, 10).Error; err != nil {
 				return err
 			}
 		}
@@ -2088,6 +2105,20 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 		Where("project_id = ?", project.ID).
 		Find(&label).Error; err != nil {
 		return EError(c, err)
+	}
+
+	var issueExists bool
+	if err := s.db.Model(&dao.IssueLabel{}).
+		Select("EXISTS(?)",
+			s.db.Model(&dao.IssueLabel{}).
+				Select("1").
+				Where("label_id = ?", label.ID),
+		).
+		Find(&issueExists).Error; err != nil {
+		return EError(c, err)
+	}
+	if issueExists {
+		return EErrorDefined(c, apierrors.ErrLabelNotEmptyCannotDelete)
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -2401,12 +2432,16 @@ func (s *Services) updateState(c echo.Context) error {
 	fields = append(fields, "updated_by")
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if req.Default != nil && *req.Default {
-			// Change other states to false default
-			if err := tx.Model(&dao.State{}).
-				Where("project_id = ?", project.ID).
-				UpdateColumn("default", false).Error; err != nil {
-				return err
+		if req.Default != nil {
+			if *req.Default {
+				// Change other states to false default
+				if err := tx.Model(&dao.State{}).
+					Where("project_id = ?", project.ID).
+					UpdateColumn("default", false).Error; err != nil {
+					return err
+				}
+			} else {
+				return apierrors.ErrProjectDefaultStateRequired
 			}
 		}
 
@@ -3329,6 +3364,9 @@ func (s *Services) getPropertyTemplateList(c echo.Context) error {
 
 	result := make([]dto.ProjectPropertyTemplate, 0, len(templates))
 	for _, t := range templates {
+		if t.Type != "select" {
+			t.Options = nil
+		}
 		result = append(result, *t.ToDTO())
 	}
 
@@ -3365,9 +3403,18 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 	}
 
 	// Валидация типа
-	validTypes := map[string]bool{"string": true, "boolean": true}
+	validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
 	if !validTypes[request.Type] {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
+	}
+
+	// Для типа select требуются опции
+	var options []string
+	if request.Type == "select" {
+		if len(request.Options) == 0 {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
+		}
+		options = request.Options
 	}
 
 	template := dao.ProjectPropertyTemplate{
@@ -3376,6 +3423,7 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		WorkspaceId: project.WorkspaceId,
 		Name:        strings.TrimSpace(request.Name),
 		Type:        request.Type,
+		Options:     options,
 		OnlyAdmin:   request.OnlyAdmin,
 		SortOrder:   request.SortOrder,
 		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -3429,34 +3477,55 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Применяем обновления
-	updates := make(map[string]interface{})
+	// Применяем обновления напрямую к структуре
+	updated := false
+
 	if request.Name != nil {
 		name := strings.TrimSpace(*request.Name)
 		if name == "" {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateNameRequired)
 		}
-		updates["name"] = name
+		template.Name = name
+		updated = true
 	}
+
+	// Определяем тип для валидации options
 	if request.Type != nil {
-		validTypes := map[string]bool{"string": true, "boolean": true}
+		validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
 		if !validTypes[*request.Type] {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 		}
-		updates["type"] = *request.Type
+		template.Type = *request.Type
+		updated = true
 	}
+
+	// Обработка options
+	if request.Options != nil {
+		template.Options = *request.Options
+		updated = true
+	}
+
+	// Для типа select проверяем наличие options
+	if template.Type == "select" {
+		if len(template.Options) == 0 {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
+		}
+	}
+
 	if request.OnlyAdmin != nil {
-		updates["only_admin"] = *request.OnlyAdmin
+		template.OnlyAdmin = *request.OnlyAdmin
+		updated = true
 	}
 	if request.SortOrder != nil {
-		updates["sort_order"] = *request.SortOrder
+		template.SortOrder = *request.SortOrder
+		updated = true
 	}
 
-	if len(updates) > 0 {
-		updates["updated_by_id"] = user.ID
-		updates["updated_at"] = time.Now()
+	if updated {
+		template.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+		template.UpdatedAt = time.Now()
 
-		if err := s.db.Model(&template).Updates(updates).Error; err != nil {
+		if err := s.db.Save(&template).Error; err != nil {
 			return EError(c, err)
 		}
 	}

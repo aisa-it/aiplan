@@ -12,9 +12,10 @@ services:
       - .env
     depends_on:
       - db
-      - minio
+      # - minio # uncomment if use minio
     volumes:
       - ssh-host-key:/var/lib/aiplan:rw # SSH host key persistence
+      - assets:/app/assets
     networks:
       - aiplan-net
 
@@ -50,6 +51,7 @@ services:
       - .env
     networks:
       - aiplan-net
+    profiles: ["minio"]
 
   createbuckets:
     image: minio/mc
@@ -61,11 +63,13 @@ services:
       - minio
     networks:
       - aiplan-net
+    profiles: ["minio"]
 
 volumes:
   db-data:
   minio-data:
   ssh-host-key: # SSH host key persistence for consistent server identity
+  assets: # for local fiel storage
 
 networks:
   aiplan-net:

@@ -176,11 +176,11 @@ var (
 	ErrProjectStateNotFound              = DefinedError{Code: 3024, StatusCode: http.StatusBadRequest, Err: "state not found", RuErr: "Статус не найден"}
 	ErrProjectStateInvalidSeqId          = DefinedError{Code: 3025, StatusCode: http.StatusBadRequest, Err: "invalid state SeqId", RuErr: "Неверный порядковый номер статуса в группе"}
 	ErrProjectGroupNotFound              = DefinedError{Code: 3026, StatusCode: http.StatusNotFound, Err: "status group not found", RuErr: "Группа статусов не найдена"}
-	ErrChangeProjectLead                 = DefinedError{Code: 3027, StatusCode: http.StatusBadRequest, Err: "error change of project lead", RuErr: "Не получилось изменить владельца пространства"}
+	ErrChangeProjectLead                 = DefinedError{Code: 3027, StatusCode: http.StatusBadRequest, Err: "error change of project lead", RuErr: "Не получилось изменить владельца проекта"}
 	ErrIssueTemplateNotFound             = DefinedError{Code: 3028, StatusCode: http.StatusNotFound, Err: "issue template not found", RuErr: "Шаблон задачи не найден"}
 	ErrIssueTemplateDuplicatedName       = DefinedError{Code: 3029, StatusCode: http.StatusConflict, Err: "issue template name already exist", RuErr: "Шаблон задачи с таким именем уже существует"}
 	ErrAttachmentIsTooBig                = DefinedError{Code: 3030, StatusCode: http.StatusRequestEntityTooLarge, Err: "attachment size exceed 4GB size", RuErr: "Размер вложения не должен превышать 4ГБ"}
-
+	ErrProjectDefaultStateRequired       = DefinedError{Code: 3031, StatusCode: http.StatusBadRequest, Err: "project default state is required", RuErr: "В проекте должен быть статус по умолчанию"}
 	// 32** - form errors
 	ErrFormNotFound           = DefinedError{Code: 3201, StatusCode: http.StatusNotFound, Err: "form not found", RuErr: "Форма не найдена"}
 	ErrFormAnswerForbidden    = DefinedError{Code: 3202, StatusCode: http.StatusForbidden, Err: "access to the form requires authorization", RuErr: "Для доступа к форме необходимо пройти авторизацию"}
@@ -249,15 +249,17 @@ var (
 	ErrUnsupportedGroup                = DefinedError{Code: 4023, StatusCode: http.StatusBadRequest, Err: "unsupported grouping param", RuErr: "Данный параметр не поддерживается для группировки"}
 	ErrIssueTargetDateExp              = DefinedError{Code: 4024, StatusCode: http.StatusBadRequest, Err: "the date has already passed", RuErr: "Заданная дата уже прошла"}
 	ErrIssueCommentEmpty               = DefinedError{Code: 4025, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
+	ErrLabelNotEmptyCannotDelete       = DefinedError{Code: 4026, StatusCode: http.StatusBadRequest, Err: "the label is not empty, only empty label can be deleted", RuErr: "Удаление тега, установленного для задачи, невозможно"}
 
 	// 45** - property template errors
-	ErrPropertyTemplateNotFound      = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
-	ErrPropertyTemplateNameRequired  = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
-	ErrPropertyTemplateTypeInvalid   = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean", RuErr: "Недопустимый тип поля, допустимы: string, boolean"}
-	ErrPropertyAlreadyExists         = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
-	ErrPropertyNotFound              = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
-	ErrPropertyOnlyAdminCanSet       = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
-	ErrPropertyValueValidationFailed = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
+	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
+	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select"}
+	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
+	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
+	ErrPropertyOnlyAdminCanSet         = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
+	ErrPropertyValueValidationFailed   = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
+	ErrPropertyTemplateOptionsRequired = DefinedError{Code: 4508, StatusCode: http.StatusBadRequest, Err: "options are required for select type", RuErr: "Для типа select требуются варианты выбора"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}
