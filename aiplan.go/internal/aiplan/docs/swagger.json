@@ -18529,6 +18529,9 @@
                         "type": "string"
                     }
                 },
+                "llm_content": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -20227,6 +20230,9 @@
                     },
                     "x-nullable": true
                 },
+                "llm_content": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -20724,6 +20730,9 @@
                 },
                 "linked_issues_count": {
                     "type": "integer"
+                },
+                "llm_content": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"
