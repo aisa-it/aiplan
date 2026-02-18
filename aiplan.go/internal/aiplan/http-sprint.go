@@ -422,6 +422,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		if err != nil {
 			errStack.GetError(c, err)
 		}
+		tracker.TrackAct(s.tracker, types.EntitySprint, activities.VerbUpdated, reqData, currentInstance, sprint, user)
 
 		changes := utils.CalculateIDChanges(newIssuesIds, oldIssueIds)
 		var issues []dao.Issue
@@ -442,12 +443,15 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 			if err != nil {
 				errStack.GetError(c, err)
 			}
+			tracker.TrackAct(s.tracker, types.EntityIssue, activities.VerbAdded, data, nil, issueMap[id], user)
+
 		}
 		for _, id := range changes.DelIds {
 			err = tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityRemoveActivity, data, nil, issueMap[id], user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
+			tracker.TrackAct(s.tracker, types.EntityIssue, activities.VerbRemoved, data, nil, issueMap[id], user)
 		}
 	}
 

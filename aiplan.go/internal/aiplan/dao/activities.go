@@ -3,56 +3,43 @@ package dao
 import (
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
-	"github.com/lib/pq"
 )
 
 type ActivityEvent struct {
-	Id uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
+	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid"`
 
-	CreatedAt time.Time `json:"created_at" gorm:"index:workspace_activities_workspace_index,sort:desc,type:btree,priority:2;index:workspace_activities_actor_index,sort:desc,type:btree,priority:2;index:workspace_activities_mail_index,type:btree,where:notified = false"`
+	CreatedAt time.Time `gorm:"column:created_at;not null;index:,type:brin"`
 
-	Verb string `json:"verb"`
-	// field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
+	ActorID  uuid.UUID `gorm:"column:actor_id;type:uuid;not null;index:idx_activity_actor_entity_created,priority:1"`
+	Notified bool      `gorm:"column:notified;default:false;index:idx_activity_notified,priority:1,where:notified=false"`
 
-	ActorId uuid.UUID `json:"actor,omitempty" gorm:"type:uuid;index:workspace_activities_actor_index,priority:1" extensions:"x-nullable"`
+	Verb          string
+	Field         actField.ActivityField
+	OldValue      *string
+	NewValue      string
+	NewIdentifier uuid.NullUUID `gorm:"type:uuid"`
+	OldIdentifier uuid.NullUUID `gorm:"type:uuid"`
+	SenderTg      int64         `gorm:"-" json:"-"`
 
-	//CreatedById uuid.UUID
-	WorkspaceId uuid.NullUUID `json:"workspace" gorm:"type:uuid;index:workspace_activities_workspace_index,priority:1" extensions:"x-nullable"`
-	ProjectId   uuid.NullUUID `json:"project_id" gorm:"type:uuid;index:project_activities_project_index,priority:1" extensions:"x-nullable"`
-	IssueId     uuid.NullUUID `json:"issue_id" gorm:"type:uuid;index:issue_activities_issue_index,priority:1" extensions:"x-nullable"`
-	FormId      uuid.NullUUID `json:"form_id,omitempty" gorm:"type:uuid;index:form_activities_form_index,priority:1" extensions:"x-nullable"`
-	DocId       uuid.NullUUID `json:"doc" gorm:"type:uuid;index:doc_activities_doc_index,priority:1" extensions:"x-nullable"`
-	SprintId    uuid.NullUUID `json:"sprint_id" gorm:"type:uuid;index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
+	EntityType types.EntityLayer `gorm:"column:entity_type;type:smallint;index:idx_activity_workspace,priority:2;index:idx_activity_project,priority:2;index:idx_activity_issue,priority:2;index:idx_activity_doc,priority:2;index:idx_activity_form,priority:2;index:idx_activity_sprint,priority:2"`
 
-	UpdatedById uuid.UUID
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
+	WorkspaceID uuid.NullUUID `gorm:"column:workspace_id;type:uuid;index:idx_activity_workspace,priority:1,where:workspace_id IS NOT NULL"`
+	ProjectID   uuid.NullUUID `gorm:"column:project_id;type:uuid;index:idx_activity_project,priority:1,where:project_id IS NOT NULL"`
+	IssueID     uuid.NullUUID `gorm:"column:issue_id;type:uuid;index:idx_activity_issue,priority:1,where:issue_id IS NOT NULL"`
+	DocID       uuid.NullUUID `gorm:"column:doc_id;type:uuid;index:idx_activity_doc,priority:1,where:doc_id IS NOT NULL"`
+	FormID      uuid.NullUUID `gorm:"column:form_id;type:uuid;index:idx_activity_form,priority:1,where:form_id IS NOT NULL"`
+	SprintID    uuid.NullUUID `gorm:"column:sprint_id;type:uuid;index:idx_activity_sprint,priority:1,where:sprint_id IS NOT NULL"`
 
-	Actor *User `gorm:"foreignKey:ActorId;references:ID"`
-
-	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" `
-	Issue     *Issue     `gorm:"foreignKey:IssueId"`
-	Project   *Project   `gorm:"foreignKey:ProjectId"`
-	Form      *Form      `gorm:"foreignKey:FormId"`
-	Doc       *Doc       `gorm:"foreignKey:DocId"`
-	Sprint    *Sprint    `gorm:"foreignKey:SprintId"`
-
-	EntityType string
-
-	UnionCustomFields string `json:"-" gorm:"-"`
-	SenderTg          int64  `json:"-" gorm:"-"`
+	Workspace *Workspace `gorm:"foreignKey:WorkspaceID"`
+	Actor     *User      `gorm:"foreignKey:ActorID;references:ID"`
+	Issue     *Issue     `gorm:"foreignKey:IssueID"`
+	Project   *Project   `gorm:"foreignKey:ProjectID"`
+	Form      *Form      `gorm:"foreignKey:FormID"`
+	Doc       *Doc       `gorm:"foreignKey:DocID"`
+	Sprint    *Sprint    `gorm:"foreignKey:SprintID"`
 
 	IssueActivityExtendFields
 	ProjectActivityExtendFields
@@ -60,5 +47,8 @@ type ActivityEvent struct {
 	WorkspaceActivityExtendFields
 	RootActivityExtendFields
 	SprintActivityExtendFields
-	//ActivitySender
+}
+
+func (ActivityEvent) TableName() string {
+	return "activity_events"
 }
