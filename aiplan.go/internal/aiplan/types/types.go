@@ -1268,3 +1268,5 @@ func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.D
 	}
 	return query
 }
+
+type EntityLayer int16

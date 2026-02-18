@@ -40,6 +40,7 @@ type Activity interface {
 type IDaoAct interface {
 	GetId() uuid.UUID
 	GetString() string
+	GetEntityType() string
 }
 
 type ActivityI interface {
@@ -59,7 +60,6 @@ type IRedactorHTML interface {
 }
 
 type IEntity[A Activity] interface {
-	GetEntityType() string
 	IDaoAct
 }
 

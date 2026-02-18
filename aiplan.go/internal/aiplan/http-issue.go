@@ -1192,6 +1192,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
+	tracker.TrackAct(s.tracker, types.EntityIssue, actField.VerbUpdated, data, issueMapOld, issue, &user)
+
 	//s.tracker.TrackActivity(tracker.ISSUE_UPDATED_ACTIVITY, data, issueMapOld, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, &project, user)
 
 	if statusChange {

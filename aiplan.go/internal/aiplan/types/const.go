@@ -15,3 +15,13 @@ const (
 	EmailCodeLifeTime time.Duration = time.Minute * 5
 	EmailCodeLimitReq               = time.Minute
 )
+
+const (
+	EntityRoot EntityLayer = iota
+	EntityWorkspace
+	EntityProject
+	EntityIssue
+	EntityDoc
+	EntityForm
+	EntitySprint
+)

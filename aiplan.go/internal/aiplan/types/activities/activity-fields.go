@@ -147,6 +147,13 @@ func (a ActivityField) WithGetFieldStr() string {
 	return fmt.Sprintf("%s_%s", a.String(), "get_field")
 }
 
+func (a ActivityField) WithActivityVal() string {
+	return fmt.Sprintf("%s_%s", a.String(), "activity_val")
+}
+func (a ActivityField) WithUpdateScopeId() string {
+	return fmt.Sprintf("%s_%s", a.String(), "updateScopeId")
+}
+
 func ReqFieldMapping(in string) string {
 	if v, ok := fieldChange[in]; ok {
 		return v
