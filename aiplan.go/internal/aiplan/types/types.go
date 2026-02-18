@@ -503,12 +503,12 @@ func (filter *FilterUUIDs) Contains(str string) bool {
 // IssuesListFilters type
 type IssuesListFilters struct {
 	AuthorIds   []string    `json:"authors"`
-	AssigneeIds FilterUUIDs `json:"assignees,omitempty"`
-	WatcherIds  FilterUUIDs `json:"watchers,omitempty"`
+	AssigneeIds FilterUUIDs `json:"assignees"`
+	WatcherIds  FilterUUIDs `json:"watchers"`
 
 	StateIds       []uuid.UUID `json:"states"`
 	Priorities     []string    `json:"priorities"`
-	Labels         []string    `json:"labels"`
+	Labels         FilterUUIDs `json:"labels"`
 	WorkspaceIds   []string    `json:"workspaces"`
 	WorkspaceSlugs []string    `json:"workspace_slugs"`
 	ProjectIds     []string    `json:"projects"`
