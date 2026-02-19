@@ -80,8 +80,8 @@ func (w Workspace) GetString() string {
 	return w.Name
 }
 
-func (w Workspace) GetEntityType() string {
-	return actField.Workspace.Field.String()
+func (w Workspace) GetEntityType() actField.ActivityField {
+	return actField.Workspace.Field
 }
 
 // WorkspaceExtendFields
@@ -380,8 +380,8 @@ func (wm WorkspaceMember) GetString() string {
 	return wm.Member.GetString()
 }
 
-func (wm WorkspaceMember) GetEntityType() string {
-	return actField.Member.Field.String()
+func (wm WorkspaceMember) GetEntityType() actField.ActivityField {
+	return actField.Member.Field
 }
 
 func (wm WorkspaceMember) GetWorkspaceId() uuid.UUID {

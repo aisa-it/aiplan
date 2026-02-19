@@ -171,8 +171,8 @@ func (i Issue) GetString() string {
 //
 // Возвращает:
 //   - string: строка, представляющая тип сущности (issue). Определяет, к какому типу относится сущность.
-func (i Issue) GetEntityType() string {
-	return actField.Issue.Field.String()
+func (i Issue) GetEntityType() actField.ActivityField {
+	return actField.Issue.Field
 }
 
 func (i Issue) GetWorkspaceId() uuid.UUID {
@@ -1153,8 +1153,8 @@ func (i IssueLink) GetString() string {
 	return i.Url
 }
 
-func (i IssueLink) GetEntityType() string {
-	return actField.Link.Field.String()
+func (i IssueLink) GetEntityType() actField.ActivityField {
+	return actField.Link.Field
 }
 
 func (i IssueLink) GetWorkspaceId() uuid.UUID {
@@ -1260,11 +1260,11 @@ func (ia IssueAttachment) GetString() string {
 	if ia.Asset != nil {
 		return ia.Asset.Name
 	}
-	return ia.GetEntityType()
+	return ia.GetEntityType().String()
 }
 
-func (ia IssueAttachment) GetEntityType() string {
-	return actField.Attachment.Field.String()
+func (ia IssueAttachment) GetEntityType() actField.ActivityField {
+	return actField.Attachment.Field
 }
 
 func (i IssueAttachment) GetWorkspaceId() uuid.UUID {
@@ -1583,8 +1583,8 @@ func (i IssueComment) GetString() string {
 	return fmt.Sprint(i.CommentHtml)
 }
 
-func (i IssueComment) GetEntityType() string {
-	return actField.Comment.Field.String()
+func (i IssueComment) GetEntityType() actField.ActivityField {
+	return actField.Comment.Field
 }
 
 func (i IssueComment) GetWorkspaceId() uuid.UUID {

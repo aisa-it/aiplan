@@ -103,8 +103,8 @@ func (p Project) GetString() string {
 	return p.Identifier
 }
 
-func (p Project) GetEntityType() string {
-	return actField.Project.Field.String()
+func (p Project) GetEntityType() actField.ActivityField {
+	return actField.Project.Field
 }
 
 func (p Project) GetProjectId() uuid.UUID {
@@ -541,8 +541,8 @@ func (pm ProjectMember) GetString() string {
 	return pm.Member.GetString()
 }
 
-func (pm ProjectMember) GetEntityType() string {
-	return actField.Member.Field.String()
+func (pm ProjectMember) GetEntityType() actField.ActivityField {
+	return actField.Member.Field
 }
 
 func (pm ProjectMember) GetProjectId() uuid.UUID {
@@ -966,8 +966,8 @@ func (l Label) GetString() string {
 //
 // Возвращает:
 //   - string: тип сущности (issue).
-func (l Label) GetEntityType() string {
-	return actField.Label.Field.String()
+func (l Label) GetEntityType() actField.ActivityField {
+	return actField.Label.Field
 }
 
 func (l Label) GetWorkspaceId() uuid.UUID {
@@ -1120,8 +1120,8 @@ func (s State) GetString() string {
 	return s.Name
 }
 
-func (s State) GetEntityType() string {
-	return actField.Status.Field.String()
+func (s State) GetEntityType() actField.ActivityField {
+	return actField.Status.Field
 }
 
 func (s State) GetWorkspaceId() uuid.UUID {
@@ -1416,8 +1416,8 @@ func (it IssueTemplate) GetString() string {
 	return it.Name
 }
 
-func (it IssueTemplate) GetEntityType() string {
-	return actField.Template.Field.String()
+func (it IssueTemplate) GetEntityType() actField.ActivityField {
+	return actField.Template.Field
 }
 
 func (it IssueTemplate) GetProjectId() uuid.UUID {

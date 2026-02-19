@@ -23,56 +23,27 @@ func update[E dao.Entity](c *ActivityCtx, en E) ([]dao.ActivityEvent, error) {
 	return result, nil
 }
 
-func add[E dao.Entity](
-	c *ActivityCtx,
-	entity E) ([]dao.ActivityEvent, error) {
+func add[E dao.Entity](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
 	result := make([]dao.ActivityEvent, 0)
 
-	//entityI, ok := any(entity).(dao.IEntity[A])
 	entityI, ok := any(entity).(dao.IDaoAct)
 	if !ok {
 		return nil, ErrStack.TrackErrorStack(fmt.Errorf("entity does not implement IEntity[A]"))
 	}
 
-	newIdentifier := entityI.GetId()
-	if id, ok := c.RequestedData["updateScopeId"].(uuid.UUID); ok {
-		newIdentifier = id
-	}
-
-	if e, ok := c.RequestedData["entityParent"].(E); ok {
-		entity = e
-	}
+	entity = GetAsOrDefault[E](c.RequestedData, ValueKey("entityParent"), entity)
+	entity = GetAsOrDefault[E](c.RequestedData, ValueKey("entity"), entity)
 
 	key := entityI.GetEntityType()
-	if keyVal, ok := c.RequestedData[fmt.Sprintf("%s_key", entityI.GetEntityType())]; ok {
-		key = fmt.Sprint(keyVal)
-	}
+	key = GetAsOrDefault[actField.ActivityField](c.RequestedData, FieldWithKey(key), key)
 
 	newV := entityI.GetString()
-	if newVal, ok := c.RequestedData[fmt.Sprintf("%s_activity_val", key)]; ok {
-		newV = fmt.Sprint(newVal)
-	}
-	if newVal, ok := c.RequestedData[fmt.Sprintf("%s_activity_val", newV)]; ok {
-		newV = fmt.Sprint(newVal)
-	}
+	newV = GetAsOrDefault[string](c.RequestedData, ValueKey(key), newV)
+	newV = GetAsOrDefault[string](c.RequestedData, ValueKey(newV), newV)
 
-	//templateActivity := dao.TemplateActivity{
-	//	IdActivity:    dao.GenUUID(),
-	//	Verb:          actField.VerbAdded,
-	//	Field:         strToPointer(key),
-	//	OldValue:      nil,
-	//	NewValue:      newV,
-	//	Comment:       fmt.Sprintf("%s added %s: %s", actor.Email, key, newV),
-	//	NewIdentifier: uuid.NullUUID{UUID: newIdentifier, Valid: true},
-	//	OldIdentifier: uuid.NullUUID{},
-	//	Actor:         &actor,
-	//}
+	newIdentifier := GetAsOrDefault[uuid.UUID](c.RequestedData, ValueKey("updateScopeId"), entityI.GetId())
 
-	if v, ok := c.RequestedData["entity"]; ok {
-		entity = v.(E)
-	}
-
-	templateActivity := NewTeActy(actField.VerbAdded, actField.ActivityField(key), nil, newV, uuid.NullUUID{UUID: newIdentifier, Valid: true}, uuid.NullUUID{}, c.Actor)
+	templateActivity := NewTeActy(actField.VerbAdded, key, nil, newV, ToNullUUID(newIdentifier), uuid.NullUUID{}, c.Actor)
 	if err := Gettt(c.Layer, &templateActivity, entity); err != nil {
 		return result, nil
 	}
@@ -87,46 +58,27 @@ func add[E dao.Entity](
 }
 
 // Удаляет существующую сущность и генерирует запись в журнале активности.
-func remove[E dao.Entity](
-	c *ActivityCtx,
-	entity E) ([]dao.ActivityEvent, error) {
+func remove[E dao.Entity](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
 	result := make([]dao.ActivityEvent, 0)
 
-	current := entity
-	if v, ok := c.CurrentInstance["entity"]; ok {
-		current = v.(E)
-	}
+	current := GetAsOrDefault[E](c.RequestedData, ValueKey("entity"), entity)
 
 	entityI, ok := any(entity).(dao.IDaoAct)
 	if !ok {
 		return nil, ErrStack.TrackErrorStack(fmt.Errorf("entity does not implement IEntity[A]"))
 	}
 
-	oldIdentifier := entityI.GetId()
-	if id, ok := c.RequestedData["updateScopeId"].(uuid.UUID); ok {
-		oldIdentifier = id
-	}
-
-	//TODO проверить
-
-	//if e, ok := c.RequestedData["entityParent"].(E); ok {
-	//	entity = e
-	//}
+	oldIdentifier := GetAsOrDefault[uuid.UUID](c.RequestedData, ValueKey("updateScopeId"), entityI.GetId())
+	//entity = types.GetAsOrDefault[E](c.RequestedData, types.ActivityValKey("entityParent"), entity)
 
 	key := entityI.GetEntityType()
-	if keyVal, ok := c.RequestedData[fmt.Sprintf("%s_key", entityI.GetEntityType())]; ok {
-		key = fmt.Sprint(keyVal)
-	}
+	key = GetAsOrDefault[actField.ActivityField](c.RequestedData, FieldWithKey(key), key)
 
 	oldV := entityI.GetString()
-	if oldVal, ok := c.RequestedData[fmt.Sprintf("%s_activity_val", key)]; ok {
-		oldV = fmt.Sprint(oldVal)
-	}
-	if oldVal, ok := c.RequestedData[fmt.Sprintf("%s_activity_val", oldV)]; ok {
-		oldV = fmt.Sprint(oldVal)
-	}
+	oldV = GetAsOrDefault[string](c.RequestedData, ValueKey(key), oldV)
+	oldV = GetAsOrDefault[string](c.RequestedData, ValueKey(oldV), oldV)
 
-	templateActivity := NewTeActy(actField.VerbRemoved, actField.ActivityField(key), &oldV, "", uuid.NullUUID{}, uuid.NullUUID{UUID: oldIdentifier, Valid: true}, c.Actor)
+	templateActivity := NewTeActy(actField.VerbRemoved, key, &oldV, "", uuid.NullUUID{}, uuid.NullUUID{UUID: oldIdentifier, Valid: true}, c.Actor)
 	if err := Gettt(c.Layer, &templateActivity, current); err != nil {
 		return result, nil
 	}

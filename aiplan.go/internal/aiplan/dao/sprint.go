@@ -80,8 +80,8 @@ func (s Sprint) GetString() string {
 }
 
 // GetEntityType Возвращает тип сущности спринта (sprint). Используется для определения типа данных при работе с активностями.
-func (s Sprint) GetEntityType() string {
-	return actField.Sprint.Field.String()
+func (s Sprint) GetEntityType() actField.ActivityField {
+	return actField.Sprint.Field
 }
 
 func (s Sprint) GetWorkspaceId() uuid.UUID {

@@ -15,8 +15,8 @@ import (
 
 type ActivityCtx struct {
 	Tracker         *ActivitiesTracker
-	RequestedData   map[string]interface{}
-	CurrentInstance map[string]interface{}
+	RequestedData   DataEntity
+	CurrentInstance DataEntity
 	Actor           *dao.User
 	Layer           types.EntityLayer
 }
@@ -50,7 +50,7 @@ func getVerbFunc[E dao.Entity](activityType string) funcVerb[E] {
 func TrackAct[E dao.Entity](
 	tracker *ActivitiesTracker,
 	layer types.EntityLayer, activityAction string,
-	requestedData map[string]interface{}, currentInstance map[string]interface{},
+	requestedData DataEntity, currentInstance DataEntity,
 	entity E, actor *dao.User,
 ) error {
 	c := getActCtx(tracker, requestedData, currentInstance, actor, layer)
@@ -189,13 +189,6 @@ func NewTeActy(verb string, field actField.ActivityField, oldVal *string, newVal
 	}
 }
 
-//	func dddd[E dao.Entity](en E)  {
-//	 eee := any(entity).(dao.WorkspaceEntityI)
-//	 switch a := any(*new(A)).(type) {
-//	 case dao.:
-//
-//	 }
-//	}
 func Gettt[E dao.Entity](layer types.EntityLayer, act *dao.ActivityEvent, entity E) error {
 	act.EntityType = layer
 
