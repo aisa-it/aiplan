@@ -652,8 +652,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 	oldIssue := issue
 	issueMapOld := StructToJSONMap(issue)
-
-	var data map[string]interface{}
+	var data tracker.DataEntity
 	form, _ := c.MultipartForm()
 
 	// If comment without attachments

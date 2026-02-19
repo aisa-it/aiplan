@@ -13,21 +13,17 @@ func actSingleWithoutIdentifier[E dao.Entity](field actField.ActivityField) func
 	}
 }
 
-func fieldUpdate[E dao.Entity](
-	c *ActivityCtx, field actField.ActivityField,
-	newIdentifier uuid.NullUUID, oldIdentifier uuid.NullUUID,
-	entity E,
-) ([]dao.ActivityEvent, error) {
-
+func fieldUpdate[E dao.Entity](c *ActivityCtx, field actField.ActivityField,
+	newIdentifier uuid.NullUUID, oldIdentifier uuid.NullUUID, entity E) ([]dao.ActivityEvent, error) {
 	result := make([]dao.ActivityEvent, 0)
 
 	oldV := c.getOldValue(field)
 	newV := c.getNewValue(field)
 
 	newIdentifier = c.getNewId(newIdentifier, field)
-	oldIdentifier = c.getOldId(newIdentifier, field)
+	oldIdentifier = c.getOldId(oldIdentifier, field)
 
-	c.getUpdateScope(&field)
+	field = c.getUpdateScope(field)
 
 	if oldV == newV {
 		return result, nil
@@ -43,9 +39,9 @@ func fieldUpdate[E dao.Entity](
 
 func acteeee[E dao.Entity, T dao.IDaoAct](field actField.FieldMapping, fieldLog *actField.ActivityField) func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
 	return func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
-		if _, ok := c.RequestedData["field_log"]; !ok && fieldLog != nil {
-			c.RequestedData["field_log"] = *fieldLog
-		}
+		//if _, ok := c.RequestedData["field_log"]; !ok && fieldLog != nil {
+		//	c.RequestedData["field_log"] = *fieldLog
+		//}
 		return fieldListUpdate[E, T](c, field, entity)
 	}
 }
@@ -68,9 +64,7 @@ func fieldListUpdate[E dao.Entity, T dao.IDaoAct](
 
 	entityMap := mapEntity(involvedEntities)
 
-	if fieldLog, ok := c.RequestedData["field_log"]; ok {
-		act.Field = fieldLog.(actField.ActivityField)
-	}
+	act.Field = GetAsOrDefault[actField.ActivityField](c.RequestedData, ValueKey("field_log"), act.Field)
 
 	for _, id := range changes.DelIds {
 

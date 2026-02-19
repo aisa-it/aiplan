@@ -85,7 +85,7 @@ func entityCreateActivity[E dao.Entity, A dao.Activity](
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenUUID(),
 		Verb:          verb,
-		Field:         strToPointer(entityI.GetEntityType()),
+		Field:         strToPointer(entityI.GetEntityType().String()),
 		OldValue:      nil,
 		NewValue:      newV,
 		Comment:       fmt.Sprintf("%s %s new %s: %s", actor.Email, verb, entityI.GetEntityType(), newV),
@@ -122,7 +122,7 @@ func entityDeleteActivity[E dao.Entity, A dao.Activity](
 	templateActivity := dao.TemplateActivity{
 		IdActivity:    dao.GenUUID(),
 		Verb:          actField.VerbDeleted,
-		Field:         strToPointer(entityI.GetEntityType()),
+		Field:         strToPointer(entityI.GetEntityType().String()),
 		OldValue:      strToPointer(oldVal),
 		Comment:       fmt.Sprintf("%s deleted %s: %s", actor.Email, entityI.GetEntityType(), oldVal),
 		NewIdentifier: uuid.NullUUID{},
@@ -169,8 +169,8 @@ func entityAddActivity[E dao.Entity, A dao.Activity](
 		entity = e
 	}
 
-	key := entityI.GetEntityType()
-	if keyVal, ok := requestedData[fmt.Sprintf("%s_key", entityI.GetEntityType())]; ok {
+	key := entityI.GetEntityType().String()
+	if keyVal, ok := requestedData[fmt.Sprintf("%s_key", entityI.GetEntityType().String())]; ok {
 		key = fmt.Sprint(keyVal)
 	}
 
@@ -232,8 +232,8 @@ func entityRemoveActivity[E dao.Entity, A dao.Activity](
 		entity = e
 	}
 
-	key := entityI.GetEntityType()
-	if keyVal, ok := requestedData[fmt.Sprintf("%s_key", entityI.GetEntityType())]; ok {
+	key := entityI.GetEntityType().String()
+	if keyVal, ok := requestedData[fmt.Sprintf("%s_key", entityI.GetEntityType().String())]; ok {
 		key = fmt.Sprint(keyVal)
 	}
 
@@ -315,8 +315,8 @@ func entityMoveActivity[E dao.Entity, A dao.Activity](
 		oldVal = v.(string)
 	}
 
-	entityTo := entityI.GetEntityType()
-	entityFrom := entityI.GetEntityType()
+	entityTo := entityI.GetEntityType().String()
+	entityFrom := entityI.GetEntityType().String()
 
 	if v, ok := requestedData["new_entity"]; ok {
 		entityTo = v.(string)

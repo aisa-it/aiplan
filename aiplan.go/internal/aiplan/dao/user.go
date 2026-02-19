@@ -16,6 +16,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -102,7 +103,7 @@ func (u User) GetString() string {
 	return u.Email
 }
 
-func (u User) GetEntityType() string {
+func (u User) GetEntityType() actField.ActivityField {
 	return "user"
 }
 

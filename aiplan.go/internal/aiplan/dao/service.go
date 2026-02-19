@@ -40,7 +40,7 @@ type Activity interface {
 type IDaoAct interface {
 	GetId() uuid.UUID
 	GetString() string
-	GetEntityType() string
+	GetEntityType() actField.ActivityField
 }
 
 type ActivityI interface {

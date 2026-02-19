@@ -239,8 +239,10 @@ func updateEntityRelationsLog[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 		Find(&involvedEntities).Error; err != nil {
 		return result, ErrStack.TrackErrorStack(err)
 	}
+
 	iEntityMap := make(map[uuid.UUID]dao.IDaoAct)
 	entityMap := make(map[uuid.UUID]E)
+
 	for _, e := range involvedEntities {
 		if v, ok := any(e).(dao.IDaoAct); ok {
 			iEntityMap[v.GetId()] = v

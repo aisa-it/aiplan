@@ -58,8 +58,8 @@ func (f Form) GetString() string {
 	return f.Slug
 }
 
-func (f Form) GetEntityType() string {
-	return actField.Form.Field.String()
+func (f Form) GetEntityType() actField.ActivityField {
+	return actField.Form.Field
 }
 
 func (f Form) GetWorkspaceId() uuid.UUID {
@@ -277,8 +277,8 @@ func (f FormAnswer) GetString() string {
 	return fmt.Sprintf("answer #%d", f.SeqId)
 }
 
-func (f FormAnswer) GetEntityType() string {
-	return "form_answers"
+func (f FormAnswer) GetEntityType() actField.ActivityField {
+	return "form_answer"
 }
 
 func (f FormAnswer) GetWorkspaceId() uuid.UUID {
@@ -529,7 +529,7 @@ func (fa FormAttachment) GetString() string {
 	if fa.Asset != nil {
 		return fa.Asset.Name
 	}
-	return fa.GetEntityType()
+	return fa.GetEntityType().String()
 }
 
 // GetEntityType возвращает строку, представляющую тип объекта, связанного с аттачментом. Если объект asset существует, возвращается имя файла, иначе - тип объекта.
@@ -539,8 +539,8 @@ func (fa FormAttachment) GetString() string {
 //
 // Возвращает:
 //   - string: имя файла или тип объекта.
-func (fa FormAttachment) GetEntityType() string {
-	return actField.Attachment.Field.String()
+func (fa FormAttachment) GetEntityType() actField.ActivityField {
+	return actField.Attachment.Field
 }
 
 func (f *FormAttachment) GetWorkspaceId() uuid.UUID {

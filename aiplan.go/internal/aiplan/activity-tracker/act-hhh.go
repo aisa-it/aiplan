@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 )
 
@@ -13,60 +12,47 @@ const (
 	updateScope   = "updateScope"
 )
 
-func (a *ActivityCtx) getUpdateScope(field *actField.ActivityField) {
-	if scope, ok := a.CurrentInstance[updateScope]; ok {
-		field = utils.ToPtr(actField.ActivityField(fmt.Sprintf("%s_%s", scope, field)))
-	} else if scope, ok := a.RequestedData[updateScope]; ok {
-		field = utils.ToPtr(actField.ActivityField(fmt.Sprintf("%s_%s", scope, field)))
+func (a *ActivityCtx) getUpdateScope(field actField.ActivityField) actField.ActivityField {
+	if scope, ok := GetAs[string](a.CurrentInstance, ValueKey(updateScope)); ok {
+		field = actField.ActivityField(fmt.Sprintf("%s_%s", scope, field))
+	} else if scope, ok := GetAs[string](a.RequestedData, ValueKey(updateScope)); ok {
+		field = actField.ActivityField(fmt.Sprintf("%s_%s", scope, field))
 	}
 
-	if fieldLog, ok := a.RequestedData[fmt.Sprintf("field_log")]; ok {
-		field = utils.ToPtr(fieldLog.(actField.ActivityField))
-	}
+	field = GetAsOrDefault[actField.ActivityField](a.RequestedData, ValueKey("field_log"), field)
+	field = GetAsOrDefault[actField.ActivityField](a.RequestedData, FieldLogKey(field), field)
 
-	if fieldLog, ok := a.RequestedData[fmt.Sprintf("%s_field_log", field)]; ok {
-		field = utils.ToPtr(fieldLog.(actField.ActivityField))
-	}
+	return field
 }
 
 ////
 
-func (a *ActivityCtx) getIDFromSource(source map[string]interface{}, defaultValue uuid.NullUUID, field actField.ActivityField) uuid.NullUUID {
-	if id, ok := source[updateScopeId].(uuid.UUID); ok {
-		return uuid.NullUUID{UUID: id, Valid: true}
-	}
-	if id, ok := source[field.WithUpdateScopeId()].(uuid.UUID); ok {
-		return uuid.NullUUID{UUID: id, Valid: true}
-	}
-	return defaultValue
+func (a *ActivityCtx) getIDFromSource(source map[string]interface{}, defaultValue uuid.NullUUID, field actField.ActivityField) uuid.UUID {
+	id := GetAsOrDefault[uuid.UUID](source, ValueKey(updateScopeId), defaultValue.UUID)
+	id = GetAsOrDefault[uuid.UUID](source, UpdateScopeIDKey(field), id)
+	return id
 }
 
 func (a *ActivityCtx) getNewId(newId uuid.NullUUID, field actField.ActivityField) uuid.NullUUID {
-	return a.getIDFromSource(a.RequestedData, newId, field)
+	return ToNullUUID(a.getIDFromSource(a.RequestedData, newId, field))
 }
 
 func (a *ActivityCtx) getOldId(oldId uuid.NullUUID, field actField.ActivityField) uuid.NullUUID {
-	return a.getIDFromSource(a.CurrentInstance, oldId, field)
+	return ToNullUUID(a.getIDFromSource(a.CurrentInstance, oldId, field))
 }
 
 ////
 
-func (a *ActivityCtx) getValueFromSource(source map[string]interface{}, field actField.ActivityField, handleNil bool) string {
-	val := fmt.Sprint(source[field.String()])
-
-	if activityVal, ok := source[field.WithActivityVal()]; ok {
-		val = fmt.Sprint(activityVal)
-	}
+func (a *ActivityCtx) getValueFromSource(source DataEntity, field actField.ActivityField, handleNil bool) string {
+	val := GetAsOrDefault[string](source, ValueKey(field), "")
+	val = GetAsOrDefault[string](source, ActivityValKey(field), val)
 
 	if handleNil && val == "<nil>" {
 		return ""
 	}
 
-	if f, ok := source[field.WithFuncStr()]; ok {
-		if ff, ok := f.(func(str string) string); ok {
-			val = ff(val)
-		}
-	}
+	f := GetAsOrDefault[func(string) string](source, FuncKey(field), func(s string) string { return s })
+	val = f(val)
 
 	return val
 }
@@ -79,4 +65,10 @@ func (a *ActivityCtx) getNewValue(field actField.ActivityField) string {
 	return a.getValueFromSource(a.RequestedData, field, true)
 }
 
-//////
+// ////
+func ToNullUUID(id uuid.UUID) uuid.NullUUID {
+	if id.IsNil() {
+		return uuid.NullUUID{}
+	}
+	return uuid.NullUUID{UUID: id, Valid: true}
+}
