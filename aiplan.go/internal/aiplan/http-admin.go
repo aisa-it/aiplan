@@ -14,12 +14,17 @@ import (
 	"compress/gzip"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -131,7 +136,9 @@ func (s *Services) AddAdminServices(g *echo.Group) {
 	importsGroup := staffPermissionGroup.Group("imports/")
 
 	staffPermissionGroup.GET("activities/", s.geRootActivityList)
+
 	workspacesGroup.GET("", s.getAllWorkspaceList)
+	workspacesGroup.DELETE(":slug/", s.deleteWorkspaceByAdmin)
 
 	projectsGroup.GET("", s.getWorkspaceProjectList)
 
@@ -238,6 +245,119 @@ func (s *Services) getAllWorkspaceList(c echo.Context) error {
 	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.WorkspaceWithCount), func(wwc *dao.WorkspaceWithCount) dto.WorkspaceWithCount { return *wwc.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+// deleteWorkspaceByAdmin godoc
+// @id deleteWorkspaceByAdmin
+// @Summary Пространство: удаление рабочего пространства администратором
+// @Description Удаляет рабочее пространство по его slug. Доступно только суперпользователям или владельцам пространства. Выполняет мягкое удаление с последующим фоновым окончательным удалением.
+// @Tags AdminPanel
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param slug path string true "Slug рабочего пространства"
+// @Success 200 "Рабочее пространство успешно удалено"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/admin/workspaces/{slug} [delete]
+func (s *Services) deleteWorkspaceByAdmin(c echo.Context) error {
+	user := c.(AuthContext).User
+	slug := c.Param("slug")
+
+	var workspace dao.Workspace
+	if err := s.db.Where("slug = ?", slug).First(&workspace).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+		}
+		return EError(c, err)
+	}
+
+	if !user.IsSuperuser && user.ID != workspace.OwnerId {
+		return EErrorDefined(c, apierrors.ErrDeleteWorkspaceForbidden)
+	}
+
+	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
+		return err
+	}
+	// Cancel jira imports
+	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
+		return EError(c, err)
+	}
+
+	{
+		// delete DeferredNotifications & activities
+		if err := s.db.
+			Where("workspace_id = ?", workspace.ID).
+			Unscoped().
+			Delete(&dao.DeferredNotifications{}).Error; err != nil {
+			return err
+		}
+
+		activityTables := []dao.UnionableTable{
+			&dao.WorkspaceActivity{},
+			&dao.DocActivity{},
+			&dao.FormActivity{},
+			&dao.ProjectActivity{},
+			&dao.IssueActivity{},
+		}
+
+		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
+			tn := strings.Split((*a).TableName(), "_")
+			return tn[0] + "_activity_id"
+		})
+
+		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
+
+		var queries []interface{}
+
+		for _, model := range activityTables {
+			queries = append(queries, s.db.Select("id").
+				Where("workspace_id = ?", workspace.ID).
+				Model(&model))
+		}
+
+		if err := s.db.Where(queryString, queries...).
+			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
+			return err
+		}
+
+		for _, model := range activityTables {
+			if err := s.db.
+				Where("workspace_id = ?", workspace.ID).
+				Unscoped().
+				Delete(model).Error; err != nil {
+				return err
+			}
+		}
+
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := s.db.Model(&dao.RootActivity{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
+	// Soft-delete projects
+	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Project{}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Soft-delete workspace
+	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Delete(&workspace).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Workspaces will be hard deleted by cron
+	// Start hard deleting in foreground
+	go func(workspace dao.Workspace) {
+		if err := s.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
+			slog.Error("Hard delete workspace by admin", "workspaceId", workspace.ID, "err", err)
+		}
+	}(workspace)
+
+	return c.NoContent(http.StatusOK)
 }
 
 // getWorkspaceProjectList godoc
