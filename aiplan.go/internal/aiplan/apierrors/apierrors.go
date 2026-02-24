@@ -56,7 +56,7 @@ func (e DefinedError) TusdError() tusd.Error {
 	}
 }
 
-func (e DefinedError) WithFormattedMessage(args ...interface{}) DefinedError {
+func (e DefinedError) WithFormattedMessage(args ...any) DefinedError {
 	if len(args) > 0 {
 		e.Err = fmt.Sprintf(e.Err, args...)
 		e.RuErr = fmt.Sprintf(e.RuErr, args...)
