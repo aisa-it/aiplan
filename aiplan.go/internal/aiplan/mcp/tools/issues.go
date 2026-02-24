@@ -12,10 +12,12 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -30,7 +32,7 @@ var issuesTools = []Tool{
 			mcp.WithDescription("Получение инфо о задаче по ее id или индетификатору"),
 			mcp.WithIdempotentHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
-			mcp.WithString("id",
+			mcp.WithString("issue_id",
 				mcp.Required(),
 				mcp.Description("Индетификатор задачи. Индетификатор должен быть вида UUID, {workspace.slug}-{project.identifier}-{issue.sequence} или короткой ссылки https://{host}/i/{workspace.slug}/{project.identifier}/{issue.sequence}"),
 			),
@@ -242,6 +244,19 @@ var issuesTools = []Tool{
 	},
 	{
 		mcp.NewTool(
+			"get_issue_comment",
+			mcp.WithDescription("Получение комментария к задаче"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("comment_id",
+				mcp.Required(),
+				mcp.Description("ID комментария(UUID)"),
+			),
+		),
+		getIssueComment,
+	},
+	{
+		mcp.NewTool(
 			"get_issue_activity",
 			mcp.WithDescription("Получение истории изменений задачи"),
 			mcp.WithIdempotentHintAnnotation(true),
@@ -291,6 +306,19 @@ var issuesTools = []Tool{
 		),
 		getIssueLinks,
 	},
+	{
+		mcp.NewTool(
+			"get_issue_attachments",
+			mcp.WithDescription("Получение вложений задачи"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		getIssueAttachments,
+	},
 }
 
 func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
@@ -305,7 +333,10 @@ func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
 }
 
 func getIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	issueIdOrSeq := request.GetArguments()["id"].(string)
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok {
+		return apierrors.ErrIssueIDsRequired.MCPError("не указан индетификатор задачи"), nil
+	}
 
 	query := db.
 		Joins("Parent").
@@ -1117,6 +1148,32 @@ func getIssueComments(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	})
 }
 
+func getIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	commentId, err := GetUUIDArg(request.GetArguments(), "comment_id")
+	if err != nil {
+		return logger.Error(err), nil
+	}
+
+	query := db.
+		Joins("Actor").
+		Joins("OriginalComment").
+		Joins("OriginalComment.Actor").
+		Preload("Reactions").
+		Where("issue_comments.project_id in (?)", db.Select("project_id").Where("member_id = ?", user.ID).Model(dao.ProjectMember{})).
+		Where("issue_comments.id = ? or issue_comments.original_id = ?", commentId, commentId).
+		Order("issue_comments.created_at DESC")
+
+	var comment dao.IssueComment
+	if err := query.First(&comment).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return apierrors.ErrIssueCommentNotFound.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	return mcp.NewToolResultJSON(comment.ToDTO())
+}
+
 // getIssueActivity возвращает историю изменений задачи
 func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
@@ -1382,6 +1439,45 @@ func getIssueLinks(ctx context.Context, db *gorm.DB, bl *business.Business, user
 		"count": len(result),
 		"links": result,
 	})
+}
+
+// getIssueAttachments возвращает вложения задачи
+func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	// Находим задачу
+	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+	if issue == nil {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	// Проверяем членство в проекте
+	var projectMember dao.ProjectMember
+	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrProjectForbidden.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	var attachments []dao.IssueAttachment
+	if err := db.
+		Joins("Asset").
+		Where("issue_attachments.issue_id = ?", issue.ID).
+		Order("issue_attachments.created_at").
+		Find(&attachments).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	return mcp.NewToolResultJSON(utils.SliceToSlice(&attachments, func(ia *dao.IssueAttachment) dto.Attachment { return *ia.ToLightDTO() }))
 }
 
 // findIssueByIdOrSeq — вспомогательная функция для поиска задачи по ID или sequence

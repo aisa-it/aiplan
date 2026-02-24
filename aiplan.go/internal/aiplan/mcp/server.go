@@ -49,16 +49,22 @@ const mcpInstructions = `MCP сервер для получения информ
 - UUID (например: 595aaa46-f5ec-423d-8272-eb29b602ee08)
 - Sequence ID формата {workspace.slug}-{project.identifier}-{issue.sequence} (например: test-PORTAL-1960)
 - Короткой ссылке: https://{host}/i/{workspace.slug}/{project.identifier}/{issue.sequence}
+
+## Идентификаторы комментариев
+Комментарии можно получать по:
+- UUID (например: 595aaa46-f5ec-423d-8272-eb29b602ee08)
+- Ссылке: https://{host}/{workspace.slug}/projects/{project.identifier}/issues/{issue.sequence}/{comment.id}
+
 `
 
 // NewMCPServer создаёт MCP сервер с доступом к БД и business слою.
-func NewMCPServer(db *gorm.DB, bl *business.Business) echo.HandlerFunc {
+func NewMCPServer(db *gorm.DB, bl *business.Business, version string) echo.HandlerFunc {
 	hooks := &server.Hooks{}
 	hooks.AddOnError(ErrorLoggerHook)
 
 	srv := server.NewMCPServer(
 		"aiplan-mcp",
-		"version",
+		version,
 		server.WithInstructions(mcpInstructions),
 		server.WithHooks(hooks),
 	)

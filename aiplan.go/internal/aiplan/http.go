@@ -516,7 +516,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// MCP handler
 	if cfg.MCPEnabled {
-		e.Any("mcp/*", mcp.NewMCPServer(db, s.business), authMiddleware)
+		e.Any("mcp/*", mcp.NewMCPServer(db, s.business, version), authMiddleware)
 	}
 
 	// Front handler
@@ -577,7 +577,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		}
 	}()
 
-	if err := e.Start(":8080"); err != nil && err != http.ErrServerClosed {
+	if err := e.Start(":8081"); err != nil && err != http.ErrServerClosed {
 		slog.Error("Server fail", "err", err)
 	}
 }
