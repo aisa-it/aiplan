@@ -2,6 +2,8 @@ package tracker
 
 import (
 	"fmt"
+	"reflect"
+	"sync"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
@@ -21,21 +23,62 @@ type ActivityCtx struct {
 	Layer           types.EntityLayer
 }
 
-//type funcVerb[E dao.Entity] func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error)
-
-func getActCtx(t *ActivitiesTracker, req, cur map[string]interface{}, actor *dao.User, layer types.EntityLayer) *ActivityCtx {
-	return &ActivityCtx{
-		Tracker:         t,
-		RequestedData:   req,
-		CurrentInstance: cur,
-		Actor:           actor,
-		Layer:           layer,
-	}
+func (a *ActivityCtx) Requested() Payload {
+	return NewPayload(a.RequestedData)
 }
 
-type funcVerb[E dao.Entity] func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error)
+func (a *ActivityCtx) Current() Payload {
+	return NewPayload(a.CurrentInstance)
+}
 
-func getVerbFunc[E dao.Entity](activityType string) funcVerb[E] {
+func (a *ActivityCtx) ResolveField(field actField.ActivityField) actField.ActivityField {
+	field = a.applyScope(field)
+	field = a.applyFieldLogOverride(field)
+	return field
+}
+
+func (a *ActivityCtx) applyScope(field actField.ActivityField) actField.ActivityField {
+	scope := a.scopeFromCurrent()
+	if scope == "" {
+		scope = a.scopeFromRequested()
+	}
+
+	if scope == "" {
+		return field
+	}
+
+	return actField.ActivityField(fmt.Sprintf("%s_%s", scope, field))
+}
+
+func (a *ActivityCtx) scopeFromCurrent() string {
+	scope, _ := GetAs[string](a.CurrentInstance, actField.UpdateScopeKey)
+	return scope
+}
+
+func (a *ActivityCtx) scopeFromRequested() string {
+	scope, _ := GetAs[string](a.RequestedData, actField.UpdateScopeKey)
+	return scope
+}
+
+func (a *ActivityCtx) applyFieldLogOverride(field actField.ActivityField) actField.ActivityField {
+	if override, ok := GetAs[actField.ActivityField](a.RequestedData, actField.FieldLogKey); ok {
+		return override
+	}
+
+	if override, ok := GetAs[actField.ActivityField](a.RequestedData, field.WithFieldLog()); ok {
+		return override
+	}
+
+	return field
+}
+
+func getActCtx(t *ActivitiesTracker, req, cur map[string]interface{}, actor *dao.User, layer types.EntityLayer) *ActivityCtx {
+	return &ActivityCtx{Tracker: t, RequestedData: req, CurrentInstance: cur, Actor: actor, Layer: layer}
+}
+
+type funcVerb[E dao.IDaoAct] func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error)
+
+func getVerbFunc[E dao.IDaoAct](activityType string) funcVerb[E] {
 	switch activityType {
 	case actField.VerbUpdated:
 		return update[E]
@@ -43,16 +86,17 @@ func getVerbFunc[E dao.Entity](activityType string) funcVerb[E] {
 		return add[E]
 	case actField.VerbRemoved:
 		return remove[E]
+	case actField.VerbCreated:
+		return create[E]
+	case actField.VerbDeleted:
+		return del[E]
+
 	}
 	return nil
 }
 
-func TrackAct[E dao.Entity](
-	tracker *ActivitiesTracker,
-	layer types.EntityLayer, activityAction string,
-	requestedData DataEntity, currentInstance DataEntity,
-	entity E, actor *dao.User,
-) error {
+func TrackEvent[E dao.IDaoAct](tracker *ActivitiesTracker, layer types.EntityLayer, activityAction string,
+	requestedData DataEntity, currentInstance DataEntity, entity E, actor *dao.User) error {
 	c := getActCtx(tracker, requestedData, currentInstance, actor, layer)
 	verbFunc := getVerbFunc[E](activityAction)
 
@@ -88,86 +132,119 @@ func TrackAct[E dao.Entity](
 	return nil
 }
 
-func gggg[E dao.Entity](rrr string) funcVerb[E] {
-	switch rrr {
-	case actField.Title.Req:
-		return actSingleWithoutIdentifier[E](actField.Title.Field)
-	case actField.Emoj.Req:
-		return actSingleWithoutIdentifier[E](actField.Emoj.Field)
-	case actField.Public.Req:
-		return actSingleWithoutIdentifier[E](actField.Public.Field)
-	case actField.Identifier.Req:
-		return actSingleWithoutIdentifier[E](actField.Identifier.Field)
-	case actField.Priority.Req:
-		return actSingleWithoutIdentifier[E](actField.Priority.Field)
-	case actField.Name.Req:
-		return actSingleWithoutIdentifier[E](actField.Name.Field)
-	case actField.Template.Req:
-		return actSingleWithoutIdentifier[E](actField.Template.Field)
-	case actField.Logo.Req:
-		return actSingleWithoutIdentifier[E](actField.Logo.Field)
-	case actField.Token.Req:
-		return actSingleWithoutIdentifier[E](actField.Token.Field)
-	case actField.Owner.Req:
-		return actSingleWithoutIdentifier[E](actField.Owner.Field)
-	case actField.Description.Req:
-		return actSingleWithoutIdentifier[E](actField.Description.Field)
-	case actField.Color.Req:
-		return actSingleWithoutIdentifier[E](actField.Color.Field)
-	case actField.AuthRequire.Req:
-		return actSingleWithoutIdentifier[E](actField.AuthRequire.Field)
-	case actField.Fields.Req:
-		return actSingleWithoutIdentifier[E](actField.Fields.Field)
-	case actField.Group.Req:
-		return actSingleWithoutIdentifier[E](actField.Group.Field)
-	case actField.Default.Req:
-		return actSingleWithoutIdentifier[E](actField.Default.Field)
-	case actField.EstimatePoint.Req:
-		return actSingleWithoutIdentifier[E](actField.EstimatePoint.Field)
-	case actField.Url.Req:
-		return actSingleWithoutIdentifier[E](actField.Url.Field)
-	case actField.CommentHtml.Req:
-		return actSingleWithoutIdentifier[E](actField.CommentHtml.Field)
-	case actField.ReaderRole.Req:
-		return actSingleWithoutIdentifier[E](actField.ReaderRole.Field)
-	case actField.EditorRole.Req:
-		return actSingleWithoutIdentifier[E](actField.EditorRole.Field)
+var registryCache sync.Map // key: reflect.Type
 
-	case actField.DescriptionHtml.Req:
-		return func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
-			c.RequestedData["field_log"] = actField.Description.Field
-			c.RequestedData[actField.DescriptionHtml.Field.WithActivityValStr()] = c.RequestedData[actField.DescriptionHtml.Req]
-			c.CurrentInstance[actField.DescriptionHtml.Field.WithActivityValStr()] = c.CurrentInstance[actField.DescriptionHtml.Req]
-			return actSingleWithoutIdentifier[E](actField.DescriptionHtml.Field)(c, entity)
-		}
+func getRegistry[E dao.IDaoAct]() map[string]funcVerb[E] {
+	t := reflect.TypeOf((*E)(nil)).Elem()
 
-		/////////////////
-	case actField.Assignees.Req:
-		return acteeee[E, dao.User](actField.Assignees, nil)
-	case actField.Watchers.Req:
-		return acteeee[E, dao.User](actField.Watchers, nil)
-	case actField.Editors.Req:
-		return acteeee[E, dao.User](actField.Editors, nil)
-	case actField.Readers.Req:
-		return acteeee[E, dao.User](actField.Readers, nil)
-	case actField.DefaultAssignees.Req:
-		return acteeee[E, dao.User](actField.DefaultAssignees, nil)
-	case actField.DefaultWatchers.Req:
-		return acteeee[E, dao.User](actField.DefaultWatchers, nil)
-
-	case actField.Label.Req:
-		return acteeee[E, dao.Label](actField.Label, nil)
-
-	case actField.Issues.Req:
-		return acteeee[E, dao.Issue](actField.Issues, nil) // TODO проверить actField.Issues.Field
-	case actField.Sprint.Req:
-		return acteeee[E, dao.Issue](actField.Issues, nil) // TODO проверить actField.Issues.Field
+	if v, ok := registryCache.Load(t); ok {
+		return v.(map[string]funcVerb[E])
 	}
-	return nil
+
+	reg := buildRegistry[E]()
+	registryCache.LoadOrStore(t, reg)
+	return reg
+}
+
+func fieldFuncReq[E dao.IDaoAct](rrr string) funcVerb[E] {
+	registry := getRegistry[E]()
+	return registry[rrr]
+}
+
+func buildRegistry[E dao.IDaoAct]() map[string]funcVerb[E] {
+	return map[string]funcVerb[E]{
+
+		// simple fields
+		actField.Title.Req:      actSingle[E](actField.Title.Field),
+		actField.Emoj.Req:       actSingle[E](actField.Emoj.Field),
+		actField.Public.Req:     actSingle[E](actField.Public.Field),
+		actField.Identifier.Req: actSingle[E](actField.Identifier.Field),
+		//actField.ProjectLead.Req: actSingle[E](actField.ProjectLead.Field),
+		actField.Priority.Req: actSingle[E](actField.Priority.Field),
+		//actField.Role.Req:   actSingle[E](actField.Role.Field),
+		actField.Name.Req:        actSingle[E](actField.Name.Field),
+		actField.Template.Req:    actSingle[E](actField.Template.Field),
+		actField.Logo.Req:        actSingle[E](actField.Logo.Field),
+		actField.Token.Req:       actSingle[E](actField.Token.Field),
+		actField.Owner.Req:       actSingle[E](actField.Owner.Field), // TODO CHECK
+		actField.Description.Req: actSingle[E](actField.Description.Field),
+		actField.DescriptionHtml.Req: func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+			c.RequestedData[actField.DescriptionHtml.Field.WithFieldLog().String()] = actField.Description.Field
+			c.RequestedData[actField.DescriptionHtml.Field.WithActivityVal().String()] = c.RequestedData[actField.DescriptionHtml.Req]
+			c.CurrentInstance[actField.DescriptionHtml.Field.WithActivityVal().String()] = c.CurrentInstance[actField.DescriptionHtml.Req]
+			return actSingle[E](actField.DescriptionHtml.Field)(c, entity)
+		},
+		actField.Color.Req: actSingle[E](actField.Color.Field),
+
+		//actField.TargetDate.Req:  actSingle[E](actField.TargetDate.Field),
+		//actField.StartDate.Req:   actSingle[E](actField.StartDate.Field),
+		//actField.CompletedAt.Req: actSingle[E](actField.CompletedAt.Field),
+		//actField.EndDate.Req:     actSingle[E](actField.EndDate.Field),
+
+		actField.AuthRequire.Req:   actSingle[E](actField.AuthRequire.Field),
+		actField.Fields.Req:        actSingle[E](actField.Fields.Field),
+		actField.Group.Req:         actSingle[E](actField.Group.Field),
+		actField.Default.Req:       actSingle[E](actField.Default.Field),
+		actField.EstimatePoint.Req: actSingle[E](actField.EstimatePoint.Field),
+		actField.Url.Req:           actSingle[E](actField.Url.Field),
+		actField.CommentHtml.Req:   actSingle[E](actField.CommentHtml.Field),
+		actField.DocSort.Req:       actSingle[E](actField.DocSort.Field), //TODO check
+		actField.ReaderRole.Req:    actSingle[E](actField.ReaderRole.Field),
+		actField.EditorRole.Req:    actSingle[E](actField.EditorRole.Field),
+		actField.Status.Req:        actSingle[E](actField.Status.Field),
+
+		// linked
+		actField.Assignees.Req:        actSeveral[E, dao.User](actField.Assignees),
+		actField.Watchers.Req:         actSeveral[E, dao.User](actField.Watchers),
+		actField.Editors.Req:          actSeveral[E, dao.User](actField.Editors),
+		actField.Readers.Req:          actSeveral[E, dao.User](actField.Readers),
+		actField.DefaultAssignees.Req: actSeveral[E, dao.User](actField.DefaultAssignees),
+		actField.DefaultWatchers.Req:  actSeveral[E, dao.User](actField.DefaultWatchers),
+
+		actField.Label.Req:  actSeveral[E, dao.Label](actField.Label),
+		actField.Issues.Req: actSeveral[E, dao.Issue](actField.Issues),
+		actField.Sprint.Req: actSeveral[E, dao.Issue](actField.Issues),
+
+		actField.Linked.Req: func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+			c.RequestedData["field_log"] = actField.Linked.Field
+			return actLinked[E](actField.Linked)(c, entity)
+		},
+		actField.Blocks.Req: func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+			cc := c.CurrentInstance["blocked_issues"]
+			if cSlice, ok := cc.([]interface{}); ok {
+				c.CurrentInstance[actField.Blocks.Req] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
+					if v, ok := (*t).(map[string]interface{}); ok {
+						return v["block"].(uuid.UUID)
+					}
+					return nil
+				})
+			}
+
+			c.RequestedData["source_field_log"] = actField.Blocks.Field   // название в таблице
+			c.RequestedData["target_field_log"] = actField.Blocking.Field // название в таблице
+			return actLinked[E](actField.Blocks)(c, entity)
+		},
+		actField.Blocking.Req: func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+			cc := c.CurrentInstance["blocker_issues"]
+			if cSlice, ok := cc.([]interface{}); ok {
+				c.CurrentInstance[actField.Blocking.Req] = utils.SliceToSlice(&cSlice, func(t *interface{}) interface{} {
+					if v, ok := (*t).(map[string]interface{}); ok {
+						return v["blocked_by"].(uuid.UUID)
+					}
+					return nil
+				})
+			}
+
+			c.RequestedData["source_field_log"] = actField.Blocking.Field // название в таблице
+			c.RequestedData["target_field_log"] = actField.Blocks.Field   // название в таблице
+			return actLinked[E](actField.Blocking)(c, entity)
+
+		},
+	}
 }
 
 // Создает новую активность шаблона.
-func NewTeActy(verb string, field actField.ActivityField, oldVal *string, newVal string, newId, oldId uuid.NullUUID, actor *dao.User) dao.ActivityEvent {
+func NewActivityEvent(verb string, field actField.ActivityField, oldVal *string, newVal string, newId, oldId uuid.NullUUID, actor *dao.User) dao.ActivityEvent {
 
 	return dao.ActivityEvent{
 		ID:            dao.GenUUID(),
@@ -189,7 +266,7 @@ func NewTeActy(verb string, field actField.ActivityField, oldVal *string, newVal
 	}
 }
 
-func Gettt[E dao.Entity](layer types.EntityLayer, act *dao.ActivityEvent, entity E) error {
+func SetEntityRefs[E dao.IDaoAct](layer types.EntityLayer, act *dao.ActivityEvent, entity E) error {
 	act.EntityType = layer
 
 	switch layer {
@@ -241,12 +318,11 @@ func Gettt[E dao.Entity](layer types.EntityLayer, act *dao.ActivityEvent, entity
 	return nil
 }
 
-func (a *ActivityCtx) getEntities(act actField.FieldMapping) ([]interface{}, []interface{}) {
-	f := act.Field.String()
-	if v, ok := a.RequestedData[act.Field.WithGetFieldStr()]; ok {
-		f = v.(string)
-	}
-	return a.RequestedData[act.Req].([]interface{}), a.CurrentInstance[f].([]interface{})
+func (a *ActivityCtx) getDiffData(act actField.FieldMapping) ([]interface{}, []interface{}) {
+	f := GetAsOrDefault[string](a.RequestedData, act.Field.WithGetField(), act.Field.String())
+	newE := GetAsOrDefault[[]interface{}](a.RequestedData, actField.New(act.Req).Only(), []interface{}{})
+	oldE := GetAsOrDefault[[]interface{}](a.CurrentInstance, actField.New(f).Only(), []interface{}{})
+	return newE, oldE
 }
 
 func getEntities[T dao.IDaoAct](tx *gorm.DB, changes *utils.IDChangeSet) ([]T, error) {

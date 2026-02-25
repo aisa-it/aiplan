@@ -445,6 +445,16 @@ func GetActionEntity[A Activity](a A, pref string) any {
 	return getEntityRecursive(val, typ, pref)
 }
 
+func GetActionEntity2(a ActivityEvent, pref string) any {
+	val := reflect.ValueOf(a)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	typ := val.Type()
+	return getEntityRecursive(val, typ, pref)
+}
+
 func getEntityRecursive(val reflect.Value, typ reflect.Type, pref string) any {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)

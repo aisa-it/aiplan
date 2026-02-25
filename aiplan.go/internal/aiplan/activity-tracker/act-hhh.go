@@ -7,20 +7,15 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-const (
-	updateScopeId = "updateScopeId"
-	updateScope   = "updateScope"
-)
-
 func (a *ActivityCtx) getUpdateScope(field actField.ActivityField) actField.ActivityField {
-	if scope, ok := GetAs[string](a.CurrentInstance, ValueKey(updateScope)); ok {
+	if scope, ok := GetAs[string](a.CurrentInstance, actField.UpdateScopeKey); ok {
 		field = actField.ActivityField(fmt.Sprintf("%s_%s", scope, field))
-	} else if scope, ok := GetAs[string](a.RequestedData, ValueKey(updateScope)); ok {
+	} else if scope, ok := GetAs[string](a.RequestedData, actField.UpdateScopeKey); ok {
 		field = actField.ActivityField(fmt.Sprintf("%s_%s", scope, field))
 	}
 
-	field = GetAsOrDefault[actField.ActivityField](a.RequestedData, ValueKey("field_log"), field)
-	field = GetAsOrDefault[actField.ActivityField](a.RequestedData, FieldLogKey(field), field)
+	field = GetAsOrDefault[actField.ActivityField](a.RequestedData, actField.FieldLogKey, field)
+	field = GetAsOrDefault[actField.ActivityField](a.RequestedData, field.WithFieldLog(), field)
 
 	return field
 }
@@ -28,8 +23,8 @@ func (a *ActivityCtx) getUpdateScope(field actField.ActivityField) actField.Acti
 ////
 
 func (a *ActivityCtx) getIDFromSource(source map[string]interface{}, defaultValue uuid.NullUUID, field actField.ActivityField) uuid.UUID {
-	id := GetAsOrDefault[uuid.UUID](source, ValueKey(updateScopeId), defaultValue.UUID)
-	id = GetAsOrDefault[uuid.UUID](source, UpdateScopeIDKey(field), id)
+	id := GetAsOrDefault[uuid.UUID](source, actField.UpdateScopeIdKey, defaultValue.UUID)
+	id = GetAsOrDefault[uuid.UUID](source, field.WithUpdateScopeId(), id)
 	return id
 }
 
@@ -44,14 +39,14 @@ func (a *ActivityCtx) getOldId(oldId uuid.NullUUID, field actField.ActivityField
 ////
 
 func (a *ActivityCtx) getValueFromSource(source DataEntity, field actField.ActivityField, handleNil bool) string {
-	val := GetAsOrDefault[string](source, ValueKey(field), "")
-	val = GetAsOrDefault[string](source, ActivityValKey(field), val)
+	val := GetAsOrDefault[string](source, field.Only(), "")
+	val = GetAsOrDefault[string](source, field.WithActivityVal(), val)
 
 	if handleNil && val == "<nil>" {
 		return ""
 	}
 
-	f := GetAsOrDefault[func(string) string](source, FuncKey(field), func(s string) string { return s })
+	f := GetAsOrDefault[func(string) string](source, field.WithFunc(), func(s string) string { return s })
 	val = f(val)
 
 	return val

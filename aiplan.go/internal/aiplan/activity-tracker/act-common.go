@@ -7,95 +7,150 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-func actSingleWithoutIdentifier[E dao.Entity](field actField.ActivityField) func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+func actSingle[E dao.IDaoAct](field actField.ActivityField) func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
 	return func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
 		return fieldUpdate(c, field, uuid.NullUUID{}, uuid.NullUUID{}, entity)
 	}
 }
 
-func fieldUpdate[E dao.Entity](c *ActivityCtx, field actField.ActivityField,
+func fieldUpdate[E dao.IDaoAct](c *ActivityCtx, field actField.ActivityField,
 	newIdentifier uuid.NullUUID, oldIdentifier uuid.NullUUID, entity E) ([]dao.ActivityEvent, error) {
 	result := make([]dao.ActivityEvent, 0)
 
-	oldV := c.getOldValue(field)
-	newV := c.getNewValue(field)
+	oldV := c.Current().GetValue(field)
+	newV := c.Requested().GetValue(field)
 
-	newIdentifier = c.getNewId(newIdentifier, field)
-	oldIdentifier = c.getOldId(oldIdentifier, field)
-
-	field = c.getUpdateScope(field)
+	newIdentifier = ToNullUUID(c.Requested().GetUUID(field, newIdentifier.UUID))
+	oldIdentifier = ToNullUUID(c.Current().GetUUID(field, oldIdentifier.UUID))
+	resolvedField := c.ResolveField(field)
 
 	if oldV == newV {
 		return result, nil
 	}
 
-	templateActivity := NewTeActy(actField.VerbUpdated, field, utils.ToPtr(oldV), newV, newIdentifier, oldIdentifier, c.Actor)
-	if err := Gettt(c.Layer, &templateActivity, entity); err != nil {
-		return result, nil
+	change := activityChange[E]{
+		verb:   actField.VerbUpdated,
+		field:  resolvedField,
+		oldVal: &oldV,
+		newVal: newV,
+		newID:  newIdentifier,
+		oldID:  oldIdentifier,
+		entity: entity,
 	}
 
-	return []dao.ActivityEvent{templateActivity}, nil
+	return buildEvents(c, []activityChange[E]{change})
 }
 
-func acteeee[E dao.Entity, T dao.IDaoAct](field actField.FieldMapping, fieldLog *actField.ActivityField) func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+func actSeveral[E dao.IDaoAct, T dao.IDaoAct](field actField.FieldMapping) func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
 	return func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
-		//if _, ok := c.RequestedData["field_log"]; !ok && fieldLog != nil {
-		//	c.RequestedData["field_log"] = *fieldLog
-		//}
 		return fieldListUpdate[E, T](c, field, entity)
 	}
 }
 
-func fieldListUpdate[E dao.Entity, T dao.IDaoAct](
+//
+
+func fieldListUpdate[E dao.IDaoAct, T dao.IDaoAct](
 	c *ActivityCtx, act actField.FieldMapping, entity E,
 ) ([]dao.ActivityEvent, error) {
 
-	result := make([]dao.ActivityEvent, 0)
-	changes := utils.CalculateIDChanges(c.getEntities(act))
-	involvedEntities, err := getEntities[T](c.Tracker.db, changes)
+	changesList := utils.CalculateIDChanges(c.getDiffData(act))
+	involvedEntities, err := getEntities[T](c.Tracker.db, changesList)
 	if err != nil {
 		return nil, err
 	}
 
-	//if err := query.
-	//	Find(&involvedEntities).Error; err != nil {
-	//	return result, ErrStack.TrackErrorStack(err).AddContext("field", act.Field.String())
-	//}
+	entityMap := utils.SliceToMap(&involvedEntities, func(a *T) uuid.UUID {
+		return (*a).GetId()
+	})
 
-	entityMap := mapEntity(involvedEntities)
+	act.Field = GetAsOrDefault[actField.ActivityField](c.RequestedData, actField.FieldLogKey, act.Field)
 
-	act.Field = GetAsOrDefault[actField.ActivityField](c.RequestedData, ValueKey("field_log"), act.Field)
+	var changes []activityChange[E]
 
-	for _, id := range changes.DelIds {
-
-		oldV := entityMap[id].GetString()
-		templateActivity := NewTeActy(actField.VerbRemoved, act.Field, &oldV, "", uuid.NullUUID{}, uuid.NullUUID{UUID: id, Valid: true}, c.Actor)
-		if err := Gettt(c.Layer, &templateActivity, entity); err != nil {
-			return result, nil
+	for _, id := range changesList.DelIds {
+		if e, ok := entityMap[id]; ok {
+			changes = append(changes, activityChange[E]{
+				verb:   actField.VerbRemoved,
+				field:  act.Field,
+				oldVal: utils.ToPtr(e.GetString()),
+				oldID:  uuid.NullUUID{UUID: id, Valid: true},
+				entity: entity,
+			})
 		}
-		//if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
-		//	ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
-		//	continue
-		//} else {
-		result = append(result, templateActivity)
-		//}
 	}
 
-	for _, id := range changes.AddIds {
-
-		newV := entityMap[id].GetString()
-		templateActivity := NewTeActy(actField.VerbAdded, act.Field, nil, newV, uuid.NullUUID{UUID: id, Valid: true}, uuid.NullUUID{}, c.Actor)
-		if err := Gettt(c.Layer, &templateActivity, entity); err != nil {
-			return result, nil
+	for _, id := range changesList.AddIds {
+		if e, ok := entityMap[id]; ok {
+			changes = append(changes, activityChange[E]{
+				verb:   actField.VerbAdded,
+				field:  act.Field,
+				newVal: e.GetString(),
+				newID:  uuid.NullUUID{UUID: id, Valid: true},
+				entity: entity,
+			})
 		}
-		//templateActivity := dao.NewTemplateActivity(actField.VerbAdded, act.Field, nil, newV, uuid.NullUUID{UUID: newId, Valid: true}, uuid.NullUUID{}, c.Actor, newV)
-
-		//if act, err := CreateActivity[E, A](entity, templateActivity); err != nil {
-		//	ErrStack.GetError(nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment))
-		//	continue
-		//} else {
-		result = append(result, templateActivity)
-		//}
 	}
-	return result, nil
+
+	return buildEvents(c, changes)
+}
+
+func actLinked[E dao.IDaoAct](field actField.FieldMapping) func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+	return func(c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+		return fieldRelationsUpdate[E](c, field, entity)
+	}
+}
+
+func fieldRelationsUpdate[E dao.IDaoAct](c *ActivityCtx, field actField.FieldMapping, entity E) ([]dao.ActivityEvent, error) {
+
+	oldIds := GetAsOrDefault[[]interface{}](c.CurrentInstance, actField.New(field.Req).Only(), []interface{}{})
+	newIds := GetAsOrDefault[[]interface{}](c.RequestedData, actField.New(field.Req).Only(), []interface{}{})
+
+	changesList := utils.CalculateIDChanges(newIds, oldIds)
+
+	involvedEntities, err := getEntities[E](c.Tracker.db, changesList)
+	if err != nil {
+		return nil, err
+	}
+
+	entityMap := utils.SliceToMap(&involvedEntities, func(a *E) uuid.UUID {
+		return (*a).GetId()
+	})
+
+	sourceField := GetAsOrDefault[actField.ActivityField](c.RequestedData, actField.FieldLogKey, field.Field)
+	targetField := sourceField
+
+	sourceField = GetAsOrDefault[actField.ActivityField](c.RequestedData, actField.New("source").WithFieldLog(), sourceField)
+	targetField = GetAsOrDefault[actField.ActivityField](c.RequestedData, actField.New("target").WithFieldLog(), targetField)
+
+	var changes []activityChange[E]
+
+	selfString := entity.GetString()
+	selfID := entity.GetId()
+
+	for _, id := range changesList.DelIds {
+		if related, ok := entityMap[id]; ok {
+			oldStr := related.GetString()
+			// событие для source
+			changes = append(changes, activityChange[E]{
+				verb: actField.VerbUpdated, field: sourceField, oldVal: &oldStr, oldID: uuid.NullUUID{UUID: id, Valid: true}, entity: entity,
+			})
+			// событие для target
+			changes = append(changes, activityChange[E]{
+				verb: actField.VerbUpdated, field: targetField, oldVal: &selfString, oldID: uuid.NullUUID{UUID: selfID, Valid: true}, entity: related})
+		}
+	}
+
+	for _, id := range changesList.AddIds {
+		if related, ok := entityMap[id]; ok {
+			newStr := related.GetString()
+			// событие для source
+			changes = append(changes, activityChange[E]{
+				verb: actField.VerbUpdated, field: sourceField, newVal: newStr, newID: uuid.NullUUID{UUID: id, Valid: true}, entity: entity})
+			// событие для target
+			changes = append(changes, activityChange[E]{
+				verb: actField.VerbUpdated, field: targetField, newVal: selfString, newID: uuid.NullUUID{UUID: selfID, Valid: true}, entity: related})
+		}
+	}
+
+	return buildEvents(c, changes)
 }

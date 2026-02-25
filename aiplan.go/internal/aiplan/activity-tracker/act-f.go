@@ -1,18 +1,16 @@
 package tracker
 
 import (
-	"fmt"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	ErrStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 )
 
-func update[E dao.Entity](c *ActivityCtx, en E) ([]dao.ActivityEvent, error) {
+func update[E dao.IDaoAct](c *ActivityCtx, en E) ([]dao.ActivityEvent, error) {
 	result := make([]dao.ActivityEvent, 0)
 	for key := range c.RequestedData {
-		if f := gggg[E](key); f != nil {
+		if f := fieldFuncReq[E](key); f != nil {
 			acts, err := f(c, en)
 			if err != nil {
 				return nil, ErrStack.TrackErrorStack(err)
@@ -23,82 +21,104 @@ func update[E dao.Entity](c *ActivityCtx, en E) ([]dao.ActivityEvent, error) {
 	return result, nil
 }
 
-func add[E dao.Entity](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
-	result := make([]dao.ActivityEvent, 0)
+func add[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+	entity = GetAsOrDefault[E](c.RequestedData, actField.EntityParentKey, entity)
+	entity = GetAsOrDefault[E](c.RequestedData, actField.EntityKey, entity)
 
-	entityI, ok := any(entity).(dao.IDaoAct)
-	if !ok {
-		return nil, ErrStack.TrackErrorStack(fmt.Errorf("entity does not implement IEntity[A]"))
-	}
+	key := entity.GetEntityType()
+	key = GetAsOrDefault[actField.ActivityField](c.RequestedData, key.WithKey(), key)
 
-	entity = GetAsOrDefault[E](c.RequestedData, ValueKey("entityParent"), entity)
-	entity = GetAsOrDefault[E](c.RequestedData, ValueKey("entity"), entity)
+	newV := entity.GetString()
+	newV = GetAsOrDefault[string](c.RequestedData, key.WithActivityVal(), newV)
+	newV = GetAsOrDefault[string](c.RequestedData, actField.New(newV).WithActivityVal(), newV)
 
-	key := entityI.GetEntityType()
-	key = GetAsOrDefault[actField.ActivityField](c.RequestedData, FieldWithKey(key), key)
+	newIdentifier := GetAsOrDefault[uuid.UUID](c.RequestedData, actField.UpdateScopeIdKey, entity.GetId())
 
-	newV := entityI.GetString()
-	newV = GetAsOrDefault[string](c.RequestedData, ValueKey(key), newV)
-	newV = GetAsOrDefault[string](c.RequestedData, ValueKey(newV), newV)
+	change := activityChange[E]{verb: actField.VerbAdded, field: key, newVal: newV, newID: ToNullUUID(newIdentifier), entity: entity}
 
-	newIdentifier := GetAsOrDefault[uuid.UUID](c.RequestedData, ValueKey("updateScopeId"), entityI.GetId())
-
-	templateActivity := NewTeActy(actField.VerbAdded, key, nil, newV, ToNullUUID(newIdentifier), uuid.NullUUID{}, c.Actor)
-	if err := Gettt(c.Layer, &templateActivity, entity); err != nil {
-		return result, nil
-	}
-	result = append(result, templateActivity)
-	return result, nil
-
-	//if newAct, err := CreateActivity[E, A](entity, templateActivity); err != nil {
-	//	return nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment)
-	//} else {
-	//	return []dao.{*newAct}, nil
-	//}
+	return buildEvents(c, []activityChange[E]{change})
 }
 
-// Удаляет существующую сущность и генерирует запись в журнале активности.
-func remove[E dao.Entity](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
-	result := make([]dao.ActivityEvent, 0)
+func remove[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+	current := GetAsOrDefault[E](c.RequestedData, actField.EntityKey, entity)
 
-	current := GetAsOrDefault[E](c.RequestedData, ValueKey("entity"), entity)
+	oldIdentifier := GetAsOrDefault[uuid.UUID](c.RequestedData, actField.UpdateScopeIdKey, entity.GetId())
 
-	entityI, ok := any(entity).(dao.IDaoAct)
-	if !ok {
-		return nil, ErrStack.TrackErrorStack(fmt.Errorf("entity does not implement IEntity[A]"))
-	}
+	key := entity.GetEntityType()
+	key = GetAsOrDefault[actField.ActivityField](c.RequestedData, key.WithKey(), key)
 
-	oldIdentifier := GetAsOrDefault[uuid.UUID](c.RequestedData, ValueKey("updateScopeId"), entityI.GetId())
-	//entity = types.GetAsOrDefault[E](c.RequestedData, types.ActivityValKey("entityParent"), entity)
+	oldV := entity.GetString()
+	oldV = GetAsOrDefault[string](c.RequestedData, key.WithActivityVal(), oldV)
+	oldV = GetAsOrDefault[string](c.RequestedData, actField.New(oldV).WithActivityVal(), oldV)
 
-	key := entityI.GetEntityType()
-	key = GetAsOrDefault[actField.ActivityField](c.RequestedData, FieldWithKey(key), key)
+	change := activityChange[E]{verb: actField.VerbRemoved, field: key, oldVal: &oldV, oldID: ToNullUUID(oldIdentifier), entity: current}
 
-	oldV := entityI.GetString()
-	oldV = GetAsOrDefault[string](c.RequestedData, ValueKey(key), oldV)
-	oldV = GetAsOrDefault[string](c.RequestedData, ValueKey(oldV), oldV)
-
-	templateActivity := NewTeActy(actField.VerbRemoved, key, &oldV, "", uuid.NullUUID{}, uuid.NullUUID{UUID: oldIdentifier, Valid: true}, c.Actor)
-	if err := Gettt(c.Layer, &templateActivity, current); err != nil {
-		return result, nil
-	}
-	result = append(result, templateActivity)
-	return result, nil
-
-	//templateActivity := dao.TemplateActivity{
-	//	IdActivity:    dao.GenUUID(),
-	//	Verb:          actField.VerbRemoved,
-	//	Field:         strToPointer(key),
-	//	OldValue:      &oldV,
-	//	Comment:       fmt.Sprintf("%s remove %s: %s", actor.Email, key, oldV),
-	//	NewIdentifier: uuid.NullUUID{},
-	//	OldIdentifier: uuid.NullUUID{UUID: oldIdentifier, Valid: true},
-	//	Actor:         &actor,
-	//}
-	//
-	//if newAct, err := CreateActivity[E, A](current, templateActivity); err != nil {
-	//	return nil, ErrStack.TrackErrorStack(err).AddContext("comment", templateActivity.Comment)
-	//} else {
-	//	return []A{*newAct}, nil
-	//}
+	return buildEvents(c, []activityChange[E]{change})
 }
+
+func create[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+	newIdentifier := GetAsOrDefault[uuid.UUID](c.RequestedData, actField.UpdateScopeIdKey, entity.GetId())
+
+	verb := GetAsOrDefault[string](c.RequestedData, actField.CustomVerbKey, actField.VerbCreated)
+
+	newVal := entity.GetString()
+	newVal = GetAsOrDefault[string](c.RequestedData, actField.New(newVal).WithActivityVal(), newVal)
+
+	entity = GetAsOrDefault[E](c.RequestedData, actField.EntityParentKey, entity)
+	change := activityChange[E]{
+		verb: verb, field: entity.GetEntityType(), newVal: newVal, newID: ToNullUUID(newIdentifier), entity: entity}
+
+	return buildEvents(c, []activityChange[E]{change})
+}
+
+func del[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+	oldVal := GetAsOrDefault[string](c.RequestedData, actField.OldTitleKey, entity.GetString())
+	change := activityChange[E]{verb: actField.VerbDeleted, field: entity.GetEntityType(), oldVal: &oldVal, entity: entity}
+
+	return buildEvents(c, []activityChange[E]{change})
+}
+
+//func move[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
+//
+//  // parent key обязателен
+//  parentKey, ok := GetAs[string](c.RequestedData, actField.ParentKey)
+//  if !ok || parentKey == "" {
+//    return nil, ErrStack.TrackErrorStack(fmt.Errorf("parent_key is required for move"))
+//  }
+//
+//  field := actField.ActivityField(parentKey)
+//
+//  // override field через field_log если передали
+//  field = GetAsOrDefault[actField.ActivityField](c.RequestedData, actField.FieldLogKey, field)
+//
+//  // verb (move или кастомный)
+//  verb := actField.VerbMove
+//  if v, ok := GetAs[string](c.RequestedData, actField.FieldMoveKey); ok {
+//    verb = fmt.Sprintf("move_%s", v)
+//  }
+//
+//  // new / old id
+//  newId := ToNullUUID(
+//    GetAsOrDefault[uuid.UUID](c.RequestedData, actField.UpdateScopeIdKey, uuid.Nil),
+//  )
+//
+//  oldId := ToNullUUID(
+//    GetAsOrDefault[uuid.UUID](c.CurrentInstance, actField.UpdateScopeIdKey, uuid.Nil),
+//  )
+//
+//  // values
+//  newVal := GetAsOrDefault[string](c.RequestedData, actField.ParentTitleKey, "")
+//  oldVal := GetAsOrDefault[string](c.CurrentInstance, actField.ParentTitleKey, "")
+//
+//  change := activityChange[E]{
+//    verb:   verb,
+//    field:  field,
+//    oldVal: &oldVal,
+//    newVal: newVal,
+//    newID:  newId,
+//    oldID:  oldId,
+//    entity: entity,
+//  }
+//
+//  return buildEvents(c, []activityChange[E]{change})
+//}

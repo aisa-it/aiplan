@@ -1270,3 +1270,23 @@ func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.D
 }
 
 type EntityLayer int16
+
+func (e EntityLayer) String() string {
+	switch e {
+	case 0:
+		return "root"
+	case 1:
+		return "workspace"
+	case 2:
+		return "project"
+	case 3:
+		return "issue"
+	case 4:
+		return "doc"
+	case 5:
+		return "form"
+	case 6:
+		return "sprint"
+	}
+	return "unknown"
+}

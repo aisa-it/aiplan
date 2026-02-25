@@ -1861,6 +1861,7 @@ func (s *Services) createIssue(c echo.Context) error {
 	if err != nil {
 		errStack.GetError(c, err)
 	}
+	tracker.TrackEvent(s.tracker, types.EntityProject, activities.VerbCreated, nil, nil, issueNew, &user)
 	if issueNew.ParentId.Valid {
 
 		data := make(map[string]interface{})

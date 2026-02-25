@@ -1,8 +1,106 @@
 package activities
 
-import "fmt"
+import (
+	"database/sql/driver"
+	"fmt"
+)
+
+const (
+	activityVal   = "activity_val"
+	updateScopeId = "updateScopeId"
+	updateScope   = "updateScope"
+	fieldLog      = "field_log"
+	funcName      = "func_name"
+	key           = "key"
+	getField      = "get_field"
+	entityParent  = "entityParent"
+	entity        = "entity"
+	customVerb    = "custom_verb"
+	oldTitle      = "old_title"
+)
+
+type FieldKey struct {
+	Field ActivityField
+	Kind  string
+}
+
+func (fk FieldKey) String() string {
+	if fk.Kind == "" {
+		return fk.Field.String()
+	}
+	return fmt.Sprintf("%s_%s", fk.Field.String(), fk.Kind)
+}
+
+var (
+	UpdateScopeIdKey = FieldKey{Field: updateScopeId, Kind: ""}
+	UpdateScopeKey   = FieldKey{Field: updateScope, Kind: ""}
+	FieldLogKey      = FieldKey{Field: fieldLog, Kind: ""}
+	EntityParentKey  = FieldKey{Field: entityParent, Kind: ""}
+	EntityKey        = FieldKey{Field: entity, Kind: ""}
+	CustomVerbKey    = FieldKey{Field: customVerb, Kind: ""}
+	OldTitleKey      = FieldKey{Field: oldTitle, Kind: ""}
+)
 
 type ActivityField string
+
+func (f ActivityField) Value() (driver.Value, error) {
+	return string(f), nil
+}
+
+func (f *ActivityField) Scan(value interface{}) error {
+	if value == nil {
+		*f = ActivityField("")
+		return nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		*f = ActivityField(v)
+	case []byte:
+		*f = ActivityField(v)
+	case fmt.Stringer:
+		*f = ActivityField(v.String())
+	default:
+		return fmt.Errorf("cannot scan type %T into ActivityField: %v", value, value)
+	}
+
+	return nil
+}
+
+func New[E ~string](field E) ActivityField {
+	return ActivityField(field)
+}
+
+func (a ActivityField) String() string {
+	return string(a)
+}
+
+func (a ActivityField) WithActivityVal() FieldKey {
+	return FieldKey{Field: a, Kind: activityVal}
+}
+
+func (a ActivityField) WithFunc() FieldKey {
+	return FieldKey{Field: a, Kind: funcName}
+}
+
+func (a ActivityField) WithGetField() FieldKey {
+	return FieldKey{Field: a, Kind: getField}
+}
+
+func (a ActivityField) WithFieldLog() FieldKey {
+	return FieldKey{Field: a, Kind: fieldLog}
+}
+
+func (a ActivityField) WithUpdateScopeId() FieldKey {
+	return FieldKey{Field: a, Kind: updateScopeId}
+}
+func (a ActivityField) WithKey() FieldKey {
+	return FieldKey{Field: a, Kind: key}
+}
+
+func (a ActivityField) Only() FieldKey {
+	return FieldKey{Field: a, Kind: ""}
+}
 
 type FieldMapping struct {
 	Req   string
@@ -130,29 +228,6 @@ const (
 	VerbMoveDocDoc       = "move_doc_to_doc"
 	VerbMoveWorkspaceDoc = "move_workspace_to_doc"
 )
-
-func (a ActivityField) String() string {
-	return string(a)
-}
-
-func (a ActivityField) WithActivityValStr() string {
-	return fmt.Sprintf("%s_%s", a.String(), "activity_val")
-}
-
-func (a ActivityField) WithFuncStr() string {
-	return fmt.Sprintf("%s_%s", a.String(), "func")
-}
-
-func (a ActivityField) WithGetFieldStr() string {
-	return fmt.Sprintf("%s_%s", a.String(), "get_field")
-}
-
-func (a ActivityField) WithActivityVal() string {
-	return fmt.Sprintf("%s_%s", a.String(), "activity_val")
-}
-func (a ActivityField) WithUpdateScopeId() string {
-	return fmt.Sprintf("%s_%s", a.String(), "updateScopeId")
-}
 
 func ReqFieldMapping(in string) string {
 	if v, ok := fieldChange[in]; ok {

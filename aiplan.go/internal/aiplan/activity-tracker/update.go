@@ -326,9 +326,9 @@ func entityDescriptionUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 
 // Обновляет HTML описание сущности, добавляя тег 'comment_html' в данные для обновления.
 func entityDescriptionHtmlUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker, requestedData map[string]interface{}, currentInstance map[string]interface{}, entity E, actor dao.User) ([]A, error) {
-	requestedData["field_log"] = actField.Description.Field
-	requestedData[actField.DescriptionHtml.Field.WithActivityValStr()] = requestedData[actField.DescriptionHtml.Req]
-	currentInstance[actField.DescriptionHtml.Field.WithActivityValStr()] = currentInstance[actField.DescriptionHtml.Req]
+	requestedData[actField.DescriptionHtml.Field.WithFieldLog().String()] = actField.Description.Field
+	requestedData[actField.DescriptionHtml.Field.WithActivityVal().String()] = requestedData[actField.DescriptionHtml.Req]
+	currentInstance[actField.DescriptionHtml.Field.WithActivityVal().String()] = currentInstance[actField.DescriptionHtml.Req]
 
 	return entityFieldUpdate[E, A](actField.DescriptionHtml.Field, uuid.NullUUID{}, uuid.NullUUID{}, tracker, requestedData, currentInstance, entity, actor)
 }
@@ -394,8 +394,8 @@ func entityStartDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTrac
 		}
 	}
 
-	requestedData[actField.StartDate.Field.WithFuncStr()] = format
-	currentInstance[actField.StartDate.Field.WithFuncStr()] = format
+	requestedData[actField.StartDate.Field.WithFunc().String()] = format
+	currentInstance[actField.StartDate.Field.WithFunc().String()] = format
 
 	if v, exists := requestedData[actField.StartDate.Field.String()]; exists {
 		if startDate, ok := v.(map[string]interface{}); ok {
@@ -425,8 +425,8 @@ func entityCompletedAtUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTr
 		}
 	}
 
-	requestedData[actField.CompletedAt.Field.WithFuncStr()] = format
-	currentInstance[actField.CompletedAt.Field.WithFuncStr()] = format
+	requestedData[actField.CompletedAt.Field.WithFunc().String()] = format
+	currentInstance[actField.CompletedAt.Field.WithFunc().String()] = format
 
 	return entityFieldUpdate[E, A](actField.CompletedAt.Field, uuid.NullUUID{}, uuid.NullUUID{}, tracker, requestedData, currentInstance, entity, actor)
 }
@@ -452,8 +452,8 @@ func entityEndDateUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracke
 		}
 	}
 
-	requestedData[actField.EndDate.Field.WithFuncStr()] = format
-	currentInstance[actField.EndDate.Field.WithFuncStr()] = format
+	requestedData[actField.EndDate.Field.WithFunc().String()] = format
+	currentInstance[actField.EndDate.Field.WithFunc().String()] = format
 
 	if v, exists := requestedData[actField.EndDate.Field.String()]; exists {
 		if startDate, ok := v.(map[string]interface{}); ok {
@@ -735,8 +735,8 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 
 	if !oldParentId.Valid && !newParentId.IsNil() {
 		entityI := issueMap[newParentId]
-		requestedData[actField.Parent.Field.WithActivityValStr()] = entityI.GetString()
-		currentInstance[actField.Parent.Field.WithActivityValStr()] = "<nil>"
+		requestedData[actField.Parent.Field.WithActivityVal().String()] = entityI.GetString()
+		currentInstance[actField.Parent.Field.WithActivityVal().String()] = "<nil>"
 		ta = dao.NewTemplateActivity(actField.VerbAdded, fieldSub, nil, e.GetString(), uuid.NullUUID{UUID: issueId, Valid: true}, uuid.NullUUID{}, &actor, e.GetString())
 		if act, err := CreateActivity[E, A](any(entityI).(E), ta); err == nil {
 			result = append(result, *act)
@@ -744,7 +744,7 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 
 	} else if newParentId.IsNil() && oldParentId.Valid {
 		entityI := issueMap[oldParentId.UUID]
-		currentInstance[actField.Parent.Field.WithActivityValStr()] = entityI.GetString()
+		currentInstance[actField.Parent.Field.WithActivityVal().String()] = entityI.GetString()
 		ta = dao.NewTemplateActivity(actField.VerbRemoved, fieldSub, strToPointer(e.GetString()), "", uuid.NullUUID{}, uuid.NullUUID{UUID: issueId, Valid: true}, &actor, e.GetString())
 		if act, err := CreateActivity[E, A](any(entityI).(E), ta); err == nil {
 			result = append(result, *act)
@@ -753,8 +753,8 @@ func issueParentUpdate[E dao.Entity, A dao.Activity](tracker *ActivitiesTracker,
 	} else if !newParentId.IsNil() && oldParentId.Valid {
 		entityIRem := issueMap[oldParentId.UUID]
 		entityIAdd := issueMap[newParentId]
-		currentInstance[actField.Parent.Field.WithActivityValStr()] = entityIRem.GetString()
-		requestedData[actField.Parent.Field.WithActivityValStr()] = entityIAdd.GetString()
+		currentInstance[actField.Parent.Field.WithActivityVal().String()] = entityIRem.GetString()
+		requestedData[actField.Parent.Field.WithActivityVal().String()] = entityIAdd.GetString()
 		ta = dao.NewTemplateActivity(actField.VerbRemoved, fieldSub, strToPointer(e.GetString()), "", uuid.NullUUID{}, uuid.NullUUID{UUID: issueId, Valid: true}, &actor, e.GetString())
 		if act, err := CreateActivity[E, A](any(entityIRem).(E), ta); err == nil {
 			result = append(result, *act)
