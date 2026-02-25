@@ -61,14 +61,15 @@ type Project struct {
 	DefaultWatchers  []uuid.UUID `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
 	ProjectLeadId    uuid.UUID   `json:"project_lead" gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	UpdatedById uuid.NullUUID    `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	WorkspaceId uuid.UUID        `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
-	Emoji       int32            `json:"emoji,string" gorm:"default:127773"`
-	LogoId      uuid.NullUUID    `json:"logo"`
-	CoverImage  *string          `json:"cover_image" extensions:"x-nullable"`
-	EstimateId  *string          `json:"estimate" extensions:"x-nullable"`
-	RulesScript *string          `json:"rules_script" extensions:"x-nullable"`
-	HideFields  types.HideFields `json:"hide_fields" gorm:"type:jsonb"`
+	UpdatedById          uuid.NullUUID    `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId          uuid.UUID        `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
+	Emoji                int32            `json:"emoji,string" gorm:"default:127773"`
+	LogoId               uuid.NullUUID    `json:"logo"`
+	CoverImage           *string          `json:"cover_image" extensions:"x-nullable"`
+	EstimateId           *string          `json:"estimate" extensions:"x-nullable"`
+	RulesScript          *string          `json:"rules_script" extensions:"x-nullable"`
+	HideFields           types.HideFields `json:"hide_fields" gorm:"type:jsonb"`
+	IssueDeletionAllowed bool             `json:"issue_deletion_allowed" gorm:"default:true"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
@@ -181,11 +182,13 @@ func (pwc *ProjectWithCount) ToDTO() *dto.Project {
 		return nil
 	}
 	return &dto.Project{
-		ProjectLight: *pwc.ToLightDTO(),
-		CreatedAt:    pwc.CreatedAt,
-		UpdatedAt:    pwc.UpdatedAt,
-		ProjectLead:  pwc.ProjectLead.ToLightDTO(),
-		Workspace:    pwc.Workspace.ToLightDTO(),
+		ProjectLight:         *pwc.ToLightDTO(),
+		HideFields:           pwc.HideFields,
+		IssueDeletionAllowed: pwc.IssueDeletionAllowed,
+		CreatedAt:            pwc.CreatedAt,
+		UpdatedAt:            pwc.UpdatedAt,
+		ProjectLead:          pwc.ProjectLead.ToLightDTO(),
+		Workspace:            pwc.Workspace.ToLightDTO(),
 	}
 }
 
