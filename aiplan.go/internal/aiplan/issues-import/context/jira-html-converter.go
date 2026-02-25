@@ -303,7 +303,7 @@ func (context *ImportContext) formatImg(node *html.Node) (bool, *entity.Attachme
 		asset.Id = attachment.DstAssetID
 	}
 
-	link := fmt.Sprintf("/api/file/%s", asset.Id.String())
+	link := fmt.Sprintf("/api/auth/file/%s", asset.Id.String())
 
 	htmlRemoveChildren(node)
 	node.Data = "img"

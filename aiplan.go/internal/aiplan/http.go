@@ -381,6 +381,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 				c.Path() == "/api/auth/workspaces/:workspaceSlug/projects/:projectId/issues/:issueIdOrSeq/" ||
 				c.Path() == "/api/auth/workspaces/:workspaceSlug/projects/:projectId/issues/:issueIdOrSeq/comments/" ||
 				c.Path() == "/api/auth/workspaces/:workspaceSlug/projects/:projectId/issues/:issueIdOrSeq/comments/:commentId/" ||
+				c.Path() == "/api/auth/forms/:formSlug/form-attachments/" ||
 				c.Path() == "/api/auth/users/me/avatar/" ||
 				strings.Contains(c.Path(), "/api/auth/issue-attachments/tus/") ||
 				strings.Contains(c.Path(), "/api/auth/attachments/tus/")
@@ -515,7 +516,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// MCP handler
 	if cfg.MCPEnabled {
-		e.Any("mcp/*", mcp.NewMCPServer(db, s.business), authMiddleware)
+		e.Any("mcp/*", mcp.NewMCPServer(db, s.business, version), authMiddleware)
 	}
 
 	// Front handler

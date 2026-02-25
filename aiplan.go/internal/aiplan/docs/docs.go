@@ -18537,6 +18537,9 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "llm_content": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -20235,6 +20238,9 @@ const docTemplate = `{
                     },
                     "x-nullable": true
                 },
+                "llm_content": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -20732,6 +20738,9 @@ const docTemplate = `{
                 },
                 "linked_issues_count": {
                     "type": "integer"
+                },
+                "llm_content": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"

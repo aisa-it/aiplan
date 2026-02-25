@@ -6,10 +6,13 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/gofrs/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"gorm.io/gorm"
 )
+
+var ErrInvalidArgType = errors.New("invalid mcp arg type")
 
 // ToolHandler определяет сигнатуру функции-обработчика MCP инструмента.
 // Получает контекст, соединение с БД, business слой, текущего пользователя и параметры запроса.
@@ -31,4 +34,16 @@ func WrapTool(db *gorm.DB, bl *business.Business, handler ToolHandler) server.To
 		user := userRaw.(*dao.User)
 		return handler(ctx, db, bl, user, request)
 	}
+}
+
+func GetUUIDArg(args map[string]any, argName string) (uuid.UUID, error) {
+	raw, ok := args[argName]
+	if !ok {
+		return uuid.Nil, nil
+	}
+	rawStr, ok := raw.(string)
+	if !ok {
+		return uuid.Nil, ErrInvalidArgType
+	}
+	return uuid.FromString(rawStr)
 }

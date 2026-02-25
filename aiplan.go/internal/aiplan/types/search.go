@@ -180,7 +180,11 @@ func ParseSearchParamsMCP(args map[string]any) (*SearchParams, error) {
 	if v, ok := args["labels"].([]interface{}); ok {
 		for _, s := range v {
 			if str, ok := s.(string); ok {
-				sp.Filters.Labels = append(sp.Filters.Labels, str)
+				if str == "" {
+					sp.Filters.Labels.IncludeEmpty = true
+					continue
+				}
+				sp.Filters.Labels.Array = append(sp.Filters.Labels.Array, uuid.FromStringOrNil(str))
 			}
 		}
 	}

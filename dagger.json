@@ -4,5 +4,10 @@
   "sdk": {
     "source": "go"
   },
-  "source": "dagger-ci"
+  "source": "dagger-ci",
+  "views": {
+    "default": {
+      "exclude": [".git", "aiplan-helm", "dagger-ci"]
+    }
+  }
 }

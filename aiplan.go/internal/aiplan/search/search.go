@@ -216,7 +216,7 @@ func FetchIssuesByGroups(
 				entity = state.ToLightDTO()
 			}
 		case "labels":
-			if len(searchParams.Filters.Labels) > 0 && !slices.Contains(searchParams.Filters.Labels, group.Key) {
+			if !searchParams.Filters.Labels.IsEmpty() && !searchParams.Filters.Labels.Contains(group.Key) {
 				continue
 			}
 			if group.Key == "" {
