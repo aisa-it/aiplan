@@ -138,7 +138,7 @@ func entityFieldsListUpdate[E dao.Entity, A dao.Activity, T dao.IDaoAct](
 	result := make([]A, 0)
 
 	f := act.Field.String()
-	if v, ok := requestedData[act.Field.WithGetFieldStr()]; ok {
+	if v, ok := requestedData[act.Field.WithGetField().String()]; ok {
 		f = v.(string)
 	}
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 )
 
@@ -126,4 +127,40 @@ type WorkspaceLimitsInfo struct {
 type GitConfigInfo struct {
 	GitEnabled          bool   `json:"git_enabled"`
 	GitRepositoriesPath string `json:"git_repositories_path"`
+}
+
+type ActivityEventLight struct {
+	Id        uuid.UUID              `json:"id"`
+	CreatedAt time.Time              `json:"created_at"`
+	Verb      string                 `json:"verb"`
+	Field     actField.ActivityField `json:"field,omitempty"  extensions:"x-nullable"`
+
+	OldValue *string `json:"old_value,omitempty"  extensions:"x-nullable"`
+	NewValue string  `json:"new_value"`
+
+	EntityType types.EntityLayer `json:"entity_type"`
+
+	NewEntity any `json:"new_entity_detail,omitempty" extensions:"x-nullable"`
+	OldEntity any `json:"old_entity_detail,omitempty" extensions:"x-nullable"`
+
+	//TargetUser *UserLight `json:"target_user,omitempty"  extensions:"x-nullable"`
+
+	EntityUrl *string `json:"entity_url,omitempty"`
+}
+
+type ActivityEventFull struct {
+	ActivityEventLight
+
+	Workspace *WorkspaceLight `json:"workspace_detail,omitempty"  extensions:"x-nullable"`
+	Actor     *UserLight      `json:"actor_detail,omitempty"  extensions:"x-nullable"`
+	Issue     *IssueLight     `json:"issue_detail,omitempty" extensions:"x-nullable"`
+	Project   *ProjectLight   `json:"project_detail,omitempty" extensions:"x-nullable"`
+	Form      *FormLight      `json:"form_detail,omitempty"  extensions:"x-nullable"`
+	Doc       *DocLight       `json:"doc_detail,omitempty" extensions:"x-nullable"`
+	Sprint    *SprintLight    `json:"sprint_detail,omitempty" extensions:"x-nullable"`
+
+	NewIdentifier uuid.NullUUID `json:"new_identifier,omitempty" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier,omitempty" extensions:"x-nullable"`
+
+	StateLag int `json:"state_lag_ms,omitempty"`
 }

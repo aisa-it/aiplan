@@ -784,16 +784,20 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if err != nil {
 			return EError(c, err)
 		}
-		data["state_id"] = stateUUID
+
+		field := actField.Status.Field
 
 		if err := s.db.Where("id = ?", stateUUID).
 			Where("project_id = ?", issue.ProjectId).
 			First(&newState).Error; err != nil {
 			return EError(c, err)
 		}
+		tracker.SetField(data, field.WithUpdateScopeId(), stateUUID)
+		tracker.SetField(data, field.WithActivityVal(), newState.Name)
 
-		issueMapOld[actField.Status.Field.WithActivityValStr()] = issue.State.Name
-		data[actField.Status.Field.WithActivityValStr()] = newState.Name
+		tracker.SetField(issueMapOld, field.WithUpdateScopeId(), issue.State.ID)
+		tracker.SetField(issueMapOld, field.WithActivityVal(), issue.State.Name)
+
 		if newState.Group == "started" && issue.State.Group != "started" {
 			data["start_date"] = &types.TargetDate{Time: time.Now()}
 		}
@@ -882,7 +886,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if err := s.db.Where("project_id = ?", project.ID).Find(&allProjectLabels).Error; err != nil {
 			return EError(c, err)
 		}
-		data[actField.Label.Field.WithGetFieldStr()] = "labels"
+		data[actField.Label.Field.WithGetField().String()] = "labels"
 	}
 
 	// Reset sort order
@@ -1191,7 +1195,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
-	tracker.TrackAct(s.tracker, types.EntityIssue, actField.VerbUpdated, data, issueMapOld, issue, &user)
+	tracker.TrackEvent(s.tracker, types.EntityIssue, actField.VerbUpdated, data, issueMapOld, issue, &user)
 
 	//s.tracker.TrackActivity(tracker.ISSUE_UPDATED_ACTIVITY, data, issueMapOld, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, &project, user)
 
@@ -2932,29 +2936,43 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	unionTable := dao.BuildUnionSubquery(s.db, "ia", dao.FullActivity{}, issue)
+	//var issue dao.IssueActivity
+	//issue.UnionCustomFields = "'issue' AS entity_type"
+	//unionTable := dao.BuildUnionSubquery(s.db, "ia", dao.FullActivity{}, issue)
 
-	query := unionTable.
+	query := s.db.
 		Joins("Issue").
 		Joins("Actor").
 		Joins("Project").
 		Joins("Workspace").
-		Where("ia.project_id = ?", projectId).
-		Where("ia.issue_id = ?", issueId).
-		Order("ia.created_at DESC")
+		Where("activity_events.project_id = ?", projectId).
+		Where("activity_events.issue_id = ?", issueId).
+		Where("activity_events.entity_type = ?", types.EntityIssue).
+		Order("activity_events.created_at DESC")
+
+	//if field != "" {
+	//	query = query.Where("activity_events.field = ?", actField.Status.Field.String())
+	//	if field == "state" {
+	//		query = query.Select("activity_events.*, round(extract('epoch' from activity_events.created_at - (LAG(activity_events.created_at, 1, \"Issue\".created_at) over (order by activity_events.created_at))) * 1000) as state_lag")
+	//
+	//	} else {
+	//		query = query.Select("activity_events.*")
+	//	}
+	//} else {
+	//	query = query.Where("activity_events.field <> ?", actField.Status.Field.String())
+	//}
+
+	if field == "state" {
+		query = query.Select("activity_events.*, round(extract('epoch' from activity_events.created_at - (LAG(activity_events.created_at, 1, \"Issue\".created_at) over (order by activity_events.created_at))) * 1000) as state_lag")
+	} else {
+		// Для остальных случаев state_lag будет NULL
+		query = query.Select("activity_events.*, NULL as state_lag")
+	}
 
 	if field != "" {
-		query = query.Where("ia.field = ?", actField.Status.Field.String())
-		if field == "state" {
-			query = query.Select("ia.*, round(extract('epoch' from ia.created_at - (LAG(ia.created_at, 1, \"Issue\".created_at) over (order by ia.created_at))) * 1000) as state_lag")
-
-		} else {
-			query = query.Select("ia.*")
-		}
+		query = query.Where("activity_events.field = ?", actField.Status.Field.String())
 	} else {
-		query = query.Where("ia.field <> ?", actField.Status.Field.String())
+		query = query.Where("activity_events.field <> ?", actField.Status.Field.String())
 	}
 
 	type fullActivityWithLag struct {
@@ -2962,23 +2980,33 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		StateLag int `json:"state_lag,omitempty" gorm:"state_lag"`
 	}
 
-	toDto := func(fa *fullActivityWithLag) *dto.EntityActivityFull {
+	type events struct {
+		dao.ActivityEvent
+		StateLag *int `json:"state_lag,omitempty" gorm:"state_lag"`
+	}
+
+	toDto := func(fa *events) *dto.ActivityEventFull {
 		if fa == nil {
 			return nil
 		}
 
 		res := fa.ToDTO()
-		res.StateLag = fa.StateLag
+		if fa.StateLag != nil {
+			res.StateLag = *fa.StateLag
+
+		}
 		return res
 	}
 
-	var activities []fullActivityWithLag
-	res, err := dao.PaginationRequest(offset, limit, query, &activities)
+	var activities2 []events
+
+	//var activities []fullActivityWithLag
+	res, err := dao.PaginationRequest(offset, limit, query, &activities2)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	res.Result = utils.SliceToSlice(res.Result.(*[]fullActivityWithLag), func(ea *fullActivityWithLag) dto.EntityActivityFull { return *toDto(ea) })
+	res.Result = utils.SliceToSlice(res.Result.(*[]events), func(ea *events) dto.ActivityEventFull { return *toDto(ea) })
 
 	//res.
 	//return c.JSON(http.StatusOK, res)
