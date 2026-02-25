@@ -117,12 +117,12 @@ func BuildIssueListQuery(
 			}
 		}
 
-		if len(searchParams.Filters.Labels) > 0 {
+		if !searchParams.Filters.Labels.IsEmpty() {
 			q := db.Where("issues.id in (?)", db.
 				Model(&dao.IssueLabel{}).
 				Select("issue_id").
-				Where("label_id in (?)", searchParams.Filters.Labels))
-			if slices.Contains(searchParams.Filters.Labels, "") {
+				Where("label_id in (?)", searchParams.Filters.Labels.Array))
+			if searchParams.Filters.Labels.IncludeEmpty {
 				q = q.Or("issues.id not in (?)", db.
 					Select("issue_id").
 					Model(&dao.IssueLabel{}))
@@ -483,12 +483,12 @@ func GetIssueListData(
 				}
 			}
 
-			if len(searchParams.Filters.Labels) > 0 {
+			if !searchParams.Filters.Labels.IsEmpty() {
 				q := db.Where("issues.id in (?)", db.
 					Model(&dao.IssueLabel{}).
 					Select("issue_id").
-					Where("label_id in (?)", searchParams.Filters.Labels))
-				if slices.Contains(searchParams.Filters.Labels, "") {
+					Where("label_id in (?)", searchParams.Filters.Labels.Array))
+				if searchParams.Filters.Labels.IncludeEmpty {
 					q = q.Or("issues.id not in (?)", db.
 						Select("issue_id").
 						Model(&dao.IssueLabel{}))

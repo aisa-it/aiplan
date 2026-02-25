@@ -54,6 +54,10 @@ docker-compose up -d
 - The application will be available at http://localhost:8080
 - Default user (superuser) email: `DEFAULT_EMAIL`; password: `password123`
 
+## Storage Logic
+
+The system uses Minio/S3 for file storage when configured. If Minio/S3 is unavailable or not configured, it falls back to local file storage using the directory specified in `ASSETS_PATH` (default: `assets`).
+
 ## Application Parameters
 
 | Parameter                     | Description                                                                | Type   |
@@ -64,6 +68,7 @@ docker-compose up -d
 | `AWS_SECRET_ACCESS_KEY`       | minio password                                                             | string |
 | `AWS_S3_ENDPOINT_URL`         | Path to minio                                                              | string |
 | `AWS_S3_BUCKET_NAME`          | Name of the minio bucket                                                   | string |
+| `ASSETS_PATH`                 | Path to local assets directory for file storage (used when Minio/S3 is not configured) | string |
 | `DATABASE_URL`                | DSN of the database                                                        | string |
 | `DEFAULT_EMAIL`               | Email of the standard user (password `password123` at creation)            | string |
 | `EMAIL_ACTIVITY_DISABLED`     | Disabling sending notifications to                                         | bool   |

@@ -60,6 +60,10 @@ docker-compose up -d
 - Приложение будет доступно по адресу http://localhost:8080
 - Пользователь по умолчанию (с правами суперпользователя) email: `DEFAULT_EMAIL`; password: `password123`
 
+## Логика работы хранилища
+
+Система использует Minio/S3 для хранения файлов при наличии конфигурации. Если Minio/S3 недоступен или не настроен, используется локальная файловая система с директорией, указанной в `ASSETS_PATH` (по умолчанию: `assets`).
+
 ## Параметры приложения
 
 | Параметр                    | Описание                                                                   | Тип    |
@@ -70,6 +74,7 @@ docker-compose up -d
 | `AWS_SECRET_ACCESS_KEY`     | Пароль minio                                                               | string |
 | `AWS_S3_ENDPOINT_URL`       | Путь до minio                                                              | string |
 | `AWS_S3_BUCKET_NAME`        | Название бакета minio                                                      | string |
+| `ASSETS_PATH`               | Путь к локальной директории для хранения файлов (используется при отсутствии Minio/S3) | string |
 | `DATABASE_URL`              | DSN базы данных                                                            | string |
 | `DEFAULT_EMAIL`             | Email стандартного пользователя(пароль `password123` при создании)         | string |
 | `EMAIL_ACTIVITY_DISABLED`   | Отключение отправки уведомлений на почту                                   | bool   |
@@ -91,7 +96,7 @@ docker-compose up -d
 | `SESSIONS_DB_PATH`          | Путь до файла сессионной базы                                              | string |
 | `SIGN_UP_ENABLE`            | Включение регистрации в системе                                            | bool   |
 | `DEMO`                      | Демо режим                                                                 | bool   |
-| `SWAGGER`           | Включение Swagger API документации на адрес /api/swagger                   | bool   |
+| `SWAGGER`                   | Включение Swagger API документации на адрес /api/swagger                   | bool   |
 | `NY_ENABLE`                 | Включение новогодней темы                                                  | bool   |
 | `CAPTCHA_DISABLED`          | Отключение капчи                                                           | bool   |
 | `EXTERNAL_LIMITER_URL`      | URL внешнего rate limiter                                                  | string |
@@ -103,6 +108,7 @@ docker-compose up -d
 | `LDAP_FILTER`               | Фильтр для поиска пользователей в LDAP (по умолчанию: `(&(uniqueIdentifier={email}))`) | string |
 | `LDAP_FORCE`                | Принудительная LDAP аутентификация даже если пользователь существует локально | bool   |
 | `MCP_ENABLED`               | Включение Model Context Protocol (MCP)                                     | bool   |
+
 ### Пример настройки nginx SSL
 ```
 server {
