@@ -42,9 +42,10 @@ type ProjectLight struct {
 
 type Project struct {
 	ProjectLight
-	HideFields types.HideFields `json:"hide_fields"`
-	CreatedAt  time.Time        `json:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at"`
+	HideFields types.HideFields      `json:"hide_fields"`
+	CreatedAt  time.Time             `json:"created_at"`
+	UpdatedAt  time.Time             `json:"updated_at"`
+	StatesFlow types.StatesFlowGraph `json:"states_flow"`
 
 	ProjectLead *UserLight `json:"project_lead_detail" extensions:"x-nullable"`
 

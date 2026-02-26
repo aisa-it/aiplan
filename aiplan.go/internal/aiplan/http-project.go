@@ -16,11 +16,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	statesflow "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/states-flow"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
@@ -260,7 +262,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
 }
 
-var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields"}
+var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow"}
 
 // updateProject godoc
 // @id updateProject
@@ -352,6 +354,11 @@ func (s *Services) updateProject(c echo.Context) error {
 	}); err != nil {
 		return EError(c, err)
 	}
+
+	if err := statesflow.ParseGraph(s.db, project.ID, project.StatesFlow); err != nil {
+		return EError(c, err)
+	}
+
 	// Post-update activity tracking
 	newProjectMap := StructToJSONMap(project)
 	if changeProjectLead {
@@ -1644,6 +1651,7 @@ func (s *Services) createIssue(c echo.Context) error {
 	user := *c.(ProjectContext).User
 	workspace := c.(ProjectContext).Workspace
 	project := c.(ProjectContext).Project
+	projectMember := c.(ProjectContext).ProjectMember
 
 	var issue IssueCreateRequest
 	form, _ := c.MultipartForm()
@@ -1690,6 +1698,21 @@ func (s *Services) createIssue(c echo.Context) error {
 		DescriptionStripped: issue.DescriptionStripped,
 		DescriptionType:     issue.DescriptionType,
 		Draft:               issue.Draft,
+	}
+
+	// State flow check
+	if projectMember.Role != types.AdminRole {
+		var state dao.State
+		if err := s.db.Select("from_states").Where("id = ?", issue.StateId).First(&state).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
+			}
+			return EError(c, err)
+		}
+
+		if len(state.FromStates) == 0 || slices.Contains(state.FromStates, uuid.Nil) {
+			return EErrorDefined(c, apierrors.ErrForbiddenState)
+		}
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
