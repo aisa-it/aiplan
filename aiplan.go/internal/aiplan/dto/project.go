@@ -35,17 +35,16 @@ type ProjectLight struct {
 	DefaultAssigneesDetails []ProjectMemberLight `json:"default_assignees_details"`
 	DefaultWatchersDetails  []ProjectMemberLight `json:"default_watchers_details"`
 
-	TotalMembers    int    `json:"total_members,omitempty"`
-	NameHighlighted string `json:"name_highlighted,omitempty"`
+	IssueDeletionAllowed bool   `json:"issue_deletion_allowed"`
+	TotalMembers         int    `json:"total_members,omitempty"`
+	NameHighlighted      string `json:"name_highlighted,omitempty"`
 }
 
 type Project struct {
 	ProjectLight
-	HideFields           types.HideFields `json:"hide_fields"`
-	IssueDeletionAllowed bool             `json:"issue_deletion_allowed"`
-
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	HideFields types.HideFields `json:"hide_fields"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
 
 	ProjectLead *UserLight `json:"project_lead_detail" extensions:"x-nullable"`
 
