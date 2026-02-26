@@ -1684,6 +1684,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/admin/workspaces/{slug}": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет рабочее пространство по его slug. Доступно только суперпользователям или владельцам пространства. Выполняет мягкое удаление с последующим фоновым окончательным удалением.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AdminPanel"
+                ],
+                "summary": "Пространство: удаление рабочего пространства администратором",
+                "operationId": "deleteWorkspaceByAdmin",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Рабочее пространство успешно удалено"
+                    },
+                    "403": {
+                        "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Рабочее пространство не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/change-my-password/": {
             "post": {
                 "security": [
@@ -11438,6 +11491,85 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/available-states": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список статусов, в которые можно перевести текущую задачу. Для администраторов возвращаются все статусы проекта, для остальных пользователей — только те статусы, которые разрешены правилами перехода из текущего статуса задачи.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Issues StatesFlow"
+                ],
+                "summary": "Задачи: получение доступных статусов",
+                "operationId": "getAvailableStates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Словарь доступных статусов, где ключ — ID статуса",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/dto.StateLight"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/blockers-issues/available": {
             "get": {
                 "security": [
@@ -21070,6 +21202,9 @@ const docTemplate = `{
                 "is_favorite": {
                     "type": "boolean"
                 },
+                "issue_deletion_allowed": {
+                    "type": "boolean"
+                },
                 "logo": {
                     "type": "string",
                     "x-nullable": true
@@ -21093,6 +21228,9 @@ const docTemplate = `{
                 },
                 "public": {
                     "type": "boolean"
+                },
+                "states_flow": {
+                    "$ref": "#/definitions/types.StatesFlowGraph"
                 },
                 "total_members": {
                     "type": "integer"
@@ -21185,6 +21323,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "is_favorite": {
+                    "type": "boolean"
+                },
+                "issue_deletion_allowed": {
                     "type": "boolean"
                 },
                 "logo": {
@@ -22743,6 +22884,48 @@ const docTemplate = `{
                 }
             }
         },
+        "types.FlowEdge": {
+            "type": "object",
+            "properties": {
+                "animated": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.FlowNode": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "object",
+                    "properties": {
+                        "x": {
+                            "type": "integer"
+                        },
+                        "y": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "types.FormAnswerNotify": {
             "type": "object",
             "properties": {
@@ -22840,10 +23023,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "labels": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "only_active": {
                     "type": "boolean"
@@ -23035,6 +23215,23 @@ const docTemplate = `{
                 },
                 "pending": {
                     "type": "integer"
+                }
+            }
+        },
+        "types.StatesFlowGraph": {
+            "type": "object",
+            "properties": {
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FlowEdge"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FlowNode"
+                    }
                 }
             }
         },

@@ -295,7 +295,6 @@ func (c *ImportContext) getUser(accountId string) (dao.User, error) {
 	if err := query.First(&DBUser).Error; err != nil {
 		return c.translateUser(user), nil
 	}
-	//fmt.Println(user.AccountID, user.EmailAddress, user.Name, "===", DBUser.Email, *DBUser.Username)
 
 	return DBUser, nil
 }
