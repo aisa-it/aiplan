@@ -1239,10 +1239,13 @@ func (s *Services) updateIssue(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq} [delete]
 func (s *Services) deleteIssue(c echo.Context) error {
 	user := *c.(IssueContext).User
-	//project := c.(IssueContext).Project
+	projectMember := c.(IssueContext).ProjectMember
 	issue := c.(IssueContext).Issue
+	project := c.(IssueContext).Project
 	//currentInst := StructToJSONMap(issue)
-	if c.(IssueContext).ProjectMember.Role != types.AdminRole && issue.CreatedById != user.ID {
+	isAdmin := projectMember.Role == types.AdminRole
+
+	if !isAdmin && (issue.CreatedById != user.ID || !project.IssueDeletionAllowed) {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
 
