@@ -1234,11 +1234,7 @@ func (s *Services) deleteIssue(c echo.Context) error {
 	//currentInst := StructToJSONMap(issue)
 	isAdmin := projectMember.Role == types.AdminRole
 
-	if !isAdmin && issue.CreatedById != user.ID {
-		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
-	}
-
-	if !isAdmin && !project.IssueDeletionAllowed {
+	if !isAdmin && (issue.CreatedById != user.ID || !project.IssueDeletionAllowed) {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
 

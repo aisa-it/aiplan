@@ -148,6 +148,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		DefaultAssigneesDetails: utils.SliceToSlice(&project.DefaultAssigneesDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
 		DefaultWatchersDetails:  utils.SliceToSlice(&project.DefaultWatchersDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
 		CurrentUserMembership:   project.CurrentUserMembership.ToLightDTO(),
+		IssueDeletionAllowed:    project.IssueDeletionAllowed,
 	}
 }
 
@@ -182,13 +183,11 @@ func (pwc *ProjectWithCount) ToDTO() *dto.Project {
 		return nil
 	}
 	return &dto.Project{
-		ProjectLight:         *pwc.ToLightDTO(),
-		HideFields:           pwc.HideFields,
-		IssueDeletionAllowed: pwc.IssueDeletionAllowed,
-		CreatedAt:            pwc.CreatedAt,
-		UpdatedAt:            pwc.UpdatedAt,
-		ProjectLead:          pwc.ProjectLead.ToLightDTO(),
-		Workspace:            pwc.Workspace.ToLightDTO(),
+		ProjectLight: *pwc.ToLightDTO(),
+		CreatedAt:    pwc.CreatedAt,
+		UpdatedAt:    pwc.UpdatedAt,
+		ProjectLead:  pwc.ProjectLead.ToLightDTO(),
+		Workspace:    pwc.Workspace.ToLightDTO(),
 	}
 }
 
