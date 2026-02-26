@@ -250,6 +250,7 @@ var (
 	ErrIssueTargetDateExp              = DefinedError{Code: 4024, StatusCode: http.StatusBadRequest, Err: "the date has already passed", RuErr: "Заданная дата уже прошла"}
 	ErrIssueCommentEmpty               = DefinedError{Code: 4025, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
 	ErrLabelNotEmptyCannotDelete       = DefinedError{Code: 4026, StatusCode: http.StatusBadRequest, Err: "the label is not empty, only empty label can be deleted", RuErr: "Удаление тега, установленного для задачи, невозможно"}
+	ErrForbiddenState                  = DefinedError{Code: 4100, StatusCode: http.StatusBadRequest, Err: "state-flow blocks this change", RuErr: "Попытка установить статус не соответствующий бизнес-процессу"}
 
 	// 45** - property template errors
 	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
