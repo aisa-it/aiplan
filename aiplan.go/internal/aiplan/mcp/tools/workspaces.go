@@ -240,7 +240,10 @@ func getWorkspaceDocs(ctx context.Context, db *gorm.DB, bl *business.Business, u
 func getWorkspaceProjects(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
-	workspaceIdOrSlug := args["workspace_id"].(string)
+	workspaceIdOrSlug, ok := args["workspace_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("workspace_id обязателен"), nil
+	}
 
 	offset := 0
 	limit := 100
