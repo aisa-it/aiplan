@@ -40,12 +40,13 @@ func main() {
 	noTranslateFlag := flag.Bool("noTranslate", false, "Turn off BD errors translate")
 	paramQueries := flag.Bool("paramQueries", true, "Mask queries params in log")
 	noMigration := flag.Bool("noMigration", false, "Turn off DB migration")
+	configPath := flag.String("configPath", "", "Path of json config file, empty if disabled configoration via json file")
 	trace := flag.Bool("trace", false, "Verbose logs and sql trace")
 	flag.Parse()
 
 	PrintBanner()
 
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig(*configPath)
 	dao.Config = cfg
 
 	if *trace {

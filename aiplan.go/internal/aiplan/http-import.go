@@ -132,7 +132,7 @@ func (s *Services) startJiraImport(c echo.Context) error {
 	}
 
 	context, err := s.importService.StartJiraProjectImport(
-		cfg.WebURL,
+		cfg.WebURL.URL,
 		*user,
 		req.Username, req.Token, req.JiraURL,
 		projectKey,

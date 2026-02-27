@@ -3468,7 +3468,7 @@ func (s *Services) getIssuePdf(c echo.Context) error {
 	c.Response().Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s.pdf", issue.String()))
 
 	var buf bytes.Buffer
-	if err := export.IssueToFPDF(&issue, cfg.WebURL, &buf); err != nil {
+	if err := export.IssueToFPDF(&issue, cfg.WebURL.URL, &buf); err != nil {
 		return EError(c, err)
 	}
 

@@ -12,7 +12,7 @@ import (
 )
 
 func TestPopulateFKs(t *testing.T) {
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig("")
 
 	db, _ := gorm.Open(postgres.New(postgres.Config{
 		DSN: cfg.DatabaseDSN,
@@ -26,7 +26,7 @@ func TestPopulateFKs(t *testing.T) {
 }
 
 func TestReplace(t *testing.T) {
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig("")
 
 	db, _ := gorm.Open(postgres.New(postgres.Config{
 		DSN: cfg.DatabaseDSN,

@@ -145,7 +145,7 @@ func (form *Form) AfterFind(tx *gorm.DB) error {
 	if form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types.AdminRole {
 		raw = fmt.Sprintf("/%s/forms/%s/", form.WorkspaceId.String(), form.Slug)
 		u, _ := url.Parse(raw)
-		form.URL = Config.WebURL.ResolveReference(u)
+		form.URL = Config.WebURL.URL.ResolveReference(u)
 	} else {
 		form.SetUrl()
 	}
@@ -157,11 +157,11 @@ func (form *Form) SetUrl() {
 	var u *url.URL
 	if form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types.AdminRole {
 		u, _ = url.Parse(fmt.Sprintf("/%s/forms/%s/", form.WorkspaceId.String(), form.Slug))
-		form.URL = Config.WebURL.ResolveReference(u)
+		form.URL = Config.WebURL.URL.ResolveReference(u)
 	} else {
 		u, _ = url.Parse(fmt.Sprintf("/f/%s/", form.Slug))
 	}
-	form.URL = Config.WebURL.ResolveReference(u)
+	form.URL = Config.WebURL.URL.ResolveReference(u)
 }
 
 // BeforeSave - Преобразует значения полей формы, чтобы предотвратить XSS-атаки и корректно отображать данные.  Применяет санитацию для полей типа textarea и input.

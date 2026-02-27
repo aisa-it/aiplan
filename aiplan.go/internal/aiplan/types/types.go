@@ -1135,14 +1135,29 @@ func (fn *FormAnswerNotify) Scan(value interface{}) error {
 }
 
 type JsonURL struct {
-	Url *url.URL `swaggertype:"string" format:"uri"`
+	URL *url.URL `swaggertype:"string" format:"uri"`
 }
 
-func (u *JsonURL) MarshalJSON() ([]byte, error) {
-	if u == nil || u.Url == nil {
+func (u JsonURL) MarshalJSON() ([]byte, error) {
+	if u.URL == nil {
 		return []byte("null"), nil
 	}
-	return []byte("\"" + u.Url.String() + "\""), nil
+	return []byte("\"" + u.URL.String() + "\""), nil
+}
+
+func (d *JsonURL) UnmarshalJSON(b []byte) error {
+	rawUrl := string(b)
+	if rawUrl == "null" || rawUrl == "" {
+		*d = JsonURL{}
+		return nil
+	}
+
+	u, err := url.Parse(rawUrl[1 : len(b)-1])
+	if err != nil {
+		return fmt.Errorf("unmarshal json url: %e", err)
+	}
+	*d = JsonURL{u}
+	return nil
 }
 
 type IssueStatus int

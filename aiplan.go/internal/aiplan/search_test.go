@@ -30,7 +30,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig("")
 
 	e = echo.New()
 
