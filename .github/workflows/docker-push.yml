@@ -66,6 +66,10 @@ jobs:
           git checkout main
           npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/internal/aiplan/docs/swagger.json -o ./src/ -n aiplan-api.ts
           git add .
+          if git diff --cached --quiet; then
+            echo "No API changes detected, skipping commit"
+            exit 0
+          fi
           git commit -m "new generated API version"
           yarn version --minor
           git push origin main
