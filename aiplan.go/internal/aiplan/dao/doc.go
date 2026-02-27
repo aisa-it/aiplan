@@ -247,13 +247,13 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 func (d *Doc) SetUrl() {
 	raw := fmt.Sprintf("/%s/aidoc/%s", d.WorkspaceId.String(), d.ID)
 	u, _ := url.Parse(raw)
-	d.URL = Config.WebURL.ResolveReference(u)
+	d.URL = Config.WebURL.URL.ResolveReference(u)
 
 	if d.Workspace != nil {
 		ref, _ := url.Parse(fmt.Sprintf("/d/%s/%s",
 			d.Workspace.Slug,
 			d.ID))
-		d.ShortURL = Config.WebURL.ResolveReference(ref)
+		d.ShortURL = Config.WebURL.URL.ResolveReference(ref)
 	}
 }
 
@@ -484,7 +484,7 @@ func (dc DocComment) GetRedactorHtml() types.RedactorHTML {
 func (dc *DocComment) AfterFind(tx *gorm.DB) error {
 	raw := fmt.Sprintf("/api/auth/workspaces/%s/doc/%s/comments/%s/", dc.WorkspaceId.String(), dc.DocId.String(), dc.Id)
 	u, _ := url.Parse(raw)
-	dc.URL = Config.WebURL.ResolveReference(u)
+	dc.URL = Config.WebURL.URL.ResolveReference(u)
 
 	reactionCounts := make(map[string]int)
 	for _, reaction := range dc.Reactions {

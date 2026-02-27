@@ -115,7 +115,7 @@ func (s *Sprint) AfterFind(tx *gorm.DB) error {
 func (s *Sprint) SetUrl() {
 	raw := fmt.Sprintf("/%s/sprints/%d", s.WorkspaceId.String(), s.SequenceId)
 	u, _ := url.Parse(raw)
-	s.URL = Config.WebURL.ResolveReference(u)
+	s.URL = Config.WebURL.URL.ResolveReference(u)
 }
 
 func (s *Sprint) GetFullName() string {
@@ -204,7 +204,7 @@ func (s *Sprint) ToLightDTO() *dto.SprintLight {
 		Name:        s.Name,
 		SequenceId:  s.SequenceId,
 		Description: s.Description,
-		Url:         types.JsonURL{Url: s.URL},
+		Url:         types.JsonURL{URL: s.URL},
 		//ShortUrl:   types.JsonURL{},
 		StartDate: utils.SqlNullTimeToPointerTime(s.StartDate),
 		EndDate:   utils.SqlNullTimeToPointerTime(s.EndDate),

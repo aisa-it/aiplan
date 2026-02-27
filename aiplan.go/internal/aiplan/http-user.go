@@ -121,8 +121,8 @@ func (s *Services) AddUserServices(g *echo.Group) {
 
 	g.GET("jitsi-url/", func(c echo.Context) error {
 		u := "meet.jit.si" // fallback to jitsi instance
-		if cfg.JitsiURL != nil {
-			u = cfg.JitsiURL.Host
+		if cfg.JitsiURL.URL != nil {
+			u = cfg.JitsiURL.URL.Host
 		}
 		return c.JSON(http.StatusOK, map[string]string{"url": u})
 	})
@@ -914,7 +914,7 @@ func (s *Services) confirmEmail(c echo.Context) error {
 	token := c.Param("token")
 
 	ref, _ := url.Parse("/not-found")
-	ErrPath := cfg.WebURL.ResolveReference(ref)
+	ErrPath := cfg.WebURL.URL.ResolveReference(ref)
 
 	jwtToken, errJwt := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -981,7 +981,7 @@ func (s *Services) confirmEmail(c echo.Context) error {
 	}
 
 	refSignIn, _ := url.Parse("/signin")
-	path := cfg.WebURL.ResolveReference(refSignIn)
+	path := cfg.WebURL.URL.ResolveReference(refSignIn)
 
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }

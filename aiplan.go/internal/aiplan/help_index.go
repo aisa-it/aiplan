@@ -38,7 +38,7 @@ func NewHelpIndex(root string) func(echo.Context) error {
 func resolveHelpURL(root string, pages []*HelpPage) {
 	for i, sub := range pages {
 		ref, _ := url.Parse(filepath.Join("/api/docs/", strings.TrimPrefix(sub.FullPath, root)))
-		pages[i].FullPath = cfg.WebURL.ResolveReference(ref).String()
+		pages[i].FullPath = cfg.WebURL.URL.ResolveReference(ref).String()
 
 		if len(sub.SubPages) > 0 {
 			resolveHelpURL(root, sub.SubPages)

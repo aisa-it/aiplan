@@ -9,7 +9,7 @@ import (
 )
 
 func TestGetChecksum(t *testing.T) {
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig("")
 
 	s, err := NewMinioStorage(cfg.AWSEndpoint, cfg.AWSAccessKey, cfg.AWSSecretKey, false, cfg.AWSBucketName)
 	assert.NoError(t, err)

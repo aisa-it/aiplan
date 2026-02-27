@@ -116,7 +116,7 @@ func (s *LocalStorage) GetTUSHandler(cfg *config.Config, baseUrl string, uploadV
 
 	basePath, _ := url.Parse(baseUrl)
 	handler, err := tusd.NewHandler(tusd.Config{
-		BasePath:                cfg.WebURL.ResolveReference(basePath).String(),
+		BasePath:                cfg.WebURL.URL.ResolveReference(basePath).String(),
 		StoreComposer:           composer,
 		DisableDownload:         true,
 		NotifyCompleteUploads:   true,
@@ -262,7 +262,7 @@ func (s *MinioStorage) GetTUSHandler(
 
 	basePath, _ := url.Parse(baseUrl)
 	handler, err := tusd.NewHandler(tusd.Config{
-		BasePath:                cfg.WebURL.ResolveReference(basePath).String(),
+		BasePath:                cfg.WebURL.URL.ResolveReference(basePath).String(),
 		StoreComposer:           composer,
 		DisableDownload:         true,
 		NotifyCompleteUploads:   true,

@@ -265,7 +265,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 	}
 
 	// Генерируем clone URL
-	cloneURL := fmt.Sprintf("git@%s:%s/%s.git", cfg.WebURL.Host, workspace.Slug, req.Name)
+	cloneURL := fmt.Sprintf("git@%s:%s/%s.git", cfg.WebURL.URL.Host, workspace.Slug, req.Name)
 
 	slog.Info("Git repository created",
 		"workspace", workspace.Slug,
@@ -379,7 +379,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 	for _, repo := range repos {
 		// Генерация clone URL
 		// Используем host из WebURL для формирования SSH clone URL
-		host := cfg.WebURL.Host
+		host := cfg.WebURL.URL.Host
 		if host == "" {
 			host = "localhost"
 		}
@@ -536,7 +536,7 @@ func (s *Services) getGitSSHConfig(c echo.Context) error {
 	_ = c.(AuthContext).User
 
 	// Получаем hostname из WebURL
-	sshHost := cfg.WebURL.Host
+	sshHost := cfg.WebURL.URL.Host
 	if sshHost == "" {
 		sshHost = "localhost"
 	}

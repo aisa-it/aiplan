@@ -372,7 +372,7 @@ func (project *Project) SetUrl() {
 	if err != nil {
 		slog.Error("Parse issue url", "url", raw, "err", err)
 	}
-	project.URL = Config.WebURL.ResolveReference(u)
+	project.URL = Config.WebURL.URL.ResolveReference(u)
 }
 
 // BeforeDelete Обновляет информацию о проекте перед его удалением.  Проверяет, является ли проект активным для текущего пользователя и удаляет его, если это так.  Также удаляет связанные данные, такие как оценки, рабочие пространства и участники проекта.
