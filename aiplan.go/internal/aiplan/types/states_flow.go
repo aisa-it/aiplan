@@ -10,8 +10,8 @@ import (
 )
 
 type StatesFlowGraph struct {
-	Nodes []FlowNode
-	Edges []FlowEdge
+	Nodes []FlowNode `json:"nodes"`
+	Edges []FlowEdge `json:"edges"`
 }
 
 type FlowNode struct {
@@ -39,7 +39,7 @@ func (fn StatesFlowGraph) Value() (driver.Value, error) {
 	return b, nil
 }
 
-func (fn *StatesFlowGraph) Scan(value interface{}) error {
+func (fn *StatesFlowGraph) Scan(value any) error {
 	if value == nil {
 		*fn = StatesFlowGraph{}
 		return nil
