@@ -1710,9 +1710,10 @@ func (s *Services) createIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if len(state.FromStates) == 0 || slices.Contains(state.FromStates, uuid.Nil) {
+		if len(state.FromStates) > 0 && !slices.Contains(state.FromStates, uuid.Nil) {
 			return EErrorDefined(c, apierrors.ErrForbiddenState)
 		}
+
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
