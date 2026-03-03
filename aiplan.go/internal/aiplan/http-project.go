@@ -409,14 +409,9 @@ func (s *Services) getProject(c echo.Context) error {
 func (s *Services) deleteProject(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-	projectMember := c.(ProjectContext).ProjectMember
-	workspace := c.(ProjectContext).Workspace
 	workspaceMember := c.(ProjectContext).WorkspaceMember
 
-	s.business.ProjectCtx(c, user, &project, &projectMember, &workspace, &workspaceMember)
-	defer s.business.ProjectCtxClean()
-
-	if err := s.business.DeleteProject(); err != nil {
+	if err := s.business.DeleteProject(user, &project, &workspaceMember); err != nil {
 		return EError(c, err)
 	}
 
@@ -951,7 +946,6 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 	projectMember := c.(ProjectContext).ProjectMember
-	workspace := c.(ProjectContext).Workspace
 	workspaceMember := c.(ProjectContext).WorkspaceMember
 	memberId := c.Param("memberId")
 
@@ -972,10 +966,7 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotUpdateWorkspaceAdmin)
 	}
 
-	s.business.ProjectCtx(c, user, &project, &projectMember, &workspace, &workspaceMember)
-	defer s.business.ProjectCtxClean()
-
-	if err := s.business.DeleteProjectMember(&projectMember, &requestedMember); err != nil {
+	if err := s.business.DeleteProjectMember(&projectMember, &requestedMember, user, &project, &workspaceMember); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -1710,10 +1701,9 @@ func (s *Services) createIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if len(state.FromStates) > 0 && !slices.Contains(state.FromStates, uuid.Nil) {
+		if len(state.FromStates.Array) > 0 && !slices.Contains(state.FromStates.Array, uuid.Nil) {
 			return EErrorDefined(c, apierrors.ErrForbiddenState)
 		}
-
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {

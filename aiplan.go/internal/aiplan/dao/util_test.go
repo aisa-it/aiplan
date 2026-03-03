@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -37,6 +39,14 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 	os.Exit(code)
+}
+
+func TestUUIDArray(t *testing.T) {
+	u := types.UUIDArray{Array: []uuid.UUID{uuid.Nil, uuid.Must(uuid.NewV4())}}
+	fmt.Println(db.Exec("update states set from_states=? where id = 'f933ecb2-aa05-4839-a9d3-bc952bdca951'", u).Error)
+	var uu types.UUIDArray
+	require.NoError(t, db.Select("from_states").Model(&State{}).Where("id = 'f933ecb2-aa05-4839-a9d3-bc952bdca951'").Find(&uu).Error)
+	fmt.Println(uu)
 }
 
 func TestReplaceType(t *testing.T) {

@@ -13,7 +13,6 @@ type Business struct {
 
 	tracker *tracker.ActivitiesTracker
 
-	projectCtx   *ProjectCtx
 	workspaceCtx *WorkspaceCtx
 }
 

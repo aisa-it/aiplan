@@ -832,8 +832,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 		// Check state flow
 		if projectMember.Role != types.AdminRole && // Админ может переводить в любой статус
-			len(newState.FromStates) > 0 && // Если указаны возможные предыдущие статусы
-			!slices.Contains(newState.FromStates, oldIssue.StateId) { // Проверяем наличие старого статуса в списке возможных предыдущих
+			len(newState.FromStates.Array) > 0 && // Если указаны возможные предыдущие статусы
+			!slices.Contains(newState.FromStates.Array, oldIssue.StateId) { // Проверяем наличие старого статуса в списке возможных предыдущих
 			return EErrorDefined(c, apierrors.ErrForbiddenState)
 		}
 

@@ -12,41 +12,16 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-type ProjectCtx struct {
-	c               echo.Context
-	user            *dao.User
-	project         *dao.Project
-	projectMember   *dao.ProjectMember
-	workspace       *dao.Workspace
-	workspaceMember *dao.WorkspaceMember
-}
-
-func (b *Business) ProjectCtx(c echo.Context, user *dao.User, project *dao.Project, projectMember *dao.ProjectMember, workspace *dao.Workspace, workspaceMember *dao.WorkspaceMember) {
-	b.projectCtx = &ProjectCtx{
-		c:               c,
-		user:            user,
-		project:         project,
-		projectMember:   projectMember,
-		workspace:       workspace,
-		workspaceMember: workspaceMember,
-	}
-}
-
-func (b *Business) ProjectCtxClean() {
-	b.projectCtx = nil
-}
-
-func (b *Business) DeleteProject() error {
-	if !b.projectCtx.user.IsSuperuser && b.projectCtx.user.ID != b.projectCtx.project.ProjectLeadId && b.projectCtx.workspaceMember.Role != types.AdminRole {
+func (b *Business) DeleteProject(user *dao.User, project *dao.Project, workspaceMember *dao.WorkspaceMember) error {
+	if !user.IsSuperuser && user.ID != project.ProjectLeadId && workspaceMember.Role != types.AdminRole {
 		return apierrors.ErrDeleteProjectForbidden
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](b.tracker, activities.EntityDeleteActivity, nil, nil, *b.projectCtx.project, b.projectCtx.user)
+	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](b.tracker, activities.EntityDeleteActivity, nil, nil, *project, user)
 	if err != nil {
 		errStack.GetError(nil, err)
 		return err
@@ -56,7 +31,7 @@ func (b *Business) DeleteProject() error {
 	{
 		// delete DeferredNotifications & activities
 		if err := b.db.
-			Where("project_id = ?", b.projectCtx.project.ID).
+			Where("project_id = ?", project.ID).
 			Unscoped().
 			Delete(&dao.DeferredNotifications{}).Error; err != nil {
 			return err
@@ -78,7 +53,7 @@ func (b *Business) DeleteProject() error {
 
 		for _, model := range activityTables {
 			queries = append(queries, b.db.Select("id").
-				Where("project_id = ?", b.projectCtx.project.ID).
+				Where("project_id = ?", project.ID).
 				Model(&model))
 		}
 
@@ -89,7 +64,7 @@ func (b *Business) DeleteProject() error {
 
 		for _, model := range activityTables {
 			if err := b.db.
-				Where("project_id = ?", b.projectCtx.project.ID).
+				Where("project_id = ?", project.ID).
 				Unscoped().
 				Delete(model).Error; err != nil {
 				return err
@@ -97,13 +72,17 @@ func (b *Business) DeleteProject() error {
 		}
 
 		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-		if err := b.db.Model(&dao.WorkspaceActivity{}).Where("new_identifier = ? OR old_identifier = ?", b.projectCtx.project.ID, b.projectCtx.project.ID).Updates(cleanId).Error; err != nil {
+		if err := b.db.Model(&dao.WorkspaceActivity{}).Where("new_identifier = ? OR old_identifier = ?", project.ID, project.ID).Updates(cleanId).Error; err != nil {
 			return err
 		}
 
 	}
 
-	if err := b.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Delete(&b.projectCtx.project).Error; err != nil {
+	if err := b.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Delete(&project).Error; err != nil {
+		return err
+	}
+
+	if err := b.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("project_id = ?", project.ID).Delete(&dao.Issue{}).Error; err != nil {
 		return err
 	}
 
@@ -112,12 +91,12 @@ func (b *Business) DeleteProject() error {
 		if err := b.db.Unscoped().Delete(&project).Error; err != nil {
 			slog.Error("Hard delete project", "projectId", project.ID, "err", err)
 		}
-	}(*b.projectCtx.project)
+	}(*project)
 
 	return nil
 }
 
-func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember *dao.ProjectMember) error {
+func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember *dao.ProjectMember, user *dao.User, project *dao.Project, workspaceMember *dao.WorkspaceMember) error {
 	var isWorkspaceAdmin bool
 
 	if actor.MemberId != requestedMember.MemberId {
@@ -173,7 +152,7 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 			return nil
 		}); err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return b.DeleteProject()
+				return b.DeleteProject(user, project, workspaceMember)
 			} else {
 				return err
 			}

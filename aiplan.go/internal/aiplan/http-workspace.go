@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -525,13 +526,18 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Soft-delete issues
+	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Issue{}).Error; err != nil {
+		return err
+	}
+
 	// Workspaces will be hard deleted by cron
 	// Start hard deleting in foreground
-	/*go func(workspace dao.Workspace) {
+	go func(workspace dao.Workspace) {
 		if err := s.db.Unscoped().Delete(&workspace).Error; err != nil {
 			slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
 		}
-	}(workspace)*/
+	}(workspace)
 
 	return c.NoContent(http.StatusOK)
 }

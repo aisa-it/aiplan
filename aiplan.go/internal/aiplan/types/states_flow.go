@@ -19,8 +19,8 @@ type FlowNode struct {
 	Type     string    `json:"type,omitempty"`
 	Label    string    `json:"label,omitempty"`
 	Position struct {
-		X int `json:"x"`
-		Y int `json:"y"`
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
 	} `json:"position"`
 }
 
