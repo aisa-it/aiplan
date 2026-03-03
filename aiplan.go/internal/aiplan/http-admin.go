@@ -349,6 +349,11 @@ func (s *Services) deleteWorkspaceByAdmin(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Soft-delete issues
+	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Issue{}).Error; err != nil {
+		return err
+	}
+
 	// Workspaces will be hard deleted by cron
 	// Start hard deleting in foreground
 	go func(workspace dao.Workspace) {

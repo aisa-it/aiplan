@@ -63,15 +63,9 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 	for _, member := range projectMembers {
 		actorPM := actorMap[member.ProjectId]
 
-		b.ProjectCtx(b.workspaceCtx.c, actor.Member, member.Project, &actorPM,
-			b.workspaceCtx.workspace, b.workspaceCtx.workspaceMember)
-
-		if err := b.DeleteProjectMember(&actorPM, &member); err != nil {
-			b.ProjectCtxClean()
+		if err := b.DeleteProjectMember(&actorPM, &member, actor.Member, member.Project, b.workspaceCtx.workspaceMember); err != nil {
 			return err
 		}
-
-		b.ProjectCtxClean()
 	}
 
 	data := map[string]interface{}{

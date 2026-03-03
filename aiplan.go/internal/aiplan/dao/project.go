@@ -75,7 +75,7 @@ type Project struct {
 
 	URL *url.URL `json:"-" gorm:"-"`
 
-	StatesFlow types.StatesFlowGraph `gorm:"type:jsonb"`
+	StatesFlow types.StatesFlowGraph `json:"states_flow" gorm:"type:jsonb"`
 
 	Workspace               *Workspace      `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	ProjectLead             *User           `json:"project_lead_detail" gorm:"foreignKey:ProjectLeadId" extensions:"x-nullable"`
@@ -1064,7 +1064,7 @@ type State struct {
 	Group    string `json:"group" gorm:"uniqueIndex:unique_state_idx,priority:2"`
 	Default  bool   `json:"default"`
 
-	FromStates []uuid.UUID `gorm:"type:uuid[]"`
+	FromStates types.UUIDArray `gorm:"type:uuid[]"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 

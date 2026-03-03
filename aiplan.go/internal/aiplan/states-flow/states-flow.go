@@ -15,7 +15,7 @@ func ParseGraph(db *gorm.DB, projectId uuid.UUID, graph types.StatesFlowGraph) e
 
 	statesMap := make(map[uuid.UUID]dao.State, len(states))
 	for _, state := range states {
-		state.FromStates = make([]uuid.UUID, 0)
+		state.FromStates = types.UUIDArray{}
 		statesMap[state.ID] = state
 	}
 
@@ -24,7 +24,7 @@ func ParseGraph(db *gorm.DB, projectId uuid.UUID, graph types.StatesFlowGraph) e
 		if !ok {
 			continue
 		}
-		targetState.FromStates = append(targetState.FromStates, edge.Source)
+		targetState.FromStates.Array = append(targetState.FromStates.Array, edge.Source)
 		statesMap[edge.Target] = targetState
 	}
 

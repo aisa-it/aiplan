@@ -1283,3 +1283,40 @@ func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.D
 	}
 	return query
 }
+
+type UUIDArray struct {
+	Array []uuid.UUID
+}
+
+func (a UUIDArray) Value() (driver.Value, error) {
+	var b strings.Builder
+	b.Grow(1 + len(a.Array) + 36*len(a.Array)) // {} + len(a)-1 commas + len(a) ids
+	b.WriteString("{")
+	b.WriteString(a.Array[0].String())
+	for _, id := range a.Array[1:] {
+		b.WriteString(",")
+		b.WriteString(id.String())
+	}
+	b.WriteString("}")
+	return b.String(), nil
+}
+
+func (a *UUIDArray) Scan(value any) (err error) {
+	rawArray, ok := value.(string)
+	if !ok {
+		return errors.New("unsupported value type")
+	}
+	aa := strings.Split(rawArray[1:len(rawArray)-1], ",")
+	a.Array = make([]uuid.UUID, len(aa))
+	for i, id := range aa {
+		a.Array[i], err = uuid.FromString(id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (UUIDArray) GormDataType() string {
+	return "uuid[]"
+}
