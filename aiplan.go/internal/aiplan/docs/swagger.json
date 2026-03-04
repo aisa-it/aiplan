@@ -1677,6 +1677,60 @@
             }
         },
         "/api/auth/admin/workspaces/{slug}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о рабочем пространстве по его slug или ID. Доступно только суперпользователям.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AdminPanel"
+                ],
+                "summary": "Пространство: получение рабочего пространства администратором",
+                "operationId": "getWorkspaceByAdmin",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug или ID рабочего пространства",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Информация о рабочем пространстве",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Workspace"
+                        }
+                    },
+                    "403": {
+                        "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Рабочее пространство не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "security": [
                     {
