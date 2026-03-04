@@ -1258,7 +1258,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) LIKE ? OR name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
+		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
 	}
 
 	query = query.Where("id in (?)",
@@ -1892,7 +1892,7 @@ func (s *Services) getSearchFilterList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) like ? or name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
+		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
 	}
 
 	var filters []dao.SearchFilter

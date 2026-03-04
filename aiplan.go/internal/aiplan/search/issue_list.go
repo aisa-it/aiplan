@@ -284,8 +284,8 @@ func BuildIssueListQuery(
 	// Rank count
 	if searchParams.Filters.SearchQuery != "" {
 		searchSelects := []string{
-			"ts_headline('russian', issues.name, plainto_tsquery('russian', ?)) as name_highlighted",
-			"ts_headline('russian', issues.description_stripped, plainto_tsquery('russian', ?), 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted",
+			"ts_headline('russian', issues.name, websearch_to_tsquery('russian', ?)) as name_highlighted",
+			"ts_headline('russian', issues.description_stripped, websearch_to_tsquery('russian', ?), 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted",
 			"calc_rank(tokens, p.identifier, issues.sequence_id, ?) as ts_rank",
 		}
 		searchInterface := []interface{}{
@@ -625,8 +625,8 @@ func GetIssueListData(
 		// Rank count
 		if searchParams.Filters.SearchQuery != "" {
 			searchSelects := []string{
-				"ts_headline('russian', issues.name, plainto_tsquery('russian', ?)) as name_highlighted",
-				"ts_headline('russian', issues.description_stripped, plainto_tsquery('russian', ?), 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted",
+				"ts_headline('russian', issues.name, websearch_to_tsquery('russian', ?)) as name_highlighted",
+				"ts_headline('russian', issues.description_stripped, websearch_to_tsquery('russian', ?), 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted",
 				"calc_rank(tokens, p.identifier, issues.sequence_id, ?) as ts_rank",
 			}
 			searchInterface := []interface{}{

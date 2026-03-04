@@ -16,15 +16,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -138,6 +134,7 @@ func (s *Services) AddAdminServices(g *echo.Group) {
 	staffPermissionGroup.GET("activities/", s.geRootActivityList)
 
 	workspacesGroup.GET("", s.getAllWorkspaceList)
+	workspacesGroup.GET(":slug/", s.getWorkspaceByAdmin)
 	workspacesGroup.DELETE(":slug/", s.deleteWorkspaceByAdmin)
 
 	projectsGroup.GET("", s.getWorkspaceProjectList)
@@ -216,7 +213,7 @@ func (s *Services) getAllWorkspaceList(c echo.Context) error {
 	}
 
 	query := s.db.Preload(clause.Associations).
-		Select("*, (?) as total_members, (?) as total_projects, (ts_rank(name_tokens, plainto_tsquery('russian', lower(?)))) as search_rank, ts_headline('russian', name, plainto_tsquery('russian', lower(?))) as name_highlighted",
+		Select("*, (?) as total_members, (?) as total_projects, (ts_rank(name_tokens, websearch_to_tsquery('russian', lower(?)))) as search_rank, ts_headline('russian', name, websearch_to_tsquery('russian', lower(?))) as name_highlighted",
 			s.db.Select("count(*)").Where("workspace_id = workspaces.id").Model(&dao.WorkspaceMember{}),
 			s.db.Select("count(*)").Where("workspace_id = workspaces.id").Model(&dao.Project{}),
 			searchQuery,
@@ -229,7 +226,7 @@ func (s *Services) getAllWorkspaceList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) like ? or name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery)).Order("search_rank desc")
+		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery)).Order("search_rank desc")
 	}
 
 	var workspaces []dao.WorkspaceWithCount
@@ -245,6 +242,43 @@ func (s *Services) getAllWorkspaceList(c echo.Context) error {
 	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.WorkspaceWithCount), func(wwc *dao.WorkspaceWithCount) dto.WorkspaceWithCount { return *wwc.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+// getWorkspaceByAdmin godoc
+// @id getWorkspaceByAdmin
+// @Summary Пространство: получение рабочего пространства администратором
+// @Description Возвращает информацию о рабочем пространстве по его slug или ID. Доступно только суперпользователям.
+// @Tags AdminPanel
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param slug path string true "Slug или ID рабочего пространства"
+// @Success 200 {object} dto.Workspace "Информация о рабочем пространстве"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/admin/workspaces/{slug} [get]
+func (s *Services) getWorkspaceByAdmin(c echo.Context) error {
+	slugOrId := c.Param("slug")
+
+	var workspace dao.Workspace
+	workspaceQuery := s.db.
+		Joins("Owner").
+		Joins("LogoAsset")
+
+	if id, err := uuid.FromString(slugOrId); err == nil {
+		workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
+	} else {
+		workspaceQuery = workspaceQuery.Where("slug = ?", slugOrId)
+	}
+
+	if err := workspaceQuery.First(&workspace).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+		}
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, workspace.ToDTO())
 }
 
 // deleteWorkspaceByAdmin godoc
@@ -263,104 +297,32 @@ func (s *Services) getAllWorkspaceList(c echo.Context) error {
 // @Router /api/auth/admin/workspaces/{slug} [delete]
 func (s *Services) deleteWorkspaceByAdmin(c echo.Context) error {
 	user := c.(AuthContext).User
-	slug := c.Param("slug")
+	slugOrId := c.Param("slug")
 
 	var workspace dao.Workspace
-	if err := s.db.Where("slug = ?", slug).First(&workspace).Error; err != nil {
+
+	workspaceQuery := s.db.Session(&gorm.Session{})
+	if id, err := uuid.FromString(slugOrId); err == nil {
+		workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
+	} else {
+		workspaceQuery = workspaceQuery.Where("slug = ?", slugOrId)
+	}
+
+	if err := workspaceQuery.First(&workspace).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
 		return EError(c, err)
 	}
 
-	if !user.IsSuperuser && user.ID != workspace.OwnerId {
-		return EErrorDefined(c, apierrors.ErrDeleteWorkspaceForbidden)
-	}
-
-	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, workspace, user)
-	if err != nil {
-		errStack.GetError(c, err)
-		return err
-	}
 	// Cancel jira imports
 	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
 		return EError(c, err)
 	}
 
-	{
-		// delete DeferredNotifications & activities
-		if err := s.db.
-			Where("workspace_id = ?", workspace.ID).
-			Unscoped().
-			Delete(&dao.DeferredNotifications{}).Error; err != nil {
-			return err
-		}
-
-		activityTables := []dao.UnionableTable{
-			&dao.WorkspaceActivity{},
-			&dao.DocActivity{},
-			&dao.FormActivity{},
-			&dao.ProjectActivity{},
-			&dao.IssueActivity{},
-		}
-
-		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
-			tn := strings.Split((*a).TableName(), "_")
-			return tn[0] + "_activity_id"
-		})
-
-		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
-
-		var queries []interface{}
-
-		for _, model := range activityTables {
-			queries = append(queries, s.db.Select("id").
-				Where("workspace_id = ?", workspace.ID).
-				Model(&model))
-		}
-
-		if err := s.db.Where(queryString, queries...).
-			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
-			return err
-		}
-
-		for _, model := range activityTables {
-			if err := s.db.
-				Where("workspace_id = ?", workspace.ID).
-				Unscoped().
-				Delete(model).Error; err != nil {
-				return err
-			}
-		}
-
-		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-		if err := s.db.Model(&dao.RootActivity{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
-			return err
-		}
-	}
-
-	// Soft-delete projects
-	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Project{}).Error; err != nil {
+	if err := s.business.DeleteWorkspace(user, &workspace); err != nil {
 		return EError(c, err)
 	}
-
-	// Soft-delete workspace
-	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Delete(&workspace).Error; err != nil {
-		return EError(c, err)
-	}
-
-	// Soft-delete issues
-	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Issue{}).Error; err != nil {
-		return err
-	}
-
-	// Workspaces will be hard deleted by cron
-	// Start hard deleting in foreground
-	go func(workspace dao.Workspace) {
-		if err := s.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
-			slog.Error("Hard delete workspace by admin", "workspaceId", workspace.ID, "err", err)
-		}
-	}(workspace)
 
 	return c.NoContent(http.StatusOK)
 }
@@ -410,7 +372,7 @@ func (s *Services) getWorkspaceProjectList(c echo.Context) error {
 		Preload("Workspace").
 		Preload("ProjectLead").
 		Where("workspace_id = ?", workspaceId).
-		Select("*, (?) as total_members, (ts_rank(name_tokens, plainto_tsquery('russian', lower(?)))) as search_rank, ts_headline('russian', name, plainto_tsquery('russian', lower(?))) as name_highlighted",
+		Select("*, (?) as total_members, (ts_rank(name_tokens, websearch_to_tsquery('russian', lower(?)))) as search_rank, ts_headline('russian', name, websearch_to_tsquery('russian', lower(?))) as name_highlighted",
 			s.db.Select("count(*)").Where("project_id = projects.id").Model(&dao.ProjectMember{}),
 			searchQuery,
 			searchQuery,
@@ -422,7 +384,7 @@ func (s *Services) getWorkspaceProjectList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) LIKE ? OR name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery).Order("search_rank desc")
+		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery).Order("search_rank desc")
 	}
 
 	var projects []dao.ProjectWithCount
@@ -851,7 +813,7 @@ func (s *Services) geWorkspaceListByUser(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) LIKE ? OR lower(slug) LIKE ? OR name_tokens @@ plainto_tsquery('russian', lower(?))",
+		query = query.Where("lower(name) LIKE ? OR lower(slug) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, escapedSearchQuery, searchQuery)
 	}
 
@@ -932,7 +894,7 @@ func (s *Services) getProjectListByUser(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) LIKE ? OR name_tokens @@ plainto_tsquery('russian', lower(?))",
+		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, searchQuery)
 	}
 	if !all {
