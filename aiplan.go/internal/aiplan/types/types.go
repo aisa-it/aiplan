@@ -1289,6 +1289,9 @@ type UUIDArray struct {
 }
 
 func (a UUIDArray) Value() (driver.Value, error) {
+	if len(a.Array) == 0 {
+		return "{}", nil
+	}
 	var b strings.Builder
 	b.Grow(1 + len(a.Array) + 36*len(a.Array)) // {} + len(a)-1 commas + len(a) ids
 	b.WriteString("{")
@@ -1305,6 +1308,9 @@ func (a *UUIDArray) Scan(value any) (err error) {
 	rawArray, ok := value.(string)
 	if !ok {
 		return errors.New("unsupported value type")
+	}
+	if rawArray == "" || rawArray == "{}" {
+		return nil
 	}
 	aa := strings.Split(rawArray[1:len(rawArray)-1], ",")
 	a.Array = make([]uuid.UUID, len(aa))

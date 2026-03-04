@@ -12,8 +12,6 @@ type Business struct {
 	db *gorm.DB
 
 	tracker *tracker.ActivitiesTracker
-
-	workspaceCtx *WorkspaceCtx
 }
 
 func NewBL(db *gorm.DB, tracker *tracker.ActivitiesTracker) (*Business, error) {

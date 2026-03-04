@@ -246,7 +246,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
 		query = query.Where(
-			"lower(name) LIKE ? OR name_tokens @@ plainto_tsquery('russian', lower(?))",
+			"lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, searchQuery)
 	}
 
@@ -1925,7 +1925,7 @@ func (s *Services) getIssueLabelList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) like ? or name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
+		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
 	}
 
 	var labels []dao.Label
@@ -2246,7 +2246,7 @@ func (s *Services) getStateList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) like ? or name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery))
+		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery))
 	}
 
 	var states []dao.State

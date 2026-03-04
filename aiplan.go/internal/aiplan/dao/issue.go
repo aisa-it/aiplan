@@ -406,9 +406,9 @@ func (Issue) FieldsAllowedForAllUpdate() []string {
 // Возвращает:
 //   - *gorom.DB: объект базы данных GORM, который можно использовать для выполнения дальнейших операций.
 func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
-	return tx.Or("issues.tokens @@ plainto_tsquery('simple', ?)", search_query).
-		Or("issues.tokens @@ plainto_tsquery('russian', ?)", search_query).
-		Or("issues.tokens @@ plainto_tsquery('english', ?)", search_query).
+	return tx.Or("issues.tokens @@ websearch_to_tsquery('simple', ?)", search_query).
+		Or("issues.tokens @@ websearch_to_tsquery('russian', ?)", search_query).
+		Or("issues.tokens @@ websearch_to_tsquery('english', ?)", search_query).
 		Or("issues.tokens @@ to_tsquery('simple', ?)", SplitTSQuery(search_query)).
 		Or("issues.tokens @@ to_tsquery('russian', ?)", SplitTSQuery(search_query)).
 		Or("issues.tokens @@ to_tsquery('english', ?)", SplitTSQuery(search_query)).

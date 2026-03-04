@@ -1,34 +1,108 @@
 package business
 
 import (
+	"log/slog"
+	"strings"
+
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
-	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-type WorkspaceCtx struct {
-	c               echo.Context
-	user            *dao.User
-	workspace       *dao.Workspace
-	workspaceMember *dao.WorkspaceMember
-}
-
-func (b *Business) WorkspaceCtx(c echo.Context, user *dao.User, workspace *dao.Workspace, workspaceMember *dao.WorkspaceMember) {
-	b.workspaceCtx = &WorkspaceCtx{
-		c:               c,
-		user:            user,
-		workspace:       workspace,
-		workspaceMember: workspaceMember,
+func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) error {
+	if !user.IsSuperuser && user.ID != workspace.OwnerId {
+		return apierrors.ErrDeleteWorkspaceForbidden
 	}
+
+	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](b.tracker, activities.EntityDeleteActivity, nil, nil, *workspace, user)
+	if err != nil {
+		errStack.GetError(nil, err)
+		return err
+	}
+
+	{
+		// delete DeferredNotifications & activities
+		if err := b.db.
+			Where("workspace_id = ?", workspace.ID).
+			Unscoped().
+			Delete(&dao.DeferredNotifications{}).Error; err != nil {
+			return err
+		}
+
+		activityTables := []dao.UnionableTable{
+			&dao.WorkspaceActivity{},
+			&dao.DocActivity{},
+			&dao.FormActivity{},
+			&dao.ProjectActivity{},
+			&dao.IssueActivity{},
+		}
+
+		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
+			tn := strings.Split((*a).TableName(), "_")
+			return tn[0] + "_activity_id"
+		})
+
+		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
+
+		var queries []interface{}
+
+		for _, model := range activityTables {
+			queries = append(queries, b.db.Select("id").
+				Where("workspace_id = ?", workspace.ID).
+				Model(&model))
+		}
+
+		if err := b.db.Where(queryString, queries...).
+			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
+			return err
+		}
+
+		for _, model := range activityTables {
+			if err := b.db.
+				Where("workspace_id = ?", workspace.ID).
+				Unscoped().
+				Delete(model).Error; err != nil {
+				return err
+			}
+		}
+
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := b.db.Model(&dao.RootActivity{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
+	// Soft-delete projects
+	if err := b.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Project{}).Error; err != nil {
+		return err
+	}
+
+	// Soft-delete workspace
+	if err := b.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Delete(workspace).Error; err != nil {
+		return err
+	}
+
+	// Soft-delete issues
+	if err := b.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Issue{}).Error; err != nil {
+		return err
+	}
+
+	// Start hard deleting in foreground
+	go func(workspace dao.Workspace) {
+		if err := b.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
+			slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
+		}
+	}(*workspace)
+
+	return nil
 }
 
-func (b *Business) WorkspaceCtxClean() {
-	b.workspaceCtx = nil
-}
 func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMember *dao.WorkspaceMember) error {
 	if requestedMember.Workspace.OwnerId == requestedMember.MemberId {
 		if err := requestedMember.Workspace.ChangeOwner(b.db, actor); err != nil {
@@ -63,7 +137,7 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 	for _, member := range projectMembers {
 		actorPM := actorMap[member.ProjectId]
 
-		if err := b.DeleteProjectMember(&actorPM, &member, actor.Member, member.Project, b.workspaceCtx.workspaceMember); err != nil {
+		if err := b.DeleteProjectMember(&actorPM, &member, actor.Member, member.Project, actor); err != nil {
 			return err
 		}
 	}
@@ -74,7 +148,7 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 
 	if err := b.db.Transaction(func(tx *gorm.DB) error {
 		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](
-			b.tracker, activities.EntityRemoveActivity, data, nil, *requestedMember, b.workspaceCtx.user)
+			b.tracker, activities.EntityRemoveActivity, data, nil, *requestedMember, actor.Member)
 		if err != nil {
 			return err
 		}
