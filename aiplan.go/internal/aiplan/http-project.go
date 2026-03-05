@@ -262,7 +262,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
 }
 
-var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow"}
+var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow", "issue_deletion_allowed"}
 
 // updateProject godoc
 // @id updateProject
