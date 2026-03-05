@@ -3794,6 +3794,8 @@ func getDefaultPropertyValue(propType string) any {
 		return nil
 	case "boolean":
 		return false
+	case "link":
+		return nil
 	default:
 		return nil
 	}
@@ -3809,6 +3811,15 @@ func parsePropertyValue(propType, value string) any {
 			return nil
 		}
 		return value
+	case "link":
+		if value == "" {
+			return nil
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(value), &m); err != nil {
+			return value
+		}
+		return m
 	default:
 		return value
 	}
@@ -3835,6 +3846,13 @@ func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) erro
 func serializePropertyValue(value any) string {
 	if value == nil {
 		return ""
+	}
+	if m, ok := value.(map[string]any); ok {
+		b, err := json.Marshal(m)
+		if err != nil {
+			return fmt.Sprint(value)
+		}
+		return string(b)
 	}
 	return fmt.Sprint(value)
 }

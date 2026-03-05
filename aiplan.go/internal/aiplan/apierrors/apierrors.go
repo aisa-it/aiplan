@@ -255,7 +255,7 @@ var (
 	// 45** - property template errors
 	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
 	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
-	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, link", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, link"}
 	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
 	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
 	ErrPropertyOnlyAdminCanSet         = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}

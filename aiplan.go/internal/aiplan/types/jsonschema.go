@@ -37,6 +37,21 @@ func GenValueSchema(propType string, options []string) map[string]any {
 		}
 		enumValues[len(options)] = nil
 		return map[string]any{"type": []any{"string", "null"}, "enum": enumValues}
+	case "link":
+		return map[string]any{
+			"oneOf": []any{
+				map[string]any{
+					"type":                 "object",
+					"required":             []string{"name", "url"},
+					"additionalProperties": false,
+					"properties": map[string]any{
+						"name": map[string]any{"type": "string", "minLength": 1},
+						"url":  map[string]any{"type": "string", "format": "uri"},
+					},
+				},
+				map[string]any{"type": "null"},
+			},
+		}
 	default:
 		return map[string]any{}
 	}

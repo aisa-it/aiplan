@@ -193,7 +193,7 @@ type ProjectPropertyTemplate struct {
 // CreatePropertyTemplateRequest - запрос на создание шаблона поля
 type CreatePropertyTemplateRequest struct {
 	Name      string   `json:"name" validate:"required,min=1,max=255"`
-	Type      string   `json:"type" validate:"required,oneof=string boolean select"`
+	Type      string   `json:"type" validate:"required,oneof=string boolean select link"`
 	Options   []string `json:"options,omitempty"`
 	OnlyAdmin bool     `json:"only_admin"`
 	SortOrder int      `json:"sort_order"`
