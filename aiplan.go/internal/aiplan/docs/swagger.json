@@ -19789,7 +19789,8 @@
                     "enum": [
                         "string",
                         "boolean",
-                        "select"
+                        "select",
+                        "link"
                     ]
                 }
             }

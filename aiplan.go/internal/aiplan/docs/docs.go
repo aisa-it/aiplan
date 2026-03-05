@@ -19797,7 +19797,8 @@ const docTemplate = `{
                     "enum": [
                         "string",
                         "boolean",
-                        "select"
+                        "select",
+                        "link"
                     ]
                 }
             }
