@@ -1970,17 +1970,9 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 	label.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	label.ProjectId = project.ID
 	label.WorkspaceId = project.WorkspaceId
+	label.Name = strings.TrimSpace(label.Name)
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&label).Error; err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				return err
-			}
-			return err
-		}
-
-		return nil
-	}); err != nil {
+	if err := s.db.Create(&label).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrTagAlreadyExists)
 		}
@@ -2064,33 +2056,27 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 
 	label.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	label.UpdatedAt = time.Now()
+	label.Name = strings.TrimSpace(label.Name)
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		// TODO rate limit
-		// Обновляем только выбранные поля
-		if err := tx.Model(&label).
-			Select([]string{"name", "description", "parent_id", "color"}).
-			Updates(&label).Error; err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				return apierrors.ErrTagAlreadyExists
-			}
-			return err
-
+	// Обновляем только выбранные поля
+	if err := s.db.Model(&label).
+		Select([]string{"name", "description", "parent_id", "color"}).
+		Updates(&label).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return EErrorDefined(c, apierrors.ErrTagAlreadyExists)
 		}
-
-		// Post-update activity tracking
-		newLabelMap := StructToJSONMap(label)
-		newLabelMap["updateScope"] = "label"
-		newLabelMap["updateScopeId"] = label.ID
-
-		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
-
-		return nil
-	}); err != nil {
 		return EError(c, err)
+
+	}
+
+	// Post-update activity tracking
+	newLabelMap := StructToJSONMap(label)
+	newLabelMap["updateScope"] = "label"
+	newLabelMap["updateScopeId"] = label.ID
+
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, label.ToLightDTO())
