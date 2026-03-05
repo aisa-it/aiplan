@@ -3403,7 +3403,7 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 	}
 
 	// Валидация типа
-	validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
+	validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
 	if !validTypes[request.Type] {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 	}
@@ -3491,7 +3491,7 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 
 	// Определяем тип для валидации options
 	if request.Type != nil {
-		validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
+		validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
 		if !validTypes[*request.Type] {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 		}
