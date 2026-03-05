@@ -273,6 +273,90 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/admin/jitsi-token-logs": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список логов токенов Jitsi с поддержкой пагинации, сортировки и фильтрации по пользователю",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AdminPanel"
+                ],
+                "summary": "Jitsi: получение логов токенов Jitsi",
+                "operationId": "getJitsiTokenLogList",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Количество результатов на странице",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID пользователя для фильтрации",
+                        "name": "user_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список логов токенов Jitsi",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dao.PaginationResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/dto.JitsiTokenLog"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/admin/projects/{workspaceId}": {
             "get": {
                 "security": [
@@ -21028,6 +21112,38 @@ const docTemplate = `{
                         }
                     ],
                     "x-nullable": true
+                }
+            }
+        },
+        "dto.JitsiTokenLog": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "room": {
+                    "type": "string"
+                },
+                "user_agent": {
+                    "type": "string"
+                },
+                "user_details": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "workspace_details": {
+                    "$ref": "#/definitions/dto.WorkspaceLight"
+                },
+                "workspace_id": {
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
                 }
             }
         },
