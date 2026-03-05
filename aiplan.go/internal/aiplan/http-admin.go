@@ -171,6 +171,8 @@ func (s *Services) AddAdminServices(g *echo.Group) {
 	templatesGroup.POST("reset/", s.reloadTemplates)
 
 	importsGroup.GET("", s.getRunningImportList)
+
+	staffPermissionGroup.GET("jitsi-token-logs/", s.getJitsiTokenLogList)
 }
 
 // getAllWorkspaceList godoc
@@ -1678,6 +1680,65 @@ func (s *Services) geRootActivityList(c echo.Context) error {
 	}
 
 	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(ea *dao.FullActivity) dto.EntityActivityFull { return *ea.ToDTO() })
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// getJitsiTokenLogList godoc
+// @id getJitsiTokenLogList
+// @Summary Jitsi: получение логов токенов Jitsi
+// @Description Возвращает список логов токенов Jitsi с поддержкой пагинации, сортировки и фильтрации по пользователю
+// @Tags AdminPanel
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param offset query int false "Смещение для пагинации" default(0)
+// @Param limit query int false "Количество результатов на странице" default(100)
+// @Param user_id query string false "ID пользователя для фильтрации"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.JitsiTokenLog} "Список логов токенов Jitsi"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/admin/jitsi-token-logs [get]
+func (s *Services) getJitsiTokenLogList(c echo.Context) error {
+	offset := -1
+	limit := 100
+	userIdStr := ""
+
+	if err := echo.QueryParamsBinder(c).
+		Int("offset", &offset).
+		Int("limit", &limit).
+		String("user_id", &userIdStr).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := s.db.Joins("User").Joins("Workspace").Order("created_at DESC")
+
+	if userIdStr != "" {
+		userId, err := uuid.FromString(userIdStr)
+		if err != nil {
+			return EError(c, err)
+		}
+		query = query.Where("user_id = ?", userId)
+	}
+
+	var logs []dao.JitsiTokenLog
+	resp, err := dao.PaginationRequest(
+		offset,
+		limit,
+		query,
+		&logs,
+	)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.JitsiTokenLog), func(l *dao.JitsiTokenLog) dto.JitsiTokenLog { return l.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }

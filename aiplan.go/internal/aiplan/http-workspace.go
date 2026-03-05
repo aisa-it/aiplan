@@ -155,7 +155,9 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 
 	workspaceGroup.GET("/states/", s.getWorkspaceStateList)
 
-	workspaceGroup.GET("/jitsi-token/", s.getWorkspaceJitsiToken)
+	if !cfg.JitsiDisabled {
+		workspaceGroup.GET("/jitsi-token/", s.getWorkspaceJitsiToken, NewJitsiTokenLogMiddleware(s.db))
+	}
 
 	workspaceGroup.GET("/integrations/", s.getIntegrationList)
 	workspaceGroup.POST("/integrations/add/:name/", s.addIntegrationToWorkspace)

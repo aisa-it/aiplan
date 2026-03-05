@@ -127,3 +127,17 @@ type GitConfigInfo struct {
 	GitEnabled          bool   `json:"git_enabled"`
 	GitRepositoriesPath string `json:"git_repositories_path"`
 }
+
+type JitsiTokenLog struct {
+	ID          uint64        `json:"id"`
+	UserId      uuid.UUID     `json:"user_id"`
+	WorkspaceId uuid.NullUUID `json:"workspace_id"`
+	Room        string        `json:"room"`
+	CreatedAt   time.Time     `json:"created_at"`
+
+	IP     string `json:"ip"`
+	UAgent string `json:"user_agent"`
+
+	User      *UserLight      `json:"user_details"`
+	Workspace *WorkspaceLight `json:"workspace_details"`
+}

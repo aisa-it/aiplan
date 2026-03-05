@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/gofrs/uuid"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
@@ -95,6 +96,42 @@ func NewSPACacheMiddleware(config middleware.StaticConfig) func(echo.HandlerFunc
 					return next(c)
 				}
 				return c.NoContent(http.StatusNotModified)
+			}
+
+			return next(c)
+		}
+	}
+}
+
+func NewJitsiTokenLogMiddleware(db *gorm.DB) func(echo.HandlerFunc) echo.HandlerFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			var userId uuid.UUID
+			var workspaceId uuid.NullUUID
+			var room string
+
+			if workspaceCtx, ok := c.(WorkspaceContext); ok {
+				userId = workspaceCtx.User.ID
+				workspaceId = uuid.NullUUID{Valid: true, UUID: workspaceCtx.Workspace.ID}
+				room = workspaceCtx.Workspace.Slug
+			} else if authCtx, ok := c.(AuthContext); ok {
+				userId = authCtx.User.ID
+				room = c.Param("room")
+			} else {
+				slog.Warn("Jitsi token logger unsupported route", "route", c.Path(), "url", c.Request().URL)
+				return next(c)
+			}
+
+			logLine := &dao.JitsiTokenLog{
+				UserId:      userId,
+				WorkspaceId: workspaceId,
+				Room:        room,
+				IP:          c.RealIP(),
+				UAgent:      c.Request().UserAgent(),
+			}
+
+			if err := db.Save(logLine).Error; err != nil {
+				slog.Error("Save jitsi token request log", "err", err)
 			}
 
 			return next(c)

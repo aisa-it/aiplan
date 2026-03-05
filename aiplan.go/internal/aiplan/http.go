@@ -512,7 +512,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	authGroup.GET("file/:fileName/", s.assetsHandler)
 
 	// Jitsi conf redirect
-	authGroup.GET("conf/:room/", s.redirectToJitsiConf)
+	if !cfg.JitsiDisabled {
+		authGroup.GET("conf/:room/", s.redirectToJitsiConf, NewJitsiTokenLogMiddleware(db))
+	}
 
 	// MCP handler
 	if cfg.MCPEnabled {
