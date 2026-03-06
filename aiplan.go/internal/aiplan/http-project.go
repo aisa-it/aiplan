@@ -2421,7 +2421,7 @@ func (s *Services) updateState(c echo.Context) error {
 		Where(gorm.Expr(`"default" = ?`, true)).
 		First(&currentDefaultState).Error; err == nil {
 		if currentDefaultState.Name != "" {
-			if req.Default != nil && *req.Default == true {
+			if req.Default != nil && *req.Default {
 				oldStateMap["default_activity_val"] = currentDefaultState.Name
 				oldStateMap["updateScopeId"] = currentDefaultState.ID
 			}
@@ -2432,16 +2432,12 @@ func (s *Services) updateState(c echo.Context) error {
 	fields = append(fields, "updated_by")
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if req.Default != nil {
-			if *req.Default {
-				// Change other states to false default
-				if err := tx.Model(&dao.State{}).
-					Where("project_id = ?", project.ID).
-					UpdateColumn("default", false).Error; err != nil {
-					return err
-				}
-			} else {
-				return apierrors.ErrProjectDefaultStateRequired
+		if req.Default != nil && *req.Default {
+			// Change other states to false default
+			if err := tx.Model(&dao.State{}).
+				Where("project_id = ?", project.ID).
+				UpdateColumn("default", false).Error; err != nil {
+				return err
 			}
 		}
 
