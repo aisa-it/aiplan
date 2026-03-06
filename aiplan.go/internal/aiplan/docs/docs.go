@@ -23067,7 +23067,13 @@ const docTemplate = `{
                 "source": {
                     "type": "string"
                 },
+                "source_handle": {
+                    "type": "string"
+                },
                 "target": {
+                    "type": "string"
+                },
+                "target_handle": {
                     "type": "string"
                 }
             }
