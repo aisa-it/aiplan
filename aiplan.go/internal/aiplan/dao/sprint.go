@@ -30,12 +30,14 @@ type Sprint struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.UUID `gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
-	WorkspaceId uuid.UUID     `gorm:"type:uuid; uniqueIndex:sprint_uniq_idx,priority:1,where:deleted_at is NULL"`
+	UpdatedById    uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId    uuid.UUID     `gorm:"type:uuid; uniqueIndex:sprint_uniq_idx,priority:1,where:deleted_at is NULL"`
+	SprintFolderId uuid.NullUUID `gorm:"type:uuid"`
 
-	CreatedBy User
-	UpdatedBy *User
-	Workspace *Workspace
+	CreatedBy    User
+	UpdatedBy    *User
+	Workspace    *Workspace    `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	SprintFolder *SprintFolder `json:"sprint_folder_detail" gorm:"foreignKey:SprintFolderId" extensions:"x-nullable"`
 
 	Name        string             `json:"name"`
 	NameTokens  types.TsVector     `gorm:"index:sprint_name_tokens,type:gin"`
@@ -200,11 +202,12 @@ func (s *Sprint) ToLightDTO() *dto.SprintLight {
 	s.SetUrl()
 
 	return &dto.SprintLight{
-		Id:          s.Id,
-		Name:        s.Name,
-		SequenceId:  s.SequenceId,
-		Description: s.Description,
-		Url:         types.JsonURL{URL: s.URL},
+		Id:           s.Id,
+		Name:         s.Name,
+		SequenceId:   s.SequenceId,
+		Description:  s.Description,
+		Url:          types.JsonURL{URL: s.URL},
+		SprintFolder: s.SprintFolder.ToDTO(),
 		//ShortUrl:   types.JsonURL{},
 		StartDate: utils.SqlNullTimeToPointerTime(s.StartDate),
 		EndDate:   utils.SqlNullTimeToPointerTime(s.EndDate),
@@ -429,4 +432,42 @@ type SprintViews struct {
 
 func (SprintViews) TableName() string {
 	return "sprint_views"
+}
+
+type SprintFolder struct {
+	Id        uuid.UUID `gorm:"primaryKey;type:uuid"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.UUID `gorm:"type:uuid"`
+	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
+
+	WorkspaceId uuid.UUID `gorm:"type:uuid; index:sprint_folders_idx"`
+
+	CreatedBy User
+	UpdatedBy *User
+	Workspace *Workspace
+
+	Sprints []Sprint `gorm:"-"`
+
+	Name string `json:"name"`
+}
+
+func (SprintFolder) TableName() string {
+	return "sprint_folders"
+}
+
+func (s *SprintFolder) ToDTO() *dto.SprintFolder {
+	if s == nil {
+		return nil
+	}
+	return &dto.SprintFolder{
+		Id:   s.Id,
+		Name: s.Name,
+		Sprints: utils.SliceToSlice(&s.Sprints, func(i *Sprint) dto.SprintLight {
+			return *i.ToLightDTO()
+		}),
+	}
 }
