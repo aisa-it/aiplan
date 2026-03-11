@@ -105,7 +105,6 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 	workspaceGroup.POST("/sprints/", s.createSprint)
 
 	workspaceGroup.POST("/sprints-folder/", s.addSprintFolders)
-	workspaceGroup.GET("/sprints-folder/", s.getSprintFolderList)
 
 	workspaceGroup.PATCH("/sprints-folder/:sprintFolderId", s.updateSprintFolders)
 	workspaceGroup.DELETE("/sprints-folder/:sprintFolderId", s.deleteSprintFolders)
@@ -128,17 +127,18 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 
 // getSprintList godoc
 // @id getSprintList
-// @Summary Спринты: получения списка спринтов
-// @Description Возвращает список всех спринтов в рабочем пространстве.
+// @Summary Спринты: получение директорий спринтов
+// @Description Возвращает список всех директорий спринтов, с вложенными спринтами.
 // @Tags Sprint
-// @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Success 200 {array} dto.SprintLight "Список спринтов"
+// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
+// @Success 200 {array} dto.SprintFolder "Список директорий спринтов"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Hе найден"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/ [get]
 func (s *Services) getSprintList(c echo.Context) error {
@@ -159,10 +159,57 @@ func (s *Services) getSprintList(c echo.Context) error {
 		sprintStatsUpdate(&sprints[i])
 	}
 
-	return c.JSON(
-		http.StatusOK,
-		utils.SliceToSlice(&sprints, func(s *dao.Sprint) dto.SprintLight { return *s.ToLightDTO() }))
-	//utils.SliceToSlice(&sprint, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
+	var folders []dao.SprintFolder
+	if err := s.db.
+		Where("workspace_id = ?", workspace.ID).
+		Find(&folders).Error; err != nil {
+		return EError(c, err)
+	}
+
+	folderMap := make(map[uuid.UUID]*dao.SprintFolder, len(folders))
+	for i := range folders {
+		folderMap[folders[i].Id] = &folders[i]
+	}
+
+	var unassignedSprints []dao.Sprint
+	for i := range sprints {
+		if sprints[i].SprintFolderId.Valid {
+			if folder, ok := folderMap[sprints[i].SprintFolderId.UUID]; ok {
+				folder.Sprints = append(folder.Sprints, sprints[i])
+			}
+		} else {
+			unassignedSprints = append(unassignedSprints, sprints[i])
+
+		}
+	}
+
+	result := make([]dao.SprintFolder, 0, len(folderMap)+1)
+
+	for _, folder := range folderMap {
+		result = append(result, *folder)
+	}
+
+	if len(unassignedSprints) != 0 {
+		result = append(result, dao.SprintFolder{
+			Id:      uuid.Nil,
+			Sprints: unassignedSprints,
+		})
+	}
+
+	slices.SortFunc(result, func(a, b dao.SprintFolder) int {
+		if a.Id == uuid.Nil && b.Id != uuid.Nil {
+			return 1
+		}
+		if a.Id != uuid.Nil && b.Id == uuid.Nil {
+			return -1
+		}
+		if a.Id == uuid.Nil && b.Id == uuid.Nil {
+			return 0
+		}
+
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&result, func(t *dao.SprintFolder) *dto.SprintFolder { return t.ToDTO() }))
 }
 
 // createSprint godoc
@@ -756,94 +803,6 @@ func (s *Services) getSprintStates(c echo.Context) error {
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(t *dao.State) *dto.StateLight { return t.ToLightDTO() }))
-}
-
-// getSprintFolderList godoc
-// @id getSprintFolderList
-// @Summary Спринты: получение директорий спринтов
-// @Description Возвращает список всех состояний задач, которые используются в задачах текущего спринта.
-// @Tags Sprint
-// @Produce json
-// @Security ApiKeyAuth
-// @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
-// @Success 200 {array} dto.StateLight "Список состояний задач"
-// @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
-// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
-// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
-// @Failure 404 {object} apierrors.DefinedError "Спринт не найден"
-// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/ [get]
-func (s *Services) getSprintFolderList(c echo.Context) error {
-
-	workspace := c.(WorkspaceContext).Workspace
-
-	var sprints []dao.Sprint
-	if err := s.db.
-		Set("issueProgress", true).
-		Joins("SprintFolder").
-		Preload("Issues.State").
-		Where("sprints.workspace_id = ?", workspace.ID).
-		Order("start_date DESC").
-		Find(&sprints).Error; err != nil {
-		return EError(c, err)
-	}
-
-	for i := range sprints {
-		sprintStatsUpdate(&sprints[i])
-	}
-
-	var folders []dao.SprintFolder
-	if err := s.db.
-		Where("workspace_id = ?", workspace.ID).
-		Find(&folders).Error; err != nil {
-		return EError(c, err)
-	}
-
-	folderMap := make(map[uuid.UUID]*dao.SprintFolder, len(folders))
-	for i := range folders {
-		folderMap[folders[i].Id] = &folders[i]
-	}
-
-	var unassignedSprints []dao.Sprint
-	for i := range sprints {
-		if sprints[i].SprintFolderId.Valid {
-			if folder, ok := folderMap[sprints[i].SprintFolderId.UUID]; ok {
-				folder.Sprints = append(folder.Sprints, sprints[i])
-			}
-		} else {
-			unassignedSprints = append(unassignedSprints, sprints[i])
-
-		}
-	}
-
-	result := make([]dao.SprintFolder, 0, len(folderMap)+1)
-
-	for _, folder := range folderMap {
-		result = append(result, *folder)
-	}
-
-	if len(unassignedSprints) != 0 {
-		result = append(result, dao.SprintFolder{
-			Id:      uuid.Nil,
-			Sprints: unassignedSprints,
-		})
-	}
-
-	slices.SortFunc(result, func(a, b dao.SprintFolder) int {
-		if a.Id == uuid.Nil && b.Id != uuid.Nil {
-			return 1
-		}
-		if a.Id != uuid.Nil && b.Id == uuid.Nil {
-			return -1
-		}
-		if a.Id == uuid.Nil && b.Id == uuid.Nil {
-			return 0
-		}
-
-		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-	})
-	return c.JSON(http.StatusOK, utils.SliceToSlice(&result, func(t *dao.SprintFolder) *dto.SprintFolder { return t.ToDTO() }))
 }
 
 // addSprintFolders godoc
