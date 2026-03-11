@@ -19,6 +19,8 @@ type SprintLight struct {
 	StartDate *time.Time `json:"start_date,omitempty"`
 	EndDate   *time.Time `json:"end_date,omitempty"`
 
+	SprintFolder *SprintFolder `json:"sprint_folder,omitempty"`
+
 	Stats *types.SprintStats `json:"stats,omitempty"`
 }
 
@@ -34,4 +36,32 @@ type Sprint struct {
 	Issues    []IssueLight    `json:"issues,omitempty"`
 	Watchers  []UserLight     `json:"watchers,omitempty"`
 	View      types.ViewProps `json:"view_props,omitempty"`
+}
+
+type SprintFolder struct {
+	Id      uuid.UUID     `json:"id"`
+	Name    string        `json:"name"`
+	Sprints []SprintLight `json:"sprints,omitempty"`
+}
+
+type RequestSprint struct {
+	Name        string             `json:"name,omitempty"`
+	Description types.RedactorHTML `json:"description,omitempty" swaggertype:"string"`
+	StartDate   *types.TargetDate  `json:"start_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	EndDate     *types.TargetDate  `json:"end_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	Folder      uuid.NullUUID      `json:"sprint_folder_id,omitempty" swaggertype:"string"`
+}
+
+type RequestSprintFolder struct {
+	Name string `json:"name"`
+}
+
+type RequestIssueIdList struct {
+	IssuesAdd    []string `json:"issues_add,omitempty"`
+	IssuesRemove []string `json:"issues_remove,omitempty"`
+}
+
+type RequestUserIdList struct {
+	MembersAdd    []string `json:"members_add,omitempty"`
+	MembersRemove []string `json:"members_remove,omitempty"`
 }
