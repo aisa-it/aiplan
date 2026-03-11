@@ -439,9 +439,7 @@ type SprintFolder struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	CreatedById uuid.UUID `gorm:"type:uuid"`
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	CreatedById uuid.UUID     `gorm:"type:uuid"`
 	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
 
 	WorkspaceId uuid.UUID `gorm:"type:uuid; index:sprint_folders_idx"`
