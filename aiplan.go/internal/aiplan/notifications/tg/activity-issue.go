@@ -16,7 +16,7 @@ import (
 type funcIssueMsgFormat func(act *dao.IssueActivity, af actField.ActivityField) TgMsg
 
 var (
-	issueMap = map[actField.ActivityField]funcIssueMsgFormat{
+	issueMap = map[actField.ActivityField]funMsgFormat{
 		actField.StartDate.Field: issueSkipper,
 		actField.EndDate.Field:   issueSkipper,
 
@@ -38,12 +38,9 @@ var (
 	}
 )
 
-func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) (*ActivityTgNotification, error) {
-	if act.Field == nil {
-		return nil, nil
-	}
+func notifyFromIssueActivity(tx *gorm.DB, act *dao.ActivityEvent) (*ActivityTgNotification, error) {
 
-	act.Issue = preloadIssueActivity(tx, act.IssueId)
+	act.Issue = preloadIssueActivity(tx, act.IssueID.UUID)
 	msg, err := formatIssueActivity(act)
 	if err != nil {
 		return nil, fmt.Errorf("formatIssueActivity: %w", err)
@@ -51,8 +48,8 @@ func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) (*ActivityTgNo
 
 	plan := NotifyPlan{
 		TableName:      act.TableName(),
-		settings:       fromProject(act.ProjectId),
-		ActivitySender: act.ActivitySender.SenderTg,
+		settings:       fromProject(act.ProjectID.UUID),
+		ActivitySender: act.SenderTg,
 		Entity:         actField.Issue.Field,
 		AuthorRole:     issueAuthor,
 		Steps: []UsersStep{
@@ -61,11 +58,11 @@ func notifyFromIssueActivity(tx *gorm.DB, act *dao.IssueActivity) (*ActivityTgNo
 			addIssueUsers(act.Issue),
 			addOriginalCommentAuthor(act),
 			addCommentMentionedUsers(act.NewIssueComment),
-			addDefaultWatchers(act.ProjectId),
+			addDefaultWatchers(act.ProjectID.UUID),
 		},
 	}
 
-	return NewActivityTgNotification(tx, act, msg, plan), nil
+	return NewActivityTgNotification(tx, *act, msg, plan), nil
 }
 
 func preloadIssueActivity(tx *gorm.DB, id uuid.UUID) *dao.Issue {
@@ -88,7 +85,7 @@ func preloadIssueActivity(tx *gorm.DB, id uuid.UUID) *dao.Issue {
 	return &issue
 }
 
-func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
+func formatIssueActivity(act *dao.ActivityEvent) (TgMsg, error) {
 
 	res, err := formatByField(act, issueMap, issueDefault)
 	if err != nil {
@@ -98,11 +95,11 @@ func formatIssueActivity(act *dao.IssueActivity) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), act.Issue.FullIssueName(), act.Issue.URL), nil
 }
 
-func issueSkipper(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueSkipper(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	return NewTgMsg()
 }
 
-func issueDefault(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	oldValue := ""
@@ -137,7 +134,7 @@ func issueDefault(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 
 }
 
-func issueDescription(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueDescription(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
@@ -150,21 +147,21 @@ func issueDescription(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueComment(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueComment(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	return genComment(act.NewIssueComment, act.OldValue, act.Verb,
 		"изменил(-a) комментарий",
 		"прокомментировал(-a)",
 		"удалил(-a) комментарий из")
 }
 
-func issueAttachment(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueAttachment(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	return genAttachment(act.OldValue, act.NewValue, act.Verb,
 		"добавил(-a) вложение в",
 		"удалил(-a) вложение из",
 	)
 }
 
-func issueLinked(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueLinked(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	var targetIssue dao.Issue
 
@@ -190,7 +187,7 @@ func issueLinked(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueSubIssue(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueSubIssue(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	subIssue := utils.GetFirstOrNil(act.NewSubIssue, act.OldSubIssue)
 	if subIssue == nil {
@@ -212,7 +209,7 @@ func issueSubIssue(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueLink(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueLink(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	format := "[%s](%s)"
@@ -252,7 +249,7 @@ func issueLink(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueAssignees(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueAssignees(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	switch act.Verb {
@@ -274,7 +271,7 @@ func issueAssignees(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueWatchers(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueWatchers(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	switch act.Verb {
@@ -296,25 +293,25 @@ func issueWatchers(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueTag(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueTag(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-
+	lef := act.IssueActivityExtendFields.LabelExtendFields
 	switch act.Verb {
 	case actField.VerbAdded:
 		msg.title = "добавил(-a) тег в"
-		if act.NewLabel != nil {
-			msg.body = Stelegramf("%s", act.NewLabel.Name)
+		if lef.NewLabel != nil {
+			msg.body = Stelegramf("%s", lef.NewLabel.Name)
 		}
 	case actField.VerbRemoved:
 		msg.title = "убрал(-a) тег из"
-		if act.OldLabel != nil {
-			msg.body = Stelegramf("%s", act.OldLabel.Name)
+		if lef.OldLabel != nil {
+			msg.body = Stelegramf("%s", lef.OldLabel.Name)
 		}
 	}
 	return msg
 }
 
-func issueParent(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueParent(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	format := "*Родитель*: "
@@ -346,7 +343,7 @@ func issueParent(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueTargetDate(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueTargetDate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
@@ -373,20 +370,21 @@ func issueTargetDate(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func issueProject(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueProject(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	if act.Verb != actField.VerbMove || (act.NewProject == nil && act.OldProject == nil) {
+	pef := act.IssueActivityExtendFields.ProjectExtendFields
+	if act.Verb != actField.VerbMove || (pef.NewProject == nil && pef.OldProject == nil) {
 		return msg
 	}
 	msg.title = "перенес(-лa)"
 	msg.body += Stelegramf("из ~%s~ в %s ",
-		fmt.Sprint(act.OldProject.Name),
-		act.NewProject.Name,
+		fmt.Sprint(pef.OldProject.Name),
+		pef.NewProject.Name,
 	)
 	return msg
 }
 
-func issueSprint(act *dao.IssueActivity, af actField.ActivityField) TgMsg {
+func issueSprint(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	switch act.Verb {

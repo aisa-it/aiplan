@@ -116,31 +116,31 @@ func (ur UserRegistry) FilterActivity(field string, verb string, entity actField
 }
 
 // UsersStep helpers
-type UsersStep func(tx *gorm.DB, act dao.ActivityI, users UserRegistry) error
+type UsersStep func(tx *gorm.DB, act dao.ActivityEvent, users UserRegistry) error
 
 func addUserRole(actor *dao.User, role role) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 		users.addUser(actor, role)
 		return nil
 	}
 }
 
-func addOriginalCommentAuthor(act *dao.IssueActivity) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+func addOriginalCommentAuthor(act *dao.ActivityEvent) UsersStep {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 
 		if act.NewIssueComment == nil || !act.NewIssueComment.ReplyToCommentId.Valid {
 			return nil
 		}
 
 		err := tx.Joins("Actor").
-			Where("workspace_id = ? ", act.WorkspaceId).
-			Where("project_id = ?", act.ProjectId).
-			Where("issue_id = ?", act.IssueId).
+			Where("workspace_id = ? ", act.WorkspaceID.UUID).
+			Where("project_id = ?", act.ProjectID.UUID).
+			Where("issue_id = ?", act.IssueID.UUID).
 			Where("issue_comments.id = ?", act.NewIssueComment.ReplyToCommentId.UUID).
 			First(&act.NewIssueComment.OriginalComment).Error
 
 		if err != nil || act.NewIssueComment.OriginalComment.Actor == nil {
-			return fmt.Errorf("reply comment not found for issue %d", act.IssueId)
+			return fmt.Errorf("reply comment not found for issue %d", act.IssueID.UUID)
 		}
 
 		users.addUser(act.NewIssueComment.OriginalComment.Actor, issueCommentCreator)
@@ -149,7 +149,7 @@ func addOriginalCommentAuthor(act *dao.IssueActivity) UsersStep {
 }
 
 func addProjectAdmin(projectId uuid.UUID) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 
 		var member []dao.ProjectMember
 		if err := tx.Joins("Member").
@@ -167,7 +167,7 @@ func addProjectAdmin(projectId uuid.UUID) UsersStep {
 }
 
 func addWorkspaceAdmins(workspaceId uuid.UUID) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 		var member []dao.WorkspaceMember
 		if err := tx.Joins("Member").
 			Where("workspace_id = ?", workspaceId).
@@ -184,7 +184,7 @@ func addWorkspaceAdmins(workspaceId uuid.UUID) UsersStep {
 }
 
 func addDocMembers(docID uuid.UUID) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 		var docUsers []dao.DocAccessRules
 		if err := tx.Joins("Member").
 			Where("doc_id = ?", docID).
@@ -207,7 +207,7 @@ func addDocMembers(docID uuid.UUID) UsersStep {
 }
 
 func addDefaultWatchers(projectId uuid.UUID) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 
 		var defaultWatchers []struct {
 			ID            uuid.UUID
@@ -247,7 +247,7 @@ func addDefaultWatchers(projectId uuid.UUID) UsersStep {
 }
 
 func addIssueUsers(issue *dao.Issue) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 		if issue == nil {
 			return nil
 		}
@@ -269,7 +269,7 @@ func addIssueUsers(issue *dao.Issue) UsersStep {
 }
 
 func addUsers(from []dao.User, r role) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 		for _, u := range from {
 			users.addUser(&u, r)
 		}
@@ -278,7 +278,7 @@ func addUsers(from []dao.User, r role) UsersStep {
 }
 
 func addCommentMentionedUsers[R dao.IRedactorHTML](comment *R) UsersStep {
-	return func(tx *gorm.DB, a dao.ActivityI, users UserRegistry) error {
+	return func(tx *gorm.DB, a dao.ActivityEvent, users UserRegistry) error {
 		if comment == nil {
 			return nil
 		}

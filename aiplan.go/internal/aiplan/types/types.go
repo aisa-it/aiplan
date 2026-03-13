@@ -28,6 +28,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type TimeValuer interface {
+	GetTime() time.Time
+}
+
 // TargetDate type
 type TargetDate struct {
 	Time time.Time
@@ -82,6 +86,12 @@ func (td *TargetDate) ToNullTime() sql.NullTime {
 		Valid: true,
 	}
 }
+func (d *TargetDate) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
+}
 
 // TargetDateTimeZ type
 type TargetDateTimeZ struct {
@@ -127,6 +137,13 @@ func (d *TargetDateTimeZ) Scan(value interface{}) error {
 
 func (d TargetDateTimeZ) String() string {
 	return d.Time.String()
+}
+
+func (d *TargetDateTimeZ) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
 }
 
 // TimeZone type

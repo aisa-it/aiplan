@@ -92,6 +92,7 @@ import (
 type Services struct {
 	db                  *gorm.DB
 	tracker             *tracker.ActivitiesTracker
+	ta                  *tracker.ActTracker
 	storage             filestorage.FileStorage
 	emailService        *notifications.EmailService
 	memDB               *mem.AIPlanMemAPI
@@ -203,6 +204,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	es := notifications.NewEmailService(cfg, db)
 	tr := tracker.NewActivitiesTracker(db)
+	at := tracker.NewTracker(db)
 	bl, err := business.NewBL(db, tr)
 	if err != nil {
 		os.Exit(1)
@@ -274,6 +276,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s := &Services{
 		db:           db,
 		tracker:      tr,
+		ta:           at,
 		storage:      storage,
 		emailService: es,
 		//telegramService:       ts,
@@ -356,7 +359,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	{ // register handler telegram activity
-		tr.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
+		//tr.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
+		at.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
 		//tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
 		//tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
 		//tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))

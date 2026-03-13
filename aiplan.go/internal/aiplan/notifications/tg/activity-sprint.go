@@ -13,7 +13,7 @@ import (
 type funcSprintMsgFormat func(act *dao.SprintActivity, af actField.ActivityField) TgMsg
 
 var (
-	sprintMap = map[actField.ActivityField]funcSprintMsgFormat{
+	sprintMap = map[actField.ActivityField]funMsgFormat{
 		actField.Watchers.Field:    sprintWatchers,
 		actField.Issue.Field:       sprintIssues,
 		actField.Description.Field: sprintDescription,
@@ -23,10 +23,7 @@ var (
 	}
 )
 
-func notifyFromSprintActivity(tx *gorm.DB, act *dao.SprintActivity) (*ActivityTgNotification, error) {
-	if act.Field == nil {
-		return nil, nil
-	}
+func notifyFromSprintActivity(tx *gorm.DB, act *dao.ActivityEvent) (*ActivityTgNotification, error) {
 
 	if err := preloadSprintActivity(tx, act); err != nil {
 		return nil, err
@@ -45,22 +42,22 @@ func notifyFromSprintActivity(tx *gorm.DB, act *dao.SprintActivity) (*ActivityTg
 
 	plan := NotifyPlan{
 		TableName:      act.TableName(),
-		settings:       fromWorkspace(act.WorkspaceId),
-		ActivitySender: act.ActivitySender.SenderTg,
+		settings:       fromWorkspace(act.WorkspaceID.UUID),
+		ActivitySender: act.SenderTg,
 		Entity:         actField.Sprint.Field,
 		AuthorRole:     sprintAuthor,
 		Steps:          steps,
 	}
 
-	return NewActivityTgNotification(tx, act, msg, plan), nil
+	return NewActivityTgNotification(tx, *act, msg, plan), nil
 }
 
-func preloadSprintActivity(tx *gorm.DB, act *dao.SprintActivity) error {
+func preloadSprintActivity(tx *gorm.DB, act *dao.ActivityEvent) error {
 	if err := tx.Unscoped().
 		Joins("Workspace").
 		Joins("CreatedBy").
 		Preload("Watchers").
-		Where("sprints.id = ?", act.SprintId).
+		Where("sprints.id = ?", act.SprintID.UUID).
 		First(&act.Sprint).Error; err != nil {
 		return fmt.Errorf("preloadSprintActivity: %v", err)
 	}
@@ -77,7 +74,7 @@ func preloadSprintActivity(tx *gorm.DB, act *dao.SprintActivity) error {
 	return nil
 }
 
-func formatSprintActivity(act *dao.SprintActivity) (TgMsg, error) {
+func formatSprintActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	res, err := formatByField(act, sprintMap, sprintDefault)
 	if err != nil {
 		return res, err
@@ -88,11 +85,11 @@ func formatSprintActivity(act *dao.SprintActivity) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), entity, act.Sprint.URL), nil
 }
 
-func sprintDefault(act *dao.SprintActivity, af actField.ActivityField) TgMsg {
+func sprintDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	return genDefault(act.OldValue, act.NewValue, af, "изменил(-a) в спринте")
 }
 
-func sprintWatchers(act *dao.SprintActivity, af actField.ActivityField) TgMsg {
+func sprintWatchers(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
@@ -105,7 +102,7 @@ func sprintWatchers(act *dao.SprintActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func sprintIssues(act *dao.SprintActivity, af actField.ActivityField) TgMsg {
+func sprintIssues(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
@@ -118,14 +115,14 @@ func sprintIssues(act *dao.SprintActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func sprintDescription(act *dao.SprintActivity, af actField.ActivityField) TgMsg {
+func sprintDescription(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	msg.title = "изменил(-а) описание спринта"
 	msg.body = Stelegramf("```\n%s```", utils.HtmlToTg(act.NewValue))
 	return msg
 }
 
-func sprintDate(act *dao.SprintActivity, af actField.ActivityField) TgMsg {
+func sprintDate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	msg.title = "изменил(-a) в спринте"
 	format := "*%s*: "

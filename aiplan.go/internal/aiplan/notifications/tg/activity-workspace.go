@@ -14,7 +14,7 @@ import (
 type funcWorkspaceMsgFormat func(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg
 
 var (
-	workspaceMap = map[actField.ActivityField]funcWorkspaceMsgFormat{
+	workspaceMap = map[actField.ActivityField]funMsgFormat{
 		actField.Project.Field:     workspaceProject,
 		actField.Doc.Field:         workspaceDoc,
 		actField.Form.Field:        workspaceForm,
@@ -32,10 +32,7 @@ var (
 	}
 )
 
-func notifyFromWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) (*ActivityTgNotification, error) {
-	if act.Field == nil {
-		return nil, nil
-	}
+func notifyFromWorkspaceActivity(tx *gorm.DB, act *dao.ActivityEvent) (*ActivityTgNotification, error) {
 
 	if err := preloadWorkspaceActivity(tx, act); err != nil {
 		return nil, err
@@ -48,32 +45,32 @@ func notifyFromWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) (*Acti
 
 	plan := NotifyPlan{
 		TableName:      act.TableName(),
-		settings:       fromWorkspace(act.WorkspaceId),
-		ActivitySender: act.ActivitySender.SenderTg,
+		settings:       fromWorkspace(act.WorkspaceID.UUID),
+		ActivitySender: act.SenderTg,
 		Entity:         actField.Workspace.Field,
 		AuthorRole:     actionAuthor,
 		Steps: []UsersStep{
 			addUserRole(act.Actor, actionAuthor),
-			addWorkspaceAdmins(act.WorkspaceId),
+			addWorkspaceAdmins(act.WorkspaceID.UUID),
 		},
 	}
 
-	return NewActivityTgNotification(tx, act, msg, plan), nil
+	return NewActivityTgNotification(tx, *act, msg, plan), nil
 }
 
-func preloadWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) error {
+func preloadWorkspaceActivity(tx *gorm.DB, act *dao.ActivityEvent) error {
 	if err := tx.Unscoped().
 		Joins("Owner").
-		Where("workspaces.id = ?", act.WorkspaceId).
+		Where("workspaces.id = ?", act.WorkspaceID.UUID).
 		First(&act.Workspace).Error; err != nil {
-		slog.Error("Get workspace for activity", "activityId", act.Id, "err", err)
+		slog.Error("Get workspace for activity", "activityId", act.ID, "err", err)
 		return fmt.Errorf("preloadWorkspaceActivity: %v", err)
 	}
 
 	return nil
 }
 
-func formatWorkspaceActivity(act *dao.WorkspaceActivity) (TgMsg, error) {
+func formatWorkspaceActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	res, err := formatByField(act, workspaceMap, nil)
 	if err != nil {
 		return res, err
@@ -82,12 +79,13 @@ func formatWorkspaceActivity(act *dao.WorkspaceActivity) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), act.Workspace.Slug, act.Workspace.URL), nil
 }
 
-func workspaceProject(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceProject(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
+	pef := act.WorkspaceActivityExtendFields.ProjectExtendFields
 	switch act.Verb {
 	case actField.VerbCreated:
 		msg.title = "создал(-a) в пространстве"
-		msg.body = Stelegramf("*Проект:* [%s](%s)", act.NewProject.Name, act.NewProject.URL.String())
+		msg.body = Stelegramf("*Проект:* [%s](%s)", pef.NewProject.Name, pef.NewProject.URL.String())
 	case actField.VerbDeleted:
 		msg.title = "удалил(-a) из пространства"
 		msg.body = Stelegramf("*Проект:* ~%s~", fmt.Sprint(*act.OldValue))
@@ -95,12 +93,13 @@ func workspaceProject(act *dao.WorkspaceActivity, af actField.ActivityField) TgM
 	return msg
 }
 
-func workspaceDoc(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceDoc(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
+	def := act.WorkspaceActivityExtendFields.DocExtendFields
 	switch act.Verb {
 	case actField.VerbCreated:
 		msg.title = "создал(-a) в пространстве"
-		msg.body = Stelegramf("*Корневой документ:* [%s](%s)", act.NewDoc.Title, act.NewDoc.URL.String())
+		msg.body = Stelegramf("*Корневой документ:* [%s](%s)", def.NewDoc.Title, def.NewDoc.URL.String())
 
 	case actField.VerbDeleted:
 		msg.title = "удалил(-a) из пространства"
@@ -109,7 +108,7 @@ func workspaceDoc(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func workspaceForm(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceForm(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbCreated:
@@ -123,7 +122,7 @@ func workspaceForm(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg 
 	return msg
 }
 
-func workspaceSprint(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceSprint(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbCreated:
@@ -136,7 +135,7 @@ func workspaceSprint(act *dao.WorkspaceActivity, af actField.ActivityField) TgMs
 	return msg
 }
 
-func workspaceDescription(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceDescription(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
@@ -146,7 +145,7 @@ func workspaceDescription(act *dao.WorkspaceActivity, af actField.ActivityField)
 	return msg
 }
 
-func workspaceToken(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceToken(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
@@ -156,7 +155,7 @@ func workspaceToken(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg
 	return msg
 }
 
-func workspaceOwner(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceOwner(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
@@ -166,7 +165,7 @@ func workspaceOwner(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg
 	return msg
 }
 
-func workspaceMember(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceMember(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
@@ -180,7 +179,7 @@ func workspaceMember(act *dao.WorkspaceActivity, af actField.ActivityField) TgMs
 	return msg
 }
 
-func workspaceIntegration(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceIntegration(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
@@ -193,7 +192,7 @@ func workspaceIntegration(act *dao.WorkspaceActivity, af actField.ActivityField)
 	return msg
 }
 
-func workspaceRole(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceRole(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
@@ -203,7 +202,7 @@ func workspaceRole(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg 
 	return msg
 }
 
-func workspaceName(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceName(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
@@ -214,7 +213,7 @@ func workspaceName(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg 
 	return msg
 }
 
-func workspaceLogo(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceLogo(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg

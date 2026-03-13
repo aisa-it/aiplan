@@ -213,7 +213,7 @@ func (s *Services) createSprint(c echo.Context) error {
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-	tracker.TrackEvent(s.tracker, types.EntitySprint, activities.VerbCreated, nil, nil, sprint, user)
+	tracker.TrackEvent(s.ta, types.LayerSprint, activities.VerbCreated, nil, nil, sprint, user)
 
 	sprint.CreatedBy = *user
 
@@ -303,7 +303,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-	tracker.TrackEvent(s.tracker, types.EntitySprint, activities.VerbUpdated, newSprintMap, oldSprintMap, sprint, user)
+	tracker.TrackEvent(s.ta, types.LayerSprint, activities.VerbUpdated, newSprintMap, oldSprintMap, sprint, user)
 
 	return c.JSON(http.StatusOK, sprint.ToDTO())
 }
@@ -425,7 +425,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-		tracker.TrackEvent(s.tracker, types.EntitySprint, activities.VerbUpdated, reqData, currentInstance, sprint, user)
+		tracker.TrackEvent(s.ta, types.LayerSprint, activities.VerbUpdated, reqData, currentInstance, sprint, user)
 
 		changes := utils.CalculateIDChanges(newIssuesIds, oldIssueIds)
 		var issues []dao.Issue
@@ -446,7 +446,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 			if err != nil {
 				errStack.GetError(c, err)
 			}
-			tracker.TrackEvent(s.tracker, types.EntityIssue, activities.VerbAdded, data, nil, issueMap[id], user)
+			tracker.TrackEvent(s.ta, types.LayerIssue, activities.VerbAdded, data, nil, issueMap[id], user)
 
 		}
 		for _, id := range changes.DelIds {
@@ -454,7 +454,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 			if err != nil {
 				errStack.GetError(c, err)
 			}
-			tracker.TrackEvent(s.tracker, types.EntityIssue, activities.VerbRemoved, data, nil, issueMap[id], user)
+			tracker.TrackEvent(s.ta, types.LayerIssue, activities.VerbRemoved, data, nil, issueMap[id], user)
 		}
 	}
 
