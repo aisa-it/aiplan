@@ -10,10 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-type funcDocMsgFormat func(act *dao.DocActivity, af actField.ActivityField) TgMsg
+type funMsgFormat func(act *dao.ActivityEvent, af actField.ActivityField) TgMsg
 
 var (
-	docMap = map[actField.ActivityField]funcDocMsgFormat{
+	docMap = map[actField.ActivityField]funMsgFormat{
 		actField.Description.Field: docDescription,
 		actField.Doc.Field:         docDoc,
 
@@ -31,10 +31,7 @@ var (
 	}
 )
 
-func notifyFromDocActivity(tx *gorm.DB, act *dao.DocActivity) (*ActivityTgNotification, error) {
-	if act.Field == nil {
-		return nil, nil
-	}
+func notifyFromDocActivity(tx *gorm.DB, act *dao.ActivityEvent) (*ActivityTgNotification, error) {
 
 	if err := preloadDocActivity(tx, act); err != nil {
 		return nil, err
@@ -48,30 +45,30 @@ func notifyFromDocActivity(tx *gorm.DB, act *dao.DocActivity) (*ActivityTgNotifi
 		addUserRole(act.Actor, actionAuthor),
 		addUserRole(act.Doc.Author, docAuthor),
 		addCommentMentionedUsers(act.NewDocComment),
-		addDocMembers(act.DocId),
+		addDocMembers(act.DocID.UUID),
 	}
 	if act.Doc == nil && act.Verb == actField.VerbCreated {
-		steps = append(steps, addWorkspaceAdmins(act.WorkspaceId))
+		steps = append(steps, addWorkspaceAdmins(act.WorkspaceID.UUID))
 	}
 
 	plan := NotifyPlan{
 		TableName:      act.TableName(),
-		settings:       fromWorkspace(act.WorkspaceId),
-		ActivitySender: act.ActivitySender.SenderTg,
+		settings:       fromWorkspace(act.WorkspaceID.UUID),
+		ActivitySender: act.SenderTg,
 		Entity:         actField.Doc.Field,
 		AuthorRole:     actionAuthor,
 		Steps:          steps,
 	}
 
-	return NewActivityTgNotification(tx, act, msg, plan), nil
+	return NewActivityTgNotification(tx, *act, msg, plan), nil
 }
 
-func preloadDocActivity(tx *gorm.DB, act *dao.DocActivity) error {
+func preloadDocActivity(tx *gorm.DB, act *dao.ActivityEvent) error {
 	if err := tx.Unscoped().
 		Joins("Workspace").
 		Joins("Author").
 		Preload("AccessRules.Member").
-		Where("docs.id = ?", act.DocId).
+		Where("docs.id = ?", act.DocID.UUID).
 		First(&act.Doc).Error; err != nil {
 		return fmt.Errorf("preloadDocActivity: %v", err)
 	}
@@ -81,7 +78,7 @@ func preloadDocActivity(tx *gorm.DB, act *dao.DocActivity) error {
 	return nil
 }
 
-func formatDocActivity(act *dao.DocActivity) (TgMsg, error) {
+func formatDocActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	res, err := formatByField(act, docMap, nil)
 	if err != nil {
 		return res, err
@@ -98,51 +95,52 @@ func formatDocActivity(act *dao.DocActivity) (TgMsg, error) {
 	return res, nil
 }
 
-func docDescription(act *dao.DocActivity, af actField.ActivityField) TgMsg {
+func docDescription(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	msg.title = "изменил(-а) описание документа"
 	msg.body = Stelegramf("```\n%s```", utils.HtmlToTg(act.NewValue))
 	return msg
 }
 
-func docDoc(act *dao.DocActivity, af actField.ActivityField) TgMsg {
+func docDoc(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	format := "*Вложенный документ*:  [%s](%s)"
+	def := act.DocActivityExtendFields.DocExtendFields
 	var values []any
 	switch act.Verb {
 	case actField.VerbCreated:
 		msg.title = "создал(-a) в документе"
-		values = append(values, act.NewValue, act.NewDoc.URL.String())
+		values = append(values, act.NewValue, def.NewDoc.URL.String())
 	case actField.VerbAdded:
 		msg.title = "добавил(-a) в документ"
-		values = append(values, act.NewValue, act.NewDoc.URL.String())
+		values = append(values, act.NewValue, def.NewDoc.URL.String())
 	case actField.VerbDeleted:
 		msg.title = "удалил(-a) из документа"
 		format = "*Вложенный документ*:  ~%s~"
 		values = append(values, fmt.Sprint(*act.OldValue))
 	case actField.VerbRemoved:
 		msg.title = "убрал(-a) из документа"
-		values = append(values, *act.OldValue, act.OldDoc.URL.String())
+		values = append(values, *act.OldValue, def.OldDoc.URL.String())
 	case actField.VerbMoveDocWorkspace:
 		msg.title = "сделал(-a) корневым документ"
 		if act.OldValue != nil {
 			format = "*Из документа*: [%s](%s)"
-			values = append(values, *act.OldValue, act.OldDoc.URL.String())
+			values = append(values, *act.OldValue, def.OldDoc.URL.String())
 		}
 	case actField.VerbMoveDocDoc:
 		msg.title = "переместил(-a) документ"
 		format = "*Из документа*: [%s](%s)\n*В документ*: [%s](%s)"
-		values = append(values, *act.OldValue, act.OldDoc.URL.String(), act.NewValue, act.NewDoc.URL.String())
+		values = append(values, *act.OldValue, def.OldDoc.URL.String(), act.NewValue, def.NewDoc.URL.String())
 	case actField.VerbMoveWorkspaceDoc:
 		msg.title = "переместил(-a) документ"
 		format = "*Из корневой директории*\n*В документ*: [%s](%s)"
-		values = append(values, act.NewValue, act.NewDoc.URL.String())
+		values = append(values, act.NewValue, def.NewDoc.URL.String())
 	}
 	msg.body = Stelegramf(format, values...)
 	return msg
 }
 
-func docMember(act *dao.DocActivity, af actField.ActivityField) TgMsg {
+func docMember(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	user := utils.GetFirstOrNil(act.NewDocEditor, act.NewDocReader, act.NewDocWatcher, act.OldDocEditor, act.OldDocReader, act.OldDocWatcher)
@@ -174,7 +172,7 @@ func docMember(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func docRole(act *dao.DocActivity, af actField.ActivityField) TgMsg {
+func docRole(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	var format string
 	values := []any{types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue)}
@@ -189,21 +187,21 @@ func docRole(act *dao.DocActivity, af actField.ActivityField) TgMsg {
 	return msg
 }
 
-func docComment(act *dao.DocActivity, af actField.ActivityField) TgMsg {
+func docComment(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	return genComment(act.NewDocComment, act.OldValue, act.Verb,
 		"изменил(-a) комментарий в документе",
 		"прокомментировал(-a) документ",
 		"удалил(-a) комментарий из документа")
 }
 
-func docAttachment(act *dao.DocActivity, af actField.ActivityField) TgMsg {
+func docAttachment(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	return genAttachment(act.OldValue, act.NewValue, act.Verb,
 		"добавил(-a) вложение в документ",
 		"удалил(-a) вложение из документа",
 	)
 }
 
-func docDefault(act *dao.DocActivity, af actField.ActivityField) TgMsg {
+func docDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	msg.title = "изменил(-a) в документе"

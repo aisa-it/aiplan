@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"fmt"
 	"log/slog"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
@@ -455,5 +456,87 @@ func (n *SprintNotification) Handle(activity dao.ActivityI) error {
 		}
 
 	}
+	return nil
+}
+
+// /
+type ActivityEventNotification struct {
+	Notification
+}
+
+func NewActivityEventNotification(n *Notification) *ActivityEventNotification {
+	if n == nil {
+		return nil
+	}
+	return &ActivityEventNotification{
+		Notification: *n,
+	}
+}
+
+func getWorkspaceMembers(tx *gorm.DB, workspaceId uuid.UUID) (members []dao.WorkspaceMember, err error) {
+	var wm []dao.WorkspaceMember
+	if err := tx.Joins("Member").
+		Where("workspace_id = ?", workspaceId).
+		Find(&wm).Error; err != nil {
+		return nil, fmt.Errorf("get workspace members err: %v", err)
+	}
+	return wm, nil
+}
+
+func (n *ActivityEventNotification) Handle(activity dao.ActivityEvent) error {
+	//a, ok := activity.(dao.SprintActivity)
+	//if !ok {
+	//  return nil
+	//}
+	switch activity.EntityType {
+	case types.LayerIssue:
+	case types.LayerProject:
+	case types.LayerWorkspace:
+	case types.LayerDoc:
+	case types.LayerSprint:
+		if activity.Sprint == nil {
+			if err := n.Db.Unscoped().
+				Joins("Workspace").
+				Joins("CreatedBy").
+				Preload("Watchers").
+				Where("sprints.id = ?", activity.SprintID).
+				Find(&a.Sprint).Error; err != nil {
+				slog.Error("Get sprint for activity", "activityId", a.Id, "err", err)
+				return err
+			}
+		}
+		var wm []dao.WorkspaceMember
+		if err := n.Db.Joins("Member").
+			Where("workspace_id = ?", activity.WorkspaceID.UUID).
+			Find(&wm).Error; err != nil {
+			return nil
+		}
+
+		userIdMap := make(map[uuid.UUID]interface{})
+		authorUUID := activity.Sprint.CreatedById
+		notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, authorUUID, activity)
+
+		if notifyId != uuid.Nil {
+			n.Ws.Send(authorUUID, notifyId, activity, countNotify)
+		}
+
+		userIdMap[authorUUID] = struct{}{}
+
+		for _, member := range a.Sprint.Watchers {
+
+			if _, ok := userIdMap[member.ID]; !ok {
+				notifyId, countNotify, _ := CreateUserNotificationActivity(n.Db, member.ID, a)
+				if notifyId != uuid.Nil {
+					n.Ws.Send(member.ID, notifyId, a, countNotify)
+				}
+				userIdMap[member.ID] = struct{}{}
+			}
+
+		}
+
+	case types.LayerForm:
+
+	}
+
 	return nil
 }

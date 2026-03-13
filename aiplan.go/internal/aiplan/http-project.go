@@ -1861,7 +1861,7 @@ func (s *Services) createIssue(c echo.Context) error {
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-	tracker.TrackEvent(s.tracker, types.EntityProject, activities.VerbCreated, nil, nil, issueNew, &user)
+	tracker.TrackEvent(s.ta, types.LayerProject, activities.VerbCreated, nil, nil, issueNew, &user)
 	if issueNew.ParentId.Valid {
 
 		data := make(map[string]interface{})
@@ -1874,6 +1874,8 @@ func (s *Services) createIssue(c echo.Context) error {
 		if err != nil {
 			errStack.GetError(c, err)
 		}
+
+		tracker.TrackEvent(s.ta, types.LayerIssue, activities.VerbUpdated, data, oldData, issueNew, &user)
 	}
 
 	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID})

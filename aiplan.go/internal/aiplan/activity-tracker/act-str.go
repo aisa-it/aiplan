@@ -3,6 +3,7 @@ package tracker
 import (
 	"fmt"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 )
@@ -60,10 +61,14 @@ func GetAs[T any](d DataEntity, key actField.FieldKey) (T, bool) {
 	switch any(zero).(type) {
 
 	case string:
-		if s, ok := v.(actField.ActivityField); ok {
-			return any(s.String()).(T), true
+		switch val := v.(type) {
+		case string:
+			return any(val).(T), true
+		case actField.ActivityField:
+			return any(val.String()).(T), true
+		case types.RedactorHTML:
+			return any(val.String()).(T), true
 		}
-
 	case actField.ActivityField:
 		if s, ok := v.(string); ok {
 			return any(actField.ActivityField(s)).(T), true

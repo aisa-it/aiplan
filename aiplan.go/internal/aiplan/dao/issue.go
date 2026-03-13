@@ -712,9 +712,18 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 		tx = tx.Unscoped().Session(&gorm.Session{})
 	}
 
+	//ActQuery(tx).ByEntity(ic)
+
 	cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
 	tx.Where("(new_identifier = ? OR old_identifier = ?) AND (verb = ? OR verb = ? OR verb = ? OR verb = ?) AND field = ?", issue.ID, issue.ID, "created", "removed", "added", "copied", issue.GetEntityType()).
 		Model(&ProjectActivity{}).
+		Updates(cleanId)
+
+	tx.Where("workspace_id = ?", issue.WorkspaceId).
+		Where("project_id = ?", issue.ProjectId).
+		Where("new_identifier = ? OR old_identifier = ?", issue.ID, issue.ID).
+		Where("entity_type in (?)", []types.EntityLayer{types.LayerProject, types.LayerSprint}).
+		Model(&ActivityEvent{}).
 		Updates(cleanId)
 
 	tx.Where("new_identifier = ? OR old_identifier = ?", issue.ID, issue.ID).
@@ -728,6 +737,20 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 	tx.Where("old_identifier = ?", issue.ID).
 		Model(&IssueActivity{}).
 		Update("old_identifier", nil)
+
+	tx.Where("workspace_id = ?", issue.WorkspaceId).
+		Where("project_id = ?", issue.ProjectId).
+		Where("old_identifier = ?", issue.ID).
+		Where("entity_type = ?", types.LayerIssue).
+		Model(&ActivityEvent{}).
+		Update("old_identifier", nil)
+
+	tx.Where("workspace_id = ?", issue.WorkspaceId).
+		Where("project_id = ?", issue.ProjectId).
+		Where("new_identifier = ?", issue.ID).
+		Where("entity_type = ?", types.LayerIssue).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
 
 	// Delete UserNotification
 	if err := tx.Where("issue_id = ?", issue.ID).Delete(&UserNotifications{}).Error; err != nil {
@@ -773,6 +796,9 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 			return err
 		}
 	}
+	tx.Where("activity_event_id IN (SELECT id FROM activity_events WHERE issue_id = ?)", issue.ID).
+		Delete(&UserNotifications{})
+	tx.Where("issue_id = ?", issue.ID).Delete(&ActivityEvent{})
 
 	//// Delete activities
 	//var activities []EntityActivity
@@ -1175,9 +1201,18 @@ func (il *IssueLink) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Where("new_identifier = ? or old_identifier = ? ", il.Id, il.Id).Find(&activities).Error; err != nil {
 		return err
 	}
-	for _, activity := range activities {
-		tx.Delete(&activity)
+	{
+		ActQuery(tx).ByEntity(il).Where("new_identifier = ? AND verb = ? AND field = ?", il.Id, "created", "link").Model(&ActivityEvent{}).Update("new_identifier", nil)
+		var activities2 []EntityActivity
+		if err := ActQuery(tx).ByEntity(il).Where("new_identifier = ? or old_identifier = ? ", il.Id, il.Id).Find(&activities).Error; err != nil {
+			return err
+		}
+
+		for _, activity := range activities2 {
+			tx.Delete(&activity)
+		}
 	}
+
 	return nil
 }
 
@@ -1285,6 +1320,8 @@ func (attachment *IssueAttachment) AfterFind(tx *gorm.DB) error {
 
 func (attachment *IssueAttachment) BeforeDelete(tx *gorm.DB) error {
 	tx.Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, "created", "attachment").Model(&IssueActivity{}).Update("new_identifier", nil)
+	ActQuery(tx).ByEntity(attachment).Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, "created", "attachment").Model(&ActivityEvent{}).Update("new_identifier", nil)
+
 	return nil
 }
 
@@ -1763,6 +1800,9 @@ func (ic *IssueComment) BeforeDelete(tx *gorm.DB) error {
 	}
 	tx.Where("new_identifier = ? AND verb = ? AND field = ?", ic.Id, "created", "comment").Model(&IssueActivity{}).Update("new_identifier", nil)
 	tx.Where("new_identifier = ? or old_identifier = ? ", ic.Id, ic.Id).Delete(&IssueActivity{})
+
+	ActQuery(tx).ByEntity(ic).Where("new_identifier = ? AND verb = ? AND field = ?", ic.Id, "created", "comment").Model(&ActivityEvent{}).Update("new_identifier", nil)
+	ActQuery(tx).ByEntity(ic).Where("new_identifier = ? or old_identifier = ? ", ic.Id, ic.Id).Delete(&ActivityEvent{})
 
 	for _, attach := range ic.Attachments {
 		if err := tx.Delete(&attach).Error; err != nil {

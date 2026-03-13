@@ -394,6 +394,9 @@ type UserNotifications struct {
 	RootActivityId uuid.NullUUID `json:"root_activity,omitempty"`
 	RootActivity   *RootActivity `json:"root_activity_detail,omitempty" gorm:"foreignKey:RootActivityId" extensions:"x-nullable"`
 
+	ActivityEventId uuid.NullUUID  `json:"activity,omitempty"`
+	ActivityEvent   *ActivityEvent `json:"activity_event,omitempty" gorm:"foreignKey:ActivityEventId" extensions:"x-nullable"`
+
 	FullActivity *FullActivity `json:"full_activity_detail,omitempty" gorm:"-" extensions:"x-nullable"`
 }
 

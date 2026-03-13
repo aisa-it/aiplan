@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -176,6 +177,19 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 		msg.Data = tmp
 	case dao.FullActivity:
 		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
+			return nil
+		}
+		msg.Type = "activity"
+		msg.Detail = NotificationDetailResponse{
+			User:      v.Actor.ToLightDTO(),
+			Issue:     v.Issue.ToLightDTO(),
+			Project:   v.Issue.Project.ToLightDTO(),
+			Workspace: v.Issue.Workspace.ToLightDTO(),
+			Doc:       v.Doc.ToLightDTO(),
+			Form:      v.Form.ToLightDTO(),
+		}
+	case dao.ActivityEvent:
+		if v.EntityType == types.LayerIssue && v.Verb == actField.VerbDeleted && v.Field != actField.Linked.Field {
 			return nil
 		}
 		msg.Type = "activity"

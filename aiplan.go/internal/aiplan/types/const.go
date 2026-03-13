@@ -17,11 +17,11 @@ const (
 )
 
 const (
-	EntityRoot EntityLayer = iota
-	EntityWorkspace
-	EntityProject
-	EntityIssue
-	EntityDoc
-	EntityForm
-	EntitySprint
+	LayerRoot EntityLayer = iota
+	LayerWorkspace
+	LayerProject
+	LayerIssue
+	LayerDoc
+	LayerForm
+	LayerSprint
 )

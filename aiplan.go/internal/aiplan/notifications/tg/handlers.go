@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -85,32 +86,26 @@ func (t *TgService) startHandler(ctx context.Context, b *bot.Bot, update *models
 
 func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	user := ctx.(*UserContext).User
+	var act dao.ActivityTelegramMessage
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	unionTable := dao.BuildUnionSubquery(t.db, "ua", dao.FullActivity{}, issue, doc)
-
-	var act dao.FullActivity
-
-	if err := unionTable.Unscoped().
-		Joins("Issue").
-		Joins("Doc").
-		Where("? = any (telegram_msg_ids)", update.Message.ReplyToMessage.ID).First(&act).Error; err != nil {
+	if err := t.db.
+		Joins("Activity").
+		Joins("Activity.Issue").
+		Joins("Activity.Doc").
+		Where("message_id = ?", update.Message.ReplyToMessage.ID).First(&act).Error; err != nil {
 		t.Send(update.Message.Chat.ID, TgMsg{
 			title: "Не возможно оставить комментарий",
 		})
 		return
-
 	}
 
-	if act.Issue != nil {
+	switch act.Activity.EntityType {
+	case types.LayerIssue:
 		var identifier uuid.UUID
-		if act.Field != nil && *act.Field == actField.Comment.Field.String() && act.NewIdentifier.Valid {
-			identifier = act.NewIdentifier.UUID
+		if act.Activity.Field == actField.Comment.Field && act.Activity.NewIdentifier.Valid {
+			identifier = act.Activity.NewIdentifier.UUID
 		}
-		err := t.bl.CreateIssueComment(*act.Issue, *user, update.Message.Text, identifier, true)
+		err := t.bl.CreateIssueComment(*act.Activity.Issue, *user, update.Message.Text, identifier, true)
 		if err != nil {
 			if err.Error() == "create comment forbidden" {
 				t.Send(update.Message.Chat.ID, TgMsg{
@@ -121,15 +116,13 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 			slog.Error("Create comment from tg reply", "err", err)
 			return
 		}
-		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий к задаче '%s'\nотправлен", bot.EscapeMarkdown(act.Issue.Name))})
+		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий к задаче '%s'\nотправлен", bot.EscapeMarkdown(act.Activity.Issue.Name))})
 		if errSend != nil {
 			slog.Error("Send comment from tg reply", "err", errSend)
 		}
 		return
-	}
-
-	if act.Doc != nil {
-		err := t.bl.CreateDocComment(*act.Doc, *user, update.Message.Text, act.NewIdentifier, true)
+	case types.LayerDoc:
+		err := t.bl.CreateDocComment(*act.Activity.Doc, *user, update.Message.Text, act.Activity.NewIdentifier, true)
 		if err != nil {
 			if err.Error() == "create comment forbidden" {
 				t.Send(update.Message.Chat.ID, TgMsg{
@@ -140,12 +133,14 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 			slog.Error("Create comment from tg reply", "err", err)
 			return
 		}
-		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий в документ '%s'\nотправлен", bot.EscapeMarkdown(act.Doc.Title))})
+		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий в документ '%s'\nотправлен", bot.EscapeMarkdown(act.Activity.Doc.Title))})
 		if errSend != nil {
 			slog.Error("Send comment from tg reply", "err", errSend)
 		}
+		return
 	}
-
+	t.Send(update.Message.Chat.ID, TgMsg{
+		title: "Не возможно оставить комментарий",
+	})
 	return
-
 }

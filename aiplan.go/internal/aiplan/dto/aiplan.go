@@ -138,7 +138,7 @@ type ActivityEventLight struct {
 	OldValue *string `json:"old_value,omitempty"  extensions:"x-nullable"`
 	NewValue string  `json:"new_value"`
 
-	EntityType types.EntityLayer `json:"entity_type"`
+	EntityType string `json:"entity_type"`
 
 	NewEntity any `json:"new_entity_detail,omitempty" extensions:"x-nullable"`
 	OldEntity any `json:"old_entity_detail,omitempty" extensions:"x-nullable"`

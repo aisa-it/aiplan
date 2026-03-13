@@ -16,29 +16,27 @@ import (
 )
 
 type ActivityEvent struct {
-	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid"`
+	ID uuid.UUID `gorm:"primaryKey;type:uuid"`
 
-	CreatedAt time.Time `gorm:"column:created_at;not null;index:,type:brin"`
+	CreatedAt time.Time `gorm:"index:idx_activity_issue_time,priority:2,sort:desc;index:idx_activity_project_time,priority:2,sort:desc;index:idx_activity_workspace_time,priority:2,sort:desc;index:idx_activity_actor_time,priority:2,sort:desc;index:idx_activity_notified_time,priority:1,sort:asc,where:notified = false"`
+	ActorID   uuid.UUID `gorm:"type:uuid;not null;index:idx_activity_actor_time,priority:1"`
 
-	ActorID  uuid.UUID `gorm:"column:actor_id;type:uuid;not null;index:idx_activity_actor_entity_created,priority:1"`
-	Notified bool      `gorm:"column:notified;default:false;index:idx_activity_notified,priority:1,where:notified=false"`
-
+	Notified      bool `gorm:"default:false"`
 	Verb          string
 	Field         actField.ActivityField
 	OldValue      *string
 	NewValue      string
-	NewIdentifier uuid.NullUUID `gorm:"type:uuid"`
-	OldIdentifier uuid.NullUUID `gorm:"type:uuid"`
-	SenderTg      int64         `gorm:"-" json:"-"`
+	NewIdentifier uuid.NullUUID     `gorm:"type:uuid"`
+	OldIdentifier uuid.NullUUID     `gorm:"type:uuid"`
+	SenderTg      int64             `gorm:"-" json:"-"`
+	EntityType    types.EntityLayer `gorm:"column:entity_type;type:smallint"`
 
-	EntityType types.EntityLayer `gorm:"column:entity_type;type:smallint;index:idx_activity_workspace,priority:2;index:idx_activity_project,priority:2;index:idx_activity_issue,priority:2;index:idx_activity_doc,priority:2;index:idx_activity_form,priority:2;index:idx_activity_sprint,priority:2"`
-
-	WorkspaceID uuid.NullUUID `gorm:"column:workspace_id;type:uuid;index:idx_activity_workspace,priority:1,where:workspace_id IS NOT NULL"`
-	ProjectID   uuid.NullUUID `gorm:"column:project_id;type:uuid;index:idx_activity_project,priority:1,where:project_id IS NOT NULL"`
-	IssueID     uuid.NullUUID `gorm:"column:issue_id;type:uuid;index:idx_activity_issue,priority:1,where:issue_id IS NOT NULL"`
-	DocID       uuid.NullUUID `gorm:"column:doc_id;type:uuid;index:idx_activity_doc,priority:1,where:doc_id IS NOT NULL"`
-	FormID      uuid.NullUUID `gorm:"column:form_id;type:uuid;index:idx_activity_form,priority:1,where:form_id IS NOT NULL"`
-	SprintID    uuid.NullUUID `gorm:"column:sprint_id;type:uuid;index:idx_activity_sprint,priority:1,where:sprint_id IS NOT NULL"`
+	WorkspaceID uuid.NullUUID `gorm:"type:uuid;index:idx_activity_workspace_time,priority:1,where:workspace_id IS NOT NULL"`
+	ProjectID   uuid.NullUUID `gorm:"type:uuid;index:idx_activity_project_time,priority:1,where:project_id IS NOT NULL"`
+	IssueID     uuid.NullUUID `gorm:"type:uuid;index:idx_activity_issue_time,priority:1,where:issue_id IS NOT NULL"`
+	DocID       uuid.NullUUID `gorm:"type:uuid"`
+	FormID      uuid.NullUUID `gorm:"type:uuid"`
+	SprintID    uuid.NullUUID `gorm:"type:uuid"`
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceID"`
 	Actor     *User      `gorm:"foreignKey:ActorID;references:ID"`
@@ -182,7 +180,7 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 	return walkStruct(val, typ)
 }
 
-// Создает легкий DTO из FullActivity.
+// Создает легкий DTO из ActivityEvent.
 func (e *ActivityEvent) ToLightDTO() *dto.ActivityEventLight {
 	if e == nil {
 		return nil
@@ -193,16 +191,15 @@ func (e *ActivityEvent) ToLightDTO() *dto.ActivityEventLight {
 		Field:      e.Field,
 		OldValue:   e.OldValue,
 		NewValue:   e.NewValue,
-		EntityType: e.EntityType,
-		//TargetUser: e.AffectedUser.ToLightDTO(),
-		EntityUrl: e.GetUrl(),
-		CreatedAt: e.CreatedAt,
-		NewEntity: GetActionEntity2(*e, "New"),
-		OldEntity: GetActionEntity2(*e, "Old"),
+		EntityType: e.EntityType.String(),
+		EntityUrl:  e.GetUrl(),
+		CreatedAt:  e.CreatedAt,
+		NewEntity:  GetActionEntity2(*e, "New"),
+		OldEntity:  GetActionEntity2(*e, "Old"),
 	}
 }
 
-// Создает полный DTO из структуры FullActivity.
+// Создает полный DTO из структуры ActivityEvent.
 func (e *ActivityEvent) ToDTO() *dto.ActivityEventFull {
 	if e == nil {
 		return nil
@@ -224,10 +221,6 @@ func (e *ActivityEvent) ToDTO() *dto.ActivityEventFull {
 
 // Проверяет, следует ли пропустить предварительную загрузку данных.  Возвращает true, если поле не определено или идентификаторы не установлены, что указывает на то, что предварительная загрузка не требуется.  В противном случае возвращает false.
 func (e ActivityEvent) SkipPreload() bool {
-	//if e.Field == nil {
-	//  return true
-	//}
-
 	if !e.NewIdentifier.Valid && !e.OldIdentifier.Valid {
 		return true
 	}
@@ -236,26 +229,69 @@ func (e ActivityEvent) SkipPreload() bool {
 
 func (e *ActivityEvent) GetUrl() *string {
 	switch e.EntityType {
-	case types.EntityIssue:
+	case types.LayerIssue:
 		if e.Issue != nil && e.Issue.URL != nil {
 			urlStr := e.Issue.URL.String()
 			return &urlStr
 		}
-	case types.EntityProject:
+	case types.LayerProject:
 		if e.Project != nil && e.Project.URL != nil {
 			urlStr := e.Project.URL.String()
 			return &urlStr
 		}
-	case types.EntityWorkspace:
+	case types.LayerWorkspace:
 		if e.Workspace != nil && e.Workspace.URL != nil {
 			urlStr := e.Workspace.URL.String()
 			return &urlStr
 		}
-	case types.EntityForm:
+	case types.LayerForm:
 		if e.Form != nil && e.Form.URL != nil {
 			urlStr := e.Form.URL.String()
 			return &urlStr
 		}
+	case types.LayerSprint:
+		if e.Sprint != nil && e.Sprint.URL != nil {
+			urlStr := e.Sprint.URL.String()
+			return &urlStr
+		}
+	case types.LayerDoc:
+		if e.Doc != nil && e.Doc.URL != nil {
+			urlStr := e.Doc.URL.String()
+			return &urlStr
+		}
 	}
+
 	return nil
+}
+
+type ActivityTelegramMessage struct {
+	ID uuid.UUID `gorm:"primaryKey;type:uuid"`
+
+	ActivityID uuid.UUID      `gorm:"type:uuid;not null;index"`
+	Activity   *ActivityEvent `gorm:"foreignKey:ActivityID;references:ID;constraint:OnDelete:CASCADE"`
+
+	MessageID int64 `gorm:"not null;index"`
+
+	CreatedAt time.Time
+}
+
+// -migration
+type Act struct {
+	db *gorm.DB
+}
+
+func ActQuery(db *gorm.DB) *Act {
+	return &Act{db: db}
+}
+
+func (a *Act) ByEntity(entity interface{}) *gorm.DB {
+	switch e := entity.(type) {
+	case interface{ GetIssueId() uuid.UUID }:
+		return a.db.Where("issue_id = ?", e.GetIssueId())
+	case interface{ GetProjectId() uuid.UUID }:
+		a.db = a.db.Where("project_id = ?", e.GetProjectId())
+	case interface{ GetWorkspaceId() uuid.UUID }:
+		a.db = a.db.Where("workspace_id = ?", e.GetWorkspaceId())
+	}
+	return a.db
 }
