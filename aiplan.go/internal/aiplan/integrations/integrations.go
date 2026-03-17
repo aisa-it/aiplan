@@ -14,6 +14,9 @@ package integrations
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
+	"strings"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
@@ -137,4 +140,33 @@ func (is *IntegrationsService) GetIntegrationUser(name string) *dao.User {
 		}
 	}
 	return user
+}
+
+type Issue struct {
+	Project string
+	Seq     int
+}
+
+func (i Issue) String() string {
+	return fmt.Sprintf("%s-%d", i.Project, i.Seq)
+}
+
+var issueReg = regexp.MustCompile(`[A-Z0-9]+-\d+`)
+
+func ParseMessage(msg string) []Issue {
+	entries := issueReg.FindAllString(msg, 10)
+	res := make([]Issue, 0, len(entries))
+	for _, entry := range entries {
+		foundIssue := strings.Split(entry, "-")
+		if len(foundIssue) != 2 {
+			continue
+		}
+		seq, err := strconv.Atoi(foundIssue[1])
+		if err != nil {
+			slog.Error("ParseMessage from hook encounter incorrect issue", "issue", entry, "msg", msg)
+			continue
+		}
+		res = append(res, Issue{Project: foundIssue[0], Seq: seq})
+	}
+	return res
 }
