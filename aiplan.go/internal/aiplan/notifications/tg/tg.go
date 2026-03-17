@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -81,12 +80,17 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 		opts...)
 
 	if err != nil {
-		slog.Error("Connect to TG bot", "err", err)
-		os.Exit(1)
+		slog.Error("Connect to TG bot, telegram notifications disabled", "err", err)
+		return &TgService{Disabled: true}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	res, _ := b.GetMe(ctx)
+	res, err := b.GetMe(ctx)
+	if err != nil {
+		cancel()
+		slog.Error("Get TG bot info error, telegram notifications disabled", "err", err)
+		return &TgService{Disabled: true}
+	}
 
 	serv.bot = b
 	serv.ctx = ctx
