@@ -64,7 +64,7 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			return uuid.Nil, 0, fmt.Errorf("user off app notify")
 		}
 
-		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Workspace.Field, a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerWorkspace, a.Verb, member.Role) {
 			notification := dao.UserNotifications{
 				ID:                  dao.GenUUID(),
 				UserId:              userId,
@@ -95,10 +95,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 
 		var notifyOk, isAuthorNotify, isMemberNotify bool
 		isProjectAdm := member.Role == types.AdminRole
-		isMemberNotify = member.NotificationSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
+		isMemberNotify = member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
 
 		if a.NewIssue != nil {
-			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
+			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
 			notifyOk = isAuthorNotify || (!isAuthorNotify && isMemberNotify)
 		} else {
 			notifyOk = isMemberNotify && isProjectAdm
@@ -140,10 +140,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			authorOK = true
 		}
 
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Doc.Field, a.Verb, member.Role) {
+		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
 			authorNotifyOk = true
 		}
-		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Doc.Field, a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
 			memberNotifyOK = true
 		}
 
@@ -218,10 +218,10 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 				authorOK = true
 			}
 
-			if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "issue", a.Verb, member.Role) {
+			if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
 				authorNotifyOk = true
 			}
-			if member.NotificationSettingsApp.IsNotify(a.Field, "issue", a.Verb, member.Role) {
+			if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
 				memberNotifyOK = true
 			}
 		}
@@ -269,11 +269,11 @@ func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUI
 			authorOK = true
 		}
 
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Sprint.Field, a.Verb, member.Role) {
+		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
 			authorNotifyOk = true
 		}
 
-		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Sprint.Field, a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
 			memberNotifyOK = true
 		}
 
@@ -347,7 +347,7 @@ func CreateUserNotification(tx *gorm.DB, userId uuid.UUID, activity dao.Activity
 			return uuid.Nil, 0, fmt.Errorf("user off app notify")
 		}
 
-		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Workspace.Field, a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerWorkspace, a.Verb, member.Role) {
 			notification := dao.UserNotifications{
 				ID:                  dao.GenUUID(),
 				UserId:              userId,
@@ -378,10 +378,10 @@ func CreateUserNotification(tx *gorm.DB, userId uuid.UUID, activity dao.Activity
 
 		var notifyOk, isAuthorNotify, isMemberNotify bool
 		isProjectAdm := member.Role == types.AdminRole
-		isMemberNotify = member.NotificationSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
+		isMemberNotify = member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
 
 		if a.NewIssue != nil {
-			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "project", a.Verb, member.Role)
+			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
 			notifyOk = isAuthorNotify || (!isAuthorNotify && isMemberNotify)
 		} else {
 			notifyOk = isMemberNotify && isProjectAdm
@@ -423,10 +423,10 @@ func CreateUserNotification(tx *gorm.DB, userId uuid.UUID, activity dao.Activity
 			authorOK = true
 		}
 
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Doc.Field, a.Verb, member.Role) {
+		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
 			authorNotifyOk = true
 		}
-		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Doc.Field, a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
 			memberNotifyOK = true
 		}
 
@@ -501,10 +501,10 @@ func CreateUserNotification(tx *gorm.DB, userId uuid.UUID, activity dao.Activity
 				authorOK = true
 			}
 
-			if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, "issue", a.Verb, member.Role) {
+			if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
 				authorNotifyOk = true
 			}
-			if member.NotificationSettingsApp.IsNotify(a.Field, "issue", a.Verb, member.Role) {
+			if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
 				memberNotifyOK = true
 			}
 		}
@@ -552,11 +552,11 @@ func CreateUserNotification(tx *gorm.DB, userId uuid.UUID, activity dao.Activity
 			authorOK = true
 		}
 
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(a.Field, actField.Sprint.Field, a.Verb, member.Role) {
+		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
 			authorNotifyOk = true
 		}
 
-		if member.NotificationSettingsApp.IsNotify(a.Field, actField.Sprint.Field, a.Verb, member.Role) {
+		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
 			memberNotifyOK = true
 		}
 

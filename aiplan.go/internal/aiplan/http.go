@@ -47,7 +47,6 @@ import (
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -350,17 +349,18 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	sendPasswordDefaultAdmin(db, es)
 
 	{ // register handler ws & UserNotify activity
-		tr.RegisterHandler(notifications.NewIssueNotification(ns))
-		tr.RegisterHandler(notifications.NewProjectNotification(ns))
-		tr.RegisterHandler(notifications.NewDocNotification(ns))
-		tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
-		tr.RegisterHandler(notifications.NewFormNotification(ns))
-		tr.RegisterHandler(notifications.NewSprintNotification(ns))
+		//tr.RegisterHandler(notifications.NewIssueNotification(ns))
+		//tr.RegisterHandler(notifications.NewProjectNotification(ns))
+		//tr.RegisterHandler(notifications.NewDocNotification(ns))
+		//tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
+		//tr.RegisterHandler(notifications.NewFormNotification(ns))
+		//tr.RegisterHandler(notifications.NewSprintNotification(ns))
 	}
 
 	{ // register handler telegram activity
 		//tr.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
-		at.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
+		//at.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
+		at.RegisterHandler(notifications.NewEventNotificationService(ns))
 		//tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
 		//tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
 		//tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))

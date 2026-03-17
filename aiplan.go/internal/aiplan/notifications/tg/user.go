@@ -6,7 +6,6 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
@@ -103,17 +102,17 @@ func combineRoles(roles ...role) role {
 	return result
 }
 
-func (ur UserRegistry) FilterActivity(field string, verb string, entity actField.ActivityField, f isNotifyFunc, authorRole role) []userTg {
-	result := make([]userTg, 0, len(ur))
-
-	for _, user := range ur {
-		if !f(&user, field, verb, entity, user.Has(authorRole)) {
-			continue
-		}
-		result = append(result, user)
-	}
-	return result
-}
+//func (ur UserRegistry) FilterActivity(field string, verb string, entity actField.ActivityField, f isNotifyFunc, authorRole role) []userTg {
+//	result := make([]userTg, 0, len(ur))
+//
+//	for _, user := range ur {
+//		if !f(&user, field, verb, entity, user.Has(authorRole)) {
+//			continue
+//		}
+//		result = append(result, user)
+//	}
+//	return result
+//}
 
 // UsersStep helpers
 type UsersStep func(tx *gorm.DB, act dao.ActivityEvent, users UserRegistry) error

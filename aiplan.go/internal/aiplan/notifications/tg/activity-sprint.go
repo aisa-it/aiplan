@@ -7,13 +7,10 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"gorm.io/gorm"
 )
 
-type funcSprintMsgFormat func(act *dao.SprintActivity, af actField.ActivityField) TgMsg
-
 var (
-	sprintMap = map[actField.ActivityField]funMsgFormat{
+	sprintMap = map[actField.ActivityField]funcTgMsgFormat{
 		actField.Watchers.Field:    sprintWatchers,
 		actField.Issue.Field:       sprintIssues,
 		actField.Description.Field: sprintDescription,
@@ -23,58 +20,7 @@ var (
 	}
 )
 
-func notifyFromSprintActivity(tx *gorm.DB, act *dao.ActivityEvent) (*ActivityTgNotification, error) {
-
-	if err := preloadSprintActivity(tx, act); err != nil {
-		return nil, err
-	}
-
-	msg, err := formatSprintActivity(act)
-	if err != nil {
-		return nil, fmt.Errorf("formatSprintActivity: %w", err)
-	}
-
-	steps := []UsersStep{
-		addUserRole(act.Actor, actionAuthor),
-		addUserRole(&act.Sprint.CreatedBy, sprintAuthor),
-		addUsers(act.Sprint.Watchers, sprintWatcher),
-	}
-
-	plan := NotifyPlan{
-		TableName:      act.TableName(),
-		settings:       fromWorkspace(act.WorkspaceID.UUID),
-		ActivitySender: act.SenderTg,
-		Entity:         actField.Sprint.Field,
-		AuthorRole:     sprintAuthor,
-		Steps:          steps,
-	}
-
-	return NewActivityTgNotification(tx, *act, msg, plan), nil
-}
-
-func preloadSprintActivity(tx *gorm.DB, act *dao.ActivityEvent) error {
-	if err := tx.Unscoped().
-		Joins("Workspace").
-		Joins("CreatedBy").
-		Preload("Watchers").
-		Where("sprints.id = ?", act.SprintID.UUID).
-		First(&act.Sprint).Error; err != nil {
-		return fmt.Errorf("preloadSprintActivity: %v", err)
-	}
-
-	if act.NewSprintIssue != nil {
-		act.NewSprintIssue = preloadIssueActivity(tx, act.NewSprintIssue.ID)
-	}
-	if act.OldSprintIssue != nil {
-		act.OldSprintIssue = preloadIssueActivity(tx, act.OldSprintIssue.ID)
-	}
-
-	act.Workspace = act.Sprint.Workspace
-
-	return nil
-}
-
-func formatSprintActivity(act *dao.ActivityEvent) (TgMsg, error) {
+func FormatSprintActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	res, err := formatByField(act, sprintMap, sprintDefault)
 	if err != nil {
 		return res, err
@@ -93,11 +39,11 @@ func sprintWatchers(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) наблюдателя в спринт"
-		msg.body = Stelegramf("__%s__", getUserName(act.NewSprintWatcher))
+		msg.Title = "добавил(-a) наблюдателя в спринт"
+		msg.Body = Stelegramf("__%s__", getUserName(act.NewSprintWatcher))
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) наблюдателя из спринта"
-		msg.body = Stelegramf("~%s~", getUserName(act.OldSprintWatcher))
+		msg.Title = "убрал(-a) наблюдателя из спринта"
+		msg.Body = Stelegramf("~%s~", getUserName(act.OldSprintWatcher))
 	}
 	return msg
 }
@@ -106,25 +52,25 @@ func sprintIssues(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) задачу в спринт"
-		msg.body = Stelegramf("[%s](%s)", act.NewSprintIssue.FullIssueName(), act.NewSprintIssue.URL.String())
+		msg.Title = "добавил(-a) задачу в спринт"
+		msg.Body = Stelegramf("[%s](%s)", act.NewSprintIssue.FullIssueName(), act.NewSprintIssue.URL.String())
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) задачу из спринта"
-		msg.body = Stelegramf("[~%s~](%s)", act.OldSprintIssue.FullIssueName(), act.OldSprintIssue.URL.String())
+		msg.Title = "убрал(-a) задачу из спринта"
+		msg.Body = Stelegramf("[~%s~](%s)", act.OldSprintIssue.FullIssueName(), act.OldSprintIssue.URL.String())
 	}
 	return msg
 }
 
 func sprintDescription(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	msg.title = "изменил(-а) описание спринта"
-	msg.body = Stelegramf("```\n%s```", utils.HtmlToTg(act.NewValue))
+	msg.Title = "изменил(-а) описание спринта"
+	msg.Body = Stelegramf("```\n%s```", utils.HtmlToTg(act.NewValue))
 	return msg
 }
 
 func sprintDate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	msg.title = "изменил(-a) в спринте"
+	msg.Title = "изменил(-a) в спринте"
 	format := "*%s*: "
 	values := []any{types.FieldsTranslation[af]}
 
@@ -146,6 +92,6 @@ func sprintDate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 		values = append(values, str)
 	}
 
-	msg.body = Stelegramf(format, values...)
+	msg.Body = Stelegramf(format, values...)
 	return msg
 }

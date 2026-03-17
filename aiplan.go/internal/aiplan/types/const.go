@@ -25,3 +25,9 @@ const (
 	LayerForm
 	LayerSprint
 )
+
+const (
+	TgCh NotifyChannel = iota
+	EmailCh
+	AppCh
+)

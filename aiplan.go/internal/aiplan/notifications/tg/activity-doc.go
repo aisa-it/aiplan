@@ -7,13 +7,10 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"gorm.io/gorm"
 )
 
-type funMsgFormat func(act *dao.ActivityEvent, af actField.ActivityField) TgMsg
-
 var (
-	docMap = map[actField.ActivityField]funMsgFormat{
+	docMap = map[actField.ActivityField]funcTgMsgFormat{
 		actField.Description.Field: docDescription,
 		actField.Doc.Field:         docDoc,
 
@@ -31,54 +28,7 @@ var (
 	}
 )
 
-func notifyFromDocActivity(tx *gorm.DB, act *dao.ActivityEvent) (*ActivityTgNotification, error) {
-
-	if err := preloadDocActivity(tx, act); err != nil {
-		return nil, err
-	}
-
-	msg, err := formatDocActivity(act)
-	if err != nil {
-		return nil, fmt.Errorf("formatDocActivity: %w", err)
-	}
-	steps := []UsersStep{
-		addUserRole(act.Actor, actionAuthor),
-		addUserRole(act.Doc.Author, docAuthor),
-		addCommentMentionedUsers(act.NewDocComment),
-		addDocMembers(act.DocID.UUID),
-	}
-	if act.Doc == nil && act.Verb == actField.VerbCreated {
-		steps = append(steps, addWorkspaceAdmins(act.WorkspaceID.UUID))
-	}
-
-	plan := NotifyPlan{
-		TableName:      act.TableName(),
-		settings:       fromWorkspace(act.WorkspaceID.UUID),
-		ActivitySender: act.SenderTg,
-		Entity:         actField.Doc.Field,
-		AuthorRole:     actionAuthor,
-		Steps:          steps,
-	}
-
-	return NewActivityTgNotification(tx, *act, msg, plan), nil
-}
-
-func preloadDocActivity(tx *gorm.DB, act *dao.ActivityEvent) error {
-	if err := tx.Unscoped().
-		Joins("Workspace").
-		Joins("Author").
-		Preload("AccessRules.Member").
-		Where("docs.id = ?", act.DocID.UUID).
-		First(&act.Doc).Error; err != nil {
-		return fmt.Errorf("preloadDocActivity: %v", err)
-	}
-	act.Workspace = act.Doc.Workspace
-	act.Doc.AfterFind(tx)
-
-	return nil
-}
-
-func formatDocActivity(act *dao.ActivityEvent) (TgMsg, error) {
+func FormatDocActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	res, err := formatByField(act, docMap, nil)
 	if err != nil {
 		return res, err
@@ -97,8 +47,8 @@ func formatDocActivity(act *dao.ActivityEvent) (TgMsg, error) {
 
 func docDescription(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	msg.title = "изменил(-а) описание документа"
-	msg.body = Stelegramf("```\n%s```", utils.HtmlToTg(act.NewValue))
+	msg.Title = "изменил(-а) описание документа"
+	msg.Body = Stelegramf("```\n%s```", utils.HtmlToTg(act.NewValue))
 	return msg
 }
 
@@ -109,34 +59,34 @@ func docDoc(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	var values []any
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) в документе"
+		msg.Title = "создал(-a) в документе"
 		values = append(values, act.NewValue, def.NewDoc.URL.String())
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) в документ"
+		msg.Title = "добавил(-a) в документ"
 		values = append(values, act.NewValue, def.NewDoc.URL.String())
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) из документа"
+		msg.Title = "удалил(-a) из документа"
 		format = "*Вложенный документ*:  ~%s~"
 		values = append(values, fmt.Sprint(*act.OldValue))
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) из документа"
+		msg.Title = "убрал(-a) из документа"
 		values = append(values, *act.OldValue, def.OldDoc.URL.String())
 	case actField.VerbMoveDocWorkspace:
-		msg.title = "сделал(-a) корневым документ"
+		msg.Title = "сделал(-a) корневым документ"
 		if act.OldValue != nil {
 			format = "*Из документа*: [%s](%s)"
 			values = append(values, *act.OldValue, def.OldDoc.URL.String())
 		}
 	case actField.VerbMoveDocDoc:
-		msg.title = "переместил(-a) документ"
+		msg.Title = "переместил(-a) документ"
 		format = "*Из документа*: [%s](%s)\n*В документ*: [%s](%s)"
 		values = append(values, *act.OldValue, def.OldDoc.URL.String(), act.NewValue, def.NewDoc.URL.String())
 	case actField.VerbMoveWorkspaceDoc:
-		msg.title = "переместил(-a) документ"
+		msg.Title = "переместил(-a) документ"
 		format = "*Из корневой директории*\n*В документ*: [%s](%s)"
 		values = append(values, act.NewValue, def.NewDoc.URL.String())
 	}
-	msg.body = Stelegramf(format, values...)
+	msg.Body = Stelegramf(format, values...)
 	return msg
 }
 
@@ -161,14 +111,14 @@ func docMember(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 
 	switch act.Verb {
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) пользователя в документ"
+		msg.Title = "добавил(-a) пользователя в документ"
 		format += "%s"
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) пользователя из документа"
+		msg.Title = "убрал(-a) пользователя из документа"
 		format += "~%s~"
 	}
 
-	msg.body = fmt.Sprintf(format, values...)
+	msg.Body = fmt.Sprintf(format, values...)
 	return msg
 }
 
@@ -176,14 +126,14 @@ func docRole(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	var format string
 	values := []any{types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue)}
-	msg.title = "изменил(-a) роли в документе"
+	msg.Title = "изменил(-a) роли в документе"
 	switch af {
 	case actField.ReaderRole.Field:
 		format = "*Просмотр раздела:* ~%s~ %s"
 	case actField.EditorRole.Field:
 		format = "*Редактирование:* ~%s~ %s"
 	}
-	msg.body = fmt.Sprintf(format, values...)
+	msg.Body = fmt.Sprintf(format, values...)
 	return msg
 }
 
@@ -204,12 +154,12 @@ func docAttachment(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 func docDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
-	msg.title = "изменил(-a) в документе"
+	msg.Title = "изменил(-a) в документе"
 
 	if act.OldValue != nil {
-		msg.body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *act.OldValue, act.NewValue)
+		msg.Body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *act.OldValue, act.NewValue)
 	} else {
-		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
+		msg.Body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
 	}
 	return msg
 }
