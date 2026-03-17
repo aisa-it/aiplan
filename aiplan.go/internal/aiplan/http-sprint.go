@@ -221,7 +221,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Param request body requestSprint true "Информация о спринте"
+// @Param request body dto.RequestSprint true "Информация о спринте"
 // @Success 200 {object} dto.Sprint "Созданный спринт"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -311,7 +311,7 @@ func (s *Services) GetSprint(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param sprintId path string true "Идентификатор или номер последовательности спринта"
-// @Param request body requestSprint true "Информация о спринте"
+// @Param request body dto.RequestSprint true "Информация о спринте"
 // @Success 200 {object} dto.Sprint "Спринт"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -385,7 +385,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param sprintId path string true "Идентификатор или номер последовательности спринта"
-// @Param request body requestIssueIdList true "Список id задач"
+// @Param request body dto.RequestIssueIdList true "Список id задач"
 // @Success 200  "Задачи добавлены"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -567,7 +567,7 @@ func (s *Services) deleteSprint(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param sprintId path string true "Идентификатор или номер последовательности спринта"
-// @Param request body requestUserIdList true "Список id user"
+// @Param request body dto.RequestUserIdList true "Список id user"
 // @Success 200  "ок"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -813,7 +813,7 @@ func (s *Services) getSprintStates(c echo.Context) error {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Param data body requestSprintFolder true "Данные шаблона"
+// @Param data body dto.RequestSprintFolder true "Данные папки спринтов"
 // @Success 200 {object} dto.SprintFolder "Новая директория спринтов"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
