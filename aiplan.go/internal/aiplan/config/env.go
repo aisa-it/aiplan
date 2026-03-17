@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 )
 
 // Exist - возвращает true, если глобальная переменная key существует, иначе false
@@ -39,11 +41,11 @@ func GetBoolEnv(key string) bool {
 	return v
 }
 
-func GetURLEnv(key string) *url.URL {
+func GetURLEnv(key string) types.JsonURL {
 	val, _ := os.LookupEnv(key)
 	u, err := url.Parse(val)
 	if err != nil {
-		return nil
+		return types.JsonURL{}
 	}
-	return u
+	return types.JsonURL{URL: u}
 }

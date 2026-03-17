@@ -22,7 +22,7 @@ func TestSliceInsert(t *testing.T) {
 }
 
 func TestIndexGen(t *testing.T) {
-	cfg = config.ReadConfig()
+	cfg = config.ReadConfig("")
 
 	e := echo.New()
 	rec := httptest.NewRecorder()

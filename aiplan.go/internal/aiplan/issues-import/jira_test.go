@@ -24,14 +24,14 @@ func TestSingleIssue(t *testing.T) {
 	login := ""
 	password := ""
 	c, _ := newJiraClient(login, password, jiraUrl)
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig("")
 
 	db, _ := gorm.Open(postgres.New(postgres.Config{
 		DSN: cfg.DatabaseDSN,
 	}))
 
 	ic, err := context.NewImportContext(
-		cfg.WebURL,
+		cfg.WebURL.URL,
 		c,
 		db,
 		nil,

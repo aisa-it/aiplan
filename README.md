@@ -47,12 +47,37 @@ The AIPLAN is constantly being improved. Your suggestions and bug reports help u
 If you have any questions and for a detailed study of the product's capabilities, you can always refer to the User's Manual, which you will find inside the product.
 
 ## How to install
-The configuration is done by .env file.
+The configuration can be done either by environment variables (.env file) or via JSON configuration file.
+
+### Using environment variables (.env file)
 ```
 docker-compose up -d
 ```
+
+### Using JSON configuration file
+You can also use a JSON configuration file with the `-configPath` flag:
+```
+docker-compose run --rm server ./aiplan -configPath /path/to/config.json
+```
+
+A template JSON configuration file is available at `config_template.json` in the project root.
+
 - The application will be available at http://localhost:8080
 - Default user (superuser) email: `DEFAULT_EMAIL`; password: `password123`
+
+## Configuration System
+
+AIPlan supports multiple configuration methods with the following priority (from highest to lowest):
+1. JSON configuration file (via `-configPath` flag)
+2. Environment variables (`.env` file)
+3. Default values
+
+When using the `-configPath` flag, configuration values are loaded from the specified JSON file first, then any missing values are loaded from environment variables. This allows for flexible deployment scenarios where you might want to store configuration in a separate file or use environment variables for sensitive data like passwords.
+
+### Configuration Template
+A complete configuration template with all available options can be found in `config_template.json` in the project root. This template includes all configurable parameters with their default values.
+
+For a working example with typical values, see `config_example.json` in the project root. This example demonstrates how to configure AIPlan for local development with common settings.
 
 ## Storage Logic
 
@@ -149,3 +174,22 @@ or shorthand:
 ```
 docker compose -f docker-compose.{yaml,dev.yaml} up --build
 ```
+
+### Command Line Flags
+
+When running the application directly (not through Docker), you can use the following command line flags:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-configPath` | Path to JSON configuration file | "" (disabled) |
+| `-noTranslate` | Turn off database errors translation | false |
+| `-paramQueries` | Mask query parameters in logs | true |
+| `-noMigration` | Turn off database migration | false |
+| `-trace` | Enable verbose logs and SQL trace | false |
+
+Example usage:
+```bash
+./aiplan -configPath /path/to/config.json -trace
+```
+
+This is useful for development and debugging scenarios where you need more control over the application behavior.

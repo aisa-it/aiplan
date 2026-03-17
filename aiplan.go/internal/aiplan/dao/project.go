@@ -61,18 +61,21 @@ type Project struct {
 	DefaultWatchers  []uuid.UUID `json:"default_watchers" gorm:"-"` // Срез строк для идентификаторов наблюдателей
 	ProjectLeadId    uuid.UUID   `json:"project_lead" gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	UpdatedById uuid.NullUUID    `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	WorkspaceId uuid.UUID        `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
-	Emoji       int32            `json:"emoji,string" gorm:"default:127773"`
-	LogoId      uuid.NullUUID    `json:"logo"`
-	CoverImage  *string          `json:"cover_image" extensions:"x-nullable"`
-	EstimateId  *string          `json:"estimate" extensions:"x-nullable"`
-	RulesScript *string          `json:"rules_script" extensions:"x-nullable"`
-	HideFields  types.HideFields `json:"hide_fields" gorm:"type:jsonb"`
+	UpdatedById          uuid.NullUUID    `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId          uuid.UUID        `json:"workspace" gorm:"type:uuid;uniqueIndex:project_identifier_idx,priority:1,where:deleted_at is NULL"`
+	Emoji                int32            `json:"emoji,string" gorm:"default:127773"`
+	LogoId               uuid.NullUUID    `json:"logo"`
+	CoverImage           *string          `json:"cover_image" extensions:"x-nullable"`
+	EstimateId           *string          `json:"estimate" extensions:"x-nullable"`
+	RulesScript          *string          `json:"rules_script" extensions:"x-nullable"`
+	HideFields           types.HideFields `json:"hide_fields" gorm:"type:jsonb"`
+	IssueDeletionAllowed bool             `json:"issue_deletion_allowed" gorm:"default:true"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
 	URL *url.URL `json:"-" gorm:"-"`
+
+	StatesFlow types.StatesFlowGraph `json:"states_flow" gorm:"type:jsonb"`
 
 	Workspace               *Workspace      `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	ProjectLead             *User           `json:"project_lead_detail" gorm:"foreignKey:ProjectLeadId" extensions:"x-nullable"`
@@ -147,6 +150,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		DefaultAssigneesDetails: utils.SliceToSlice(&project.DefaultAssigneesDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
 		DefaultWatchersDetails:  utils.SliceToSlice(&project.DefaultWatchersDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
 		CurrentUserMembership:   project.CurrentUserMembership.ToLightDTO(),
+		IssueDeletionAllowed:    project.IssueDeletionAllowed,
 	}
 }
 
@@ -182,6 +186,7 @@ func (pwc *ProjectWithCount) ToDTO() *dto.Project {
 	}
 	return &dto.Project{
 		ProjectLight: *pwc.ToLightDTO(),
+		StatesFlow:   pwc.StatesFlow,
 		CreatedAt:    pwc.CreatedAt,
 		UpdatedAt:    pwc.UpdatedAt,
 		ProjectLead:  pwc.ProjectLead.ToLightDTO(),
@@ -203,6 +208,7 @@ func (project *Project) ToDTO() *dto.Project {
 
 	projectDTO := dto.Project{
 		ProjectLight: *project.ToLightDTO(),
+		StatesFlow:   project.StatesFlow,
 		CreatedAt:    project.CreatedAt,
 		UpdatedAt:    project.UpdatedAt,
 		HideFields:   project.HideFields,
@@ -366,7 +372,7 @@ func (project *Project) SetUrl() {
 	if err != nil {
 		slog.Error("Parse issue url", "url", raw, "err", err)
 	}
-	project.URL = Config.WebURL.ResolveReference(u)
+	project.URL = Config.WebURL.URL.ResolveReference(u)
 }
 
 // BeforeDelete Обновляет информацию о проекте перед его удалением.  Проверяет, является ли проект активным для текущего пользователя и удаляет его, если это так.  Также удаляет связанные данные, такие как оценки, рабочие пространства и участники проекта.
@@ -1039,38 +1045,26 @@ func (l *Label) BeforeDelete(tx *gorm.DB) error {
 
 // Состояния задач
 type State struct {
-	// id uuid NOT NULL,
-	ID uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
-	// created_at timestamp with time zone NOT NULL,
+	ID        uuid.UUID `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time `json:"created_at"`
-	// updated_at timestamp with time zone NOT NULL,
 	UpdatedAt time.Time `json:"updated_at"`
-	// name character varying(255) COLLATE pg_catalog."default" NOT NULL,
-	Name       string         `json:"name" gorm:"uniqueIndex:unique_state_idx,priority:3"`
-	NameTokens types.TsVector `json:"-" gorm:"index:state_name_tokens,type:gin"`
-	// description text COLLATE pg_catalog."default" NOT NULL,
-	Description string `json:"description"`
-	// color character varying(255) COLLATE pg_catalog."default" NOT NULL,
-	Color string `json:"color" gorm:"uniqueIndex:unique_state_idx,priority:4"`
-	// slug character varying(100) COLLATE pg_catalog."default" NOT NULL,
-	Slug string `json:"slug"`
-	// created_by_id uuid,
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+
+	Name        string         `json:"name" gorm:"uniqueIndex:unique_state_idx,priority:3"`
+	NameTokens  types.TsVector `json:"-" gorm:"index:state_name_tokens,type:gin"`
+	Description string         `json:"description"`
+	Color       string         `json:"color" gorm:"uniqueIndex:unique_state_idx,priority:4"`
+
+	Slug        string        `json:"slug"`
 	CreatedById uuid.NullUUID `json:"created_by" gorm:"type:uuid" extensions:"x-nullable"`
-	// project_id uuid NOT NULL,
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	ProjectId uuid.UUID `json:"project" gorm:"type:uuid;uniqueIndex:unique_state_idx,priority:1"`
-	// updated_by_id uuid,
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
+	ProjectId   uuid.UUID     `json:"project" gorm:"type:uuid;uniqueIndex:unique_state_idx,priority:1"`
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	// workspace_id uuid NOT NULL,
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
-	// sequence double precision NOT NULL,
+	WorkspaceId uuid.UUID     `json:"workspace" gorm:"type:uuid"`
+
 	Sequence uint64 `json:"sequence"`
-	// "group" character varying(20) COLLATE pg_catalog."default" NOT NULL,
-	Group string `json:"group" gorm:"uniqueIndex:unique_state_idx,priority:2"`
-	// "default" boolean NOT NULL,
-	Default bool `json:"default"`
+	Group    string `json:"group" gorm:"uniqueIndex:unique_state_idx,priority:2"`
+	Default  bool   `json:"default"`
+
+	FromStates types.UUIDArray `gorm:"type:uuid[]"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 

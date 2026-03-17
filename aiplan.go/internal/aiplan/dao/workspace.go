@@ -174,7 +174,7 @@ func (workspace *Workspace) AfterFind(tx *gorm.DB) error {
 }
 
 func (workspace *Workspace) SetUrl() {
-	workspace.URL = Config.WebURL.JoinPath(workspace.Slug)
+	workspace.URL = Config.WebURL.URL.JoinPath(workspace.Slug)
 }
 
 func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {

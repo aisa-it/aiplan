@@ -20,7 +20,7 @@ type ProjectPropertyTemplate struct {
 	ProjectId   uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:2;type:uuid"`
 
 	Name      string   `gorm:"not null"`
-	Type      string   `gorm:"not null"` // "string", "boolean", "select"
+	Type      string   `gorm:"not null"` // "string", "boolean", "select", "link"
 	Options   []string `gorm:"serializer:json"`
 	OnlyAdmin bool     `gorm:"default:false"`
 	SortOrder int      `gorm:"default:0"`

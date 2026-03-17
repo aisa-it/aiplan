@@ -21,7 +21,7 @@ import (
 var db *gorm.DB
 
 func TestMain(m *testing.M) {
-	dao.Config = config.ReadConfig()
+	dao.Config = config.ReadConfig("")
 	db, _ = gorm.Open(postgres.New(postgres.Config{
 		DSN:                  dao.Config.DatabaseDSN,
 		PreferSimpleProtocol: false,

@@ -16,11 +16,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
+	statesflow "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/states-flow"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
@@ -244,7 +246,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
 		query = query.Where(
-			"lower(name) LIKE ? OR name_tokens @@ plainto_tsquery('russian', lower(?))",
+			"lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, searchQuery)
 	}
 
@@ -260,7 +262,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
 }
 
-var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields"}
+var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow", "issue_deletion_allowed"}
 
 // updateProject godoc
 // @id updateProject
@@ -352,6 +354,11 @@ func (s *Services) updateProject(c echo.Context) error {
 	}); err != nil {
 		return EError(c, err)
 	}
+
+	if err := statesflow.ParseGraph(s.db, project.ID, project.StatesFlow); err != nil {
+		return EError(c, err)
+	}
+
 	// Post-update activity tracking
 	newProjectMap := StructToJSONMap(project)
 	if changeProjectLead {
@@ -402,14 +409,9 @@ func (s *Services) getProject(c echo.Context) error {
 func (s *Services) deleteProject(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-	projectMember := c.(ProjectContext).ProjectMember
-	workspace := c.(ProjectContext).Workspace
 	workspaceMember := c.(ProjectContext).WorkspaceMember
 
-	s.business.ProjectCtx(c, user, &project, &projectMember, &workspace, &workspaceMember)
-	defer s.business.ProjectCtxClean()
-
-	if err := s.business.DeleteProject(); err != nil {
+	if err := s.business.DeleteProject(user, &project, &workspaceMember); err != nil {
 		return EError(c, err)
 	}
 
@@ -944,7 +946,6 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 	projectMember := c.(ProjectContext).ProjectMember
-	workspace := c.(ProjectContext).Workspace
 	workspaceMember := c.(ProjectContext).WorkspaceMember
 	memberId := c.Param("memberId")
 
@@ -965,10 +966,7 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotUpdateWorkspaceAdmin)
 	}
 
-	s.business.ProjectCtx(c, user, &project, &projectMember, &workspace, &workspaceMember)
-	defer s.business.ProjectCtxClean()
-
-	if err := s.business.DeleteProjectMember(&projectMember, &requestedMember); err != nil {
+	if err := s.business.DeleteProjectMember(&projectMember, &requestedMember, user, &project, &workspaceMember); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -1644,6 +1642,7 @@ func (s *Services) createIssue(c echo.Context) error {
 	user := *c.(ProjectContext).User
 	workspace := c.(ProjectContext).Workspace
 	project := c.(ProjectContext).Project
+	projectMember := c.(ProjectContext).ProjectMember
 
 	var issue IssueCreateRequest
 	form, _ := c.MultipartForm()
@@ -1690,6 +1689,21 @@ func (s *Services) createIssue(c echo.Context) error {
 		DescriptionStripped: issue.DescriptionStripped,
 		DescriptionType:     issue.DescriptionType,
 		Draft:               issue.Draft,
+	}
+
+	// State flow check
+	if projectMember.Role != types.AdminRole {
+		var state dao.State
+		if err := s.db.Select("from_states").Where("id = ?", issue.StateId).First(&state).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
+			}
+			return EError(c, err)
+		}
+
+		if len(state.FromStates.Array) > 0 && !slices.Contains(state.FromStates.Array, uuid.Nil) {
+			return EErrorDefined(c, apierrors.ErrForbiddenState)
+		}
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -1914,7 +1928,7 @@ func (s *Services) getIssueLabelList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) like ? or name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
+		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
 	}
 
 	var labels []dao.Label
@@ -1959,17 +1973,9 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 	label.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	label.ProjectId = project.ID
 	label.WorkspaceId = project.WorkspaceId
+	label.Name = strings.TrimSpace(label.Name)
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&label).Error; err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				return err
-			}
-			return err
-		}
-
-		return nil
-	}); err != nil {
+	if err := s.db.Create(&label).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrTagAlreadyExists)
 		}
@@ -2053,33 +2059,27 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 
 	label.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	label.UpdatedAt = time.Now()
+	label.Name = strings.TrimSpace(label.Name)
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		// TODO rate limit
-		// Обновляем только выбранные поля
-		if err := tx.Model(&label).
-			Select([]string{"name", "description", "parent_id", "color"}).
-			Updates(&label).Error; err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				return apierrors.ErrTagAlreadyExists
-			}
-			return err
-
+	// Обновляем только выбранные поля
+	if err := s.db.Model(&label).
+		Select([]string{"name", "description", "parent_id", "color"}).
+		Updates(&label).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return EErrorDefined(c, apierrors.ErrTagAlreadyExists)
 		}
-
-		// Post-update activity tracking
-		newLabelMap := StructToJSONMap(label)
-		newLabelMap["updateScope"] = "label"
-		newLabelMap["updateScopeId"] = label.ID
-
-		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
-
-		return nil
-	}); err != nil {
 		return EError(c, err)
+
+	}
+
+	// Post-update activity tracking
+	newLabelMap := StructToJSONMap(label)
+	newLabelMap["updateScope"] = "label"
+	newLabelMap["updateScopeId"] = label.ID
+
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, label.ToLightDTO())
@@ -2235,7 +2235,7 @@ func (s *Services) getStateList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) like ? or name_tokens @@ plainto_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery))
+		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery))
 	}
 
 	var states []dao.State
@@ -3406,7 +3406,7 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 	}
 
 	// Валидация типа
-	validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
+	validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
 	if !validTypes[request.Type] {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 	}
@@ -3494,7 +3494,7 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 
 	// Определяем тип для валидации options
 	if request.Type != nil {
-		validTypes := map[string]bool{"string": true, "boolean": true, "select": true}
+		validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
 		if !validTypes[*request.Type] {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 		}

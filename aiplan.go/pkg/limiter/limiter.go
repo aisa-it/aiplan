@@ -25,11 +25,11 @@ type LimiterInt interface {
 var Limiter LimiterInt = CommunityLimiter{}
 
 func Init(cfg *config.Config) {
-	if cfg.ExternalLimiter == nil {
+	if cfg.ExternalLimiter.URL == nil {
 		slog.Info("Using Community limiter")
 		return
 	}
-	Limiter = NewExternalLimiter(cfg.ExternalLimiter)
+	Limiter = NewExternalLimiter(cfg.ExternalLimiter.URL)
 }
 
 type CommunityLimiter struct{}

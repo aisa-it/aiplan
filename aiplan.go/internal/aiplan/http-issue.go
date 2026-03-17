@@ -81,6 +81,8 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	issueGroup.PATCH("/", s.updateIssue)
 	issueGroup.DELETE("/", s.deleteIssue)
 
+	issueGroup.GET("/available-states/", s.getAvailableStates)
+
 	issueGroup.GET("/sub-issues/", s.getSubIssueList)
 	issueGroup.POST("/sub-issues/", s.addSubIssueList)
 	issueGroup.POST("/sub-issues/:subIssueId/up/", s.moveSubIssueUp)
@@ -777,6 +779,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 	}()
 
+	// State change
 	var statusChange bool
 	var newState dao.State
 	if stateId, ok := data["state"]; ok {
@@ -832,6 +835,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 				return EError(c, err.ClientError())
 			}
 		}
+
+		// Check state flow
+		if projectMember.Role != types.AdminRole && // Админ может переводить в любой статус
+			len(newState.FromStates.Array) > 0 && // Если указаны возможные предыдущие статусы
+			!slices.Contains(newState.FromStates.Array, oldIssue.StateId) { // Проверяем наличие старого статуса в списке возможных предыдущих
+			return EErrorDefined(c, apierrors.ErrForbiddenState)
+		}
+
 		issue.StateId = newState.ID
 	}
 
@@ -1234,10 +1245,13 @@ func (s *Services) updateIssue(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq} [delete]
 func (s *Services) deleteIssue(c echo.Context) error {
 	user := *c.(IssueContext).User
-	//project := c.(IssueContext).Project
+	projectMember := c.(IssueContext).ProjectMember
 	issue := c.(IssueContext).Issue
+	project := c.(IssueContext).Project
 	//currentInst := StructToJSONMap(issue)
-	if c.(IssueContext).ProjectMember.Role != types.AdminRole && issue.CreatedById != user.ID {
+	isAdmin := projectMember.Role == types.AdminRole
+
+	if !isAdmin && (issue.CreatedById != user.ID || !project.IssueDeletionAllowed) {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
 
@@ -1264,6 +1278,43 @@ func (s *Services) deleteIssue(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+// getAvailableStates godoc
+// @id getAvailableStates
+// @Summary Задачи: получение доступных статусов
+// @Description Возвращает список статусов, в которые можно перевести текущую задачу. Для администраторов возвращаются все статусы проекта, для остальных пользователей — только те статусы, которые разрешены правилами перехода из текущего статуса задачи.
+// @Tags Issues StatesFlow
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Success 200 {object} map[string]dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/available-states [get]
+func (s *Services) getAvailableStates(c echo.Context) error {
+	issue := c.(IssueContext).Issue
+	projectMember := c.(IssueContext).ProjectMember
+
+	query := s.db.Where("project_id = ?", projectMember.ProjectId).Order("sequence")
+
+	if projectMember.Role != types.AdminRole {
+		query = query.Where(s.db.Where("array_length(from_states, 1) IS NULL"). // States that allow transition from all states
+											Or("? = any(from_states)", issue.StateId), // States that has current state as allowed previous
+		)
+	}
+
+	var states []dao.State
+	if err := query.Find(&states).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, utils.SliceToMap(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 // ############# Sub-issues methods ###################
@@ -3453,7 +3504,7 @@ func (s *Services) getIssuePdf(c echo.Context) error {
 	c.Response().Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s.pdf", issue.String()))
 
 	var buf bytes.Buffer
-	if err := export.IssueToFPDF(&issue, cfg.WebURL, &buf); err != nil {
+	if err := export.IssueToFPDF(&issue, cfg.WebURL.URL, &buf); err != nil {
 		return EError(c, err)
 	}
 
@@ -3779,6 +3830,8 @@ func getDefaultPropertyValue(propType string) any {
 		return nil
 	case "boolean":
 		return false
+	case "link":
+		return nil
 	default:
 		return nil
 	}
@@ -3794,6 +3847,15 @@ func parsePropertyValue(propType, value string) any {
 			return nil
 		}
 		return value
+	case "link":
+		if value == "" {
+			return nil
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(value), &m); err != nil {
+			return value
+		}
+		return m
 	default:
 		return value
 	}
@@ -3820,6 +3882,13 @@ func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) erro
 func serializePropertyValue(value any) string {
 	if value == nil {
 		return ""
+	}
+	if m, ok := value.(map[string]any); ok {
+		b, err := json.Marshal(m)
+		if err != nil {
+			return fmt.Sprint(value)
+		}
+		return string(b)
 	}
 	return fmt.Sprint(value)
 }

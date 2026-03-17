@@ -11,11 +11,11 @@ import (
 var cfg *config.Config
 
 func TestMain(t *testing.T) {
-	cfg = config.ReadConfig()
+	cfg = config.ReadConfig("")
 }
 
 func TestSync(t *testing.T) {
-	lp, err := InitLDAP(cfg.LDAPServerURL, cfg.LDAPBindUser, cfg.LDAPBindPassword, cfg.LDAPBaseDN, "(&(uniqueIdentifier={email}))")
+	lp, err := InitLDAP(cfg.LDAPServerURL.URL, cfg.LDAPBindUser, cfg.LDAPBindPassword, cfg.LDAPBaseDN, "(&(uniqueIdentifier={email}))")
 	require.NoError(t, err)
 	users := []dao.User{
 		{

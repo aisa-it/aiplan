@@ -734,3 +734,31 @@ func (ra RootActivity) GetOldIdentifier() uuid.NullUUID {
 func (ra RootActivity) GetId() uuid.UUID {
 	return ra.Id
 }
+
+type JitsiTokenLog struct {
+	ID          uint64        `gorm:"unique;primaryKey;autoIncrement"`
+	UserId      uuid.UUID     `gorm:"index"`
+	WorkspaceId uuid.NullUUID `gorm:"index"`
+	Room        string        `gorm:"index"`
+	CreatedAt   time.Time
+
+	IP     string
+	UAgent string
+
+	User      *User      `gorm:"foreignKey:UserId"`
+	Workspace *Workspace `gorm:"foreignKey:WorkspaceId"`
+}
+
+func (stl JitsiTokenLog) ToDTO() dto.JitsiTokenLog {
+	return dto.JitsiTokenLog{
+		ID:          stl.ID,
+		UserId:      stl.UserId,
+		WorkspaceId: stl.WorkspaceId,
+		Room:        stl.Room,
+		CreatedAt:   stl.CreatedAt,
+		IP:          stl.IP,
+		UAgent:      stl.UAgent,
+		User:        stl.User.ToLightDTO(),
+		Workspace:   stl.Workspace.ToLightDTO(),
+	}
+}

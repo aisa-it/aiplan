@@ -192,10 +192,10 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	memDBConn := "session.db"
-	if cfg.ExternalMemDB != nil {
-		memDBConn = cfg.ExternalMemDB.String()
+	if cfg.ExternalMemDB.URL != nil {
+		memDBConn = cfg.ExternalMemDB.URL.String()
 	}
-	memDB, err := mem.NewClient(cfg.ExternalMemDB == nil, memDBConn)
+	memDB, err := mem.NewClient(cfg.ExternalMemDB.URL == nil, memDBConn)
 	if err != nil {
 		slog.Error("Connect to AIPlan MemDB", "err", err)
 		os.Exit(1)
@@ -217,9 +217,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
 
 	var ldapProvider *authprovider.LdapProvider
-	if cfg.LDAPServerURL != nil {
+	if cfg.LDAPServerURL.URL != nil {
 		ldapProvider, err = authprovider.InitLDAP(
-			cfg.LDAPServerURL,
+			cfg.LDAPServerURL.URL,
 			cfg.LDAPBindUser,
 			cfg.LDAPBindPassword,
 			cfg.LDAPBaseDN,
@@ -516,7 +516,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	authGroup.GET("file/:fileName/", s.assetsHandler)
 
 	// Jitsi conf redirect
-	authGroup.GET("conf/:room/", s.redirectToJitsiConf)
+	if !cfg.JitsiDisabled {
+		authGroup.GET("conf/:room/", s.redirectToJitsiConf, NewJitsiTokenLogMiddleware(db))
+	}
 
 	// MCP handler
 	if cfg.MCPEnabled {
@@ -625,10 +627,10 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	accessCookie.Name = "access_token"
 	accessCookie.Value = accessToken.SignedString
 	accessCookie.HttpOnly = true
-	accessCookie.Secure = cfg.WebURL.Scheme == "https"
+	accessCookie.Secure = cfg.WebURL.URL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
-	if cfg.WebURL.Scheme != "https" {
+	if cfg.WebURL.URL.Scheme != "https" {
 		accessCookie.SameSite = http.SameSiteLaxMode
 	}
 	accessCookie.Expires = time.Now().Add(types.TokenExpiresPeriod)
@@ -638,10 +640,10 @@ func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
 	refreshCookie.Name = "refresh_token"
 	refreshCookie.Value = refreshToken.SignedString
 	refreshCookie.HttpOnly = true
-	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
+	refreshCookie.Secure = cfg.WebURL.URL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
-	if cfg.WebURL.Scheme != "https" {
+	if cfg.WebURL.URL.Scheme != "https" {
 		refreshCookie.SameSite = http.SameSiteLaxMode
 	}
 	refreshCookie.Expires = time.Now().Add(types.RefreshTokenExpiresPeriod)
@@ -653,10 +655,10 @@ func clearAuthCookies(c echo.Context) {
 	accessCookie.Name = "access_token"
 	accessCookie.Value = ""
 	accessCookie.HttpOnly = true
-	accessCookie.Secure = cfg.WebURL.Scheme == "https"
+	accessCookie.Secure = cfg.WebURL.URL.Scheme == "https"
 	accessCookie.Path = "/"
 	accessCookie.SameSite = http.SameSiteNoneMode
-	if cfg.WebURL.Scheme != "https" {
+	if cfg.WebURL.URL.Scheme != "https" {
 		accessCookie.SameSite = http.SameSiteLaxMode
 	}
 	accessCookie.MaxAge = -1
@@ -666,10 +668,10 @@ func clearAuthCookies(c echo.Context) {
 	refreshCookie.Name = "refresh_token"
 	refreshCookie.Value = ""
 	refreshCookie.HttpOnly = true
-	refreshCookie.Secure = cfg.WebURL.Scheme == "https"
+	refreshCookie.Secure = cfg.WebURL.URL.Scheme == "https"
 	refreshCookie.Path = "/"
 	refreshCookie.SameSite = http.SameSiteNoneMode
-	if cfg.WebURL.Scheme != "https" {
+	if cfg.WebURL.URL.Scheme != "https" {
 		refreshCookie.SameSite = http.SameSiteLaxMode
 	}
 	refreshCookie.MaxAge = -1

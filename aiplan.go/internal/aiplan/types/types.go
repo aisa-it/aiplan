@@ -1146,14 +1146,29 @@ func (fn *FormAnswerNotify) Scan(value interface{}) error {
 }
 
 type JsonURL struct {
-	Url *url.URL `swaggertype:"string" format:"uri"`
+	URL *url.URL `swaggertype:"string" format:"uri"`
 }
 
-func (u *JsonURL) MarshalJSON() ([]byte, error) {
-	if u == nil || u.Url == nil {
+func (u JsonURL) MarshalJSON() ([]byte, error) {
+	if u.URL == nil {
 		return []byte("null"), nil
 	}
-	return []byte("\"" + u.Url.String() + "\""), nil
+	return []byte("\"" + u.URL.String() + "\""), nil
+}
+
+func (d *JsonURL) UnmarshalJSON(b []byte) error {
+	rawUrl := string(b)
+	if rawUrl == "null" || rawUrl == "" {
+		*d = JsonURL{}
+		return nil
+	}
+
+	u, err := url.Parse(rawUrl[1 : len(b)-1])
+	if err != nil {
+		return fmt.Errorf("unmarshal json url: %e", err)
+	}
+	*d = JsonURL{u}
+	return nil
 }
 
 type IssueStatus int
@@ -1303,3 +1318,46 @@ func (e EntityLayer) String() string {
 }
 
 type NotifyChannel int
+
+type UUIDArray struct {
+	Array []uuid.UUID
+}
+
+func (a UUIDArray) Value() (driver.Value, error) {
+	if len(a.Array) == 0 {
+		return "{}", nil
+	}
+	var b strings.Builder
+	b.Grow(1 + len(a.Array) + 36*len(a.Array)) // {} + len(a)-1 commas + len(a) ids
+	b.WriteString("{")
+	b.WriteString(a.Array[0].String())
+	for _, id := range a.Array[1:] {
+		b.WriteString(",")
+		b.WriteString(id.String())
+	}
+	b.WriteString("}")
+	return b.String(), nil
+}
+
+func (a *UUIDArray) Scan(value any) (err error) {
+	rawArray, ok := value.(string)
+	if !ok {
+		return errors.New("unsupported value type")
+	}
+	if rawArray == "" || rawArray == "{}" {
+		return nil
+	}
+	aa := strings.Split(rawArray[1:len(rawArray)-1], ",")
+	a.Array = make([]uuid.UUID, len(aa))
+	for i, id := range aa {
+		a.Array[i], err = uuid.FromString(id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (UUIDArray) GormDataType() string {
+	return "uuid[]"
+}
