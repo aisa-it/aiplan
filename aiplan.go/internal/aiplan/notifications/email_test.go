@@ -20,7 +20,7 @@ import (
 var es *EmailService
 
 func setup() {
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig("")
 	db, _ := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseDSN,
 		PreferSimpleProtocol: false,

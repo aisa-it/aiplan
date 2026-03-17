@@ -6,10 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func TestUUID(t *testing.T) {
@@ -37,12 +34,11 @@ func TestJSONTime(t *testing.T) {
 	fmt.Println(ttUn.CreatedAtFrom.Time())
 }
 
-func TestJSONTimeDB(t *testing.T) {
-	cfg := config.ReadConfig()
-	db, err := gorm.Open(postgres.New(postgres.Config{DSN: cfg.DatabaseDSN}))
-	require.NoError(t, err)
+func TestJsonURL(t *testing.T) {
+	str := `"http://test.com/asd?s=s"`
 
-	var tt bool
-	fmt.Println(db.Raw("select $1 > NOW()", JSONTime(time.Now())).Scan(&tt).Error)
-	fmt.Println(tt)
+	var u JsonURL
+	require.NoError(t, json.Unmarshal([]byte(str), &u))
+
+	fmt.Println(u.URL.Query())
 }

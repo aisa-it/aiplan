@@ -47,7 +47,7 @@ func (s *Services) shortIssueURLRedirect(c echo.Context) error {
 		slug,
 		issue.Project.Identifier,
 		issue.SequenceId))
-	path := cfg.WebURL.ResolveReference(ref)
+	path := cfg.WebURL.URL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }
 
@@ -68,7 +68,7 @@ func (s *Services) shortDocURLRedirect(c echo.Context) error {
 		"/%s/aidoc/%s/",
 		slug,
 		doc.ID.String()))
-	path := cfg.WebURL.ResolveReference(ref)
+	path := cfg.WebURL.URL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }
 
@@ -86,6 +86,6 @@ func (s *Services) shortSearchFilterURLRedirect(c echo.Context) error {
 		"/filters/%s/",
 		sf.ID.String(),
 	))
-	path := cfg.WebURL.ResolveReference(ref)
+	path := cfg.WebURL.URL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }

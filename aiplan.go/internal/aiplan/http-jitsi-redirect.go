@@ -22,7 +22,7 @@ func (s *Services) redirectToJitsiConf(c echo.Context) error {
 
 	q := make(url.Values)
 	q.Add("jwt", token)
-	u := cfg.JitsiURL.ResolveReference(&url.URL{Path: room, RawQuery: q.Encode()})
+	u := cfg.JitsiURL.URL.ResolveReference(&url.URL{Path: room, RawQuery: q.Encode()})
 
 	return c.Redirect(http.StatusTemporaryRedirect, u.String())
 }

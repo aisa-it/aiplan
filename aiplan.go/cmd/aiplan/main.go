@@ -25,7 +25,7 @@ import (
 
 var version string = "DEV"
 
-var models = []any{&dao.ActivityEvent{}, &dao.ActivityTelegramMessage{}, &dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Doc{}, &dao.DocAccessRules{}, &dao.DocActivity{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocFavorites{}, &dao.EntityActivity{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.ForeignKey{}, &dao.Form{}, &dao.FormActivity{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueActivity{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.Project{}, &dao.ProjectActivity{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ProjectPropertyTemplate{}, &dao.ReleaseNote{}, &dao.RootActivity{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintActivity{}, &dao.SprintIssue{}, &dao.SprintViews{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserFeedback{}, &dao.UserNotifications{}, &dao.Workspace{}, &dao.WorkspaceActivity{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}}
+var models = []any{&dao.ActivityEvent{}, &dao.ActivityTelegramMessage{}, &dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Doc{}, &dao.DocAccessRules{}, &dao.DocActivity{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocFavorites{}, &dao.EntityActivity{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.ForeignKey{}, &dao.Form{}, &dao.FormActivity{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueActivity{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.JitsiTokenLog{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.Project{}, &dao.ProjectActivity{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ProjectPropertyTemplate{}, &dao.ReleaseNote{}, &dao.RootActivity{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintActivity{}, &dao.SprintFolder{}, &dao.SprintIssue{}, &dao.SprintViews{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserFeedback{}, &dao.UserNotifications{}, &dao.Workspace{}, &dao.WorkspaceActivity{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}}
 
 //go:embed triggers.sql
 var triggersSQL string
@@ -40,12 +40,13 @@ func main() {
 	noTranslateFlag := flag.Bool("noTranslate", false, "Turn off BD errors translate")
 	paramQueries := flag.Bool("paramQueries", true, "Mask queries params in log")
 	noMigration := flag.Bool("noMigration", false, "Turn off DB migration")
+	configPath := flag.String("configPath", "", "Path of json config file, empty if disabled configoration via json file")
 	trace := flag.Bool("trace", false, "Verbose logs and sql trace")
 	flag.Parse()
 
 	PrintBanner()
 
-	cfg := config.ReadConfig()
+	cfg := config.ReadConfig(*configPath)
 	dao.Config = cfg
 
 	if *trace {

@@ -201,13 +201,13 @@ func (u *User) AfterUpdate(tx *gorm.DB) (err error) {
 
 func (u *User) AfterFind(tx *gorm.DB) (err error) {
 	if u.AvatarId.Valid {
-		u.Avatar = Config.WebURL.String() + filepath.Join("/", Config.AWSBucketName, u.AvatarId.UUID.String())
+		u.Avatar = Config.WebURL.URL.String() + filepath.Join("/", Config.AWSBucketName, u.AvatarId.UUID.String())
 	} else {
 		u.AvatarAsset = nil
 	}
 
 	if !u.Domain.Valid {
-		u.Domain = types.NullDomain{URL: Config.WebURL, Valid: true}
+		u.Domain = types.NullDomain{URL: Config.WebURL.URL, Valid: true}
 	}
 
 	if u.Settings.IsEmpty() {
@@ -306,8 +306,8 @@ func (sf *SearchFilter) ToLightDTO() *dto.SearchFilterLight {
 		Description: sf.Description,
 		Public:      sf.Public,
 		Filter:      sf.Filter,
-		Url:         types.JsonURL{Url: sf.URL},
-		ShortUrl:    types.JsonURL{Url: sf.ShortURL},
+		Url:         types.JsonURL{URL: sf.URL},
+		ShortUrl:    types.JsonURL{URL: sf.ShortURL},
 	}
 }
 
@@ -339,8 +339,8 @@ func (sf *SearchFilter) SetUrl() {
 	u, _ := url.Parse(urlFilter)
 	shortU, _ := url.Parse(shortUrl)
 
-	sf.URL = Config.WebURL.ResolveReference(u)
-	sf.ShortURL = Config.WebURL.ResolveReference(shortU)
+	sf.URL = Config.WebURL.URL.ResolveReference(u)
+	sf.ShortURL = Config.WebURL.URL.ResolveReference(shortU)
 }
 
 type UserNotifications struct {

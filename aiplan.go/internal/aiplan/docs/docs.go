@@ -273,6 +273,90 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/admin/jitsi-token-logs": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список логов токенов Jitsi с поддержкой пагинации, сортировки и фильтрации по пользователю",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AdminPanel"
+                ],
+                "summary": "Jitsi: получение логов токенов Jitsi",
+                "operationId": "getJitsiTokenLogList",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Количество результатов на странице",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID пользователя для фильтрации",
+                        "name": "user_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список логов токенов Jitsi",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dao.PaginationResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/dto.JitsiTokenLog"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/admin/projects/{workspaceId}": {
             "get": {
                 "security": [
@@ -1671,6 +1755,113 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/admin/workspaces/{slug}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает информацию о рабочем пространстве по его slug или ID. Доступно только суперпользователям.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AdminPanel"
+                ],
+                "summary": "Пространство: получение рабочего пространства администратором",
+                "operationId": "getWorkspaceByAdmin",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug или ID рабочего пространства",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Информация о рабочем пространстве",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Workspace"
+                        }
+                    },
+                    "403": {
+                        "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Рабочее пространство не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет рабочее пространство по его slug. Доступно только суперпользователям или владельцам пространства. Выполняет мягкое удаление с последующим фоновым окончательным удалением.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AdminPanel"
+                ],
+                "summary": "Пространство: удаление рабочего пространства администратором",
+                "operationId": "deleteWorkspaceByAdmin",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Рабочее пространство успешно удалено"
+                    },
+                    "403": {
+                        "description": "Ошибка: доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Рабочее пространство не найдено",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -11438,6 +11629,85 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/available-states": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список статусов, в которые можно перевести текущую задачу. Для администраторов возвращаются все статусы проекта, для остальных пользователей — только те статусы, которые разрешены правилами перехода из текущего статуса задачи.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Issues StatesFlow"
+                ],
+                "summary": "Задачи: получение доступных статусов",
+                "operationId": "getAvailableStates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Словарь доступных статусов, где ключ — ID статуса",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/dto.StateLight"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/blockers-issues/available": {
             "get": {
                 "security": [
@@ -16523,25 +16793,22 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/workspaces/{workspaceSlug}/sprints/": {
-            "get": {
+        "/api/auth/workspaces/{workspaceSlug}/sprints-folder/": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Возвращает список всех спринтов в рабочем пространстве.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Создает новую директорию для спринтов.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Sprint"
                 ],
-                "summary": "Спринты: получения списка спринтов",
-                "operationId": "getSprintList",
+                "summary": "Спринты: добавление директории спринтов",
+                "operationId": "addSprintFolders",
                 "parameters": [
                     {
                         "type": "string",
@@ -16549,15 +16816,163 @@ const docTemplate = `{
                         "name": "workspaceSlug",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Данные папки спринтов",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RequestSprintFolder"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Список спринтов",
+                        "description": "Новая директория спринтов",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SprintFolder"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Пространство не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет директорию спринта.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sprint"
+                ],
+                "summary": "Спринты: удаление директорий спринтов",
+                "operationId": "deleteSprintFolders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор директории спринта",
+                        "name": "sprintFolderId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Директория успешно удалена"
+                    },
+                    "400": {
+                        "description": "Ошибка запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет директорию спринта.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sprint"
+                ],
+                "summary": "Спринты: обновление директорий спринтов",
+                "operationId": "updateSprintFolders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор директории спринта",
+                        "name": "sprintFolderId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленная директория спринтов",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/dto.SprintLight"
+                                "$ref": "#/definitions/dto.SprintFolder"
                             }
                         }
                     },
@@ -16575,6 +16990,87 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/sprints/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список всех директорий спринтов, с вложенными спринтами.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sprint"
+                ],
+                "summary": "Спринты: получение директорий спринтов",
+                "operationId": "getSprintList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или номер последовательности спринта",
+                        "name": "sprintId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список директорий спринтов",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.SprintFolder"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Hе найден",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -16619,7 +17115,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestSprint"
+                            "$ref": "#/definitions/dto.RequestSprint"
                         }
                     }
                 ],
@@ -16840,7 +17336,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestSprint"
+                            "$ref": "#/definitions/dto.RequestSprint"
                         }
                     }
                 ],
@@ -17028,7 +17524,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestIssueIdList"
+                            "$ref": "#/definitions/dto.RequestIssueIdList"
                         }
                     }
                 ],
@@ -17250,7 +17746,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestUserIdList"
+                            "$ref": "#/definitions/dto.RequestUserIdList"
                         }
                     }
                 ],
@@ -19107,23 +19603,6 @@ const docTemplate = `{
                 }
             }
         },
-        "aiplan.requestIssueIdList": {
-            "type": "object",
-            "properties": {
-                "issues_add": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "issues_remove": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
         "aiplan.requestMembersInvite": {
             "type": "object",
             "properties": {
@@ -19168,42 +19647,6 @@ const docTemplate = `{
             "properties": {
                 "role": {
                     "type": "integer"
-                }
-            }
-        },
-        "aiplan.requestSprint": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "end_date": {
-                    "type": "string",
-                    "x-nullable": true
-                },
-                "name": {
-                    "type": "string"
-                },
-                "start_date": {
-                    "type": "string",
-                    "x-nullable": true
-                }
-            }
-        },
-        "aiplan.requestUserIdList": {
-            "type": "object",
-            "properties": {
-                "members_add": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "members_remove": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },
@@ -19527,7 +19970,8 @@ const docTemplate = `{
                     "enum": [
                         "string",
                         "boolean",
-                        "select"
+                        "select",
+                        "link"
                     ]
                 }
             }
@@ -20845,6 +21289,38 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.JitsiTokenLog": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "room": {
+                    "type": "string"
+                },
+                "user_agent": {
+                    "type": "string"
+                },
+                "user_details": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "workspace_details": {
+                    "$ref": "#/definitions/dto.WorkspaceLight"
+                },
+                "workspace_id": {
+                    "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                }
+            }
+        },
         "dto.JoinProjectsSuccessResponse": {
             "type": "object",
             "properties": {
@@ -21070,6 +21546,9 @@ const docTemplate = `{
                 "is_favorite": {
                     "type": "boolean"
                 },
+                "issue_deletion_allowed": {
+                    "type": "boolean"
+                },
                 "logo": {
                     "type": "string",
                     "x-nullable": true
@@ -21093,6 +21572,9 @@ const docTemplate = `{
                 },
                 "public": {
                     "type": "boolean"
+                },
+                "states_flow": {
+                    "$ref": "#/definitions/types.StatesFlowGraph"
                 },
                 "total_members": {
                     "type": "integer"
@@ -21185,6 +21667,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "is_favorite": {
+                    "type": "boolean"
+                },
+                "issue_deletion_allowed": {
                     "type": "boolean"
                 },
                 "logo": {
@@ -21492,6 +21977,70 @@ const docTemplate = `{
                 "value": {}
             }
         },
+        "dto.RequestIssueIdList": {
+            "type": "object",
+            "properties": {
+                "issues_add": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "issues_remove": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dto.RequestSprint": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sprint_folder_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "dto.RequestSprintFolder": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RequestUserIdList": {
+            "type": "object",
+            "properties": {
+                "members_add": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "members_remove": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "dto.ResponseAnswers": {
             "type": "object",
             "properties": {
@@ -21714,6 +22263,9 @@ const docTemplate = `{
                 "short_url": {
                     "type": "string"
                 },
+                "sprint_folder": {
+                    "$ref": "#/definitions/dto.SprintFolder"
+                },
                 "start_date": {
                     "type": "string"
                 },
@@ -21748,6 +22300,23 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SprintFolder": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintLight"
+                    }
+                }
+            }
+        },
         "dto.SprintLight": {
             "type": "object",
             "properties": {
@@ -21768,6 +22337,9 @@ const docTemplate = `{
                 },
                 "short_url": {
                     "type": "string"
+                },
+                "sprint_folder": {
+                    "$ref": "#/definitions/dto.SprintFolder"
                 },
                 "start_date": {
                     "type": "string"
@@ -22743,6 +23315,54 @@ const docTemplate = `{
                 }
             }
         },
+        "types.FlowEdge": {
+            "type": "object",
+            "properties": {
+                "animated": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_handle": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "target_handle": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.FlowNode": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "object",
+                    "properties": {
+                        "x": {
+                            "type": "number"
+                        },
+                        "y": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "types.FormAnswerNotify": {
             "type": "object",
             "properties": {
@@ -22840,10 +23460,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "labels": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "$ref": "#/definitions/types.FilterUUIDs"
                 },
                 "only_active": {
                     "type": "boolean"
@@ -23035,6 +23652,23 @@ const docTemplate = `{
                 },
                 "pending": {
                     "type": "integer"
+                }
+            }
+        },
+        "types.StatesFlowGraph": {
+            "type": "object",
+            "properties": {
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FlowEdge"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FlowNode"
+                    }
                 }
             }
         },

@@ -150,7 +150,7 @@ func (es *EmailService) NewUserPasswordNotify(user dao.User, password string) er
 		WebUrl   *url.URL
 		Password string
 	}{
-		WebUrl:   es.cfg.WebURL.ResolveReference(&url.URL{Path: "/signin/"}),
+		WebUrl:   es.cfg.WebURL.URL.ResolveReference(&url.URL{Path: "/signin/"}),
 		Password: password,
 	}
 

@@ -233,15 +233,18 @@ func UpdateUserLastActivityTime(tx *gorm.DB, user *User) error {
 	return tx.Omit(clause.Associations).Model(user).UpdateColumn("last_active", time.Now()).Error
 }
 
+var filterRegexp = regexp.MustCompile(`[^\d|\w]`)
+
 func SplitTSQuery(searchQuery string) string {
 	searchQuery = strings.TrimSpace(searchQuery)
 	if searchQuery == "" {
 		return ""
 	}
+
+	searchQuery = filterRegexp.ReplaceAllString(searchQuery, " ")
 	words := strings.Fields(searchQuery)
 	var tokens []string
 	for _, word := range words {
-		word = strings.Trim(word, "<:|'*)(&![]")
 		if word != "" {
 			tokens = append(tokens, word+":*")
 		}
@@ -250,7 +253,6 @@ func SplitTSQuery(searchQuery string) string {
 	if len(tokens) == 0 {
 		return ""
 	}
-
 	return strings.Join(tokens, " | ")
 }
 

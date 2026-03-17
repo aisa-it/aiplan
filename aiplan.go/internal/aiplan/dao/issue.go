@@ -406,9 +406,9 @@ func (Issue) FieldsAllowedForAllUpdate() []string {
 // Возвращает:
 //   - *gorom.DB: объект базы данных GORM, который можно использовать для выполнения дальнейших операций.
 func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
-	return tx.Or("issues.tokens @@ plainto_tsquery('simple', ?)", search_query).
-		Or("issues.tokens @@ plainto_tsquery('russian', ?)", search_query).
-		Or("issues.tokens @@ plainto_tsquery('english', ?)", search_query).
+	return tx.Or("issues.tokens @@ websearch_to_tsquery('simple', ?)", search_query).
+		Or("issues.tokens @@ websearch_to_tsquery('russian', ?)", search_query).
+		Or("issues.tokens @@ websearch_to_tsquery('english', ?)", search_query).
 		Or("issues.tokens @@ to_tsquery('simple', ?)", SplitTSQuery(search_query)).
 		Or("issues.tokens @@ to_tsquery('russian', ?)", SplitTSQuery(search_query)).
 		Or("issues.tokens @@ to_tsquery('english', ?)", SplitTSQuery(search_query)).
@@ -681,7 +681,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 			issue.Workspace.Slug,
 			issue.Project.Identifier,
 			issue.SequenceId))
-		issue.ShortURL = Config.WebURL.ResolveReference(ref)
+		issue.ShortURL = Config.WebURL.URL.ResolveReference(ref)
 	}
 
 	return nil
@@ -690,7 +690,7 @@ func (issue *Issue) AfterFind(tx *gorm.DB) error {
 func (issue *Issue) SetUrl() {
 	raw := fmt.Sprintf("/%s/projects/%s/issues/%d", issue.WorkspaceId, issue.ProjectId.String(), issue.SequenceId)
 	u, _ := url.Parse(raw)
-	issue.URL = Config.WebURL.ResolveReference(u)
+	issue.URL = Config.WebURL.URL.ResolveReference(u)
 }
 
 // BeforeDelete - Вызывается перед удалением записи. Выполняет очистку связанных данных и удаление записи из базы данных.
@@ -1784,7 +1784,7 @@ func (i *IssueComment) AfterFind(tx *gorm.DB) error {
 func (i *IssueComment) SetUrl() {
 	raw := fmt.Sprintf("/api/auth/workspaces/%s/projects/%s/issues/%s/comments/%s/", i.WorkspaceId, i.ProjectId.String(), i.IssueId, i.Id)
 	u, _ := url.Parse(raw)
-	i.URL = Config.WebURL.ResolveReference(u)
+	i.URL = Config.WebURL.URL.ResolveReference(u)
 }
 
 // BeforeDelete - Вызывается перед удалением объекта Issue из базы данных.  Функция выполняет очистку связанных данных, таких как удаление комментариев, реакций и других связанных сущностей.

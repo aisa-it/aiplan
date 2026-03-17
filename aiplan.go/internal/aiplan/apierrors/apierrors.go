@@ -223,6 +223,8 @@ var (
 	ErrSprintRequestValidate   = DefinedError{Code: 3605, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
 	ErrInvalidSprintViewProps  = DefinedError{Code: 3606, StatusCode: http.StatusBadRequest, Err: "invalid sprint view properties %s", RuErr: "Указаны некорректные параметры настроек спринта (%s)"}
 	ErrInvalidSprintTimeWindow = DefinedError{Code: 3607, StatusCode: http.StatusBadRequest, Err: "invalid sprint time window", RuErr: "Некорректный период спринта"}
+	ErrSprintFolderDelete      = DefinedError{Code: 3608, StatusCode: http.StatusBadRequest, Err: "cannot delete folder that contains sprints", RuErr: "Нельзя удалить папку, в которой есть добавленные спринты"}
+
 	// 4*** - issue errors
 	ErrIssueNotFound                   = DefinedError{Code: 4001, StatusCode: http.StatusNotFound, Err: "issue not found", RuErr: "Задача не найдена"}
 	ErrDeleteIssueForbidden            = DefinedError{Code: 4002, StatusCode: http.StatusForbidden, Err: "only admin and author can delete issue", RuErr: "У вас недостаточно прав для удаления задачи"}
@@ -250,11 +252,12 @@ var (
 	ErrIssueTargetDateExp              = DefinedError{Code: 4024, StatusCode: http.StatusBadRequest, Err: "the date has already passed", RuErr: "Заданная дата уже прошла"}
 	ErrIssueCommentEmpty               = DefinedError{Code: 4025, StatusCode: http.StatusBadRequest, Err: "comment is empty", RuErr: "Попытка отправить пустой комментарий"}
 	ErrLabelNotEmptyCannotDelete       = DefinedError{Code: 4026, StatusCode: http.StatusBadRequest, Err: "the label is not empty, only empty label can be deleted", RuErr: "Удаление тега, установленного для задачи, невозможно"}
+	ErrForbiddenState                  = DefinedError{Code: 4100, StatusCode: http.StatusBadRequest, Err: "state-flow blocks this change", RuErr: "Попытка установить статус не соответствующий бизнес-процессу"}
 
 	// 45** - property template errors
 	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
 	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
-	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, link", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, link"}
 	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
 	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
 	ErrPropertyOnlyAdminCanSet         = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}

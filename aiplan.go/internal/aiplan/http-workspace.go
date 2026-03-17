@@ -155,7 +155,9 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 
 	workspaceGroup.GET("/states/", s.getWorkspaceStateList)
 
-	workspaceGroup.GET("/jitsi-token/", s.getWorkspaceJitsiToken)
+	if !cfg.JitsiDisabled {
+		workspaceGroup.GET("/jitsi-token/", s.getWorkspaceJitsiToken, NewJitsiTokenLogMiddleware(s.db))
+	}
 
 	workspaceGroup.GET("/integrations/", s.getIntegrationList)
 	workspaceGroup.POST("/integrations/add/:name/", s.addIntegrationToWorkspace)
@@ -449,89 +451,14 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	if !user.IsSuperuser && user.ID != workspace.OwnerId {
-		return EErrorDefined(c, apierrors.ErrDeleteWorkspaceForbidden)
-	}
-
-	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, workspace, user)
-	if err != nil {
-		errStack.GetError(c, err)
-		return err
-	}
 	// Cancel jira imports
 	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
 		return EError(c, err)
 	}
 
-	{
-		// delete DeferredNotifications & activities
-		if err := s.db.
-			Where("workspace_id = ?", workspace.ID).
-			Unscoped().
-			Delete(&dao.DeferredNotifications{}).Error; err != nil {
-			return err
-		}
-
-		activityTables := []dao.UnionableTable{
-			&dao.WorkspaceActivity{},
-			&dao.DocActivity{},
-			&dao.FormActivity{},
-			&dao.ProjectActivity{},
-			&dao.IssueActivity{},
-		}
-
-		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
-			tn := strings.Split((*a).TableName(), "_")
-			return tn[0] + "_activity_id"
-		})
-
-		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
-
-		var queries []interface{}
-
-		for _, model := range activityTables {
-			queries = append(queries, s.db.Select("id").
-				Where("workspace_id = ?", workspace.ID).
-				Model(&model))
-		}
-
-		if err := s.db.Where(queryString, queries...).
-			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
-			return err
-		}
-
-		for _, model := range activityTables {
-			if err := s.db.
-				Where("workspace_id = ?", workspace.ID).
-				Unscoped().
-				Delete(model).Error; err != nil {
-				return err
-			}
-		}
-
-		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-		if err := s.db.Model(&dao.RootActivity{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
-			return err
-		}
-	}
-
-	// Soft-delete projects
-	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Where("workspace_id = ?", workspace.ID).Delete(&dao.Project{}).Error; err != nil {
+	if err := s.business.DeleteWorkspace(user, &workspace); err != nil {
 		return EError(c, err)
 	}
-
-	// Soft-delete workspace
-	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Omit(clause.Associations).Delete(&workspace).Error; err != nil {
-		return EError(c, err)
-	}
-
-	// Workspaces will be hard deleted by cron
-	// Start hard deleting in foreground
-	/*go func(workspace dao.Workspace) {
-		if err := s.db.Unscoped().Delete(&workspace).Error; err != nil {
-			slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
-		}
-	}(workspace)*/
 
 	return c.NoContent(http.StatusOK)
 }
@@ -975,18 +902,12 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 
 	if user.ID != requestedMember.Member.ID {
 		// If not current user - set current user as new owner
-		s.business.WorkspaceCtx(c, workspaceMember.Member, &workspace, &workspaceMember)
-		defer s.business.WorkspaceCtxClean()
-
 		if err := s.business.DeleteWorkspaceMember(&workspaceMember, &requestedMember); err != nil {
 			return EError(c, err)
 		}
 	} else {
 		newOwner := possibleOwners[0]
 		newOwner.Workspace = &workspace
-		s.business.WorkspaceCtx(c, newOwner.Member, &workspace, &newOwner)
-		defer s.business.WorkspaceCtxClean()
-
 		if err := s.business.DeleteWorkspaceMember(&newOwner, &requestedMember); err != nil {
 			return EError(c, err)
 		}
@@ -1343,7 +1264,7 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 
 	if searchQuery != "" {
 		escapedSearchQuery := PrepareSearchRequest(searchQuery)
-		query = query.Where("lower(name) LIKE ? OR name_tokens @@ plainto_tsquery('russian', lower(?))",
+		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, searchQuery)
 	}
 
