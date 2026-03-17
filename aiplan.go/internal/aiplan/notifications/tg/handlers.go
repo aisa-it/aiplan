@@ -94,7 +94,7 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 		Joins("Activity.Doc").
 		Where("message_id = ?", update.Message.ReplyToMessage.ID).First(&act).Error; err != nil {
 		t.Send(update.Message.Chat.ID, TgMsg{
-			title: "Не возможно оставить комментарий",
+			Title: "Не возможно оставить комментарий",
 		})
 		return
 	}
@@ -109,14 +109,14 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 		if err != nil {
 			if err.Error() == "create comment forbidden" {
 				t.Send(update.Message.Chat.ID, TgMsg{
-					title: "У вас нет прав оставлять комментарии в данном проекте",
+					Title: "У вас нет прав оставлять комментарии в данном проекте",
 				})
 				return
 			}
 			slog.Error("Create comment from tg reply", "err", err)
 			return
 		}
-		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий к задаче '%s'\nотправлен", bot.EscapeMarkdown(act.Activity.Issue.Name))})
+		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{Title: fmt.Sprintf("Комментарий к задаче '%s'\nотправлен", bot.EscapeMarkdown(act.Activity.Issue.Name))})
 		if errSend != nil {
 			slog.Error("Send comment from tg reply", "err", errSend)
 		}
@@ -126,21 +126,21 @@ func (t *TgService) commentActivityHandler(ctx context.Context, b *bot.Bot, upda
 		if err != nil {
 			if err.Error() == "create comment forbidden" {
 				t.Send(update.Message.Chat.ID, TgMsg{
-					title: "У вас нет прав оставлять комментарии в данном пространстве",
+					Title: "У вас нет прав оставлять комментарии в данном пространстве",
 				})
 				return
 			}
 			slog.Error("Create comment from tg reply", "err", err)
 			return
 		}
-		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{title: fmt.Sprintf("Комментарий в документ '%s'\nотправлен", bot.EscapeMarkdown(act.Activity.Doc.Title))})
+		_, errSend := t.Send(update.Message.Chat.ID, TgMsg{Title: fmt.Sprintf("Комментарий в документ '%s'\nотправлен", bot.EscapeMarkdown(act.Activity.Doc.Title))})
 		if errSend != nil {
 			slog.Error("Send comment from tg reply", "err", errSend)
 		}
 		return
 	}
 	t.Send(update.Message.Chat.ID, TgMsg{
-		title: "Не возможно оставить комментарий",
+		Title: "Не возможно оставить комментарий",
 	})
 	return
 }

@@ -160,6 +160,9 @@ func (es *EmailService) Stop() {
 
 func (es *EmailService) sendEmail(e mail) error {
 	m := gomail.NewMessage()
+	//m.SetAddressHeader("From", es.cfg.EmailUser, es.cfg.EmailFrom)
+	//m.SetAddressHeader("To", "client@example.com", "")
+
 	m.SetHeader("From", es.cfg.EmailFrom)
 	m.SetHeader("To", e.To)
 	m.SetHeader("Subject", e.Subject)

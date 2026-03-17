@@ -200,7 +200,9 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 			Workspace: v.Issue.Workspace.ToLightDTO(),
 			Doc:       v.Doc.ToLightDTO(),
 			Form:      v.Form.ToLightDTO(),
+			Sprint:    v.Sprint.ToLightDTO(),
 		}
+		msg.Data = v.ToLightDTO()
 
 	case dao.IssueComment:
 		msg.Type = "comment"
@@ -261,6 +263,24 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		if err := wsjson.Write(ctx, session, msg); err != nil {
 			slog.Error("Write notification to websocket", "userId", userIdStr, "err", err)
+		}
+		cancel()
+	}
+	return nil
+}
+
+func (wns *WebsocketNotificationService) SendMsg(userId uuid.UUID, data WebsocketMsg) error {
+
+	wns.mutex.RLock()
+	cons, ok := wns.sessions[userId]
+	wns.mutex.RUnlock()
+	if !ok {
+		return nil
+	}
+	for _, session := range cons {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		if err := wsjson.Write(ctx, session, data); err != nil {
+			slog.Error("Write notification to websocket", "userId", userId.String(), "err", err)
 		}
 		cancel()
 	}

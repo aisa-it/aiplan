@@ -38,21 +38,20 @@ type TgService struct {
 }
 
 type TgMsg struct {
-	title string
-	body  string
+	Title string
+	Body  string
 
-	replace map[string]any
-	Skip    func(u userTg) bool
+	Replace map[string]any
 }
 
 func NewTgMsg() TgMsg {
 	return TgMsg{
-		replace: make(map[string]any),
+		Replace: make(map[string]any),
 	}
 }
 
 func (m TgMsg) IsEmpty() bool {
-	if m.title == "" && m.body == "" {
+	if m.Title == "" && m.Body == "" {
 		return true
 	}
 	return false
@@ -126,7 +125,7 @@ func (t *TgService) GetBotLink() string {
 }
 
 func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
-	msg := strings.Join([]string{tgMsg.title, tgMsg.body}, "\n")
+	msg := strings.Join([]string{tgMsg.Title, tgMsg.Body}, "\n")
 	if msg == "" {
 		return 0, fmt.Errorf("message is empty")
 	}
@@ -160,7 +159,7 @@ func isReplyMessage(update *models.Update) bool {
 
 func (t *TgService) SendMessage(tgId int64, format string, anyStr []any) bool {
 	msg := NewTgMsg()
-	msg.title = Stelegramf(format, anyStr...)
+	msg.Title = Stelegramf(format, anyStr...)
 	_, err := t.Send(tgId, msg)
 	if err != nil {
 		slog.Error("Sending message to Telegram:", "error", err)
@@ -175,7 +174,7 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 
 	msg := NewTgMsg()
 	formName := fmt.Sprintf("%s/%s", form.Workspace.Name, form.Title)
-	msg.title = fmt.Sprintf("*%s* прошел форму [%s](%s)\n", bot.EscapeMarkdown(user.GetName()), bot.EscapeMarkdown(formName), form.URL.String())
+	msg.Title = fmt.Sprintf("*%s* прошел форму [%s](%s)\n", bot.EscapeMarkdown(user.GetName()), bot.EscapeMarkdown(formName), form.URL.String())
 
 	fileName := make(map[string]string, len(answer.Attachments))
 	for _, attachment := range answer.Attachments {
@@ -250,7 +249,7 @@ func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAn
 			}
 		}
 	}
-	msg.body = Stelegramf(d.String(), out...)
+	msg.Body = Stelegramf(d.String(), out...)
 
 	t.Send(tgId, msg)
 }
@@ -261,7 +260,7 @@ func (t *TgService) UserMentionNotification(user dao.User, comment dao.IssueComm
 	}
 
 	msg := NewTgMsg()
-	msg.title = fmt.Sprintf(
+	msg.Title = fmt.Sprintf(
 		"*%s* %s [%s](%s)",
 		bot.EscapeMarkdown(comment.Actor.GetName()),
 		bot.EscapeMarkdown("упомянул(-а) вас в комментарии"),
@@ -269,7 +268,7 @@ func (t *TgService) UserMentionNotification(user dao.User, comment dao.IssueComm
 		comment.Issue.URL.String(),
 	)
 
-	msg.body = Stelegramf("```\n%s```",
+	msg.Body = Stelegramf("```\n%s```",
 		utils.HtmlToTg(comment.CommentHtml.Body))
 	t.Send(*user.TelegramId, msg)
 }
@@ -281,7 +280,7 @@ func (t *TgService) WorkspaceInvitation(workspaceMember dao.WorkspaceMember) {
 
 	if workspaceMember.Member.TelegramId != nil {
 		msg := NewTgMsg()
-		msg.title = fmt.Sprintf(
+		msg.Title = fmt.Sprintf(
 			"Вас добавили в пространство [%s](%s)",
 			bot.EscapeMarkdown(workspaceMember.Workspace.Slug),
 			workspaceMember.Workspace.URL.String(),
@@ -291,7 +290,7 @@ func (t *TgService) WorkspaceInvitation(workspaceMember dao.WorkspaceMember) {
 
 	if workspaceMember.CreatedBy.TelegramId != nil {
 		msg := NewTgMsg()
-		msg.title = fmt.Sprintf(
+		msg.Title = fmt.Sprintf(
 			"Вы добавили пользователя *%s* в пространство [%s](%s)",
 			bot.EscapeMarkdown(workspaceMember.Member.GetName()),
 			bot.EscapeMarkdown(workspaceMember.Workspace.Slug),
@@ -308,7 +307,7 @@ func (t *TgService) UserBlockedUntil(user dao.User, until time.Time) {
 	}
 
 	msg := NewTgMsg()
-	msg.title = Stelegramf("❗️ Ваша учетная запись была заблокирована")
-	msg.body = Stelegramf("из-за подозрительной активности до *%s*", until.Format("02.01.2006 15:04"))
+	msg.Title = Stelegramf("❗️ Ваша учетная запись была заблокирована")
+	msg.Body = Stelegramf("из-за подозрительной активности до *%s*", until.Format("02.01.2006 15:04"))
 	t.Send(*user.TelegramId, msg)
 }

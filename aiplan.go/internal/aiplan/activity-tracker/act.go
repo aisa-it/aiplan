@@ -133,7 +133,6 @@ func TrackEvent[E dao.IDaoAct](tracker *ActTracker, layer types.EntityLayer, act
 			//}
 			activity = confSkipper2(activity, requestedData)
 			tracker.RunHandlers(activity)
-
 		}
 	}
 
@@ -168,6 +167,8 @@ type ActHandler interface {
 type ActTracker struct {
 	db *gorm.DB
 
+	//notifyService *notifications.EventNotificationService
+
 	handlers []ActHandler
 }
 
@@ -179,6 +180,7 @@ func (t *ActTracker) RunHandlers(activity dao.ActivityEvent) {
 			slog.Error("handler failed", "error", err)
 		}
 	}
+
 }
 
 func (t *ActTracker) RegisterHandler(handler ActHandler) {

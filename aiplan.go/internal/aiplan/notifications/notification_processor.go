@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"gorm.io/gorm/clause"
 
@@ -459,11 +461,11 @@ func (nd *notifyDeadline) isNotifyTg(tx *gorm.DB, notification *dao.DeferredNoti
 	}
 	field := "deadline"
 	if notification.Issue.CreatedById == projectMember.MemberId {
-		if !projectMember.NotificationAuthorSettingsTG.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationAuthorSettingsTG.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	} else {
-		if !projectMember.NotificationSettingsTG.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationSettingsTG.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	}
@@ -483,11 +485,11 @@ func (nd *notifyDeadline) isNotifyEmail(tx *gorm.DB, notification *dao.DeferredN
 	field := "deadline"
 
 	if notification.Issue.CreatedById == projectMember.MemberId {
-		if !projectMember.NotificationAuthorSettingsEmail.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationAuthorSettingsEmail.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	} else {
-		if !projectMember.NotificationSettingsEmail.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationSettingsEmail.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	}
@@ -504,11 +506,11 @@ func (nd *notifyDeadline) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNot
 	}
 	field := "deadline"
 	if notification.Issue.CreatedById == projectMember.MemberId {
-		if !projectMember.NotificationAuthorSettingsApp.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	} else {
-		if !projectMember.NotificationSettingsApp.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationSettingsApp.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	}

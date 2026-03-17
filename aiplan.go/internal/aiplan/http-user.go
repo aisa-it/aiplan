@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -1505,90 +1504,75 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// TODO refactoring & add other Activities
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "ua", dao.FullActivity{}, issue, project, doc, form, workspace, sprint)
-
+	//// TODO refactoring & add other Activities
+	//var issue dao.IssueActivity
+	//issue.UnionCustomFields = "'issue' AS entity_type"
+	//var project dao.ProjectActivity
+	//project.UnionCustomFields = "'project' AS entity_type"
+	//var doc dao.DocActivity
+	//doc.UnionCustomFields = "'doc' AS entity_type"
+	//var form dao.FormActivity
+	//form.UnionCustomFields = "'form' AS entity_type"
+	//var workspace dao.WorkspaceActivity
+	//workspace.UnionCustomFields = "'workspace' AS entity_type"
+	//var sprint dao.SprintActivity
+	//sprint.UnionCustomFields = "'sprint' AS entity_type"
+	//
+	//unionTable := dao.BuildUnionSubquery(s.db, "ua", dao.FullActivity{}, issue, project, doc, form, workspace, sprint)
+	//
 	var userNotifications []dao.UserNotifications
-
-	getActivityId := func(u *dao.UserNotifications) uuid.NullUUID {
-		if u.IssueActivityId.Valid {
-			return u.IssueActivityId
-		}
-		if u.ProjectActivityId.Valid {
-			return u.ProjectActivityId
-		}
-		if u.DocActivityId.Valid {
-			return u.DocActivityId
-		}
-		if u.FormActivityId.Valid {
-			return u.FormActivityId
-		}
-		if u.WorkspaceActivityId.Valid {
-			return u.WorkspaceActivityId
-		}
-		if u.SprintActivityId.Valid {
-			return u.SprintActivityId
-		}
-
-		return uuid.NullUUID{}
-	}
+	//
+	//getActivityId := func(u *dao.UserNotifications) uuid.NullUUID {
+	//	if u.IssueActivityId.Valid {
+	//		return u.IssueActivityId
+	//	}
+	//	if u.ProjectActivityId.Valid {
+	//		return u.ProjectActivityId
+	//	}
+	//	if u.DocActivityId.Valid {
+	//		return u.DocActivityId
+	//	}
+	//	if u.FormActivityId.Valid {
+	//		return u.FormActivityId
+	//	}
+	//	if u.WorkspaceActivityId.Valid {
+	//		return u.WorkspaceActivityId
+	//	}
+	//	if u.SprintActivityId.Valid {
+	//		return u.SprintActivityId
+	//	}
+	//
+	//  if u.
+	//
+	//	return uuid.NullUUID{}
+	//}
 
 	query := s.db.
-		//Preload("EntityActivity").
-		//Preload("EntityActivity.Actor").
-		//Preload("EntityActivity.Issue").
-		//Preload("EntityActivity.Project").
-		//Preload("EntityActivity.Workspace").
-		Joins("IssueActivity").
-		Joins("ProjectActivity").
-		Joins("DocActivity").
-		Joins("FormActivity").
-		Joins("SprintActivity").
-
-		//Joins("IssueActivity").
-		//Preload("IssueActivity.Actor").
-		//Preload("IssueActivity.Issue").
-		//Preload("IssueActivity.Project").
-		//Preload("IssueActivity.Workspace").
-		//Joins("ProjectActivity").
-		//Preload("ProjectActivity.Actor").
-		//Preload("ProjectActivity.Project").
-		//Preload("ProjectActivity.Workspace").
-		//Joins("WorkspaceActivity").
-		//Preload("WorkspaceActivity.Actor").
-		//Preload("WorkspaceActivity.Workspace").
-		//Joins("DocActivity").
-		//Preload("DocActivity.Actor").
-		//Preload("DocActivity.Workspace").
-		//Preload("DocActivity.Doc").
-		//Preload("FormActivity.Actor").
-		//Preload("FormActivity.Workspace").
-		//Preload("FormActivity.Form").
-		//Joins("RootActivity").
-		//Preload("RootActivity.Actor").
+		Joins("ActivityEvent").
+		Joins("ActivityEvent.Actor").
+		Joins("ActivityEvent.Issue").
+		Joins("ActivityEvent.Project").
+		Joins("ActivityEvent.Workspace").
+		Joins("ActivityEvent.Doc").
+		Joins("ActivityEvent.Form").
+		Joins("ActivityEvent.Sprint").
 		Joins("Comment").
-		Preload("Comment.Actor").
-		Preload("Comment.Issue").
-		Preload("Comment.Project").
-		Preload("Comment.Workspace").
+		Joins("Comment.Actor").
+		Joins("Comment.Issue").
+		Joins("Comment.Project").
+		Joins("Comment.Workspace").
 		Joins("Workspace").
 		Joins("Author").
 		Joins("Issue").
-		Preload("Issue.Project").
-		Where("user_id = ?", user.ID).Order("created_at desc")
+		Joins("Issue.Project").
+		Where("user_notifications.user_id = ?", user.ID).
+		Where("user_notifications.issue_activity_id is null").
+		Where("user_notifications.project_activity_id is null").
+		Where("user_notifications.workspace_activity_id is null").
+		Where("user_notifications.sprint_activity_id is null").
+		Where("user_notifications.doc_activity_id is null").
+		Where("user_notifications.form_activity_id is null").
+		Order("user_notifications.created_at desc")
 
 	resp, err := dao.PaginationRequest(
 		offset,
@@ -1600,57 +1584,57 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	elementsRes := utils.Filter(
-		slices.All(*resp.Result.(*[]dao.UserNotifications)),
-		func(t dao.UserNotifications) bool {
-			if id := getActivityId(&t); id.Valid {
-				return true
-			}
-			return false
-		})
+	//elementsRes := utils.Filter(
+	//	slices.All(*resp.Result.(*[]dao.UserNotifications)),
+	//	func(t dao.UserNotifications) bool {
+	//		if id := getActivityId(&t); id.Valid {
+	//			return true
+	//		}
+	//		return false
+	//	})
+	//
+	//res := slices.Collect(elementsRes)
+	//
+	//qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) uuid.UUID {
+	//	if id := getActivityId(t); id.Valid {
+	//		return id.UUID
+	//	}
+	//	return uuid.Nil
+	//})
 
-	res := slices.Collect(elementsRes)
+	//var fa []dao.FullActivity
+	//if err := unionTable.
+	//	Joins("Project").
+	//	Joins("Workspace").
+	//	Joins("Actor").
+	//	Joins("Issue").
+	//	Joins("Doc").
+	//	Joins("Form").
+	//	Joins("Sprint").
+	//	Where("ua.id::text IN (?)", qqq).
+	//	Find(&fa).Error; err != nil {
+	//	if err != gorm.ErrRecordNotFound {
+	//		return EErrorDefined(c, apierrors.ErrGeneric)
+	//	}
+	//}
 
-	qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) uuid.UUID {
-		if id := getActivityId(t); id.Valid {
-			return id.UUID
-		}
-		return uuid.Nil
-	})
-
-	var fa []dao.FullActivity
-	if err := unionTable.
-		Joins("Project").
-		Joins("Workspace").
-		Joins("Actor").
-		Joins("Issue").
-		Joins("Doc").
-		Joins("Form").
-		Joins("Sprint").
-		Where("ua.id::text IN (?)", qqq).
-		Find(&fa).Error; err != nil {
-		if err != gorm.ErrRecordNotFound {
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		}
-	}
-
-	idMap := utils.SliceToMap(&fa, func(t *dao.FullActivity) uuid.UUID {
-		return t.Id
-	})
-
-	for i := 0; i < len(*resp.Result.(*[]dao.UserNotifications)); i++ {
-		var id uuid.NullUUID
-		if results, ok := resp.Result.(*[]dao.UserNotifications); ok {
-			id = getActivityId(&(*results)[i])
-			if !id.Valid {
-				continue
-			}
-
-			if v, ok := idMap[id.UUID]; ok {
-				(*resp.Result.(*[]dao.UserNotifications))[i].FullActivity = &v
-			}
-		}
-	}
+	//idMap := utils.SliceToMap(&fa, func(t *dao.FullActivity) uuid.UUID {
+	//	return t.Id
+	//})
+	//
+	//for i := 0; i < len(*resp.Result.(*[]dao.UserNotifications)); i++ {
+	//	var id uuid.NullUUID
+	//	if results, ok := resp.Result.(*[]dao.UserNotifications); ok {
+	//		id = getActivityId(&(*results)[i])
+	//		if !id.Valid {
+	//			continue
+	//		}
+	//
+	//		if v, ok := idMap[id.UUID]; ok {
+	//			(*resp.Result.(*[]dao.UserNotifications))[i].FullActivity = &v
+	//		}
+	//	}
+	//}
 
 	resp.Result = userNotifyToSimple(resp.Result)
 	return c.JSON(http.StatusOK, resp)
@@ -1715,17 +1699,19 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 				//entityActivity.OldEntity = dao.GetActionEntity(*notify.FullActivity, "Old")
 				tmp.Data = entityActivity
 			}
-			if notify.EntityActivity != nil {
+			if notify.ActivityEvent != nil {
 				tmp.Detail = notifications.NotificationDetailResponse{
-					User:      notify.EntityActivity.Actor.ToLightDTO(),
-					Issue:     notify.EntityActivity.Issue.ToLightDTO(),
-					Project:   notify.EntityActivity.Project.ToLightDTO(),
-					Workspace: notify.EntityActivity.Workspace.ToLightDTO(),
-					//Doc:       notify.EntityActivity.Doc.ToLightDTO(),
+					User:      notify.ActivityEvent.Actor.ToLightDTO(),
+					Issue:     notify.ActivityEvent.Issue.ToLightDTO(),
+					Project:   notify.ActivityEvent.Project.ToLightDTO(),
+					Workspace: notify.ActivityEvent.Workspace.ToLightDTO(),
+					Doc:       notify.ActivityEvent.Doc.ToLightDTO(),
+					Form:      notify.ActivityEvent.Form.ToLightDTO(),
+					Sprint:    notify.ActivityEvent.Sprint.ToLightDTO(),
 				}
-				entityActivity := notify.EntityActivity.ToLightDTO()
-				entityActivity.NewEntity = dao.GetActionEntity(*notify.EntityActivity, "New")
-				entityActivity.OldEntity = dao.GetActionEntity(*notify.EntityActivity, "Old")
+				entityActivity := notify.ActivityEvent.ToLightDTO()
+				//entityActivity.NewEntity = dao.GetActionEntity(*notify.FullActivity, "New")
+				//entityActivity.OldEntity = dao.GetActionEntity(*notify.FullActivity, "Old")
 				tmp.Data = entityActivity
 			}
 

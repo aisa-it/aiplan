@@ -758,16 +758,13 @@ func (ns *ProjectMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns ProjectMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
-	if field == nil {
-		return false
-	}
+func (ns ProjectMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
 
-	isIssue := entity == actField.Issue.Field
-	isProject := entity == actField.Project.Field
-	isPrAdmin := entity == actField.Project.Field && role == AdminRole
+	isIssue := entity == LayerIssue
+	isProject := entity == LayerProject
+	isPrAdmin := entity == LayerProject && role == AdminRole
 
-	switch actField.ActivityField(*field) {
+	switch field {
 	case actField.Name.Field:
 		if isIssue {
 			return !ns.DisableName
@@ -987,17 +984,14 @@ func (ns *WorkspaceMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
-	if field == nil {
-		return false
-	}
+func (ns WorkspaceMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
 
-	isSprint := entity == actField.Sprint.Field
-	isDoc := entity == actField.Doc.Field
-	isWorkspace := entity == actField.Workspace.Field
-	isWorkspaceAdmin := entity == actField.Workspace.Field && role == AdminRole
+	isSprint := entity == LayerSprint
+	isDoc := entity == LayerDoc
+	isWorkspace := entity == LayerWorkspace
+	isWorkspaceAdmin := entity == LayerWorkspace && role == AdminRole
 
-	switch actField.ActivityField(*field) {
+	switch field {
 	case actField.Title.Field:
 		if isDoc {
 			return !ns.DisableDocTitle
@@ -1307,3 +1301,5 @@ func (e EntityLayer) String() string {
 	}
 	return "unknown"
 }
+
+type NotifyChannel int
