@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -221,8 +222,9 @@ func (u *User) String() string {
 }
 
 func (u *User) GetName() string {
-	if u.FirstName != "" && u.LastName != "" {
-		return fmt.Sprintf("%s %s", u.FirstName, u.LastName)
+	name := strings.Join([]string{u.FirstName, u.LastName}, " ")
+	if name != "" {
+		return name
 	}
 	return u.Email
 }
