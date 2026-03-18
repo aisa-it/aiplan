@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -222,11 +221,13 @@ func (u *User) String() string {
 }
 
 func (u *User) GetName() string {
-	name := strings.Join([]string{u.FirstName, u.LastName}, " ")
-	if name != "" {
-		return name
+	if u.FirstName == "" && u.LastName == "" {
+		return u.Email
 	}
-	return u.Email
+	if u.LastName == "" {
+		return u.FirstName
+	}
+	return u.FirstName + " " + u.LastName
 }
 
 func (u *User) CanReceiveNotifications() bool {
