@@ -121,6 +121,7 @@ func (np *NotificationProcessor) ProcessNotifications() {
 		Preload("Issue").
 		Preload("Issue.Workspace").
 		Preload("Issue.Project").
+		Preload("Issue.State").
 		Preload("Workspace").
 		Where("sent_at IS NULL AND time_send < NOW()  AND attempt_count < ?", maxRetryAttempts).
 		Find(&notifications).Error
@@ -142,6 +143,10 @@ func (np *NotificationProcessor) ProcessNotifications() {
 			}
 		case "deadline_notification":
 			if notification.Issue == nil || notification.Issue.Project == nil {
+				notifyDel = append(notifyDel, notification.ID)
+				continue
+			}
+			if notification.Issue.CompletedAt != nil || notification.Issue.State.Group == "cancelled" {
 				notifyDel = append(notifyDel, notification.ID)
 				continue
 			}
