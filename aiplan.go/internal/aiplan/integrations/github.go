@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
-	"strings"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
@@ -44,13 +42,13 @@ type githubCommit struct {
 	Author    githubUser `json:"author"`
 	Committer githubUser `json:"committer"`
 	Distinct  bool       `json:"distinct"`
-	Id        string     `json:"id"`
+	ID        string     `json:"id"`
 	Message   string     `json:"message"`
 	Modified  []string   `json:"modified"`
 	Removed   []string   `json:"removed"`
 	Timestamp string     `json:"timestamp"`
 	TreeId    string     `json:"treeId"`
-	Url       string     `json:"url"`
+	URL       string     `json:"url"`
 }
 
 type GithubPushEvent struct {
@@ -67,7 +65,7 @@ type GithubPushEvent struct {
 	Pusher     githubUser    `json:"pusher"`
 	Ref        string        `json:"ref"`
 	Repository struct {
-		Url      string `json:"url"`
+		URL      string `json:"url"`
 		FullName string `json:"full_name"`
 	} `json:"repository"`
 	Sender struct {
@@ -142,7 +140,7 @@ func (ghi *GithubIntegration) GithubPushEvent(event GithubPushEvent, workspace d
 				ghi.db.Model(&dao.IssueComment{}).
 					Select("1").
 					Where("actor_id = ?", ghi.User.ID).
-					Where("integration_meta = ?", commit.Id),
+					Where("integration_meta = ?", commit.ID),
 			).
 			Find(&exist).Error; err != nil {
 			logGithub.Error("Check commit comment exists")
@@ -163,59 +161,61 @@ func (ghi *GithubIntegration) GithubPushEvent(event GithubPushEvent, workspace d
 			}
 		}
 
-		issueReg := regexp.MustCompile(`[A-Z0-9]+-\d+`)
-		foundIssue := strings.Split(issueReg.FindString(commit.Message), "-")
-		if len(foundIssue) != 2 {
-			continue
-		}
+		foundIssues := ParseMessage(commit.Message)
 
-		var issue dao.Issue
-		if err := ghi.db.Where("project_id = (?)",
-			ghi.db.
-				Select("id").
-				Model(dao.Project{}).
-				Where("workspace_id = ?", workspace.ID).
-				Where("identifier = ?", foundIssue[0])).
-			Where("sequence_id = ?", foundIssue[1]).
-			Joins("Workspace").
-			First(&issue).Error; err != nil {
-			logGithub.Error("Find issue from gitlab event", "issueID", strings.Join(foundIssue, "-"), "err", err)
-			continue
-		}
-		if _, ok := dao.IsProjectMember(ghi.db, ghi.User.ID, issue.ProjectId); !ok {
-			continue
-		}
+		for _, foundIssue := range foundIssues {
+			var issue dao.Issue
+			if err := ghi.db.Where("project_id = (?)",
+				ghi.db.
+					Select("id").
+					Model(dao.Project{}).
+					Where("workspace_id = ?", workspace.ID).
+					Where("identifier = ?", foundIssue.Project)).
+				Where("sequence_id = ?", foundIssue.Seq).
+				Joins("Workspace").
+				First(&issue).Error; err != nil {
+				logGithub.Error("Find issue from event", "issueID", foundIssue.String(), "err", err)
+				continue
+			}
 
-		userName := user.GetName()
-		if !userFound {
-			userName = commit.Author.Name
-		}
-		msg := fmt.Sprintf("<p><strong>%s</strong> упомянул эту задачу в <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">коммите</a> проекта <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">%s</a>:</p><pre><code>%s</code></pre>",
-			userName,
-			commit.Url,
-			event.Repository.Url,
-			event.Repository.FullName,
-			commit.Message,
-		)
+			if _, ok := dao.IsProjectMember(ghi.db, ghi.User.ID, issue.ProjectId); !ok {
+				logGithub.Warn("Not a project member commit issue in commit message", "issue", foundIssue.String(), "user", ghi.User)
+				continue
+			}
 
-		err := ghi.bl.CreateIssueComment(issue, *ghi.User, msg, uuid.Nil, false, commit.Id)
-		if err != nil {
-			logGithub.Error("Create issue comment from webhook", "err", err)
-			continue
-		}
+			userName := user.GetName()
+			if !userFound {
+				userName = commit.Author.Name
+			}
 
-		link := dao.IssueLink{
-			Id:          dao.GenUUID(),
-			CreatedById: uuid.NullUUID{UUID: ghi.User.ID, Valid: true},
-			IssueId:     issue.ID,
-			ProjectId:   issue.ProjectId,
-			WorkspaceId: issue.WorkspaceId,
-			Url:         commit.Url,
-			Title:       commit.Message,
-		}
+			msg := fmt.Sprintf("<p><strong>%s</strong> упомянул эту задачу в <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">коммите</a> проекта <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">%s</a>:</p><pre><code>%s</code></pre>",
+				userName,
+				commit.URL,
+				event.Repository.URL,
+				event.Repository.FullName,
+				commit.Message,
+			)
 
-		if err := ghi.db.Create(&link).Error; err != nil {
-			logGithub.Error("Create issue link from webhook", "err", err)
+			err := ghi.bl.CreateIssueComment(issue, *ghi.User, msg, uuid.Nil, false, commit.ID)
+			if err != nil {
+				logGithub.Error("Create issue comment from webhook", "err", err)
+				continue
+			}
+
+			// BAK-268
+			/*link := dao.IssueLink{
+			  	Id:          dao.GenID(),
+			  	CreatedById: &gi.User.ID,
+			  	IssueId:     issue.ID.String(),
+			  	ProjectId:   issue.ProjectId,
+			  	WorkspaceId: issue.WorkspaceId,
+			  	Url:         commit.URL,
+			  	Title:       commit.Title,
+			  }
+
+			  if err := gi.db.Create(&link).Error; err != nil {
+			  	log.Error("Create issue link from webhook", "err", err)
+			  }*/
 		}
 	}
 }

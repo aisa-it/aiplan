@@ -3817,8 +3817,12 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 
 	// Загружаем шаблон для ответа
 	existingProp.Template = &template
+	resp := existingProp.ToDTO()
+	if resp.Type == "link" {
+		resp.Value = json.RawMessage(resp.Value.(string))
+	}
 
-	return c.JSON(status, existingProp.ToDTO())
+	return c.JSON(status, resp)
 }
 
 // getDefaultPropertyValue возвращает дефолтное значение для типа поля
@@ -3851,7 +3855,7 @@ func parsePropertyValue(propType, value string) any {
 		if value == "" {
 			return nil
 		}
-		var m map[string]any
+		var m json.RawMessage
 		if err := json.Unmarshal([]byte(value), &m); err != nil {
 			return value
 		}
@@ -3864,7 +3868,6 @@ func parsePropertyValue(propType, value string) any {
 // validatePropertyValue валидирует значение через JSON Schema
 func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) error {
 	schema := types.GenValueSchema(template.Type, template.Options)
-
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("schema.json", schema); err != nil {
 		return err
@@ -3875,7 +3878,11 @@ func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) erro
 		return err
 	}
 
-	return sch.Validate(value)
+	err = sch.Validate(value)
+	if errors.Is(err, &jsonschema.ValidationError{}) {
+		slog.Debug("JSON schema validation error", "err", err)
+	}
+	return err
 }
 
 // serializePropertyValue сериализует значение в строку для хранения в БД
