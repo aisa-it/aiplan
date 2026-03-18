@@ -1283,7 +1283,7 @@ func (s *Services) deleteIssue(c echo.Context) error {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
-// @Success 200 {object} map[string]dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
+// @Success 200 {array} dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -1306,7 +1306,7 @@ func (s *Services) getAvailableStates(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, utils.SliceToMap(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 // ############# Sub-issues methods ###################
