@@ -221,10 +221,13 @@ func (u *User) String() string {
 }
 
 func (u *User) GetName() string {
-	if u.FirstName != "" && u.LastName != "" {
-		return fmt.Sprintf("%s %s", u.FirstName, u.LastName)
+	if u.FirstName == "" && u.LastName == "" {
+		return u.Email
 	}
-	return u.Email
+	if u.LastName == "" {
+		return u.FirstName
+	}
+	return u.FirstName + " " + u.LastName
 }
 
 func (u *User) CanReceiveNotifications() bool {
