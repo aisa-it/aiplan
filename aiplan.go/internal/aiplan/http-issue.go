@@ -806,7 +806,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			data["start_date"] = nil
 		}
 
-		if newState.Group == "completed" && issue.State.Group != "completed" {
+		if (newState.Group == "completed" || newState.Group == "cancelled") &&
+			issue.State.Group != "completed" && issue.State.Group != "cancelled" {
 			data["completed_at"] = &types.TargetDate{Time: time.Now()}
 		} else if newState.Group != "completed" {
 			if newState.Group == "started" {

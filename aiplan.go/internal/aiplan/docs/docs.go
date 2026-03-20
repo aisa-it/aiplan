@@ -11675,8 +11675,8 @@ const docTemplate = `{
                     "200": {
                         "description": "Словарь доступных статусов, где ключ — ID статуса",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
+                            "type": "array",
+                            "items": {
                                 "$ref": "#/definitions/dto.StateLight"
                             }
                         }
