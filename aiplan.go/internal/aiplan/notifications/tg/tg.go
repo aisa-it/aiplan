@@ -130,6 +130,9 @@ func (t *TgService) GetBotLink() string {
 }
 
 func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
+	if t.Disabled {
+		return 0, fmt.Errorf("tg service disabled")
+	}
 	msg := strings.Join([]string{tgMsg.title, tgMsg.body}, "\n")
 	if msg == "" {
 		return 0, fmt.Errorf("message is empty")
@@ -163,6 +166,9 @@ func isReplyMessage(update *models.Update) bool {
 }
 
 func (t *TgService) SendMessage(tgId int64, format string, anyStr []any) bool {
+	if t.Disabled {
+		return false
+	}
 	msg := NewTgMsg()
 	msg.title = Stelegramf(format, anyStr...)
 	_, err := t.Send(tgId, msg)
@@ -174,6 +180,9 @@ func (t *TgService) SendMessage(tgId int64, format string, anyStr []any) bool {
 }
 
 func (t *TgService) SendFormAnswer(tgId int64, form dao.Form, answer *dao.FormAnswer, user *dao.User) {
+	if t.Disabled {
+		return
+	}
 	var d strings.Builder
 	var out []any
 
