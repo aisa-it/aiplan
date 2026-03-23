@@ -133,7 +133,6 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
 // @Success 200 {array} dto.SprintFolder "Список директорий спринтов"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"

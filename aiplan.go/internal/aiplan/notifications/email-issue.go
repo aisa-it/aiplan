@@ -188,6 +188,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 			Subject:     subj,
 			Content:     content,
 			TextContent: textContent,
+			Actor:       utils.ToPtr(ia.activities[0].Actor.GetName()),
 		})
 	}
 
