@@ -2,9 +2,11 @@ package aiplan
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -36,6 +38,7 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			Joins("Workspace").
 			Joins("CreatedBy").
 			Joins("UpdatedBy").
+			Joins("SprintFolder").
 			Preload("Watchers").
 			Preload("Issues.State").
 			Where("sprints.workspace_id = ?", workspace.ID).
@@ -55,19 +58,7 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EError(c, err)
 		}
 
-		sprint.Stats.AllIssues = len(sprint.Issues)
-		for _, issue := range sprint.Issues {
-			switch issue.IssueProgress.Status {
-			case types.InProgress:
-				sprint.Stats.InProgress++
-			case types.Pending:
-				sprint.Stats.Pending++
-			case types.Cancelled:
-				sprint.Stats.Cancelled++
-			case types.Completed:
-				sprint.Stats.Completed++
-			}
-		}
+		sprintStatsUpdate(&sprint)
 
 		// Для получения списка задач спринта отсортированных по sequence_id
 		//err := s.db.
@@ -84,6 +75,22 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func sprintStatsUpdate(sprint *dao.Sprint) {
+	sprint.Stats.AllIssues = len(sprint.Issues)
+	for _, issue := range sprint.Issues {
+		switch issue.IssueProgress.Status {
+		case types.InProgress:
+			sprint.Stats.InProgress++
+		case types.Pending:
+			sprint.Stats.Pending++
+		case types.Cancelled:
+			sprint.Stats.Cancelled++
+		case types.Completed:
+			sprint.Stats.Completed++
+		}
+	}
+}
+
 func (s *Services) AddSprintServices(g *echo.Group) {
 	workspaceGroup := g.Group("workspaces/:workspaceSlug", s.WorkspaceMiddleware)
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
@@ -96,6 +103,11 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 
 	workspaceGroup.GET("/sprints/", s.getSprintList)
 	workspaceGroup.POST("/sprints/", s.createSprint)
+
+	workspaceGroup.POST("/sprints-folder/", s.addSprintFolders)
+
+	workspaceGroup.PATCH("/sprints-folder/:sprintFolderId", s.updateSprintFolders)
+	workspaceGroup.DELETE("/sprints-folder/:sprintFolderId", s.deleteSprintFolders)
 
 	sprintAdminGroup.PATCH("/", s.updateSprint)
 	sprintAdminGroup.DELETE("/", s.deleteSprint)
@@ -115,17 +127,18 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 
 // getSprintList godoc
 // @id getSprintList
-// @Summary Спринты: получения списка спринтов
-// @Description Возвращает список всех спринтов в рабочем пространстве.
+// @Summary Спринты: получение директорий спринтов
+// @Description Возвращает список всех директорий спринтов, с вложенными спринтами.
 // @Tags Sprint
-// @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Success 200 {array} dto.SprintLight "Список спринтов"
+// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
+// @Success 200 {array} dto.SprintFolder "Список директорий спринтов"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Hе найден"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/ [get]
 func (s *Services) getSprintList(c echo.Context) error {
@@ -134,33 +147,69 @@ func (s *Services) getSprintList(c echo.Context) error {
 	var sprints []dao.Sprint
 	if err := s.db.
 		Set("issueProgress", true).
+		Joins("SprintFolder").
 		Preload("Issues.State").
-		Where("workspace_id = ?", workspace.ID).
+		Where("sprints.workspace_id = ?", workspace.ID).
 		Order("start_date DESC").
 		Find(&sprints).Error; err != nil {
 		return EError(c, err)
 	}
 
 	for i := range sprints {
-		sprints[i].Stats.AllIssues = len(sprints[i].Issues)
-		for _, issue := range sprints[i].Issues {
-			switch issue.IssueProgress.Status {
-			case types.InProgress:
-				sprints[i].Stats.InProgress++
-			case types.Pending:
-				sprints[i].Stats.Pending++
-			case types.Cancelled:
-				sprints[i].Stats.Cancelled++
-			case types.Completed:
-				sprints[i].Stats.Completed++
+		sprintStatsUpdate(&sprints[i])
+	}
+
+	var folders []dao.SprintFolder
+	if err := s.db.
+		Where("workspace_id = ?", workspace.ID).
+		Find(&folders).Error; err != nil {
+		return EError(c, err)
+	}
+
+	folderMap := make(map[uuid.UUID]*dao.SprintFolder, len(folders))
+	for i := range folders {
+		folderMap[folders[i].Id] = &folders[i]
+	}
+
+	var unassignedSprints []dao.Sprint
+	for i := range sprints {
+		if sprints[i].SprintFolderId.Valid {
+			if folder, ok := folderMap[sprints[i].SprintFolderId.UUID]; ok {
+				folder.Sprints = append(folder.Sprints, sprints[i])
 			}
+		} else {
+			unassignedSprints = append(unassignedSprints, sprints[i])
+
 		}
 	}
 
-	return c.JSON(
-		http.StatusOK,
-		utils.SliceToSlice(&sprints, func(s *dao.Sprint) dto.SprintLight { return *s.ToLightDTO() }))
-	//utils.SliceToSlice(&sprint, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
+	result := make([]dao.SprintFolder, 0, len(folderMap)+1)
+
+	for _, folder := range folderMap {
+		result = append(result, *folder)
+	}
+
+	if len(unassignedSprints) != 0 {
+		result = append(result, dao.SprintFolder{
+			Id:      uuid.Nil,
+			Sprints: unassignedSprints,
+		})
+	}
+
+	slices.SortFunc(result, func(a, b dao.SprintFolder) int {
+		if a.Id == uuid.Nil && b.Id != uuid.Nil {
+			return 1
+		}
+		if a.Id != uuid.Nil && b.Id == uuid.Nil {
+			return -1
+		}
+		if a.Id == uuid.Nil && b.Id == uuid.Nil {
+			return 0
+		}
+
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&result, func(t *dao.SprintFolder) *dto.SprintFolder { return t.ToDTO() }))
 }
 
 // createSprint godoc
@@ -172,7 +221,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Param request body requestSprint true "Информация о спринте"
+// @Param request body dto.RequestSprint true "Информация о спринте"
 // @Success 200 {object} dto.Sprint "Созданный спринт"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -180,7 +229,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/ [post]
 func (s *Services) createSprint(c echo.Context) error {
-	var req requestSprint
+	var req dto.RequestSprint
 	user := c.(WorkspaceContext).User
 
 	err := c.Bind(&req)
@@ -195,14 +244,26 @@ func (s *Services) createSprint(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
 	}
 
-	sprint, err := req.toDao(c)
+	sprintReq := sprintDto{
+		req,
+	}
+	sprint, err := sprintReq.toDao(c)
+	if err != nil {
+		return EError(c, err)
+	}
 	if sprint.EndDate.Valid && sprint.StartDate.Valid {
 		if !sprint.EndDate.Time.After(sprint.StartDate.Time) {
 			return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
 		}
 	}
-	if err != nil {
-		return EError(c, err)
+
+	if sprint.SprintFolderId.Valid {
+		if err := s.db.Where("workspace_id = ?", sprint.WorkspaceId).
+			Where("id = ?", sprintReq.RequestSprint.Folder).
+			First(&sprint.SprintFolder).Error; err != nil {
+			sprint.SprintFolderId = uuid.NullUUID{}
+			sprint.SprintFolder = nil
+		}
 	}
 
 	if err := s.db.Create(&sprint).Error; err != nil {
@@ -250,7 +311,7 @@ func (s *Services) GetSprint(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param sprintId path string true "Идентификатор или номер последовательности спринта"
-// @Param request body requestSprint true "Информация о спринте"
+// @Param request body dto.RequestSprint true "Информация о спринте"
 // @Success 200 {object} dto.Sprint "Спринт"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -263,7 +324,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 	user := c.(SprintContext).User
 	oldSprintMap := StructToJSONMap(sprint)
 
-	var req requestSprint
+	var req dto.RequestSprint
 	fields, err := BindData(c, "", &req)
 	if err != nil {
 		return EError(c, err)
@@ -279,6 +340,15 @@ func (s *Services) updateSprint(c echo.Context) error {
 			sprint.StartDate = req.StartDate.ToNullTime()
 		case "end_date":
 			sprint.EndDate = req.EndDate.ToNullTime()
+		case "sprint_folder_id":
+			if eerr := s.db.Where("workspace_id = ?", sprint.WorkspaceId).
+				Where("id = ?", req.Folder).
+				First(&sprint.SprintFolder).Error; eerr != nil {
+				sprint.SprintFolderId = uuid.NullUUID{}
+				sprint.SprintFolder = nil
+			} else {
+				sprint.SprintFolderId = req.Folder
+			}
 		}
 	}
 
@@ -315,7 +385,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param sprintId path string true "Идентификатор или номер последовательности спринта"
-// @Param request body requestIssueIdList true "Список id задач"
+// @Param request body dto.RequestIssueIdList true "Список id задач"
 // @Success 200  "Задачи добавлены"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -333,7 +403,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	workspaceUUID := workspace.ID
 	userUUID := user.ID
 
-	var req requestIssueIdList
+	var req dto.RequestIssueIdList
 
 	err := c.Bind(&req)
 	if err != nil {
@@ -497,7 +567,7 @@ func (s *Services) deleteSprint(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param sprintId path string true "Идентификатор или номер последовательности спринта"
-// @Param request body requestUserIdList true "Список id user"
+// @Param request body dto.RequestUserIdList true "Список id user"
 // @Success 200  "ок"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -515,7 +585,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 	workspaceUUID := workspace.ID
 	userUUID := user.ID
 
-	var req requestUserIdList
+	var req dto.RequestUserIdList
 
 	err := c.Bind(&req)
 	if err != nil {
@@ -637,13 +707,13 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 		Where("union_activities.workspace_id = ?", workspaceId).
 		Where("union_activities.sprint_id = ?", sprintId)
 
-	var activities []dao.FullActivity
+	var acts []dao.FullActivity
 
 	resp, err := dao.PaginationRequest(
 		offset,
 		limit,
 		query,
-		&activities,
+		&acts,
 	)
 	if err != nil {
 		return EError(c, err)
@@ -735,26 +805,162 @@ func (s *Services) getSprintStates(c echo.Context) error {
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(t *dao.State) *dto.StateLight { return t.ToLightDTO() }))
 }
 
-//
+// addSprintFolders godoc
+// @id addSprintFolders
+// @Summary Спринты: добавление директории спринтов
+// @Description Создает новую директорию для спринтов.
+// @Tags Sprint
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param data body dto.RequestSprintFolder true "Данные папки спринтов"
+// @Success 200 {object} dto.SprintFolder "Новая директория спринтов"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/ [post]
+func (s *Services) addSprintFolders(c echo.Context) error {
+	var req dto.RequestSprintFolder
+	user := c.(WorkspaceContext).User
+	workspace := c.(WorkspaceContext).Workspace
 
-type requestSprint struct {
-	Name        string             `json:"name,omitempty"`
-	Description types.RedactorHTML `json:"description,omitempty" swaggertype:"string"`
-	StartDate   *types.TargetDate  `json:"start_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
-	EndDate     *types.TargetDate  `json:"end_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	err := c.Bind(&req)
+	if err != nil {
+		return EError(c, apierrors.ErrSprintBadRequest)
+	}
+	if req.Name == "" {
+		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
+	}
+
+	if err := c.Validate(req); err != nil {
+		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
+	}
+
+	folder := &dao.SprintFolder{
+		Id: dao.GenUUID(),
+
+		CreatedById: user.ID,
+		WorkspaceId: workspace.ID,
+		CreatedBy:   *user,
+		Workspace:   &workspace,
+		Name:        req.Name,
+	}
+
+	if err := s.db.Create(&folder).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusCreated, folder.ToDTO())
 }
 
-type requestIssueIdList struct {
-	IssuesAdd    []string `json:"issues_add,omitempty"`
-	IssuesRemove []string `json:"issues_remove,omitempty"`
+// updateSprintFolders godoc
+// @id updateSprintFolders
+// @Summary Спринты: обновление директорий спринтов
+// @Description Обновляет директорию спринта.
+// @Tags Sprint
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param sprintFolderId path string true "Идентификатор директории спринта"
+// @Success 200 {array} dto.SprintFolder "Обновленная директория спринтов"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/ [patch]
+func (s *Services) updateSprintFolders(c echo.Context) error {
+	var req dto.RequestSprintFolder
+	user := c.(WorkspaceContext).User
+	workspace := c.(WorkspaceContext).Workspace
+	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
+
+	var folder dao.SprintFolder
+	if err := s.db.Where("workspace_id = ?", workspace.ID).
+		Where("id = ?", sprintFolderId).First(&folder).Error; err != nil {
+		return EError(c, err)
+	}
+
+	err := c.Bind(&req)
+	if err != nil {
+		return EError(c, apierrors.ErrSprintBadRequest)
+	}
+	if req.Name == "" || req.Name == folder.Name {
+		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
+	}
+
+	if err := c.Validate(req); err != nil {
+		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
+	}
+
+	folder.Name = req.Name
+	folder.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+	folder.UpdatedBy = user
+
+	if err := s.db.Updates(&folder).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusCreated, folder.ToDTO())
 }
 
-type requestUserIdList struct {
-	MembersAdd    []string `json:"members_add,omitempty"`
-	MembersRemove []string `json:"members_remove,omitempty"`
+// deleteSprintFolders godoc
+// @id deleteSprintFolders
+// @Summary Спринты: удаление директорий спринтов
+// @Description Удаляет директорию спринта.
+// @Tags Sprint
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param sprintFolderId path string true "Идентификатор директории спринта"
+// @Success 204 "Директория успешно удалена"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/ [delete]
+func (s *Services) deleteSprintFolders(c echo.Context) error {
+	workspace := c.(WorkspaceContext).Workspace
+	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+
+		var exists bool
+		if err := s.db.Model(&dao.Sprint{}).
+			Select("EXISTS(?)",
+				s.db.Model(&dao.Sprint{}).
+					Select("1").
+					Where("sprint_folder_id = ?", sprintFolderId),
+			).
+			Find(&exists).Error; err != nil {
+			return err
+		}
+		if exists {
+			return apierrors.ErrSprintFolderDelete
+		}
+
+		if err := s.db.Where("workspace_id = ?", workspace.ID).
+			Where("id = ?", sprintFolderId).Delete(&dao.SprintFolder{}).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return EError(c, err)
+	}
+
+	return c.NoContent(http.StatusNoContent)
 }
 
-func (rs *requestSprint) toDao(ctx echo.Context) (*dao.Sprint, error) {
+type sprintDto struct {
+	dto.RequestSprint
+}
+
+func (rs *sprintDto) toDao(ctx echo.Context) (*dao.Sprint, error) {
+	if rs == nil {
+		return nil, fmt.Errorf("empty sprint")
+	}
 	var workspaceMember dao.WorkspaceMember
 	var workspace dao.Workspace
 	switch v := ctx.(type) {
@@ -766,18 +972,16 @@ func (rs *requestSprint) toDao(ctx echo.Context) (*dao.Sprint, error) {
 		workspace = v.Workspace
 	}
 
-	userUUID := workspaceMember.MemberId
-	workspaceUUID := workspace.ID
-
 	return &dao.Sprint{
 		Id:          dao.GenUUID(),
-		CreatedById: userUUID,
+		CreatedById: workspaceMember.MemberId,
 
-		WorkspaceId: workspaceUUID,
-		CreatedBy:   dao.User{},
-		Name:        rs.Name,
-		Description: rs.Description,
-		StartDate:   rs.StartDate.ToNullTime(),
-		EndDate:     rs.EndDate.ToNullTime(),
+		WorkspaceId:    workspace.ID,
+		CreatedBy:      dao.User{},
+		Name:           rs.Name,
+		Description:    rs.Description,
+		StartDate:      rs.StartDate.ToNullTime(),
+		EndDate:        rs.EndDate.ToNullTime(),
+		SprintFolderId: rs.Folder,
 	}, nil
 }

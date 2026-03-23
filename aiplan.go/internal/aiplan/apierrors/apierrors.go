@@ -223,6 +223,8 @@ var (
 	ErrSprintRequestValidate   = DefinedError{Code: 3605, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
 	ErrInvalidSprintViewProps  = DefinedError{Code: 3606, StatusCode: http.StatusBadRequest, Err: "invalid sprint view properties %s", RuErr: "Указаны некорректные параметры настроек спринта (%s)"}
 	ErrInvalidSprintTimeWindow = DefinedError{Code: 3607, StatusCode: http.StatusBadRequest, Err: "invalid sprint time window", RuErr: "Некорректный период спринта"}
+	ErrSprintFolderDelete      = DefinedError{Code: 3608, StatusCode: http.StatusBadRequest, Err: "cannot delete folder that contains sprints", RuErr: "Нельзя удалить папку, в которой есть добавленные спринты"}
+
 	// 4*** - issue errors
 	ErrIssueNotFound                   = DefinedError{Code: 4001, StatusCode: http.StatusNotFound, Err: "issue not found", RuErr: "Задача не найдена"}
 	ErrDeleteIssueForbidden            = DefinedError{Code: 4002, StatusCode: http.StatusForbidden, Err: "only admin and author can delete issue", RuErr: "У вас недостаточно прав для удаления задачи"}

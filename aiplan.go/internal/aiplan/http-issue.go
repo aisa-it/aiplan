@@ -806,7 +806,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			data["start_date"] = nil
 		}
 
-		if newState.Group == "completed" && issue.State.Group != "completed" {
+		if (newState.Group == "completed" || newState.Group == "cancelled") &&
+			issue.State.Group != "completed" && issue.State.Group != "cancelled" {
 			data["completed_at"] = &types.TargetDate{Time: time.Now()}
 		} else if newState.Group != "completed" {
 			if newState.Group == "started" {
@@ -1283,7 +1284,7 @@ func (s *Services) deleteIssue(c echo.Context) error {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
-// @Success 200 {object} map[string]dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
+// @Success 200 {array} dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -1306,7 +1307,7 @@ func (s *Services) getAvailableStates(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, utils.SliceToMap(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 // ############# Sub-issues methods ###################
@@ -3781,8 +3782,12 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 
 	// Загружаем шаблон для ответа
 	existingProp.Template = &template
+	resp := existingProp.ToDTO()
+	if resp.Type == "link" {
+		resp.Value = json.RawMessage(resp.Value.(string))
+	}
 
-	return c.JSON(status, existingProp.ToDTO())
+	return c.JSON(status, resp)
 }
 
 // getDefaultPropertyValue возвращает дефолтное значение для типа поля
@@ -3815,7 +3820,7 @@ func parsePropertyValue(propType, value string) any {
 		if value == "" {
 			return nil
 		}
-		var m map[string]any
+		var m json.RawMessage
 		if err := json.Unmarshal([]byte(value), &m); err != nil {
 			return value
 		}
@@ -3828,7 +3833,6 @@ func parsePropertyValue(propType, value string) any {
 // validatePropertyValue валидирует значение через JSON Schema
 func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) error {
 	schema := types.GenValueSchema(template.Type, template.Options)
-
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("schema.json", schema); err != nil {
 		return err
@@ -3839,7 +3843,11 @@ func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) erro
 		return err
 	}
 
-	return sch.Validate(value)
+	err = sch.Validate(value)
+	if errors.Is(err, &jsonschema.ValidationError{}) {
+		slog.Debug("JSON schema validation error", "err", err)
+	}
+	return err
 }
 
 // serializePropertyValue сериализует значение в строку для хранения в БД
