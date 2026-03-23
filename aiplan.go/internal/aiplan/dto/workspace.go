@@ -37,8 +37,8 @@ type Workspace struct {
 
 type WorkspaceWithCount struct {
 	Workspace
-	TotalMembers  int  `json:"total_members"`
-	TotalProjects int  `json:"total_projects"`
+	TotalMembers  int  `json:"total_members,omitempty"`
+	TotalProjects int  `json:"total_projects,omitempty"`
 	IsFavorite    bool `json:"is_favorite" `
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
