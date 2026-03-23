@@ -11675,8 +11675,8 @@ const docTemplate = `{
                     "200": {
                         "description": "Словарь доступных статусов, где ключ — ID статуса",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
+                            "type": "array",
+                            "items": {
                                 "$ref": "#/definitions/dto.StateLight"
                             }
                         }
@@ -16793,25 +16793,22 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/auth/workspaces/{workspaceSlug}/sprints/": {
-            "get": {
+        "/api/auth/workspaces/{workspaceSlug}/sprints-folder/": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Возвращает список всех спринтов в рабочем пространстве.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Создает новую директорию для спринтов.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Sprint"
                 ],
-                "summary": "Спринты: получения списка спринтов",
-                "operationId": "getSprintList",
+                "summary": "Спринты: добавление директории спринтов",
+                "operationId": "addSprintFolders",
                 "parameters": [
                     {
                         "type": "string",
@@ -16819,15 +16816,163 @@ const docTemplate = `{
                         "name": "workspaceSlug",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Данные папки спринтов",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RequestSprintFolder"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Список спринтов",
+                        "description": "Новая директория спринтов",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SprintFolder"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Пространство не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет директорию спринта.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sprint"
+                ],
+                "summary": "Спринты: удаление директорий спринтов",
+                "operationId": "deleteSprintFolders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор директории спринта",
+                        "name": "sprintFolderId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Директория успешно удалена"
+                    },
+                    "400": {
+                        "description": "Ошибка запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет директорию спринта.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sprint"
+                ],
+                "summary": "Спринты: обновление директорий спринтов",
+                "operationId": "updateSprintFolders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор директории спринта",
+                        "name": "sprintFolderId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленная директория спринтов",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/dto.SprintLight"
+                                "$ref": "#/definitions/dto.SprintFolder"
                             }
                         }
                     },
@@ -16845,6 +16990,87 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/sprints/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список всех директорий спринтов, с вложенными спринтами.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sprint"
+                ],
+                "summary": "Спринты: получение директорий спринтов",
+                "operationId": "getSprintList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или номер последовательности спринта",
+                        "name": "sprintId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список директорий спринтов",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.SprintFolder"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Hе найден",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -16889,7 +17115,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestSprint"
+                            "$ref": "#/definitions/dto.RequestSprint"
                         }
                     }
                 ],
@@ -17110,7 +17336,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestSprint"
+                            "$ref": "#/definitions/dto.RequestSprint"
                         }
                     }
                 ],
@@ -17298,7 +17524,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestIssueIdList"
+                            "$ref": "#/definitions/dto.RequestIssueIdList"
                         }
                     }
                 ],
@@ -17520,7 +17746,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/aiplan.requestUserIdList"
+                            "$ref": "#/definitions/dto.RequestUserIdList"
                         }
                     }
                 ],
@@ -19377,23 +19603,6 @@ const docTemplate = `{
                 }
             }
         },
-        "aiplan.requestIssueIdList": {
-            "type": "object",
-            "properties": {
-                "issues_add": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "issues_remove": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
         "aiplan.requestMembersInvite": {
             "type": "object",
             "properties": {
@@ -19438,42 +19647,6 @@ const docTemplate = `{
             "properties": {
                 "role": {
                     "type": "integer"
-                }
-            }
-        },
-        "aiplan.requestSprint": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "end_date": {
-                    "type": "string",
-                    "x-nullable": true
-                },
-                "name": {
-                    "type": "string"
-                },
-                "start_date": {
-                    "type": "string",
-                    "x-nullable": true
-                }
-            }
-        },
-        "aiplan.requestUserIdList": {
-            "type": "object",
-            "properties": {
-                "members_add": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "members_remove": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },
@@ -21804,6 +21977,70 @@ const docTemplate = `{
                 "value": {}
             }
         },
+        "dto.RequestIssueIdList": {
+            "type": "object",
+            "properties": {
+                "issues_add": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "issues_remove": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dto.RequestSprint": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sprint_folder_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "dto.RequestSprintFolder": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RequestUserIdList": {
+            "type": "object",
+            "properties": {
+                "members_add": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "members_remove": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "dto.ResponseAnswers": {
             "type": "object",
             "properties": {
@@ -22026,6 +22263,9 @@ const docTemplate = `{
                 "short_url": {
                     "type": "string"
                 },
+                "sprint_folder": {
+                    "$ref": "#/definitions/dto.SprintFolder"
+                },
                 "start_date": {
                     "type": "string"
                 },
@@ -22060,6 +22300,23 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SprintFolder": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintLight"
+                    }
+                }
+            }
+        },
         "dto.SprintLight": {
             "type": "object",
             "properties": {
@@ -22080,6 +22337,9 @@ const docTemplate = `{
                 },
                 "short_url": {
                     "type": "string"
+                },
+                "sprint_folder": {
+                    "$ref": "#/definitions/dto.SprintFolder"
                 },
                 "start_date": {
                     "type": "string"
