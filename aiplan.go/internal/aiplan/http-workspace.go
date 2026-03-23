@@ -116,7 +116,6 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
 	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
 
-	// ../front/services/workspace.service.ts
 	g.GET("users/me/workspaces/", s.getUserWorkspaceList)
 
 	// Favorites
@@ -151,7 +150,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 
 	g.GET("users/last-visited-workspace/", s.getLastVisitedWorkspace)
 
-	workspaceGroup.GET("/workspace-members/me/", s.getWorkspaceMemberMe)
+	workspaceGroup.GET("/workspace-members/me/", s.getWorkspaceMemberMe) // Legacy TODO: delete after front
 
 	workspaceGroup.GET("/states/", s.getWorkspaceStateList)
 

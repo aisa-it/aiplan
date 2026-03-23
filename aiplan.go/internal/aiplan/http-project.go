@@ -146,7 +146,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	projectGroup.POST("/project-views/", s.updateProjectView)
 
-	projectGroup.GET("/project-members/me/", s.getProjectMemberMe)
+	projectGroup.GET("/project-members/me/", s.getProjectMemberMe) // Legacy TODO: delete after front
 
 	workspaceGroup.GET("/user-favorite-projects/", s.getFavoriteProjects)
 	workspaceGroup.POST("/user-favorite-projects/", s.addProjectToFavorites)
@@ -2473,7 +2473,7 @@ func (s *Services) updateState(c echo.Context) error {
 
 	newStateMap["updateScope"] = "status"
 	newStateMap["updateScopeId"] = stateId
-	if req.Default != nil && *req.Default == true {
+	if req.Default != nil && *req.Default {
 		newStateMap["default_activity_val"] = state.Name
 	}
 
