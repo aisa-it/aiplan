@@ -12,6 +12,7 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"mime"
 	"path/filepath"
 	"strings"
 	"time"
@@ -64,6 +65,9 @@ type EmailService struct {
 
 	emailChan chan mail
 	eg        errgroup.Group
+
+	emailFrom  string
+	senderName string
 }
 
 type mail struct {
@@ -71,20 +75,27 @@ type mail struct {
 	Subject     string
 	Content     string
 	TextContent string
+
+	Actor *string
 }
 
 func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
 	minifier.AddFunc("text/html", html.Minify)
+	email, emailName := parseEmailFrom(cfg.EmailFrom)
 
 	es := &EmailService{
-		gomail.NewDialer(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPassword),
-		cfg,
-		db,
-		make(chan bool),
-		false,
-		cfg.EmailActivityDisabled,
-		make(chan mail),
-		errgroup.Group{}}
+		d:           gomail.NewDialer(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPassword),
+		cfg:         cfg,
+		db:          db,
+		monitorExit: make(chan bool),
+		sending:     false,
+		disabled:    cfg.EmailActivityDisabled,
+		emailChan:   make(chan mail),
+		eg:          errgroup.Group{},
+		emailFrom:   email,
+		senderName:  emailName,
+	}
+
 	if cfg.EmailActivityDisabled {
 		slog.Warn("Email activity notifications disabled")
 	}
@@ -98,6 +109,54 @@ func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
 	es.CreateNewTemplates(db)
 
 	return es
+}
+
+func parseEmailFrom(s string) (email, systemName string) {
+	start := strings.IndexByte(s, '<')
+	if start == -1 {
+		return s, ""
+	}
+
+	end := strings.IndexByte(s[start:], '>')
+	if end == -1 {
+		return s, ""
+	}
+
+	email = s[start+1 : start+end]
+
+	if start > 0 {
+		systemName = strings.TrimSpace(s[:start])
+	}
+
+	return email, systemName
+}
+
+func (es *EmailService) formatFrom(userName *string) string {
+
+	var user, system string
+
+	if userName != nil {
+		user = *userName
+	}
+	if es.senderName != "" {
+		system = es.senderName
+	}
+
+	var displayName string
+	if user != "" && system != "" {
+		displayName = user + " (" + system + ")"
+	} else if user != "" {
+		displayName = user
+	} else if system != "" {
+		displayName = system
+	}
+
+	if displayName == "" {
+		return es.emailFrom
+	}
+
+	encodedName := mime.QEncoding.Encode("UTF-8", displayName)
+	return encodedName + " <" + es.emailFrom + ">"
 }
 
 func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
@@ -160,7 +219,9 @@ func (es *EmailService) Stop() {
 
 func (es *EmailService) sendEmail(e mail) error {
 	m := gomail.NewMessage()
-	m.SetHeader("From", es.cfg.EmailFrom)
+	m.SetHeader("From", es.formatFrom(e.Actor))
+	m.SetHeader("Sender", es.emailFrom)
+
 	m.SetHeader("To", e.To)
 	m.SetHeader("Subject", e.Subject)
 	m.SetBody("text/plain", e.TextContent)
