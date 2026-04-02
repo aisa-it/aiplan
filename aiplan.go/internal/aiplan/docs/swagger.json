@@ -10000,7 +10000,7 @@
                     "200": {
                         "description": "Успешный ответ с данными текущего участника рабочего пространства",
                         "schema": {
-                            "$ref": "#/definitions/dto.WorkspaceMember"
+                            "$ref": "#/definitions/dto.WorkspaceMemberWithOwner"
                         }
                     },
                     "403": {
@@ -15153,7 +15153,7 @@
                     "200": {
                         "description": "Информация о членстве пользователя в проекте",
                         "schema": {
-                            "$ref": "#/definitions/dto.ProjectMember"
+                            "$ref": "#/definitions/dto.ProjectMemberWithLead"
                         }
                     },
                     "404": {
@@ -21802,6 +21802,75 @@
                 }
             }
         },
+        "dto.ProjectMemberWithLead": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "is_default_assignee": {
+                    "type": "boolean"
+                },
+                "is_default_watcher": {
+                    "type": "boolean"
+                },
+                "is_project_lead": {
+                    "type": "boolean"
+                },
+                "member": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.UserLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "member_id": {
+                    "type": "string"
+                },
+                "notification_author_settings_app": {
+                    "$ref": "#/definitions/types.ProjectMemberNS"
+                },
+                "notification_author_settings_email": {
+                    "$ref": "#/definitions/types.ProjectMemberNS"
+                },
+                "notification_author_settings_tg": {
+                    "$ref": "#/definitions/types.ProjectMemberNS"
+                },
+                "notification_settings_app": {
+                    "$ref": "#/definitions/types.ProjectMemberNS"
+                },
+                "notification_settings_email": {
+                    "$ref": "#/definitions/types.ProjectMemberNS"
+                },
+                "notification_settings_tg": {
+                    "$ref": "#/definitions/types.ProjectMemberNS"
+                },
+                "project": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.ProjectLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "integer"
+                },
+                "view_props": {
+                    "$ref": "#/definitions/types.ViewProps"
+                },
+                "workspace_admin": {
+                    "type": "boolean"
+                },
+                "workspace_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ProjectPropertyTemplate": {
             "type": "object",
             "properties": {
@@ -22867,6 +22936,50 @@
                 },
                 "member_id": {
                     "type": "string"
+                },
+                "role": {
+                    "type": "integer"
+                },
+                "workspace_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.WorkspaceMemberWithOwner": {
+            "type": "object",
+            "properties": {
+                "editable_by_admin": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_workspace_owner": {
+                    "type": "boolean"
+                },
+                "member": {
+                    "$ref": "#/definitions/dto.UserLight"
+                },
+                "member_id": {
+                    "type": "string"
+                },
+                "notification_author_settings_app": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_author_settings_email": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_author_settings_tg": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_app": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_email": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
+                },
+                "notification_settings_tg": {
+                    "$ref": "#/definitions/types.WorkspaceMemberNS"
                 },
                 "role": {
                     "type": "integer"
