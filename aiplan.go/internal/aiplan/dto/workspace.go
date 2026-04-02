@@ -63,6 +63,11 @@ type WorkspaceMember struct {
 	NotificationAuthorSettingsEmail types.WorkspaceMemberNS `json:"notification_author_settings_email" `
 }
 
+type WorkspaceMemberWithOwner struct {
+	WorkspaceMember
+	IsWorkspaceOwner bool `json:"is_workspace_owner"`
+}
+
 type WorkspaceFavorites struct {
 	ID          uuid.UUID  `json:"id"`
 	WorkspaceId uuid.UUID  `json:"workspace_id"`

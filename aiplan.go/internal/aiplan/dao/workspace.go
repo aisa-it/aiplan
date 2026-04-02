@@ -372,6 +372,15 @@ type WorkspaceMember struct {
 	NotificationAuthorSettingsEmail types.WorkspaceMemberNS `json:"notification_author_settings_email" gorm:"type:jsonb"`
 }
 
+type WorkspaceMemberWithOwner struct {
+	WorkspaceMember
+	IsWorkspaceOwner bool `gorm:"->;-:migration"`
+}
+
+func (wm WorkspaceMember) TableName() string {
+	return "workspace_members"
+}
+
 func (wm WorkspaceMember) GetId() uuid.UUID {
 	return wm.ID
 }
@@ -416,6 +425,13 @@ func (wm *WorkspaceMember) ToDTO() *dto.WorkspaceMember {
 		NotificationAuthorSettingsTG:    wm.NotificationAuthorSettingsTG,
 		NotificationSettingsEmail:       wm.NotificationSettingsEmail,
 		NotificationAuthorSettingsEmail: wm.NotificationAuthorSettingsEmail,
+	}
+}
+
+func (wm *WorkspaceMemberWithOwner) ToDTOWithOwner() *dto.WorkspaceMemberWithOwner {
+	return &dto.WorkspaceMemberWithOwner{
+		WorkspaceMember:  *wm.ToDTO(),
+		IsWorkspaceOwner: wm.IsWorkspaceOwner,
 	}
 }
 

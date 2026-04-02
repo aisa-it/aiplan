@@ -80,6 +80,12 @@ type ProjectMember struct {
 	NotificationAuthorSettingsEmail types.ProjectMemberNS `json:"notification_author_settings_email" `
 }
 
+type ProjectMemberWithLead struct {
+	ProjectMember
+
+	IsProjectLead bool `json:"is_project_lead"`
+}
+
 type ProjectFavorites struct {
 	ID        uuid.UUID     `json:"id"`
 	ProjectId uuid.UUID     `json:"project_id"`

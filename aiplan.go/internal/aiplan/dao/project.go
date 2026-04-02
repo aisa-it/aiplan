@@ -539,6 +539,15 @@ type EntityMemberExtendFields struct {
 	OldMember *User `json:"-" gorm:"-" field:"member" extensions:"x-nullable"`
 }
 
+type ProjectMemberWithLead struct {
+	ProjectMember
+	IsProjectLead bool `gorm:"->;-:migration"`
+}
+
+func (pm ProjectMember) TableName() string {
+	return "project_members"
+}
+
 func (pm ProjectMember) GetId() uuid.UUID {
 	return pm.ID
 }
@@ -604,6 +613,13 @@ func (pm *ProjectMember) ToDTO() *dto.ProjectMember {
 		NotificationAuthorSettingsTG:    pm.NotificationAuthorSettingsTG,
 		NotificationSettingsEmail:       pm.NotificationSettingsEmail,
 		NotificationAuthorSettingsEmail: pm.NotificationAuthorSettingsEmail,
+	}
+}
+
+func (pm *ProjectMemberWithLead) ToDTOWithLead() *dto.ProjectMemberWithLead {
+	return &dto.ProjectMemberWithLead{
+		ProjectMember: *pm.ToDTO(),
+		IsProjectLead: pm.IsProjectLead,
 	}
 }
 
