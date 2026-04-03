@@ -109,85 +109,6 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 	msg.CreatedAt = time.Now().UTC()
 	userIdStr := userId.String()
 	switch v := data.(type) {
-	case dao.IssueActivity:
-		if v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
-			return nil
-		}
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Issue:     v.Issue.ToLightDTO(),
-			Project:   v.Issue.Project.ToLightDTO(),
-			Workspace: v.Issue.Workspace.ToLightDTO(),
-		}
-		msg.Data = v.ToLightDTO()
-	case dao.DocActivity:
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Doc:       v.Doc.ToLightDTO(),
-			Workspace: v.Doc.Workspace.ToLightDTO(),
-		}
-		msg.Data = v.ToLightDTO()
-	case dao.ProjectActivity:
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Project:   v.Project.ToLightDTO(),
-			Workspace: v.Project.Workspace.ToLightDTO(),
-		}
-		msg.Data = v.ToLightDTO()
-	case dao.WorkspaceActivity:
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Workspace: v.Workspace.ToLightDTO(),
-		}
-		msg.Data = v.ToLightDTO()
-	case dao.FormActivity:
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Form:      v.Form.ToLightDTO(),
-			Workspace: v.Form.Workspace.ToLightDTO(),
-		}
-		msg.Data = v.ToLightDTO()
-	case dao.SprintActivity:
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Sprint:    v.Sprint.ToLightDTO(),
-			Workspace: v.Sprint.Workspace.ToLightDTO(),
-		}
-		msg.Data = v.ToLightDTO()
-	case dao.EntityActivity:
-		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
-			return nil
-		}
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Issue:     v.Issue.ToLightDTO(),
-			Project:   v.Issue.Project.ToLightDTO(),
-			Workspace: v.Issue.Workspace.ToLightDTO(),
-		}
-
-		tmp := v.ToLightDTO()
-		//tmp.NewEntity = v.AffectedUser.ToLightDTO()
-		msg.Data = tmp
-	case dao.FullActivity:
-		if v.EntityType == "issue" && v.Verb == "deleted" && *v.Field != actField.Linked.Field.String() {
-			return nil
-		}
-		msg.Type = "activity"
-		msg.Detail = NotificationDetailResponse{
-			User:      v.Actor.ToLightDTO(),
-			Issue:     v.Issue.ToLightDTO(),
-			Project:   v.Issue.Project.ToLightDTO(),
-			Workspace: v.Issue.Workspace.ToLightDTO(),
-			Doc:       v.Doc.ToLightDTO(),
-			Form:      v.Form.ToLightDTO(),
-		}
 	case dao.ActivityEvent:
 		if v.EntityType == types.LayerIssue && v.Verb == actField.VerbDeleted && v.Field != actField.Linked.Field {
 			return nil
@@ -224,7 +145,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 		}
 		msg.Data = v.ToLightDTO()
 
-	case dao.UserNotifications:
+	case dao.UserAppNotify:
 		msg.Type = v.Type
 		var project *dto.ProjectLight
 		var form *dto.FormLight
@@ -232,16 +153,17 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 			project = v.Issue.Project.ToLightDTO()
 		}
 
-		if v.FormActivity != nil {
-			form = v.FormActivity.Form.ToLightDTO()
+		if v.ActivityEvent.Form != nil {
+			form = v.ActivityEvent.Form.ToLightDTO()
 		}
 		msg.Detail = NotificationDetailResponse{
 			User:         v.Author.ToLightDTO(),
-			IssueComment: v.Comment.ToLightDTO(),
+			IssueComment: v.IssueComment.ToLightDTO(),
 			Issue:        v.Issue.ToLightDTO(),
-			Project:      project,
-			Workspace:    v.Workspace.ToLightDTO(),
-			Form:         form,
+
+			Project:   project,
+			Workspace: v.Workspace.ToLightDTO(),
+			Form:      form,
 		}
 
 		msg.Data = NotificationResponseMessage{

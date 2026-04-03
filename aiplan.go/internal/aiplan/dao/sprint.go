@@ -12,7 +12,6 @@ import (
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -147,29 +146,64 @@ func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
 	return nil
 }
 
-func (s *Sprint) BeforeDelete(tx *gorm.DB) (err error) {
-	if err := tx.
-		Where("sprint_activity_id in (?)", tx.Select("id").Where("sprint_id = ?", s.Id).
-			Model(&SprintActivity{})).
-		Unscoped().Delete(&UserNotifications{}).Error; err != nil {
+func CleanupActivityData(tx, q *gorm.DB, id uuid.UUID, layers ...types.EntityLayer) error {
+	subQuery := q.Model(&ActivityEvent{}).Select("id")
+
+	if err := tx.Where("activity_event_id IN (?)", subQuery).
+		Unscoped().
+		Delete(&UserAppNotify{}).Error; err != nil {
 		return err
 	}
 
-	cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-	tx.Where("(new_identifier = ? OR old_identifier =?) AND field = ?", s.Id, s.Id, s.GetEntityType()).
-		Model(&WorkspaceActivity{}).
-		Updates(cleanId)
+	if err := q.Unscoped().Delete(&ActivityEvent{}).Error; err != nil {
+		return err
+	}
 
-	tx.Where("new_identifier = ? OR old_identifier =?", s.Id, s.Id).
-		Model(&IssueActivity{}).
-		Updates(cleanId)
+	if len(layers) > 0 {
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := tx.Where("new_identifier = ? OR old_identifier = ?",
+			id, id).
+			Where("entity_type IN (?)", layers).
+			Model(&ActivityEvent{}).
+			Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Sprint) BeforeDelete(tx *gorm.DB) error {
+
+	query := tx.Where("entity_type = ?", types.LayerSprint).Where("sprint_id = ?", s.Id)
+	if err := CleanupActivityData(tx, query, s.Id, types.LayerWorkspace, types.LayerIssue); err != nil {
+		return err
+	}
+
+	//if err := tx.Where("activity_event_id IN (?)",
+	//  tx.Model(&ActivityEvent{}).
+	//    Select("id").
+	//    Where("entity_type = ?", types.LayerSprint).
+	//    Where("sprint_id = ?", s.Id),
+	//).Unscoped().Delete(&UserAppNotify{}).Error; err != nil {
+	//  return err
+	//}
+	//
+	//if err := tx.Where("entity_type = ?", types.LayerSprint).
+	//  Where("sprint_id = ?", s.Id).
+	//  Unscoped().
+	//  Delete(&ActivityEvent{}).Error; err != nil {
+	//  return err
+	//}
+	//
+	//cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+	//
+	//tx.Where("(new_identifier = ? OR old_identifier =?) AND field = ?", s.Id, s.Id, s.GetEntityType()).
+	//  Where("entity_type in (?)", []types.EntityLayer{types.LayerWorkspace, types.LayerIssue}).
+	//	Model(&ActivityEvent{}).
+	//	Updates(cleanId)
 
 	if err := tx.Where("sprint_id = ?", s.Id).Delete(&SprintViews{}).Error; err != nil {
-		return err
-	}
-
-	if err := tx.Where("workspace_id = ?", s.WorkspaceId).
-		Where("sprint_id = ?", s.Id).Unscoped().Delete(&SprintActivity{}).Error; err != nil {
 		return err
 	}
 
@@ -291,129 +325,11 @@ type SprintWatcherExtendFields struct {
 	OldSprintWatcher *User `json:"-" gorm:"-" field:"watchers::sprint" extensions:"x-nullable"`
 }
 
-type SprintActivity struct {
-	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time `json:"created_at" gorm:"index:sprint_activities_sprint_index,sort:desc,priority:2;index:sprint_activities_actor_index,sort:desc,priority:2;index:sprint_activities_mail_index,where:notified = false"`
-	// verb character varying IS_NULL:NO
-	Verb string `json:"verb"`
-	// field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
-	// sprint_id uuid IS_NULL:YES
-	SprintId uuid.UUID `json:"sprint_id" gorm:"type:uuid;index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
-	// actor_id uuid IS_NULL:YES
-	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
-
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
-
-	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	Sprint    *Sprint    `json:"sprint_detail" gorm:"foreignKey:SprintId" extensions:"x-nullable"`
-
-	UnionCustomFields string `json:"-" gorm:"-"`
-	SprintActivityExtendFields
-	ActivitySender
-}
-
 // SprintActivityExtendFields
 // -migration
 type SprintActivityExtendFields struct {
 	SprintWatcherExtendFields
 	SprintIssuesExtendFields
-}
-
-func (SprintActivity) TableName() string { return "sprint_activities" }
-
-func (sa SprintActivity) GetCustomFields() string {
-	return sa.UnionCustomFields
-}
-
-func (SprintActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "comment", "sprint_id", "workspace_id", "actor_id", "new_identifier", "old_identifier", "notified", "telegram_msg_ids"}
-}
-
-func (SprintActivity) GetEntity() string {
-	return "sprint"
-}
-
-func (activity *SprintActivity) AfterFind(tx *gorm.DB) error {
-	return EntityActivityAfterFind(activity, tx)
-}
-
-func (activity *SprintActivity) BeforeDelete(tx *gorm.DB) error {
-	return tx.Where("sprint_activity_id = ?", activity.Id).Unscoped().Delete(&UserNotifications{}).Error
-}
-
-func (sa SprintActivity) GetUrl() *string {
-	//if pa.Project.URL != nil {
-	//	urlStr := pa.Project.URL.String()
-	//	return &urlStr
-	//}
-	return nil
-}
-
-func (sa SprintActivity) SkipPreload() bool {
-	if sa.Field == nil {
-		return true
-	}
-
-	if !sa.NewIdentifier.Valid && !sa.OldIdentifier.Valid {
-		return true
-	}
-	return false
-}
-
-func (sa SprintActivity) GetField() string {
-	return pointerToStr(sa.Field)
-}
-
-func (sa SprintActivity) GetVerb() string {
-	return sa.Verb
-}
-
-func (sa SprintActivity) GetNewIdentifier() uuid.NullUUID {
-	return sa.NewIdentifier
-}
-
-func (sa SprintActivity) GetOldIdentifier() uuid.NullUUID {
-	return sa.OldIdentifier
-}
-
-func (sa SprintActivity) GetId() uuid.UUID {
-	return sa.Id
-}
-
-func (activity *SprintActivity) ToLightDTO() *dto.EntityActivityLight {
-	if activity == nil {
-		return nil
-	}
-
-	return &dto.EntityActivityLight{
-		Id:         activity.Id,
-		CreatedAt:  activity.CreatedAt,
-		Verb:       activity.Verb,
-		Field:      activity.Field,
-		OldValue:   activity.OldValue,
-		NewValue:   activity.NewValue,
-		EntityType: "sprint",
-
-		NewEntity: GetActionEntity(*activity, "New"),
-		OldEntity: GetActionEntity(*activity, "Old"),
-
-		EntityUrl: activity.GetUrl(),
-	}
 }
 
 type SprintViews struct {

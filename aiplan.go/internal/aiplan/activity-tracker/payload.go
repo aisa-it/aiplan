@@ -19,8 +19,8 @@ func NewPayload(d DataEntity) Payload {
 }
 
 func (p Payload) GetValue(field actField.ActivityField) string {
-	val := GetAsOrDefault[string](p.data, field.Only(), "")
-	val = GetAsOrDefault[string](p.data, field.WithActivityVal(), val)
+	val := GetAsOrDefault[string](p.data, field.AsKey(), "")
+	val = GetAsOrDefault[string](p.data, field.AsLogValue(), val)
 
 	if val == "<nil>" {
 		return ""
@@ -34,8 +34,8 @@ func (p Payload) GetValue(field actField.ActivityField) string {
 }
 
 func (p Payload) GetUUID(field actField.ActivityField, def uuid.UUID) uuid.UUID {
-	id := GetAsOrDefault[uuid.UUID](p.data, actField.UpdateScopeIdKey, def)
-	id = GetAsOrDefault[uuid.UUID](p.data, field.WithUpdateScopeId(), id)
+	id := GetAsOrDefault[uuid.UUID](p.data, actField.NewKey(actField.KindScopeID), def)
+	id = GetAsOrDefault[uuid.UUID](p.data, field.WithScopeID(), id)
 	return id
 }
 

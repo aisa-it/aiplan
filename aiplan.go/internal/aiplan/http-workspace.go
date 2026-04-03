@@ -282,7 +282,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			oldWorkspaceMap["owner_field_log"] = activities.Owner.Field
 		}
 
-		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newWorkspaceMap, oldWorkspaceMap, workspace, user)
+		err = tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newWorkspaceMap, &oldWorkspaceMap), workspace, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -368,11 +368,10 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 			"logo": fileAsset.Id.String(),
 		}
 
-		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
+		err = tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), workspace, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-
 		return nil
 	}); err != nil {
 		return EError(c, err)
@@ -425,11 +424,10 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 		"logo": uuid.Nil.String(),
 	}
 
-	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.JSON(http.StatusOK, workspace.ToDTO())
 }
 
@@ -477,7 +475,7 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 // @Param day query string false "День выборки активностей" default("")
 // @Param offset query int false "Смещение для пагинации" default(-1)
 // @Param limit query int false "Количество результатов на странице" default(100)
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список активностей рабочего пространства"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список активностей рабочего пространства"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
@@ -496,21 +494,7 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, issue, project, workspace, form, doc, sprint)
-	query := unionTable.
+	query := s.db.
 		Joins("Project").
 		Joins("Workspace").
 		Joins("Actor").
@@ -518,25 +502,25 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 		Joins("Doc").
 		Joins("Form").
 		Joins("Sprint").
-		Order("union_activities.created_at desc").
-		Where("union_activities.workspace_id = ?", workspaceId)
+		Order("created_at desc").
+		Where("workspace_id = ?", workspaceId)
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("union_activities.created_at >= ?", time.Time(day)).Where("union_activities.created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("created_at >= ?", time.Time(day)).Where("created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
-	var activities []dao.FullActivity
+	var acts []dao.ActivityEvent
 	resp, err := dao.PaginationRequest(
 		offset,
 		limit,
 		query,
-		&activities,
+		&acts,
 	)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(ea *dao.FullActivity) dto.EntityActivityFull { return *ea.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(ea *dao.ActivityEvent) dto.ActivityEventFull { return *ea.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }
@@ -697,6 +681,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 	oldMemberMap := StructToJSONMap(requestedMember)
 	var newMemberMap map[string]interface{}
 
+	ctx := tracker.NewTrackerCtx(&newMemberMap, &oldMemberMap)
 	var oldMemberRole int
 	if req.Role != nil {
 		oldMemberRole = *req.Role
@@ -752,6 +737,8 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 				}
 			}
 
+			ctx.Old.SetKey(activities.Role.Field.AsLogValue(), fmt.Sprint(oldMemberMap["role"]))
+
 			newMemberMap = StructToJSONMap(requestedMember)
 			newMemberMap["updateScopeId"] = requestedMember.MemberId
 
@@ -761,7 +748,10 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		}
 	}
 
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMemberMap, oldMemberMap, requestedMember, &user)
+	ctx.New.SetKey(activities.Role.Field.AsLogValue(), fmt.Sprintf("%d", requestedMember.Role))
+	ctx.New.SetKey(activities.Role.Field.WithScopeID(), requestedMember.ID)
+
+	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, ctx, requestedMember, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -950,15 +940,13 @@ func (s *Services) getWorkspaceMembersActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, dao.FormActivity{}, dao.IssueActivity{}, dao.DocActivity{}, dao.WorkspaceActivity{}, dao.ProjectActivity{})
-
-	query := unionTable.Where("fa.workspace_id = ?", workspace.ID)
-	activities, err := GetActivitiesTable(query, from, to)
+	query := s.db.Where("workspace_id = ?", workspace.ID)
+	acts, err := GetActivitiesTable(query, from, to)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, activities)
+	return c.JSON(http.StatusOK, acts)
 }
 
 // createMessageForWorkspaceMember godoc
@@ -1206,7 +1194,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 		}
 
 		for _, m := range createMemberLog {
-			err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, m.data, nil, m.pm, &issuer)
+			err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbAdded, tracker.NewTrackerCtx(&m.data, nil), m.pm, &issuer)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -1217,7 +1205,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			"member_activity_val": workspaceMember.Role,
 		}
 
-		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityAddActivity, data, nil, workspaceMember, &issuer)
+		err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbAdded, tracker.NewTrackerCtx(&data, nil), workspaceMember, &issuer)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -1366,11 +1354,10 @@ func (s *Services) createWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, activities.EntityCreateActivity, nil, nil, workspace, &user)
+	err = tracker.TrackEvent(s.activityTracker, types.LayerRoot, activities.VerbCreated, nil, workspace, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.JSON(http.StatusCreated, workspace.ToDTO())
 }
 
@@ -1476,11 +1463,10 @@ func (s *Services) resetWorkspaceToken(c echo.Context) error {
 		"integration_token": "******",
 	}
 
-	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.NoContent(http.StatusCreated)
 }
 
@@ -1745,11 +1731,10 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 		"integration_activity_val": name,
 	}
 
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityAddActivity, data, nil, workspaceMember, user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbAdded, tracker.NewTrackerCtx(&data, nil), workspaceMember, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.NoContent(http.StatusCreated)
 }
 
@@ -1793,7 +1778,7 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityRemoveActivity, data, nil, wm, c.(WorkspaceContext).User)
+		err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbRemoved, tracker.NewTrackerCtx(&data, nil), wm, c.(WorkspaceContext).User)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err

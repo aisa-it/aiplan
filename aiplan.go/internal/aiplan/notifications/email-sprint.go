@@ -32,15 +32,16 @@ func (e *emailNotifySprint) Process() {
 		e.service.sending = false
 	}()
 
-	var activities []dao.SprintActivity
+	var activities []dao.ActivityEvent
 	if err := e.service.db.Unscoped().
 		Preload("Sprint.Watchers").
 		Joins("Sprint.CreatedBy").
 		Preload("Sprint.Issues.Project").
 		Joins("Actor").
 		Joins("Workspace").
-		Order("created_at").
-		Where("notified = ?", false).
+		Order("activity_events.created_at").
+		Where("activity_events.entity_type = ?", types.LayerSprint).
+		Where("activity_events.notified = ?", false).
 		Limit(100).
 		Find(&activities).Error; err != nil {
 		slog.Error("Get activities", slog.Int("interval", e.service.cfg.NotificationsSleep), "err", err)
@@ -59,7 +60,7 @@ func (e *emailNotifySprint) Process() {
 		}()
 
 		sorter := sprintActivitySorter{
-			skipActivities: make([]dao.SprintActivity, 0),
+			skipActivities: make([]dao.ActivityEvent, 0),
 			Sprint:         make(map[uuid.UUID]sprintActivity),
 		}
 
@@ -94,9 +95,10 @@ func (e *emailNotifySprint) Process() {
 
 	if err := e.service.db.Transaction(func(tx *gorm.DB) error {
 		for _, activity := range activities {
-			if err := e.service.db.Model(&dao.SprintActivity{}).
+			if err := e.service.db.Model(&dao.ActivityEvent{}).
 				Unscoped().
-				Where("id = ?", activity.Id).
+				Where("notified", false).
+				Where("id = ?", activity.ID).
 				Update("notified", true).Error; err != nil {
 				return err
 			}
@@ -140,7 +142,7 @@ func (ia *sprintActivity) getNotifySettings(tx *gorm.DB) error {
 }
 
 type sprintActivitySorter struct {
-	skipActivities []dao.SprintActivity
+	skipActivities []dao.ActivityEvent
 	Sprint         map[uuid.UUID]sprintActivity //map[sprintId]
 }
 
@@ -155,26 +157,24 @@ type sprintMember struct {
 
 type sprintActivity struct {
 	sprint     *dao.Sprint
-	activities []dao.SprintActivity
+	activities []dao.ActivityEvent
 	users      map[string]sprintMember //map[user.Email]
 }
 
-func (as *sprintActivitySorter) sortEntity(activity dao.SprintActivity) {
-	if activity.SprintId != uuid.Nil { // TODO check it
-		if v, ok := as.Sprint[activity.SprintId]; !ok {
-			ia := newSprintActivity(activity.Sprint)
-			if ia != nil {
-				if !ia.AddActivity(activity) {
-					as.skipActivities = append(as.skipActivities, activity)
-				}
-				as.Sprint[activity.SprintId] = *ia
-			}
-		} else {
-			if !v.AddActivity(activity) {
+func (as *sprintActivitySorter) sortEntity(activity dao.ActivityEvent) {
+	if v, ok := as.Sprint[activity.SprintID.UUID]; !ok {
+		ia := newSprintActivity(activity.Sprint)
+		if ia != nil {
+			if !ia.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Sprint[activity.SprintId] = v
+			as.Sprint[activity.SprintID.UUID] = *ia
 		}
+	} else {
+		if !v.AddActivity(activity) {
+			as.skipActivities = append(as.skipActivities, activity)
+		}
+		as.Sprint[activity.SprintID.UUID] = v
 	}
 	return
 }
@@ -187,7 +187,7 @@ func newSprintActivity(sprint *dao.Sprint) *sprintActivity {
 
 	res := sprintActivity{
 		sprint:     sprint,
-		activities: make([]dao.SprintActivity, 0),
+		activities: make([]dao.ActivityEvent, 0),
 		users:      make(map[string]sprintMember),
 	}
 
@@ -219,7 +219,7 @@ func newSprintActivity(sprint *dao.Sprint) *sprintActivity {
 	return &res
 }
 
-func (ia *sprintActivity) AddActivity(activity dao.SprintActivity) bool {
+func (ia *sprintActivity) AddActivity(activity dao.ActivityEvent) bool {
 	if ia.skip(activity) {
 		return false
 	}
@@ -229,7 +229,7 @@ func (ia *sprintActivity) AddActivity(activity dao.SprintActivity) bool {
 }
 
 // Для пропуска активностей
-func (ia *sprintActivity) skip(activity dao.SprintActivity) bool {
+func (ia *sprintActivity) skip(activity dao.ActivityEvent) bool {
 	return false
 }
 
@@ -245,13 +245,13 @@ func (ia *sprintActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		var sendActivities []dao.SprintActivity
+		var sendActivities []dao.ActivityEvent
 
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
-			memberNotify = member.WorkspaceMemberSettings.IsNotify(actField.ActivityField(*activity.Field), types.LayerSprint, activity.Verb, member.WorkspaceRole)
+			memberNotify = member.WorkspaceMemberSettings.IsNotify(activity.Field, types.LayerSprint, activity.Verb, member.WorkspaceRole)
 			if activity.Sprint.CreatedById == member.User.ID {
-				authorNotify = member.WorkspaceAuthorSettings.IsNotify(actField.ActivityField(*activity.Field), types.LayerSprint, activity.Verb, member.WorkspaceRole)
+				authorNotify = member.WorkspaceAuthorSettings.IsNotify(activity.Field, types.LayerSprint, activity.Verb, member.WorkspaceRole)
 			}
 			if (member.SprintAuthor && authorNotify) || (!member.SprintAuthor && memberNotify) {
 				sendActivities = append(sendActivities, activity)
@@ -278,10 +278,10 @@ func (ia *sprintActivity) getMails(tx *gorm.DB) []mail {
 	return mails
 }
 
-func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao.SprintActivity, targetUser *dao.User) (string, string, error) {
+func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao.ActivityEvent, targetUser *dao.User) (string, string, error) {
 	result := ""
 
-	actorsChangesMap := make(map[uuid.UUID]map[string]dao.SprintActivity)
+	actorsChangesMap := make(map[uuid.UUID]map[string]dao.ActivityEvent)
 	actorsMap := make(map[uuid.UUID]dao.User)
 	removeIssuesId := make([]uuid.UUID, 0)
 	removeWatchers := make([]dao.User, 0)
@@ -297,14 +297,15 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 		Watcher dao.User
 		IsNew   bool
 	}
-	for _, activity := range activities {
-		changesMap, ok := actorsChangesMap[activity.ActorId.UUID]
+	for i, activity := range activities {
+		activities[i].Sprint.SetUrl()
+		changesMap, ok := actorsChangesMap[activity.ActorID]
 		if !ok {
-			changesMap = make(map[string]dao.SprintActivity)
+			changesMap = make(map[string]dao.ActivityEvent)
 		}
-		field := *activity.Field
+		field := activity.Field
 
-		if field == actField.StartDate.Field.String() || field == actField.EndDate.Field.String() {
+		if field == actField.StartDate.Field || field == actField.EndDate.Field {
 			newT, errNew := FormatDate(activity.NewValue, "02.01.2006", &targetUser.UserTimezone)
 
 			if activity.OldValue != nil {
@@ -317,7 +318,7 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 				activity.NewValue = newT
 			}
 		}
-		if field == actField.Issue.Field.String() {
+		if field == actField.Issue.Field {
 			switch activity.Verb {
 			case actField.VerbAdded:
 				issuesExist[activity.NewSprintIssue.ID] = struct{}{}
@@ -325,7 +326,7 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 				removeIssuesId = append(removeIssuesId, activity.OldSprintIssue.ID)
 			}
 		}
-		if field == actField.Watchers.Field.String() {
+		if field == actField.Watchers.Field {
 			switch activity.Verb {
 			case actField.VerbAdded:
 				watchersExist[activity.NewSprintWatcher.ID] = struct{}{}
@@ -334,7 +335,7 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 			}
 		}
 
-		if field == actField.Description.Field.String() {
+		if field == actField.Description.Field {
 			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
@@ -345,9 +346,9 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 			activity.NewValue = newValue
 		}
 
-		changesMap[field] = activity
-		actorsMap[activity.ActorId.UUID] = *activity.Actor
-		actorsChangesMap[activity.ActorId.UUID] = changesMap
+		changesMap[field.String()] = activity
+		actorsMap[activity.ActorID] = *activity.Actor
+		actorsChangesMap[activity.ActorID] = changesMap
 	}
 
 	issues := make([]IssueView, 0, len(activities[0].Sprint.Issues))
@@ -380,7 +381,7 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 	for userId, changesMap := range actorsChangesMap {
 		context := struct {
 			SprintURL      string
-			Changes        map[string]dao.SprintActivity
+			Changes        map[string]dao.ActivityEvent
 			Issues         []IssueView
 			Watchers       []WatchersView
 			RemoveIssues   []dao.Issue

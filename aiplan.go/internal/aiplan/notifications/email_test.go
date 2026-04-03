@@ -33,7 +33,7 @@ func setup() {
 func TestGenHTML(t *testing.T) {
 	setup()
 
-	var activities []dao.IssueActivity
+	var activities []dao.ActivityEvent
 	if err := es.db.Preload("Issue").
 		Preload("Actor").
 		Preload("Project").

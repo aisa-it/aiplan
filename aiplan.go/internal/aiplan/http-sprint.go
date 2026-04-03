@@ -133,7 +133,6 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
 // @Success 200 {array} dto.SprintFolder "Список директорий спринтов"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -270,11 +269,10 @@ func (s *Services) createSprint(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, activities.EntityCreateActivity, nil, nil, *sprint, user)
+	err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbCreated, nil, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-	tracker.TrackEvent(s.ta, types.LayerSprint, activities.VerbCreated, nil, nil, sprint, user)
 
 	sprint.CreatedBy = *user
 
@@ -369,11 +367,10 @@ func (s *Services) updateSprint(c echo.Context) error {
 	}
 	newSprintMap := StructToJSONMap(sprint)
 
-	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, newSprintMap, oldSprintMap, sprint, user)
+	err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbUpdated, tracker.NewTrackerCtx(&newSprintMap, &oldSprintMap), sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-	tracker.TrackEvent(s.ta, types.LayerSprint, activities.VerbUpdated, newSprintMap, oldSprintMap, sprint, user)
 
 	return c.JSON(http.StatusOK, sprint.ToDTO())
 }
@@ -487,15 +484,17 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		"field_log":  activities.Issue.Field,
 	}
 	currentInstance := map[string]interface{}{
-		"issues": oldIssueIds,
+		"issue": oldIssueIds,
 	}
 
+	ctx := tracker.NewTrackerCtx(&reqData, &currentInstance)
+	ctx.New.SetKey(activities.Issues.Field.LookupFrom(), activities.Issue.Field)
+
 	{ // reg activity
-		err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, sprint, user)
+		err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbUpdated, ctx, sprint, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-		tracker.TrackEvent(s.ta, types.LayerSprint, activities.VerbUpdated, reqData, currentInstance, sprint, user)
 
 		changes := utils.CalculateIDChanges(newIssuesIds, oldIssueIds)
 		var issues []dao.Issue
@@ -505,26 +504,23 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 
 		issueMap := utils.SliceToMap(&issues, func(t *dao.Issue) uuid.UUID { return t.ID })
 
-		data := map[string]interface{}{
-			"issue_key":           "sprint",
-			"sprint_activity_val": sprint.Name,
-			"updateScopeId":       sprint.Id,
-		}
+		issueCtx := tracker.NewTrackerCtx(nil, nil)
+		issueCtx.New.SetKey(activities.Issue.Field.WithKey(), activities.Sprint.Field)
+		issueCtx.New.SetKey(activities.Sprint.Field.AsLogValue(), sprint.Name)
+		issueCtx.New.SetKey(activities.NewKey(activities.KindScopeID), sprint.Id)
 
 		for _, id := range changes.AddIds {
-			err = tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityAddActivity, data, nil, issueMap[id], user)
+			err = tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbAdded, issueCtx, issueMap[id], user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
-			tracker.TrackEvent(s.ta, types.LayerIssue, activities.VerbAdded, data, nil, issueMap[id], user)
 
 		}
 		for _, id := range changes.DelIds {
-			err = tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityRemoveActivity, data, nil, issueMap[id], user)
+			err = tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbRemoved, issueCtx, issueMap[id], user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
-			tracker.TrackEvent(s.ta, types.LayerIssue, activities.VerbRemoved, data, nil, issueMap[id], user)
 		}
 	}
 
@@ -552,10 +548,8 @@ func (s *Services) deleteSprint(c echo.Context) error {
 	sprint := c.(SprintContext).Sprint
 	user := c.(SprintContext).User
 
-	err := tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, sprint, user)
-	if err != nil {
+	if err := tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbDeleted, nil, sprint, user); err != nil {
 		errStack.GetError(c, err)
-		return err
 	}
 
 	if err := s.db.Delete(&sprint).Error; err != nil {
@@ -654,18 +648,20 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	ctx := tracker.NewTrackerCtx(nil, nil)
 	reqData := map[string]interface{}{
 		"watchers_list": utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID }),
 	}
 	currentInstance := map[string]interface{}{
 		"watchers": oldMemberIds,
 	}
+	ctx.GormMap = &reqData
+	ctx.OldGormMap = &currentInstance
 
-	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, sprint, user)
+	err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbUpdated, ctx, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.NoContent(http.StatusOK)
 }
 
@@ -681,7 +677,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 // @Param sprintId path string true "Идентификатор или номер последовательности спринта"
 // @Param offset query int false "Смещение для пагинации" default(0)
 // @Param limit query int false "Количество записей на странице" default(100)
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список активностей спринта"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список активностей спринта"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -701,20 +697,16 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, sprint)
-
-	query := unionTable.
+	query := s.db.
 		Joins("Sprint").
 		Joins("Workspace").
 		Joins("Actor").
-		Order("union_activities.created_at desc").
-		Where("union_activities.workspace_id = ?", workspaceId).
-		Where("union_activities.sprint_id = ?", sprintId)
+		Order("created_at desc").
+		Where("entity_type = ?", types.LayerSprint).
+		Where("workspace_id = ?", workspaceId).
+		Where("sprint_id = ?", sprintId)
 
-	var acts []dao.FullActivity
+	var acts []dao.ActivityEvent
 
 	resp, err := dao.PaginationRequest(
 		offset,
@@ -726,7 +718,7 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(pa *dao.FullActivity) dto.EntityActivityFull { return *pa.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(pa *dao.ActivityEvent) dto.ActivityEventFull { return *pa.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }

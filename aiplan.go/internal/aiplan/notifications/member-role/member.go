@@ -43,6 +43,8 @@ const (
 	SprintWatcher
 
 	ActionAuthor
+
+	NoAuthor
 )
 
 type MemberNotify struct {
@@ -119,45 +121,6 @@ func (u *MemberNotify) GetUser() *dao.User {
 	return u.user
 }
 
-//func (u *MemberNotify) I(field string, verb string, entity actField.ActivityField, f isNotifyFunc, authorRole Role)  {
-//  u.
-//  if f(u, field, verb, entity, u.Has(authorRole)){
-//
-//  }
-//}
-
-//func (u *MemberNotify) Allowed(
-//	field string,
-//	verb string,
-//	entity actField.ActivityField,
-//	authorRole Role,
-//	settings *MemberSettings,
-//) bool {
-//	isAuthor := u.Has(authorRole)
-//	return settings.Notify(u, field, verb, entity, isAuthor)
-//}
-
-//func (ur UserRegistry) AddUser(user *dao.User, roles ...Role) bool {
-//	if user == nil {
-//		return false
-//	}
-//	if existing, exists := ur[user.ID]; exists {
-//		for _, r := range roles {
-//			existing.Add(r)
-//		}
-//		ur[user.ID] = existing
-//		return true
-//	}
-//
-//	tgUser, ok := getUser(user, roles...)
-//	if !ok {
-//		return false
-//	}
-//
-//	ur[user.ID] = tgUser
-//	return true
-//}
-
 func (ur UserRegistry) AddUser(user *dao.User, roles ...Role) bool {
 	if user == nil || !user.CanReceiveNotifications() {
 		return false
@@ -179,19 +142,6 @@ func (ur UserRegistry) AddUser(user *dao.User, roles ...Role) bool {
 	return true
 }
 
-//	func getUser(user *dao.User, roles ...Role) (MemberNotify, bool) {
-//		if user.TelegramId == nil {
-//			return MemberNotify{}, false
-//		}
-//		if !user.CanReceiveNotifications() {
-//			return MemberNotify{}, false
-//		}
-//		if user.Settings.TgNotificationMute {
-//			return MemberNotify{}, false
-//		}
-//		return MemberNotify{id: *user.TelegramId, loc: user.UserTimezone, roles: combineRoles(roles...)}, true
-//	}
-//
 // TODO ref to new notify
 func (ur UserRegistry) FilterActivity(field string, verb string, entity actField.ActivityField, f IsNotifyFunc, authorRole Role) []*MemberNotify {
 	result := make([]*MemberNotify, 0, len(ur))

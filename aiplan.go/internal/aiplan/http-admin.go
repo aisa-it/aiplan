@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
@@ -1633,7 +1632,7 @@ type roleUpdRequest struct {
 // @Param day query string false "День выборки активностей" default("")
 // @Param offset query int false "Смещение для пагинации" default(-1)
 // @Param limit query int false "Количество результатов на странице" default(100)
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список активностей"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список активностей"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
@@ -1651,24 +1650,20 @@ func (s *Services) geRootActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var root dao.RootActivity
-	root.UnionCustomFields = "'root' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, root)
-	query := unionTable.
+	query := s.db.
 		Joins("Project").
 		Joins("Workspace").
 		Joins("Actor").
 		Joins("Issue").
 		Joins("Doc").
 		Joins("Form").
-		Order("union_activities.created_at desc")
+		Order("activity_events.created_at desc")
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("union_activities.created_at >= ?", time.Time(day)).Where("union_activities.created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("activity_events.created_at >= ?", time.Time(day)).Where("activity_events.created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
-	var activities []dao.FullActivity
+	var activities []dao.ActivityEvent
 	resp, err := dao.PaginationRequest(
 		offset,
 		limit,
@@ -1679,7 +1674,7 @@ func (s *Services) geRootActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(ea *dao.FullActivity) dto.EntityActivityFull { return *ea.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(ea *dao.ActivityEvent) dto.ActivityEventFull { return *ea.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }

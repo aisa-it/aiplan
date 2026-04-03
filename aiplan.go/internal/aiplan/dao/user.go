@@ -343,7 +343,7 @@ func (sf *SearchFilter) SetUrl() {
 	sf.ShortURL = Config.WebURL.URL.ResolveReference(shortU)
 }
 
-type UserNotifications struct {
+type UserAppNotify struct {
 	ID        uuid.UUID      `gorm:"column:id;primaryKey;type:uuid" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -352,12 +352,7 @@ type UserNotifications struct {
 	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
 	User   *User     `json:"user_detail,omitempty" gorm:"foreignKey:UserId" extensions:"x-nullable"`
 
-	Type             string          `json:"type"`
-	EntityActivityId uuid.NullUUID   `json:"entity_activity,omitempty"`
-	EntityActivity   *EntityActivity `json:"entity_activity_detail,omitempty" gorm:"foreignKey:EntityActivityId" extensions:"x-nullable"`
-
-	CommentId uuid.NullUUID `json:"comment_id,omitempty" gorm:"type:uuid"`
-	Comment   *IssueComment `json:"comment,omitempty" gorm:"foreignKey:CommentId" extensions:"x-nullable"`
+	Type string `json:"type"`
 
 	WorkspaceId uuid.NullUUID `json:"workspace_id,omitempty" gorm:"type:uuid"`
 	Workspace   *Workspace    `json:"workspace,omitempty" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
@@ -373,60 +368,39 @@ type UserNotifications struct {
 
 	TargetUser *User `json:"target_user,omitempty" gorm:"-"`
 
-	IssueActivityId uuid.NullUUID  `json:"issue_activity,omitempty"`
-	IssueActivity   *IssueActivity `json:"issue_activity_detail,omitempty" gorm:"foreignKey:IssueActivityId" extensions:"x-nullable"`
-
-	ProjectActivityId uuid.NullUUID    `json:"project_activity,omitempty"`
-	ProjectActivity   *ProjectActivity `json:"project_activity_detail,omitempty" gorm:"foreignKey:ProjectActivityId" extensions:"x-nullable"`
-
-	FormActivityId uuid.NullUUID `json:"form_activity,omitempty"`
-	FormActivity   *FormActivity `json:"form_activity_detail,omitempty" gorm:"foreignKey:FormActivityId" extensions:"x-nullable"`
-
-	DocActivityId uuid.NullUUID `json:"doc_activity,omitempty"`
-	DocActivity   *DocActivity  `json:"doc_activity_detail,omitempty" gorm:"foreignKey:DocActivityId" extensions:"x-nullable"`
-
-	SprintActivityId uuid.NullUUID   `json:"sprint_activity,omitempty"`
-	SprintActivity   *SprintActivity `json:"sprint_activity_detail,omitempty" gorm:"foreignKey:SprintActivityId" extensions:"x-nullable"`
-
-	WorkspaceActivityId uuid.NullUUID      `json:"workspace_activity,omitempty"`
-	WorkspaceActivity   *WorkspaceActivity `json:"workspace_activity_detail,omitempty" gorm:"foreignKey:WorkspaceActivityId" extensions:"x-nullable"`
-
-	RootActivityId uuid.NullUUID `json:"root_activity,omitempty"`
-	RootActivity   *RootActivity `json:"root_activity_detail,omitempty" gorm:"foreignKey:RootActivityId" extensions:"x-nullable"`
-
 	ActivityEventId uuid.NullUUID  `json:"activity,omitempty"`
 	ActivityEvent   *ActivityEvent `json:"activity_event,omitempty" gorm:"foreignKey:ActivityEventId" extensions:"x-nullable"`
 
-	FullActivity *FullActivity `json:"full_activity_detail,omitempty" gorm:"-" extensions:"x-nullable"`
+	IssueCommentId uuid.NullUUID `json:"issue_comment_id,omitempty" gorm:"type:uuid"`
+	IssueComment   *IssueComment `json:"issue_comment,omitempty" gorm:"foreignKey:IssueCommentId" extensions:"x-nullable"`
 }
 
-func (un *UserNotifications) ToLightDTO() *dto.UserNotificationsLight {
+func (un *UserAppNotify) ToLightDTO() *dto.UserNotificationsLight {
 	if un == nil {
 		return nil
 	}
 	return &dto.UserNotificationsLight{
-		ID:               un.ID,
-		UserId:           un.UserId,
-		Type:             un.Type,
-		Viewed:           un.Viewed,
-		Title:            un.Title,
-		Msg:              un.Msg,
-		AuthorId:         un.AuthorId,
-		EntityActivityId: un.EntityActivityId,
-		CommentId:        un.CommentId,
-		WorkspaceId:      un.WorkspaceId,
-		IssueId:          un.IssueId,
+		ID:          un.ID,
+		UserId:      un.UserId,
+		Type:        un.Type,
+		Viewed:      un.Viewed,
+		Title:       un.Title,
+		Msg:         un.Msg,
+		AuthorId:    un.AuthorId,
+		CommentId:   un.IssueCommentId,
+		WorkspaceId: un.WorkspaceId,
+		IssueId:     un.IssueId,
 	}
 }
 
-func (un *UserNotifications) ToFullDTO() *dto.UserNotificationsFull {
+func (un *UserAppNotify) ToFullDTO() *dto.UserNotificationsFull {
 	if un == nil {
 		return nil
 	}
 	return &dto.UserNotificationsFull{
 		UserNotificationsLight: *un.ToLightDTO(),
 		User:                   un.User.ToLightDTO(),
-		Comment:                un.Comment.ToLightDTO(),
+		Comment:                un.IssueComment.ToLightDTO(),
 		Workspace:              un.Workspace.ToLightDTO(),
 		Issue:                  un.Issue.ToLightDTO(),
 		Author:                 un.Author.ToLightDTO(),
@@ -434,7 +408,7 @@ func (un *UserNotifications) ToFullDTO() *dto.UserNotificationsFull {
 	}
 }
 
-func (un *UserNotifications) AfterCreate(tx *gorm.DB) (err error) {
+func (un *UserAppNotify) AfterCreate(tx *gorm.DB) (err error) {
 	if un.ID == uuid.Nil {
 		un.ID = GenUUID()
 	}
@@ -448,17 +422,17 @@ func (un *UserNotifications) AfterCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-func (un *UserNotifications) GetWorkspaceId() uuid.UUID {
+func (un *UserAppNotify) GetWorkspaceId() uuid.UUID {
 	if un.WorkspaceId.Valid {
 		return un.WorkspaceId.UUID
 	}
 	return uuid.Nil
 }
 
-func (un *UserNotifications) AfterFind(tx *gorm.DB) (err error) {
-	if un.EntityActivity != nil {
-		if un.EntityActivity.Verb == "updated" && (*un.EntityActivity.Field == "assignees" || *un.EntityActivity.Field == "watchers") {
-			if err := tx.Where("id = ? or id = ?", un.EntityActivity.OldIdentifier, un.EntityActivity.NewIdentifier).First(&un.TargetUser).Error; err != nil {
+func (un *UserAppNotify) AfterFind(tx *gorm.DB) (err error) {
+	if un.ActivityEvent != nil {
+		if un.ActivityEvent.Verb == "updated" && (un.ActivityEvent.Field == actField.Assignees.Field || un.ActivityEvent.Field == actField.Watchers.Field) {
+			if err := tx.Where("id = ? or id = ?", un.ActivityEvent.OldIdentifier, un.ActivityEvent.NewIdentifier).First(&un.TargetUser).Error; err != nil {
 				return err
 			}
 		}

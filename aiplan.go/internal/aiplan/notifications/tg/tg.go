@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -28,7 +27,6 @@ type TgService struct {
 	bot         *bot.Bot
 	botUserName string
 	cfg         *config.Config
-	tracker     *tracker.ActivitiesTracker
 	Disabled    bool
 	bl          *business.Business
 
@@ -56,7 +54,7 @@ func (m TgMsg) IsEmpty() bool {
 	return false
 }
 
-func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl *business.Business) *TgService {
+func New(db *gorm.DB, cfg *config.Config, bl *business.Business) *TgService {
 	if cfg.TelegramBotToken == "" {
 		slog.Info("Telegram notifications disabled")
 		return &TgService{Disabled: true}
@@ -65,7 +63,6 @@ func New(db *gorm.DB, cfg *config.Config, tracker *tracker.ActivitiesTracker, bl
 	serv := &TgService{
 		db:       db,
 		cfg:      cfg,
-		tracker:  tracker,
 		Disabled: false,
 		bl:       bl,
 	}
@@ -129,6 +126,9 @@ func (t *TgService) GetBotLink() string {
 }
 
 func (t *TgService) Send(tgId int64, tgMsg TgMsg) (int64, error) {
+	if t.Disabled {
+		return 0, fmt.Errorf("bot disabled")
+	}
 	msg := strings.Join([]string{tgMsg.Title, tgMsg.Body}, "\n")
 	if msg == "" {
 		return 0, fmt.Errorf("message is empty")

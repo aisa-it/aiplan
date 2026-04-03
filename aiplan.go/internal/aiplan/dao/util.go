@@ -24,8 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"github.com/sethvargo/go-password/password"
@@ -270,52 +268,6 @@ func GetIssuesLink(id1 uuid.UUID, id2 uuid.UUID) LinkedIssues {
 	return link
 }
 
-func BuildUnionSubquery(tx *gorm.DB, alias string, tab UnionableTable, tables ...UnionableTable) *gorm.DB {
-	var union []string
-	var args []interface{}
-
-	for _, table := range tables {
-		var selectFields []string
-		fieldSet := utils.SliceToSet(table.GetFields())
-		for _, field := range tab.GetFields() {
-			f := strings.Split(field, "::")
-			var t string
-			if len(f) > 1 {
-				field = f[0]
-				t = "::" + f[1]
-			}
-
-			if utils.CheckInSet(fieldSet, field) {
-				selectFields = append(selectFields, field+t)
-			} else {
-				selectFields = append(selectFields, fmt.Sprintf("NULL%s AS %s", t, field))
-			}
-		}
-
-		selectFields = AddCustomFields(table, selectFields)
-
-		q := tx.Session(&gorm.Session{DryRun: true}).
-			Select(selectFields).
-			Model(table).
-			Find(nil).Statement
-
-		union = append(union, "("+q.SQL.String()+")")
-		args = append(args, q.Vars...)
-	}
-
-	unionSQL := strings.Join(union, " UNION ALL ")
-
-	return tx.Table("(?) AS "+alias, gorm.Expr(unionSQL, args...)).Model(tab)
-}
-
-func SliceToSet(sl []string) map[string]interface{} {
-	res := make(map[string]interface{})
-	for _, s := range sl {
-		res[s] = struct{}{}
-	}
-	return res
-}
-
 func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMember, tx *gorm.DB) error {
 	// Change workspace owner on demand
 	if requestedMember.Workspace.OwnerId == requestedMember.MemberId {
@@ -370,13 +322,6 @@ func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMem
 	}
 
 	return tx.Omit(clause.Associations).Delete(requestedMember).Error
-}
-
-func pointerToStr(str *string) string {
-	if str == nil {
-		return ""
-	}
-	return *str
 }
 
 func GetFileAssetFromDescription(query *gorm.DB, description *string) ([]FileAsset, error) {

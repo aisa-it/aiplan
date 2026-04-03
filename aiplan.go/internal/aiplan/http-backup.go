@@ -43,14 +43,14 @@ type WorkspaceBackup struct {
 	ProjectFavorites []dao.ProjectFavorites `importOrder:"4"`
 	ProjectMembers   []dao.ProjectMember    `importOrder:"4"`
 
-	IssueActivities []dao.EntityActivity `importOrder:"5"`
-	IssueAssignees  []dao.IssueAssignee  `importOrder:"5"`
-	IssueWatchers   []dao.IssueWatcher   `importOrder:"5"`
-	IssueBlockers   []dao.IssueBlocker   `importOrder:"5"`
-	IssueComments   []dao.IssueComment   `importOrder:"5"`
-	IssueLabels     []dao.IssueLabel     `importOrder:"5"`
-	IssueLinks      []dao.IssueLink      `importOrder:"5"`
-	IssueProperties []dao.IssueProperty  `importOrder:"5"`
+	IssueActivities []dao.ActivityEvent `importOrder:"5"`
+	IssueAssignees  []dao.IssueAssignee `importOrder:"5"`
+	IssueWatchers   []dao.IssueWatcher  `importOrder:"5"`
+	IssueBlockers   []dao.IssueBlocker  `importOrder:"5"`
+	IssueComments   []dao.IssueComment  `importOrder:"5"`
+	IssueLabels     []dao.IssueLabel    `importOrder:"5"`
+	IssueLinks      []dao.IssueLink     `importOrder:"5"`
+	IssueProperties []dao.IssueProperty `importOrder:"5"`
 
 	Estimates []dao.Estimate `importOrder:"5"`
 }

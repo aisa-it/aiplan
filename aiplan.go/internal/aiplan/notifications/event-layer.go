@@ -15,7 +15,8 @@ var issueRolesNotified = []member_role.Role{
 	member_role.IssueAuthor,
 	member_role.ProjectDefaultWatcher,
 	member_role.IssueWatcher,
-	member_role.IssueAssigner}
+	member_role.IssueAssigner,
+}
 
 type baseEventHandler struct{}
 
@@ -27,6 +28,7 @@ func (baseEventHandler) CanHandle(event *dao.ActivityEvent) bool {
 	return true
 }
 
+// Реализация для слоя issue
 type issueEvent struct {
 	baseEventHandler
 }
@@ -39,27 +41,6 @@ func (issueEvent) Preload(tx *gorm.DB, event *dao.ActivityEvent) error {
 	event.Issue = issue
 
 	return nil
-	//return tx.Unscoped().
-	//  Joins("Author").
-	//  Joins("Workspace").
-	//  Joins("Project").
-	//  Joins("Parent").
-	//  Preload("Assignees").
-	//  Preload("Watchers").
-	//  Preload("Parent.Project").
-	//  Preload("Links").
-	//  Where("issues.id = ?", event.IssueID).
-	//  First(&event.Issue).Error
-
-	//return tx.
-	//	Joins("Author").
-	//	Joins("Workspace").
-	//	Joins("Project").
-	//	Preload("Assignees").
-	//	Preload("Watchers").
-	//	Preload("Project.DefaultWatchersDetails", "is_default_watcher = ?", true).
-	//	Where("issues.id = ?", event.IssueID).
-	//	First(&event.Issue).Error
 }
 
 func (issueEvent) GetRecipientsSteps(event *dao.ActivityEvent) []member_role.UsersStep {
@@ -80,16 +61,12 @@ func (issueEvent) AuthorRole() member_role.Role {
 	return member_role.IssueAuthor
 }
 
+// Реализация для слоя project
 type projectEvent struct {
 	baseEventHandler
 }
 
-func (p projectEvent) FilterRecipients(
-	event *dao.ActivityEvent,
-	recipients []member_role.MemberNotify,
-) []member_role.MemberNotify {
-
-	// 👉 если это НЕ кейс с issue — ничего не фильтруем
+func (p projectEvent) FilterRecipients(event *dao.ActivityEvent, recipients []member_role.MemberNotify) []member_role.MemberNotify {
 	if event.NewIssue == nil {
 		return recipients
 	}
@@ -138,29 +115,14 @@ func (p projectEvent) GetRecipientsSteps(event *dao.ActivityEvent) []member_role
 }
 
 func (p projectEvent) GetSettingsFunc() member_role.IsNotifyFunc {
-	return member_role.FromWorkspace()
+	return member_role.FromProject()
 }
 
 func (p projectEvent) AuthorRole() member_role.Role {
-	return member_role.ActionAuthor
+	return member_role.NoAuthor
 }
 
-func preloadIssue(tx *gorm.DB, issueID uuid.UUID) (*dao.Issue, error) {
-	var issue dao.Issue
-	err := tx.Unscoped().
-		Joins("Author").
-		Joins("Workspace").
-		Joins("Project").
-		Joins("Parent").
-		Preload("Assignees").
-		Preload("Watchers").
-		Preload("Parent.Project").
-		Preload("Links").
-		Where("issues.id = ?", issueID).
-		First(&issue).Error
-	return &issue, err
-}
-
+// Реализация для слоя sprint
 type sprintEvent struct {
 	baseEventHandler
 }
@@ -208,6 +170,7 @@ func (s sprintEvent) AuthorRole() member_role.Role {
 	return member_role.SprintAuthor
 }
 
+// Реализация для слоя workspace
 type workspaceEvent struct {
 	baseEventHandler
 }
@@ -235,9 +198,10 @@ func (w workspaceEvent) GetSettingsFunc() member_role.IsNotifyFunc {
 }
 
 func (w workspaceEvent) AuthorRole() member_role.Role {
-	return member_role.ActionAuthor
+	return member_role.NoAuthor
 }
 
+// Реализация для слоя doc
 type docEvent struct {
 	baseEventHandler
 }
@@ -271,4 +235,20 @@ func (d docEvent) GetSettingsFunc() member_role.IsNotifyFunc {
 
 func (d docEvent) AuthorRole() member_role.Role {
 	return member_role.ActionAuthor
+}
+
+func preloadIssue(tx *gorm.DB, issueID uuid.UUID) (*dao.Issue, error) {
+	var issue dao.Issue
+	err := tx.Unscoped().
+		Joins("Author").
+		Joins("Workspace").
+		Joins("Project").
+		Joins("Parent").
+		Preload("Assignees").
+		Preload("Watchers").
+		Preload("Parent.Project").
+		Preload("Links").
+		Where("issues.id = ?", issueID).
+		First(&issue).Error
+	return &issue, err
 }

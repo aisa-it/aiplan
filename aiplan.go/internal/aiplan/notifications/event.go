@@ -34,10 +34,7 @@ type EventNotificationService struct {
 	channels []NotificationChannel
 }
 
-func NewEventNotificationService(ns *Notification,
-
-// db *gorm.DB, tgService *tg.TgService, wsService *WebsocketNotificationService, emailSvc *EmailService,
-) *EventNotificationService {
+func NewEventNotificationService(ns *Notification) *EventNotificationService {
 
 	channels := []NotificationChannel{
 		newTgChannel(ns.Db, ns.Tg),
@@ -55,7 +52,6 @@ func NewEventNotificationService(ns *Notification,
 }
 
 // EventHandler интерфейс для обработчиков конкретных типов событий.
-// Каждый тип сущности (Issue, Project, Workspace, Doc, Sprint, Form) имеет свой обработчик.
 type EventHandler interface {
 	CanHandle(event *dao.ActivityEvent) bool
 	Preload(tx *gorm.DB, event *dao.ActivityEvent) error
@@ -77,10 +73,7 @@ type Delivery interface {
 }
 
 func (np *EventNotificationService) Handle(activity dao.ActivityEvent) error {
-	return np.ProcessEvent(&activity)
-}
-
-func (np *EventNotificationService) ProcessEvent(event *dao.ActivityEvent) error {
+	event := &activity
 
 	steps := []member_role.UsersStep{
 		member_role.AddUserRole(event.Actor, member_role.ActionAuthor),
@@ -89,7 +82,6 @@ func (np *EventNotificationService) ProcessEvent(event *dao.ActivityEvent) error
 	eh := getHandler(event.EntityType)
 	if eh == nil {
 		return fmt.Errorf("unknown event type: %s", event.EntityType)
-
 	}
 
 	if err := eh.Preload(np.db, event); err != nil {

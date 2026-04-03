@@ -90,8 +90,7 @@ import (
 
 type Services struct {
 	db                  *gorm.DB
-	tracker             *tracker.ActivitiesTracker
-	ta                  *tracker.ActTracker
+	activityTracker     *tracker.ActTracker
 	storage             filestorage.FileStorage
 	emailService        *notifications.EmailService
 	memDB               *mem.AIPlanMemAPI
@@ -202,13 +201,12 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	es := notifications.NewEmailService(cfg, db)
-	tr := tracker.NewActivitiesTracker(db)
 	at := tracker.NewTracker(db)
-	bl, err := business.NewBL(db, tr)
+	bl, err := business.NewBL(db, at)
 	if err != nil {
 		os.Exit(1)
 	}
-	ns := notifications.NewNotificationService(cfg, db, tr, bl)
+	ns := notifications.NewNotificationService(cfg, db, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 	/*if err := np.ListenNotifications(cfg.DatabaseDSN); err != nil {
 		slog.Error("Notification listener fail", "err", err)
@@ -273,11 +271,10 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	s := &Services{
-		db:           db,
-		tracker:      tr,
-		ta:           at,
-		storage:      storage,
-		emailService: es,
+		db:              db,
+		activityTracker: at,
+		storage:         storage,
+		emailService:    es,
 		//telegramService:       ts,
 		memDB:         memDB,
 		importService: issues_import.NewImportService(db, storage, es),
@@ -348,24 +345,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	sendPasswordDefaultAdmin(db, es)
 
-	{ // register handler ws & UserNotify activity
-		//tr.RegisterHandler(notifications.NewIssueNotification(ns))
-		//tr.RegisterHandler(notifications.NewProjectNotification(ns))
-		//tr.RegisterHandler(notifications.NewDocNotification(ns))
-		//tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
-		//tr.RegisterHandler(notifications.NewFormNotification(ns))
-		//tr.RegisterHandler(notifications.NewSprintNotification(ns))
-	}
-
-	{ // register handler telegram activity
-		//tr.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
-		//at.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
-		at.RegisterHandler(notifications.NewEventNotificationService(ns))
-		//tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
-		//tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
-		//tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))
-		//tr.RegisterHandler(notifications.NewTgNotifyWorkspace(ns.Tg))
-	}
+	at.RegisterHandler(notifications.NewEventNotificationService(ns))
 
 	// Global middlewares
 	e.Use(ServerHeader)
@@ -439,7 +419,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	//services with auth
 	apiGroup := e.Group("/api/")
 
-	s.integrationsService = integrations.NewIntegrationService(apiGroup, db, s.notificationsService.Tg, s.storage, tr, bl)
+	s.integrationsService = integrations.NewIntegrationService(apiGroup, db, s.notificationsService.Tg, s.storage, bl)
 
 	authMiddleware := AuthMiddleware(AuthConfig{
 		Secret:      []byte(cfg.SecretKey),
@@ -977,7 +957,7 @@ func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[uui
 		Where("actor_id is not null").
 		Group("actor_id, Day").
 		Order("Day").
-		Model(&dao.FullActivity{}).
+		Model(&dao.ActivityEvent{}).
 		Find(&activities).Error; err != nil {
 		return nil, err
 	}
