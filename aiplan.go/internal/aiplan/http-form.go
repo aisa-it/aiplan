@@ -769,7 +769,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 		return err
 	}
 
-	if err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, *issue, systemUser); err != nil {
+	if err := tracker.TrackEvent(s.activityTracker, types2.LayerProject, activities.VerbCreated, nil, *issue, systemUser); err != nil {
 		errStack.GetError(c, err)
 	}
 

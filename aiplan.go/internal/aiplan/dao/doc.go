@@ -268,43 +268,20 @@ func (d *Doc) BeforeDelete(tx *gorm.DB) error {
 		}
 	}
 
-	// TODO hook ACTIVITYEVENT
+	tx.Where("entity_type in (?)", []types.EntityLayer{types.LayerDoc, types.LayerWorkspace}).
+		Where("old_identifier = ? AND field = ?", d.ID, d.GetEntityType()).
+		Model(&ActivityEvent{}).
+		Update("old_identifier", nil)
 
-	//cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-	////
-	//if err := tx.
-	//	Where("activity_event_id in (?)", tx.Select("id").
-	//		Where("entity_type = ?", types.LayerDoc).
-	//		Where("doc_id = ?", d.ID).
-	//		Model(&ActivityEvent{})).
-	//	Unscoped().Delete(&UserAppNotify{}).Error; err != nil {
-	//	return err
-	//}
-	//tx.
-	//	Where("(new_identifier = ? OR old_identifier = ?) AND (verb = ? OR verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "created", "removed", "added", d.GetEntityType()).
-	//	Model(&migration.DocActivity{}).
-	//	Updates(cleanId)
+	tx.Where("entity_type in (?)", []types.EntityLayer{types.LayerDoc, types.LayerWorkspace}).
+		Where("new_identifier = ? AND field = ?", d.ID, d.GetEntityType()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
 
-	//tx.
-	//	Where("(new_identifier = ? OR old_identifier = ?) AND (verb = ? OR verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "created", "removed", "added", d.GetEntityType()).
-	//	Model(&WorkspaceActivity{}).
-	//	Updates(cleanId)
-
-	//tx.Where("new_identifier = ? AND (verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "move_workspace_to_doc", "move_doc_to_doc", d.GetEntityType()).Update("new_identifier", nil)
-	//tx.Where("old_identifier = ? AND (verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "move_doc_to_workspace", "move_doc_to_doc", d.GetEntityType()).Update("old_identifier", nil)
-	//
-	//if err := tx.Where("workspace_id = ?", d.WorkspaceId).
-	//	Where("doc_activity_id IN (?)",
-	//		tx.Select("id").
-	//			Where("doc_id = ?", d.ID).
-	//			Model(&migration.DocActivity{})).
-	//	Unscoped().
-	//	Delete(&UserNotifications{}).Error; err != nil {
-	//	return err
-	//}
-	//
-	//tx.Where("doc_id = ?", d.ID).Unscoped().
-	//	Delete(&migration.DocActivity{})
+	query := tx.Where("entity_type = ?", types.LayerDoc).Where("doc_id = ?", d.ID)
+	if err := CleanupActivityData(tx, query, d.ID); err != nil {
+		return err
+	}
 
 	if err := tx.Unscoped().Where("doc_id = ?", d.ID).Delete(&DocFavorites{}).Error; err != nil {
 		return err
@@ -511,23 +488,19 @@ func (dc *DocComment) AfterFind(tx *gorm.DB) error {
 // Возвращает:
 //   - error: ошибка, если при выполнении каких-либо операций с базой данных возникает ошибка.
 func (dc *DocComment) BeforeDelete(tx *gorm.DB) error {
-	// TODO hook ACTIVITYEVENT
-	//if err := tx.Where("workspace_id = ?", dc.WorkspaceId).
-	//	Where("doc_activity_id IN (?)",
-	//		tx.Select("id").
-	//			Where("doc_id = ?", dc.DocId).
-	//			Where("new_identifier = ? or old_identifier = ? ", dc.Id, dc.Id).
-	//			Model(&migration.DocActivity{})).
-	//	Unscoped().
-	//	Delete(&UserNotifications{}).Error; err != nil {
-	//	return err
-	//}
-	//
-	//// DocActivity update create to nil
-	//tx.Where("new_identifier = ? AND verb = ? AND field = ?", dc.Id, "created", "comment").Model(&migration.DocActivity{}).Update("new_identifier", nil)
-	//
-	////DocActivity delete other activity
-	//tx.Where("new_identifier = ? or old_identifier = ? ", dc.Id, dc.Id).Delete(&migration.DocActivity{})
+	tx.
+		Where("entity_type = ?", types.LayerDoc).
+		Where("new_identifier = ? AND verb = ? AND field = ?", dc.Id, actField.VerbCreated, actField.Comment.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
+
+	query := tx.
+		Where("entity_type = ?", types.LayerDoc).
+		Where("new_identifier = ? or old_identifier = ? ", dc.Id, dc.Id)
+
+	if err := CleanupActivityData(tx, query, dc.DocId); err != nil {
+		return err
+	}
 
 	for _, attach := range dc.Attachments {
 		if err := tx.Delete(&attach).Error; err != nil {
@@ -642,72 +615,6 @@ type DocActivityExtendFields struct {
 	DocMemberExtendFields
 }
 
-// Преобразует Doc в структуру dto.EntityActivityLight для упрощения передачи данных в API.
-//
-// Параметры:
-//   - Нет
-//
-// Возвращает:
-//   - dto.EntityActivityLight: структура, содержащая упрощенные данные Doc.
-//func (da *DocActivity) ToLightDTO() *dto.EntityActivityLight {
-//	if da == nil {
-//		return nil
-//	}
-
-//func (da *DocActivity) ToLightDTO() *dto.EntityActivityLight {
-//	if da == nil {
-//		return nil
-//	}
-//
-//	return &dto.EntityActivityLight{
-//		Id:         da.Id,
-//		CreatedAt:  da.CreatedAt,
-//		Verb:       da.Verb,
-//		Field:      da.Field,
-//		OldValue:   da.OldValue,
-//		NewValue:   da.NewValue,
-//		EntityType: "doc",
-//		//TargetUser: da.AffectedUser.ToLightDTO(),
-//		EntityUrl: nil,
-//	}
-//}
-
-// Преобразует структуру Doc в структуру dto.EntityActivityFull для удобства использования в API.
-//
-// Параметры:
-//   - Нет
-//
-// Возвращает:
-//   - dto.EntityActivityFull: структура, содержащая преобразованные данные Doc.
-//func (da *DocActivity) ToDTO() *dto.EntityActivityFull {
-//	if da == nil {
-//		return nil
-//	}
-//
-//	res := dto.EntityActivityFull{
-//		EntityActivityLight: *da.ToLightDTO(),
-//		Actor:               da.Actor.ToLightDTO(),
-//		Workspace:           da.Workspace.ToLightDTO(),
-//		Doc:                 da.Doc.ToLightDTO(),
-//		NewIdentifier:       nil,
-//		OldIdentifier:       nil,
-//	}
-//
-//	if da.Field != nil {
-//		switch *da.Field {
-//		case "doc":
-//			if da.OldIdentifier != nil {
-//				res.oldEntity = da.OldDoc.ToLightDTO()
-//			}
-//			if da.NewIdentifier != nil {
-//				res.NewEntity = da.NewDoc.ToLightDTO()
-//			}
-//		}
-//	}
-//
-//	return &res
-//}
-
 type DocAttachment struct {
 	// created_at timestamp with time zone IS_NULL:NO
 	CreatedAt time.Time `json:"created_at"`
@@ -802,8 +709,10 @@ func (da *DocAttachment) ToLightDTO() *dto.Attachment {
 // Возвращает:
 //   - error: ошибка, если при выполнении каких-либо операций с базой данных возникает ошибка.
 func (attachment *DocAttachment) BeforeDelete(tx *gorm.DB) error {
-	// TODO hook ACTIVITYEVENT
-	//tx.Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, "created", "attachment").Model(&migration.DocActivity{}).Update("new_identifier", nil)
+	tx.Where("entity_type = ?", types.LayerDoc).
+		Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, actField.VerbCreated, actField.Attachment.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
 	return nil
 }
 

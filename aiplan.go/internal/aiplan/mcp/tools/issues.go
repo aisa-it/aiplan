@@ -1571,7 +1571,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 
 	// Activity tracking
 	comment.Actor = user
-	if err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](bl.GetTracker(), activities.EntityCreateActivity, nil, nil, comment, user); err != nil {
+	if err := tracker.TrackEvent(bl.GetTrackerEvent(), types.LayerIssue, activities.VerbCreated, nil, comment, user); err != nil {
 		return logger.Error(err), nil
 	}
 

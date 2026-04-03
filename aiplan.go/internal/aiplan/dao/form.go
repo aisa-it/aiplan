@@ -192,32 +192,6 @@ func (form *Form) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	//if err := tx.
-	//	Where("form_activity_id in (?)", tx.Select("id").Where("form_id = ?", form.ID).
-	//		Model(&migration.FormActivity{})).
-	//	Unscoped().Delete(&migration.UserNotifications{}).Error; err != nil {
-	//	return err
-	//}
-
-	//tx.Where("new_identifier = ? AND verb = ? AND field = ?", form.ID, "created", form.GetEntityType()).
-	//	Model(&migration.WorkspaceActivity{}).
-	//	Updates(map[string]interface{}{"new_identifier": nil, "new_value": form.Title})
-	//
-	//tx.Where("new_identifier = ? ", form.ID).
-	//	Model(&migration.FormActivity{}).
-	//	Update("new_identifier", nil)
-	//
-	//tx.Where("old_identifier = ?", form.ID).
-	//	Model(&migration.FormActivity{}).
-	//	Update("old_identifier", nil)
-	//
-	//tx.Where("form_id = ? ", form.ID).Delete(&migration.FormActivity{})
-	//
-	////delete activity
-	//if err := tx.Unscoped().Where("form_id = ?", form.ID).Delete(&migration.EntityActivity{}).Error; err != nil {
-	//	return err
-	//}
-
 	//delete answers
 	if err := tx.Unscoped().Where("form_id = ?", form.ID).Delete(&FormAnswer{}).Error; err != nil {
 		return err

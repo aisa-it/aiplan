@@ -1559,22 +1559,6 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 				//entityActivity.OldEntity = dao.GetActionEntity(*notify.FullActivity, "Old")
 				tmp.Data = entityActivity
 			}
-			//if notify.ActivityEvent != nil {
-			//	tmp.Detail = notifications.NotificationDetailResponse{
-			//		User:      notify.ActivityEvent.Actor.ToLightDTO(),
-			//		Issue:     notify.ActivityEvent.Issue.ToLightDTO(),
-			//		Project:   notify.ActivityEvent.Project.ToLightDTO(),
-			//		Workspace: notify.ActivityEvent.Workspace.ToLightDTO(),
-			//		Doc:       notify.ActivityEvent.Doc.ToLightDTO(),
-			//		Form:      notify.ActivityEvent.Form.ToLightDTO(),
-			//		Sprint:    notify.ActivityEvent.Sprint.ToLightDTO(),
-			//	}
-			//	entityActivity := notify.ActivityEvent.ToLightDTO()
-			//	//entityActivity.NewEntity = dao.GetActionEntity(*notify.FullActivity, "New")
-			//	//entityActivity.OldEntity = dao.GetActionEntity(*notify.FullActivity, "Old")
-			//	tmp.Data = entityActivity
-			//}
-
 		}
 		res = append(res, tmp)
 

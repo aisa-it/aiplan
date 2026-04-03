@@ -2951,10 +2951,6 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//var issue dao.IssueActivity
-	//issue.UnionCustomFields = "'issue' AS entity_type"
-	//unionTable := dao.BuildUnionSubquery(s.db, "ia", dao.FullActivity{}, issue)
-
 	query := s.db.
 		Joins("Issue").
 		Joins("Actor").
@@ -2964,18 +2960,6 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		Where("activity_events.issue_id = ?", issueId).
 		Where("activity_events.entity_type = ?", types.LayerIssue).
 		Order("activity_events.created_at DESC")
-
-	//if field != "" {
-	//	query = query.Where("activity_events.field = ?", actField.Status.Field.String())
-	//	if field == "state" {
-	//		query = query.Select("activity_events.*, round(extract('epoch' from activity_events.created_at - (LAG(activity_events.created_at, 1, \"Issue\".created_at) over (order by activity_events.created_at))) * 1000) as state_lag")
-	//
-	//	} else {
-	//		query = query.Select("activity_events.*")
-	//	}
-	//} else {
-	//	query = query.Where("activity_events.field <> ?", actField.Status.Field.String())
-	//}
 
 	if field == "state" {
 		query = query.Select("activity_events.*, round(extract('epoch' from activity_events.created_at - (LAG(activity_events.created_at, 1, \"Issue\".created_at) over (order by activity_events.created_at))) * 1000) as state_lag")
@@ -3010,16 +2994,12 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 
 	var activities2 []events
 
-	//var activities []fullActivityWithLag
 	res, err := dao.PaginationRequest(offset, limit, query, &activities2)
 	if err != nil {
 		return EError(c, err)
 	}
 
 	res.Result = utils.SliceToSlice(res.Result.(*[]events), func(ea *events) dto.ActivityEventFull { return *toDto(ea) })
-
-	//res.
-	//return c.JSON(http.StatusOK, res)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"offset":     res.Offset,
@@ -3028,14 +3008,6 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		"activities": res.Result,
 	})
 }
-
-//func findActivities[T any](query *gorm.DB, offset, limit int) ([]T, error) {
-//	var activities []T
-//	if err := query.Offset(offset).Limit(limit).Find(&activities).Error; err != nil {
-//		return nil, err
-//	}
-//	return activities, nil
-//}
 
 // ############# Issue attachments methods ###################
 

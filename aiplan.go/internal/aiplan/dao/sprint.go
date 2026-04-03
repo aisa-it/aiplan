@@ -180,29 +180,6 @@ func (s *Sprint) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	//if err := tx.Where("activity_event_id IN (?)",
-	//  tx.Model(&ActivityEvent{}).
-	//    Select("id").
-	//    Where("entity_type = ?", types.LayerSprint).
-	//    Where("sprint_id = ?", s.Id),
-	//).Unscoped().Delete(&UserAppNotify{}).Error; err != nil {
-	//  return err
-	//}
-	//
-	//if err := tx.Where("entity_type = ?", types.LayerSprint).
-	//  Where("sprint_id = ?", s.Id).
-	//  Unscoped().
-	//  Delete(&ActivityEvent{}).Error; err != nil {
-	//  return err
-	//}
-	//
-	//cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-	//
-	//tx.Where("(new_identifier = ? OR old_identifier =?) AND field = ?", s.Id, s.Id, s.GetEntityType()).
-	//  Where("entity_type in (?)", []types.EntityLayer{types.LayerWorkspace, types.LayerIssue}).
-	//	Model(&ActivityEvent{}).
-	//	Updates(cleanId)
-
 	if err := tx.Where("sprint_id = ?", s.Id).Delete(&SprintViews{}).Error; err != nil {
 		return err
 	}

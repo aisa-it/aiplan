@@ -29,45 +29,9 @@ func Stelegramf(format string, a ...any) string {
 	return fmt.Sprintf(format, a...)
 }
 
-func getUserTg(user *dao.User, roles ...role) (userTg, bool) {
-	if user.TelegramId == nil {
-		return userTg{}, false
-	}
-	if !user.CanReceiveNotifications() {
-		return userTg{}, false
-	}
-	if user.Settings.TgNotificationMute {
-		return userTg{}, false
-	}
-	return userTg{id: *user.TelegramId, loc: user.UserTimezone, roles: combineRoles(roles...)}, true
-}
-
 func strReplace(in string) string {
 	out := strings.Split(in, "_")
 	return "$$$" + strings.Join(out, "$$$") + "$$$"
-}
-
-func msgReplace(user userTg, msg TgMsg) TgMsg {
-	for k, v := range msg.Replace {
-		key := k
-		keys := strings.Split(k, "_")
-		if len(keys) > 1 {
-			key = keys[0]
-		}
-		switch key {
-		case targetDateTimeZ:
-			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006 15:04", &user.loc); err == nil {
-				msg.Body = strings.ReplaceAll(msg.Body, strReplace(k), Stelegramf("%s", strNeW))
-			} else {
-				return NewTgMsg()
-			}
-		case userMentioned:
-			if user.Has(commentMentioned) {
-				msg.Title += Stelegramf("\n__%s__", "Вас упомянули в комментарии")
-			}
-		}
-	}
-	return msg
 }
 
 func MsgReplace(user member_role.MemberNotify, msg TgMsg) TgMsg {
