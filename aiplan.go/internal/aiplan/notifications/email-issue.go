@@ -474,39 +474,6 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targe
 			continue
 		}
 
-		// new issue
-		//if activity.Field == nil {
-		//	var template dao.Template
-		//	if err := tx.Where("name = ?", "issue_activity_new").First(&template).Error; err != nil {
-		//		return "", "", err
-		//	}
-		//	var p string
-		//	p = types.TranslateMap(types.PriorityTranslation, activity.Issue.Priority)
-		//
-		//	activity.Issue.Priority = &p
-		//	description := replaceTablesToText(replaceImageToText(activity.Issue.DescriptionHtml))
-		//	description = policy.ProcessCustomHtmlTag(description)
-		//	description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))
-		//	description = template.ReplaceTxtToSvg(description)
-		//	var buf bytes.Buffer
-		//	if err := template.ParsedTemplate.Execute(&buf, struct {
-		//		Actor       *dao.User
-		//		Issue       dao.Issue
-		//		CreatedAt   time.Time
-		//		Description string
-		//	}{
-		//		activity.Actor,
-		//		*activity.Issue,
-		//		activity.CreatedAt.In((*time.Location)(&targetUser.UserTimezone)),
-		//		description,
-		//	}); err != nil {
-		//		return "", "", err
-		//	}
-		//
-		//	result += buf.String()
-		//	continue
-		//}
-
 		if activity.Field == actField.IssueTransfer.Field && activity.Verb == "cloned" {
 			continue
 		}

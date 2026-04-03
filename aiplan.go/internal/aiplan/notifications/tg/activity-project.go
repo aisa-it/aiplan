@@ -53,8 +53,6 @@ func FormatProjectActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), entity, act.Project.URL), nil
 }
 
-var issueRolesNotified = []role{actionAuthor, issueAuthor, projectDefaultWatcher, issueWatcher, issueAssigner}
-
 func projectIssue(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 

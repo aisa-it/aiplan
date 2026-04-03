@@ -710,7 +710,7 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 		tx = tx.Unscoped().Session(&gorm.Session{})
 	}
 
-	query := tx.Where("entity_type = ?", types.LayerSprint).Where("issue_id = ?", issue.ID)
+	query := tx.Where("entity_type = ?", types.LayerIssue).Where("issue_id = ?", issue.ID)
 	if err := CleanupActivityData(tx, query, issue.ID, types.LayerProject, types.LayerSprint); err != nil {
 		return err
 	}
