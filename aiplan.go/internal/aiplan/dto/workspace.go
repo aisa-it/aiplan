@@ -37,8 +37,8 @@ type Workspace struct {
 
 type WorkspaceWithCount struct {
 	Workspace
-	TotalMembers  int  `json:"total_members"`
-	TotalProjects int  `json:"total_projects"`
+	TotalMembers  int  `json:"total_members,omitempty"`
+	TotalProjects int  `json:"total_projects,omitempty"`
 	IsFavorite    bool `json:"is_favorite" `
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
@@ -61,6 +61,11 @@ type WorkspaceMember struct {
 	NotificationAuthorSettingsTG    types.WorkspaceMemberNS `json:"notification_author_settings_tg" `
 	NotificationSettingsEmail       types.WorkspaceMemberNS `json:"notification_settings_email" `
 	NotificationAuthorSettingsEmail types.WorkspaceMemberNS `json:"notification_author_settings_email" `
+}
+
+type WorkspaceMemberWithOwner struct {
+	WorkspaceMember
+	IsWorkspaceOwner bool `json:"is_workspace_owner"`
 }
 
 type WorkspaceFavorites struct {

@@ -2167,16 +2167,18 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.Where("member_id = ?", user.ID)
+	query := s.db.Select("workspace_members.*, owner_id = ? as is_workspace_owner", user.ID).
+		Joins("Workspace").
+		Where("member_id = ?", user.ID)
 	if len(workspaces) > 0 {
 		query = query.Where("workspace_id in (?)", workspaces)
 	}
 
-	var memberships []dao.WorkspaceMember
+	var memberships []dao.WorkspaceMemberWithOwner
 	if err := query.Find(&memberships).Error; err != nil {
 		return EError(c, err)
 	}
-	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.WorkspaceMember) dto.WorkspaceMember { return *t.ToDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.WorkspaceMemberWithOwner) dto.WorkspaceMemberWithOwner { return *t.ToDTOWithOwner() }))
 }
 
 // getCurrentUserProjectMemberships godoc
@@ -2201,16 +2203,18 @@ func (s *Services) getCurrentUserProjectMemberships(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.Where("member_id = ?", user.ID)
+	query := s.db.Select("project_members.*, project_lead_id = ? as is_project_lead", user.ID).
+		Joins("Project").
+		Where("member_id = ?", user.ID)
 	if len(projects) > 0 {
 		query = query.Where("project_id in (?)", projects)
 	}
 
-	var memberships []dao.ProjectMember
+	var memberships []dao.ProjectMemberWithLead
 	if err := query.Find(&memberships).Error; err != nil {
 		return EError(c, err)
 	}
-	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.ProjectMember) dto.ProjectMember { return *t.ToDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.ProjectMemberWithLead) dto.ProjectMemberWithLead { return *t.ToDTOWithLead() }))
 }
 
 // EmailCaptchaRequest представляет структуру данных для запроса на восстановление пароля
