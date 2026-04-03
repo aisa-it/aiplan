@@ -13,14 +13,11 @@ import (
 	"fmt"
 	"time"
 
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
-	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -33,574 +30,7 @@ func NewNotificationCleaner(db *gorm.DB) *NotificationCleaner {
 	return &NotificationCleaner{db}
 }
 
-// TODO продоолжить
-func CreateUserNotificationActivity[A dao.Activity](tx *gorm.DB, userId uuid.UUID, activity A) (uuid.UUID, int, error) {
-	if userId == uuid.Nil {
-		return uuid.Nil, 0, nil
-	}
-
-	var notifyId uuid.UUID
-
-	switch a := any(activity).(type) {
-	case dao.RootActivity:
-		//TODO add activity to notify
-		return uuid.Nil, 0, nil
-
-	case dao.WorkspaceActivity:
-		var member dao.WorkspaceMember
-		if err := tx.
-			Joins("Member").
-			Where("workspace_id = ?", a.WorkspaceId).
-			Where("member_id = ?", userId).
-			Where("workspace_members.role = ?", types.AdminRole).
-			First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerWorkspace, a.Verb, member.Role) {
-			notification := dao.UserNotifications{
-				ID:                  dao.GenUUID(),
-				UserId:              userId,
-				Type:                "activity",
-				WorkspaceId:         uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				WorkspaceActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-
-	case dao.ProjectActivity:
-		var member dao.ProjectMember
-		if err := tx.Joins("Member").Where("project_id = ?", a.ProjectId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var notifyOk, isAuthorNotify, isMemberNotify bool
-		isProjectAdm := member.Role == types.AdminRole
-		isMemberNotify = member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
-
-		if a.NewIssue != nil {
-			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
-			notifyOk = isAuthorNotify || (!isAuthorNotify && isMemberNotify)
-		} else {
-			notifyOk = isMemberNotify && isProjectAdm
-		}
-
-		if (isProjectAdm && isMemberNotify) || (!isProjectAdm && notifyOk) {
-			notification := dao.UserNotifications{
-				ID:                dao.GenUUID(),
-				UserId:            userId,
-				Type:              "activity",
-				WorkspaceId:       uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				ProjectActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-	case dao.DocActivity:
-		var member dao.WorkspaceMember
-
-		if err := tx.Joins("Member").
-			Where("workspace_id = ?", a.WorkspaceId).
-			Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var authorOK, authorNotifyOk, memberNotifyOK bool
-
-		if a.Doc.CreatedById == userId {
-			authorOK = true
-		}
-
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
-			authorNotifyOk = true
-		}
-		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
-			memberNotifyOK = true
-		}
-
-		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
-
-			notification := dao.UserNotifications{
-				ID:            dao.GenUUID(),
-				UserId:        userId,
-				Type:          "activity",
-				WorkspaceId:   uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				DocActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			//if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
-			//	notification.CommentId = a.NewIdentifier
-			//}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-	case dao.FormActivity:
-		var member dao.WorkspaceMember
-		if err := tx.Joins("Member").Where("workspace_id = ?", a.WorkspaceId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-		a.Form.CurrentWorkspaceMember = &member
-
-		notification := dao.UserNotifications{
-			ID:             dao.GenUUID(),
-			UserId:         userId,
-			Type:           "activity",
-			WorkspaceId:    uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-			FormActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-		}
-
-		if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		notifyId = notification.ID
-	case dao.IssueActivity:
-		if a.Field != nil && *a.Field == actField.IssueTransfer.Field.String() && a.Verb == "cloned" {
-			return uuid.Nil, 0, nil
-		}
-
-		var member dao.ProjectMember
-		if err := tx.Joins("Member").Where("project_id = ?", a.ProjectId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var authorOK, authorNotifyOk, memberNotifyOK bool
-
-		if a.Issue != nil {
-			if a.Issue.CreatedById == userId {
-				authorOK = true
-			}
-
-			if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
-				authorNotifyOk = true
-			}
-			if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
-				memberNotifyOK = true
-			}
-		}
-		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
-			notification := dao.UserNotifications{
-				ID:              dao.GenUUID(),
-				UserId:          userId,
-				Type:            "activity",
-				WorkspaceId:     uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				IssueId:         uuid.NullUUID{UUID: a.IssueId, Valid: true},
-				IssueActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			if a.Field != nil && *a.Field == actField.Comment.Field.String() && a.Verb != "deleted" {
-				if a.NewIdentifier.Valid {
-					notification.CommentId = uuid.NullUUID{UUID: a.NewIdentifier.UUID, Valid: true}
-				}
-			}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-
-	case dao.SprintActivity:
-		var member dao.WorkspaceMember
-
-		if err := tx.Joins("Member").
-			Where("workspace_id = ?", a.WorkspaceId).
-			Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var authorOK, authorNotifyOk, memberNotifyOK bool
-
-		if a.Sprint.CreatedById == userId {
-			authorOK = true
-		}
-
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
-			authorNotifyOk = true
-		}
-
-		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
-			memberNotifyOK = true
-		}
-
-		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
-
-			notification := dao.UserNotifications{
-				ID:               dao.GenUUID(),
-				UserId:           userId,
-				Type:             "activity",
-				WorkspaceId:      uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				SprintActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			//if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
-			//	notification.CommentId = a.NewIdentifier
-			//}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-
-	default:
-		return uuid.Nil, 0, errStack.TrackErrorStack(fmt.Errorf("unknown type notify %T", a))
-	}
-
-	var count int
-	if err := tx.Select("count(*)").
-		Where("viewed = false").
-		Where("user_id = ?", userId).
-		Where("deleted_at IS NULL").
-		Model(&dao.UserNotifications{}).
-		Find(&count).Error; err != nil {
-		return uuid.Nil, 0, err
-	}
-
-	if notifyId == uuid.Nil {
-		return uuid.Nil, count, nil
-	}
-	return notifyId, count, nil
-}
-
-func CreateUserNotification(tx *gorm.DB, userId uuid.UUID, activity dao.ActivityEvent) (uuid.UUID, int, error) {
-	if userId == uuid.Nil {
-		return uuid.Nil, 0, nil
-	}
-
-	var notifyId uuid.UUID
-
-	switch a := any(activity).(type) {
-	case dao.RootActivity:
-		//TODO add activity to notify
-		return uuid.Nil, 0, nil
-
-	case dao.WorkspaceActivity:
-		var member dao.WorkspaceMember
-		if err := tx.
-			Joins("Member").
-			Where("workspace_id = ?", a.WorkspaceId).
-			Where("member_id = ?", userId).
-			Where("workspace_members.role = ?", types.AdminRole).
-			First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerWorkspace, a.Verb, member.Role) {
-			notification := dao.UserNotifications{
-				ID:                  dao.GenUUID(),
-				UserId:              userId,
-				Type:                "activity",
-				WorkspaceId:         uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				WorkspaceActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-
-	case dao.ProjectActivity:
-		var member dao.ProjectMember
-		if err := tx.Joins("Member").Where("project_id = ?", a.ProjectId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var notifyOk, isAuthorNotify, isMemberNotify bool
-		isProjectAdm := member.Role == types.AdminRole
-		isMemberNotify = member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
-
-		if a.NewIssue != nil {
-			isAuthorNotify = a.NewIssue.CreatedById == userId && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerProject, a.Verb, member.Role)
-			notifyOk = isAuthorNotify || (!isAuthorNotify && isMemberNotify)
-		} else {
-			notifyOk = isMemberNotify && isProjectAdm
-		}
-
-		if (isProjectAdm && isMemberNotify) || (!isProjectAdm && notifyOk) {
-			notification := dao.UserNotifications{
-				ID:                dao.GenUUID(),
-				UserId:            userId,
-				Type:              "activity",
-				WorkspaceId:       uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				ProjectActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-	case dao.DocActivity:
-		var member dao.WorkspaceMember
-
-		if err := tx.Joins("Member").
-			Where("workspace_id = ?", a.WorkspaceId).
-			Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var authorOK, authorNotifyOk, memberNotifyOK bool
-
-		if a.Doc.CreatedById == userId {
-			authorOK = true
-		}
-
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
-			authorNotifyOk = true
-		}
-		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerDoc, a.Verb, member.Role) {
-			memberNotifyOK = true
-		}
-
-		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
-
-			notification := dao.UserNotifications{
-				ID:            dao.GenUUID(),
-				UserId:        userId,
-				Type:          "activity",
-				WorkspaceId:   uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				DocActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			//if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
-			//	notification.CommentId = a.NewIdentifier
-			//}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-	case dao.FormActivity:
-		var member dao.WorkspaceMember
-		if err := tx.Joins("Member").Where("workspace_id = ?", a.WorkspaceId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-		a.Form.CurrentWorkspaceMember = &member
-
-		notification := dao.UserNotifications{
-			ID:             dao.GenUUID(),
-			UserId:         userId,
-			Type:           "activity",
-			WorkspaceId:    uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-			FormActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-		}
-
-		if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		notifyId = notification.ID
-	case dao.IssueActivity:
-		if a.Field != nil && *a.Field == actField.IssueTransfer.Field.String() && a.Verb == "cloned" {
-			return uuid.Nil, 0, nil
-		}
-
-		var member dao.ProjectMember
-		if err := tx.Joins("Member").Where("project_id = ?", a.ProjectId).Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var authorOK, authorNotifyOk, memberNotifyOK bool
-
-		if a.Issue != nil {
-			if a.Issue.CreatedById == userId {
-				authorOK = true
-			}
-
-			if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
-				authorNotifyOk = true
-			}
-			if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerIssue, a.Verb, member.Role) {
-				memberNotifyOK = true
-			}
-		}
-		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
-			notification := dao.UserNotifications{
-				ID:              dao.GenUUID(),
-				UserId:          userId,
-				Type:            "activity",
-				WorkspaceId:     uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				IssueId:         uuid.NullUUID{UUID: a.IssueId, Valid: true},
-				IssueActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			if a.Field != nil && *a.Field == actField.Comment.Field.String() && a.Verb != "deleted" {
-				if a.NewIdentifier.Valid {
-					notification.CommentId = uuid.NullUUID{UUID: a.NewIdentifier.UUID, Valid: true}
-				}
-			}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-
-	case dao.SprintActivity:
-		var member dao.WorkspaceMember
-
-		if err := tx.Joins("Member").
-			Where("workspace_id = ?", a.WorkspaceId).
-			Where("member_id = ?", userId).First(&member).Error; err != nil {
-			return uuid.Nil, 0, err
-		}
-		if !member.Member.CanReceiveNotifications() {
-			return uuid.Nil, 0, fmt.Errorf("user can not receive notify")
-		}
-
-		if member.Member.Settings.AppNotificationMute {
-			return uuid.Nil, 0, fmt.Errorf("user off app notify")
-		}
-
-		var authorOK, authorNotifyOk, memberNotifyOK bool
-
-		if a.Sprint.CreatedById == userId {
-			authorOK = true
-		}
-
-		if authorOK && member.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
-			authorNotifyOk = true
-		}
-
-		if member.NotificationSettingsApp.IsNotify(actField.ActivityField(*a.Field), types.LayerSprint, a.Verb, member.Role) {
-			memberNotifyOK = true
-		}
-
-		if (authorOK && authorNotifyOk) || (!authorOK && memberNotifyOK) {
-
-			notification := dao.UserNotifications{
-				ID:               dao.GenUUID(),
-				UserId:           userId,
-				Type:             "activity",
-				WorkspaceId:      uuid.NullUUID{UUID: a.WorkspaceId, Valid: true},
-				SprintActivityId: uuid.NullUUID{UUID: a.Id, Valid: true},
-			}
-
-			//if a.Field != nil && *a.Field == "comment" && a.Verb != "deleted" {
-			//	notification.CommentId = a.NewIdentifier
-			//}
-
-			if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
-				return uuid.Nil, 0, err
-			}
-			notifyId = notification.ID
-		}
-
-	default:
-		return uuid.Nil, 0, errStack.TrackErrorStack(fmt.Errorf("unknown type notify %T", a))
-	}
-
-	var count int
-	if err := tx.Select("count(*)").
-		Where("viewed = false").
-		Where("user_id = ?", userId).
-		Where("deleted_at IS NULL").
-		Model(&dao.UserNotifications{}).
-		Find(&count).Error; err != nil {
-		return uuid.Nil, 0, err
-	}
-
-	if notifyId == uuid.Nil {
-		return uuid.Nil, count, nil
-	}
-	return notifyId, count, nil
-}
-
-func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao.IssueComment) (*dao.UserNotifications, int, error) {
+func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao.IssueComment) (*dao.UserAppNotify, int, error) {
 	var user dao.User
 
 	if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
@@ -615,14 +45,14 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 		return nil, 0, fmt.Errorf("user off app notify")
 	}
 
-	notification := dao.UserNotifications{
-		ID:          dao.GenUUID(),
-		UserId:      userId,
-		Type:        "comment",
-		CommentId:   uuid.NullUUID{UUID: comment.Id, Valid: true},
-		Comment:     &comment,
-		WorkspaceId: uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true},
-		IssueId:     uuid.NullUUID{UUID: comment.IssueId, Valid: comment.IssueId != uuid.Nil},
+	notification := dao.UserAppNotify{
+		ID:             dao.GenUUID(),
+		UserId:         userId,
+		Type:           "comment",
+		IssueCommentId: uuid.NullUUID{UUID: comment.Id, Valid: true},
+		IssueComment:   &comment,
+		WorkspaceId:    uuid.NullUUID{UUID: comment.WorkspaceId, Valid: true},
+		IssueId:        uuid.NullUUID{UUID: comment.IssueId, Valid: comment.IssueId != uuid.Nil},
 	}
 
 	if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
@@ -634,14 +64,14 @@ func CreateUserNotificationAddComment(tx *gorm.DB, userId uuid.UUID, comment dao
 		Where("viewed = false").
 		Where("user_id = ?", userId).
 		Where("deleted_at IS NULL").
-		Model(&dao.UserNotifications{}).
+		Model(&dao.UserAppNotify{}).
 		Find(&count).Error; err != nil {
 		return nil, 0, err
 	}
 	return &notification, count, nil
 }
 
-func CreateUserNotificationAddCFormAnswer(tx *gorm.DB, userId uuid.UUID, answer dao.FormAnswer, activityId uuid.UUID) (*dao.UserNotifications, int, error) {
+func CreateUserNotificationAddCFormAnswer(tx *gorm.DB, userId uuid.UUID, answer dao.FormAnswer, activityId uuid.UUID) (*dao.UserAppNotify, int, error) {
 	var user dao.User
 
 	if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
@@ -664,15 +94,15 @@ func CreateUserNotificationAddCFormAnswer(tx *gorm.DB, userId uuid.UUID, answer 
 	}
 
 	msg += " отправил ответ на форму"
-
-	notification := dao.UserNotifications{
-		ID:             dao.GenUUID(),
-		UserId:         userId,
-		Type:           "notify",
-		Title:          fmt.Sprintf("Прохождение формы: \"%s\"", answer.Form.Title),
-		Msg:            msg,
-		WorkspaceId:    uuid.NullUUID{UUID: answer.WorkspaceId, Valid: true},
-		FormActivityId: uuid.NullUUID{UUID: activityId, Valid: true},
+	// TODO check
+	notification := dao.UserAppNotify{
+		ID:              dao.GenUUID(),
+		UserId:          userId,
+		Type:            "notify",
+		Title:           fmt.Sprintf("Прохождение формы: \"%s\"", answer.Form.Title),
+		Msg:             msg,
+		WorkspaceId:     uuid.NullUUID{UUID: answer.WorkspaceId, Valid: true},
+		ActivityEventId: uuid.NullUUID{UUID: activityId, Valid: true},
 	}
 
 	if err := tx.Omit(clause.Associations).Create(&notification).Error; err != nil {
@@ -684,7 +114,7 @@ func CreateUserNotificationAddCFormAnswer(tx *gorm.DB, userId uuid.UUID, answer 
 		Where("viewed = false").
 		Where("user_id = ?", userId).
 		Where("deleted_at IS NULL").
-		Model(&dao.UserNotifications{}).
+		Model(&dao.UserAppNotify{}).
 		Find(&count).Error; err != nil {
 		return nil, 0, err
 	}
@@ -694,13 +124,13 @@ func CreateUserNotificationAddCFormAnswer(tx *gorm.DB, userId uuid.UUID, answer 
 func (nc *NotificationCleaner) Clean() {
 	if err := nc.db.Omit(clause.Associations).Unscoped().
 		Where("created_at <= ?", time.Now().AddDate(0, -1, 0)).
-		Delete(&dao.UserNotifications{}).Error; err != nil {
+		Delete(&dao.UserAppNotify{}).Error; err != nil {
 		return
 	}
 
 	if err := nc.db.Omit(clause.Associations).Unscoped().
 		Where("deleted_at is not null").
-		Delete(&dao.UserNotifications{}).Error; err != nil {
+		Delete(&dao.UserAppNotify{}).Error; err != nil {
 		return
 	}
 	if err := nc.db.Omit(clause.Associations).Unscoped().

@@ -5,23 +5,73 @@ import (
 	"fmt"
 )
 
+type TrackKey string
+
 const (
-	activityVal   = "activity_val"
-	updateScopeId = "updateScopeId"
-	updateScope   = "updateScope"
-	fieldLog      = "field_log"
-	funcName      = "func_name"
-	key           = "key"
-	getField      = "get_field"
-	entityParent  = "entityParent"
-	entity        = "entity"
-	customVerb    = "custom_verb"
-	oldTitle      = "old_title"
+	updateScope  = "updateScope"
+	parentKey    = "parent_key"
+	entity       = "entity"
+	entityParent = "entityParent"
+	customVerb   = "custom_verb"
+	oldTitle     = "old_title"
+	parentTitle  = "parent_title"
+	newEntity    = "new_entity"
+	oldEntity    = "old_entity"
+	fieldMove    = "field_move"
+)
+
+const (
+	// KindLogValue — суффикс для значения поля, записываемого в лог activity.
+	//  Используется для хранения отображаемого значения (而不是 исходного).
+	//  - key: "{field}_activity_val"
+	//  - Пример: "attachment_activity_val" = "file.pdf"
+	KindLogValue FieldKind = "activity_val"
+
+	// KindScopeID — суффикс для ID (области видимости).
+	//  Используется для хранения идентификатора, к которому относится поле.
+	//  - key: "{field}_updateScopeId"
+	//  - Пример: state_updateScopeId = "uuid"
+	KindScopeID FieldKind = "updateScopeId"
+
+	// KindTransform — суффикс для функции трансформации значения поля.
+	//  Используется для хранения имени функции-форматера значения.
+	//  - key: "{field}_func_name"
+	//  - Пример: "start_date_func_name" = "formatDate"
+	KindTransform FieldKind = "func_name"
+
+	// KindLookup — суффикс для поля, значение которого нужно получить из внешнего источника.
+	//  Используется для получения связанных данных по ID из другой сущности.
+	//  - key: "{field}_get_field"
+	//  - Пример: "project_lead_get_field" -> получить email по user_id
+	KindLookup FieldKind = "get_field"
+
+	// KindLogOverride — переопределённое имя поля для записи в лог.
+	//  Используется когда фактическое поле одно, а в лог пишется другое.
+	//  - key: "field_log"
+	//  - Пример: фактическое поле "description_html", в лог пишется как "description"
+	KindLogOverride FieldKind = "field_log"
+
+	// KindCustomKey — суффикс для кастомного ключа поля.
+	//  Используется для указания альтернативного имени поля в запросе.
+	//  - key: "{field}_key"
+	//  - Пример: "entity_key" = "custom_entity_name"
+	KindCustomKey FieldKind = "key"
+
+	// KindEmpty — пустой суффикс (без суффикса).
+	//  Используется по умолчанию, когда поле не имеет дополнительного суффикса.
+	//  - key: "{field}" (без суффикса)
+	KindEmpty FieldKind = ""
 )
 
 type FieldKey struct {
 	Field ActivityField
-	Kind  string
+	Kind  FieldKind
+}
+
+type FieldKind string
+
+func (k FieldKind) AsField() ActivityField {
+	return ActivityField(k)
 }
 
 func (fk FieldKey) String() string {
@@ -31,14 +81,69 @@ func (fk FieldKey) String() string {
 	return fmt.Sprintf("%s_%s", fk.Field.String(), fk.Kind)
 }
 
+func NewKey[A ~string](str A) FieldKey {
+	return FieldKey{ActivityField(str), KindEmpty}
+}
+
 var (
-	UpdateScopeIdKey = FieldKey{Field: updateScopeId, Kind: ""}
-	UpdateScopeKey   = FieldKey{Field: updateScope, Kind: ""}
-	FieldLogKey      = FieldKey{Field: fieldLog, Kind: ""}
-	EntityParentKey  = FieldKey{Field: entityParent, Kind: ""}
-	EntityKey        = FieldKey{Field: entity, Kind: ""}
-	CustomVerbKey    = FieldKey{Field: customVerb, Kind: ""}
-	OldTitleKey      = FieldKey{Field: oldTitle, Kind: ""}
+
+	// UpdateScopeKey — префикс scope'а для формирования составного имени поля.
+	//  Используется для генерации ключей вида "{scope}_{field}".
+	//  - key: "updateScope"
+	//  - Пример: scope="label" + val="name" → "label_name"
+	UpdateScopeKey = NewKey(updateScope)
+
+	// ParentKey — ключ поля родительской сущности.
+	//  Используется в операциях move для указания какое поле является родительским.
+	//  - key: "parent_key"
+	//  - Пример: значение "project_id" означает что parent это project
+	ParentKey = NewKey(parentKey)
+
+	// EntityParentKey — ключ родительской сущности.
+	//  Используется для указания какой объект является родительским для текущей сущности.
+	//  - key: "entityParent"
+	//  - Пример: при перемещении issue в project, здесь указывается project_id
+	EntityParentKey = NewKey(entityParent)
+
+	// ParentTitleKey — название/заголовок родительской сущности.
+	//  Используется для отображения имени родителя в логах и уведомлениях.
+	//  - key: "parent_title"
+	//  - Пример: "Project Name" или "Sprint 42"
+	ParentTitleKey = NewKey(parentTitle)
+
+	// NewEntityKey — новая сущность или значение после изменения.
+	//  Используется в операциях move/перемещения для указания нового расположения.
+	//  - key: "new_entity"
+	//  - Пример: new_parent_id или new_project_id
+	NewEntityKey = NewKey(newEntity)
+
+	// OldEntityKey — старая сущность или значение до изменения.
+	//  Используется в операциях move/перемещения для указания предыдущего расположения.
+	//  - key: "old_entity"
+	//  - Пример: old_parent_id или old_project_id
+	OldEntityKey = NewKey(oldEntity)
+
+	// FieldMoveKey — поле перемещения (какое именно поле перемещается).
+	//  Используется для указания типа перемещения (внутри сущности или между сущностями).
+	//  - key: "field_move"
+	//  - Пример: "status", "project_id", "sprint"
+	FieldMoveKey = NewKey(fieldMove)
+
+	// EntityKey — основная сущность для операции.
+	//  Используется для указания над какой сущностью совершается действие.
+	//  - key: "entity"
+	EntityKey = NewKey(entity)
+
+	// CustomVerbKey — кастомный глагол вместо стандартного (added/updated/deleted).
+	//  Используется для создания специфичных activity events.
+	//  - key: "custom_verb"
+	//  - Пример: "copied", "moved"
+	CustomVerbKey = NewKey(customVerb)
+
+	// OldTitleKey — старое значение title при удалении сущности.
+	//  Используется для записи в лог что именно было удалено.
+	// - key: "old_title"
+	OldTitleKey = NewKey(oldTitle)
 )
 
 type ActivityField string
@@ -75,31 +180,54 @@ func (a ActivityField) String() string {
 	return string(a)
 }
 
-func (a ActivityField) WithActivityVal() FieldKey {
-	return FieldKey{Field: a, Kind: activityVal}
+// AsLogValue — для добавления суффикса к ActivityField
+// из константы KindLogValue
+//   - Пример: { ActivityField }_activity_val
+func (a ActivityField) AsLogValue() FieldKey {
+	return FieldKey{Field: a, Kind: KindLogValue}
 }
 
+// WithFunc — для добавления суффикса к ActivityField
+// из константы KindTransform
+//   - Пример: { ActivityField }_func_name
 func (a ActivityField) WithFunc() FieldKey {
-	return FieldKey{Field: a, Kind: funcName}
+	return FieldKey{Field: a, Kind: KindTransform}
 }
 
-func (a ActivityField) WithGetField() FieldKey {
-	return FieldKey{Field: a, Kind: getField}
+// LookupFrom — для добавления суффикса к ActivityField
+// из константы KindLookup
+//   - Пример: { ActivityField }_get_field
+func (a ActivityField) LookupFrom() FieldKey {
+	return FieldKey{Field: a, Kind: KindLookup}
 }
 
-func (a ActivityField) WithFieldLog() FieldKey {
-	return FieldKey{Field: a, Kind: fieldLog}
+// LogAs — для добавления суффикса к ActivityField
+// из константы KindLogOverride
+//   - Пример: { ActivityField }_field_log
+func (a ActivityField) LogAs() FieldKey {
+	return FieldKey{Field: a, Kind: KindLogOverride}
 }
 
-func (a ActivityField) WithUpdateScopeId() FieldKey {
-	return FieldKey{Field: a, Kind: updateScopeId}
+// WithScopeID — для добавления суффикса к ActivityField
+// из константы KindScopeID
+//   - передавать uuid
+//   - Пример: { ActivityField }_updateScopeId
+func (a ActivityField) WithScopeID() FieldKey {
+	return FieldKey{Field: a, Kind: KindScopeID}
 }
+
+// WithKey — для добавления суффикса к ActivityField
+// из константы KindCustomKey
+//   - Пример: { ActivityField }_key
 func (a ActivityField) WithKey() FieldKey {
-	return FieldKey{Field: a, Kind: key}
+	return FieldKey{Field: a, Kind: KindCustomKey}
 }
 
-func (a ActivityField) Only() FieldKey {
-	return FieldKey{Field: a, Kind: ""}
+// AsKey — для без суффикса ActivityField как ключ
+// из константы KindEmpty
+//   - Пример:ActivityField
+func (a ActivityField) AsKey() FieldKey {
+	return FieldKey{Field: a, Kind: KindEmpty}
 }
 
 type FieldMapping struct {

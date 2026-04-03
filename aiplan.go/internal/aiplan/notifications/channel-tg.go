@@ -36,6 +36,10 @@ func (t *tgChannel) NewDelivery(event *dao.ActivityEvent, userIds []uuid.UUID) D
 		return nil
 	}
 
+	if t.tgService.Disabled {
+		return nil
+	}
+
 	return &tgDelivery{
 		db:        t.db,
 		tgService: t.tgService,
@@ -110,9 +114,8 @@ func (d *tgDelivery) persistResults(msgIds []int64, invalidTgIds []int64) {
 		records := make([]dao.ActivityTelegramMessage, len(msgIds))
 		for i, msgID := range msgIds {
 			records[i] = dao.ActivityTelegramMessage{
-				ID:         dao.GenUUID(),
-				ActivityID: d.event.ID,
 				MessageID:  msgID,
+				ActivityID: d.event.ID,
 			}
 		}
 

@@ -240,7 +240,10 @@ func (s *Services) createForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	err = tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, activities.EntityCreateActivity, nil, nil, *form, user)
+	ctx := tracker.NewTrackerCtx(nil, nil)
+	ctx.New.SetKey(activities.Form.Field.AsLogValue(), form.Title)
+
+	err = tracker.TrackEvent(s.activityTracker, types2.LayerWorkspace, activities.VerbCreated, ctx, *form, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -333,7 +336,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	oldForm["end_date"] = currentEndDate
 	oldForm["end_date_activity_val"] = currentEndDate
 
-	err = tracker.TrackActivity[dao.Form, dao.FormActivity](s.tracker, activities.EntityUpdatedActivity, data, oldForm, form, user)
+	err = tracker.TrackEvent(s.activityTracker, types2.LayerForm, activities.VerbUpdated, tracker.NewTrackerCtx(&data, &oldForm), form, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -358,7 +361,8 @@ func (s *Services) deleteForm(c echo.Context) error {
 	form := c.(FormContext).Form
 	user := c.(FormContext).User
 	data := map[string]interface{}{"old_title": form.Title}
-	err := tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, data, nil, form, user)
+
+	err := tracker.TrackEvent(s.activityTracker, types2.LayerWorkspace, activities.VerbDeleted, tracker.NewTrackerCtx(&data, nil), form, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -616,7 +620,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		}
 	}
 
-	err = tracker.TrackActivity[dao.FormAnswer, dao.FormActivity](s.tracker, activities.EntityCreateActivity, nil, nil, answer, user)
+	err = tracker.TrackEvent(s.activityTracker, types2.LayerForm, activities.VerbCreated, nil, answer, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

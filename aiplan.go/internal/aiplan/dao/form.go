@@ -4,13 +4,12 @@ package dao
 import (
 	"fmt"
 
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"github.com/lib/pq"
-
 	"html"
 	"net/url"
 	"time"
+
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	policy "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/redactor-policy"
@@ -188,31 +187,36 @@ func (form *Form) BeforeSave(tx *gorm.DB) error {
 //   - error: Возвращает ошибку, если при выполнении каких-либо операций произошла ошибка.
 func (form *Form) BeforeDelete(tx *gorm.DB) error {
 
-	if err := tx.
-		Where("form_activity_id in (?)", tx.Select("id").Where("form_id = ?", form.ID).
-			Model(&FormActivity{})).
-		Unscoped().Delete(&UserNotifications{}).Error; err != nil {
+	query := tx.Where("entity_type = ?", types.LayerForm).Where("form_id = ?", form.ID)
+	if err := CleanupActivityData(tx, query, form.ID, types.LayerWorkspace); err != nil {
 		return err
 	}
 
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", form.ID, "created", form.GetEntityType()).
-		Model(&WorkspaceActivity{}).
-		Updates(map[string]interface{}{"new_identifier": nil, "new_value": form.Title})
+	//if err := tx.
+	//	Where("form_activity_id in (?)", tx.Select("id").Where("form_id = ?", form.ID).
+	//		Model(&migration.FormActivity{})).
+	//	Unscoped().Delete(&migration.UserNotifications{}).Error; err != nil {
+	//	return err
+	//}
 
-	tx.Where("new_identifier = ? ", form.ID).
-		Model(&FormActivity{}).
-		Update("new_identifier", nil)
-
-	tx.Where("old_identifier = ?", form.ID).
-		Model(&FormActivity{}).
-		Update("old_identifier", nil)
-
-	tx.Where("form_id = ? ", form.ID).Delete(&FormActivity{})
-
-	//delete activity
-	if err := tx.Unscoped().Where("form_id = ?", form.ID).Delete(&EntityActivity{}).Error; err != nil {
-		return err
-	}
+	//tx.Where("new_identifier = ? AND verb = ? AND field = ?", form.ID, "created", form.GetEntityType()).
+	//	Model(&migration.WorkspaceActivity{}).
+	//	Updates(map[string]interface{}{"new_identifier": nil, "new_value": form.Title})
+	//
+	//tx.Where("new_identifier = ? ", form.ID).
+	//	Model(&migration.FormActivity{}).
+	//	Update("new_identifier", nil)
+	//
+	//tx.Where("old_identifier = ?", form.ID).
+	//	Model(&migration.FormActivity{}).
+	//	Update("old_identifier", nil)
+	//
+	//tx.Where("form_id = ? ", form.ID).Delete(&migration.FormActivity{})
+	//
+	////delete activity
+	//if err := tx.Unscoped().Where("form_id = ?", form.ID).Delete(&migration.EntityActivity{}).Error; err != nil {
+	//	return err
+	//}
 
 	//delete answers
 	if err := tx.Unscoped().Where("form_id = ?", form.ID).Delete(&FormAnswer{}).Error; err != nil {
@@ -351,118 +355,6 @@ func (answer *FormAnswer) AfterFind(tx *gorm.DB) error {
 type FormEntityI interface {
 	WorkspaceEntityI
 	GetFormId() uuid.UUID
-}
-
-type FormActivity struct {
-	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time `json:"created_at" gorm:"index:form_activities_form_index,sort:desc,type:btree,priority:2;index:form_activities_actor_index,sort:desc,type:btree,priority:2;index:form_activities_mail_index,type:btree,where:notified = false"`
-	// verb character varying IS_NULL:NO
-	Verb string `json:"verb"`
-	// field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
-	// form_id uuid IS_NULL:YES
-	FormId uuid.UUID `json:"form_id,omitempty" gorm:"type:uuid;index:form_activities_form_index,priority:1" extensions:"x-nullable"`
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
-	// actor_id uuid IS_NULL:YES
-	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:form_activities_actor_index,priority:1" extensions:"x-nullable"`
-
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
-
-	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	Form      *Form      `json:"form_detail" gorm:"foreignKey:FormId" extensions:"x-nullable"`
-
-	//AffectedUser      *User  `json:"affected_user,omitempty" gorm:"-" extensions:"x-nullable"`
-	UnionCustomFields string `json:"-" gorm:"-"`
-	FormActivityExtendFields
-	ActivitySender
-}
-
-func (FormActivity) TableName() string { return "form_activities" }
-
-func (fa FormActivity) GetCustomFields() string {
-	return fa.UnionCustomFields
-}
-
-func (FormActivity) GetEntity() string {
-	return "form"
-}
-
-func (FormActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "form_id", "workspace_id", "actor_id", "new_identifier", "old_identifier", "telegram_msg_ids"}
-}
-
-func (fa FormActivity) SkipPreload() bool {
-	if fa.Field == nil {
-		return true
-	}
-
-	if !fa.NewIdentifier.Valid && !fa.OldIdentifier.Valid {
-		return true
-	}
-	return false
-}
-
-func (fa FormActivity) GetField() string {
-	return pointerToStr(fa.Field)
-}
-
-func (fa FormActivity) GetVerb() string {
-	return fa.Verb
-}
-
-func (fa FormActivity) GetNewIdentifier() uuid.NullUUID {
-	return fa.NewIdentifier
-}
-
-func (fa FormActivity) GetOldIdentifier() uuid.NullUUID {
-	return fa.OldIdentifier
-
-}
-
-func (fa FormActivity) GetId() uuid.UUID {
-	return fa.Id
-}
-
-func (wa FormActivity) GetUrl() *string {
-	if wa.Form.URL != nil {
-		urlStr := wa.Form.URL.String()
-		return &urlStr
-	}
-	return nil
-}
-
-func (activity *FormActivity) ToLightDTO() *dto.EntityActivityLight {
-	if activity == nil {
-		return nil
-	}
-
-	return &dto.EntityActivityLight{
-		Id:         activity.Id,
-		CreatedAt:  activity.CreatedAt,
-		Verb:       activity.Verb,
-		Field:      activity.Field,
-		OldValue:   activity.OldValue,
-		NewValue:   activity.NewValue,
-		EntityType: "form",
-
-		NewEntity: GetActionEntity(*activity, "New"),
-		OldEntity: GetActionEntity(*activity, "Old"),
-
-		EntityUrl: activity.GetUrl(),
-	}
 }
 
 // FormActivityExtendFields

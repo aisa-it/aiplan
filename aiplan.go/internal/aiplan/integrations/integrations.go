@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 
-	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 
@@ -45,7 +44,6 @@ type Integration struct {
 	db              *gorm.DB
 	telegramService *tg.TgService
 	fileStorage     filestorage.FileStorage
-	tracker         *tracker.ActivitiesTracker
 	bl              *business.Business
 }
 
@@ -102,10 +100,10 @@ type IntegrationsService struct {
 	db           *gorm.DB
 }
 
-func NewIntegrationService(g *echo.Group, db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *IntegrationsService {
+func NewIntegrationService(g *echo.Group, db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, bl *business.Business) *IntegrationsService {
 	integrations := []IntegrationInterface{
-		NewGitlabIntegration(db, tS, fs, tr, bl),
-		NewGithubIntegration(db, tS, fs, tr, bl),
+		NewGitlabIntegration(db, tS, fs, bl),
+		NewGithubIntegration(db, tS, fs, bl),
 	}
 
 	webhooksGroup := g.Group("integrations/webhooks/")

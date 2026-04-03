@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -22,9 +21,9 @@ func NewMigrateActivityTargetDateUpdate(db *gorm.DB) *MigrateActivityTargetDateU
 func (m *MigrateActivityTargetDateUpdate) CheckMigrate() (bool, error) {
 	var exist bool
 
-	if err := m.db.Model(&dao.IssueActivity{}).
+	if err := m.db.Model(&IssueActivity{}).
 		Select("EXISTS(?)",
-			m.db.Model(&dao.IssueActivity{}).
+			m.db.Model(&IssueActivity{}).
 				Select("1").
 				Where("field = ? and old_value = ?", "target_date", "<nil>"),
 		).
@@ -39,10 +38,10 @@ func (m *MigrateActivityTargetDateUpdate) Name() string {
 }
 
 func (m *MigrateActivityTargetDateUpdate) Execute() error {
-	var activities []dao.IssueActivity
+	var activities []IssueActivity
 
 	if err := m.db.Where("field = ? and old_value = ?", "target_date", "<nil>").FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-		result := tx.Model(&dao.IssueActivity{}).Where("id IN ?", utils.SliceToSlice(&activities, func(t *dao.IssueActivity) uuid.UUID {
+		result := tx.Model(&IssueActivity{}).Where("id IN ?", utils.SliceToSlice(&activities, func(t *IssueActivity) uuid.UUID {
 			return t.Id
 		})).Update("old_value", nil)
 		if result.Error != nil {

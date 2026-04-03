@@ -34,13 +34,14 @@ func (e *emailNotifyProject) Process() {
 		e.service.sending = false
 	}()
 
-	var activities []dao.ProjectActivity
+	var activities []dao.ActivityEvent
 	if err := e.service.db.Unscoped().
 		Joins("Project").
 		Joins("Workspace").
 		Joins("Actor").
-		Order("project_activities.created_at").
-		Where("notified = ?", false).
+		Order("activity_events.created_at").
+		Where("activity_events.entity_type = ?", types.LayerProject).
+		Where("activity_events.notified = ?", false).
 		Limit(100).
 		Find(&activities).Error; err != nil {
 		slog.Error("Get activities", slog.Int("interval", e.service.cfg.NotificationsSleep), "err", err)
@@ -59,7 +60,7 @@ func (e *emailNotifyProject) Process() {
 		}()
 
 		sorter := projectActivitySorter{
-			skipActivities: make([]dao.ProjectActivity, 0),
+			skipActivities: make([]dao.ActivityEvent, 0),
 			Project:        make(map[uuid.UUID]projectActivity),
 		}
 		for i := range activities {
@@ -93,9 +94,10 @@ func (e *emailNotifyProject) Process() {
 
 	if err := e.service.db.Transaction(func(tx *gorm.DB) error {
 		for _, activity := range activities {
-			if err := e.service.db.Model(&dao.ProjectActivity{}).
+			if err := e.service.db.Model(&dao.ActivityEvent{}).
 				Unscoped().
-				Where("id = ?", activity.Id).
+				Where("notified", false).
+				Where("id = ?", activity.ID).
 				Update("notified", true).Error; err != nil {
 				return err
 			}
@@ -119,38 +121,37 @@ type projectMember struct {
 }
 
 type projectActivitySorter struct {
-	skipActivities []dao.ProjectActivity
+	skipActivities []dao.ActivityEvent
 	Project        map[uuid.UUID]projectActivity //map[issueId]
 }
 
 type projectActivity struct {
 	Project    *dao.Project
-	activities []dao.ProjectActivity
+	activities []dao.ActivityEvent
 	users      map[string]projectMember //map[user.Email]
 	AllMember  []dao.ProjectMember
 	//commentActivityMap  map[string][]dao.IssueActivity // map[commentId]
 	//commentActivityUser map[string]issueCommentAuthor  //map[user.Email]
 }
 
-func (as *projectActivitySorter) sortEntity(tx *gorm.DB, activity dao.ProjectActivity) {
-	if activity.ProjectId != uuid.Nil { // TODO check it
-		activity.Project.Workspace = activity.Workspace
-		projectId := activity.ProjectId
-		if v, ok := as.Project[projectId]; !ok {
-			pa := newProjectActivity(tx, activity.Project)
-			if pa != nil {
-				if !pa.AddActivity(activity) {
-					as.skipActivities = append(as.skipActivities, activity)
-				}
-				as.Project[projectId] = *pa
-			}
-		} else {
-			if !v.AddActivity(activity) {
+func (as *projectActivitySorter) sortEntity(tx *gorm.DB, activity dao.ActivityEvent) {
+	activity.Project.Workspace = activity.Workspace
+	projectId := activity.ProjectID.UUID
+	if v, ok := as.Project[projectId]; !ok {
+		pa := newProjectActivity(tx, activity.Project)
+		if pa != nil {
+			if !pa.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Project[projectId] = v
+			as.Project[projectId] = *pa
 		}
+	} else {
+		if !v.AddActivity(activity) {
+			as.skipActivities = append(as.skipActivities, activity)
+		}
+		as.Project[projectId] = v
 	}
+
 	return
 }
 
@@ -217,7 +218,7 @@ func newProjectActivity(tx *gorm.DB, project *dao.Project) *projectActivity {
 	return &res
 }
 
-func (pa *projectActivity) AddActivity(activity dao.ProjectActivity) bool {
+func (pa *projectActivity) AddActivity(activity dao.ActivityEvent) bool {
 	if pa.skip(activity) {
 		return false
 	}
@@ -226,11 +227,11 @@ func (pa *projectActivity) AddActivity(activity dao.ProjectActivity) bool {
 	return true
 }
 
-func (pa *projectActivity) skip(activity dao.ProjectActivity) bool {
+func (pa *projectActivity) skip(activity dao.ActivityEvent) bool {
 	if activity.Verb != actField.VerbCreated {
 		return true
 	}
-	if activity.Field != nil && *activity.Field != actField.Issue.Field.String() {
+	if activity.Field != actField.Issue.Field {
 		return true
 	}
 	return false
@@ -248,7 +249,7 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		var sendActivities []dao.ProjectActivity
+		var sendActivities []dao.ActivityEvent
 		for _, activity := range pa.activities {
 
 			if activity.NewIssue != nil {
@@ -269,13 +270,13 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 
 				if isWatcher || isAssignee || issue.CreatedById == member.User.ID {
 					if issue.CreatedById == member.User.ID {
-						if member.ProjectAuthorSettings.IsNotify(actField.ActivityField(*activity.Field), types.LayerProject, activity.Verb, member.ProjectRole) {
+						if member.ProjectAuthorSettings.IsNotify(activity.Field, types.LayerProject, activity.Verb, member.ProjectRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
 						}
 						continue
 					}
-					if member.ProjectMemberSettings.IsNotify(actField.ActivityField(*activity.Field), types.LayerProject, activity.Verb, member.ProjectRole) {
+					if member.ProjectMemberSettings.IsNotify(activity.Field, types.LayerProject, activity.Verb, member.ProjectRole) {
 						sendActivities = append(sendActivities, activity)
 						continue
 					}
@@ -284,7 +285,7 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 			}
 
 			if member.ProjectAdmin {
-				if activity.Field != nil && *activity.Field == actField.Issue.Field.String() {
+				if activity.Field == actField.Issue.Field {
 					continue
 				}
 				sendActivities = append(sendActivities, activity)
@@ -313,12 +314,13 @@ func (pa *projectActivity) getMails(tx *gorm.DB) []mail {
 	return mails
 }
 
-func getProjectNotificationHTML(tx *gorm.DB, activities []dao.ProjectActivity, targetUser *dao.User) (string, string, error) {
+func getProjectNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targetUser *dao.User) (string, string, error) {
 	result := ""
 	//actorsChangesMap := make(map[string]map[string]dao.ProjectActivity)
 	//actorsMap := make(map[string]dao.User)
 
-	for _, act := range activities {
+	for i, act := range activities {
+		activities[i].Project.SetUrl()
 		result += newIssue(tx, targetUser, &act)
 	}
 
@@ -354,8 +356,8 @@ func getProjectNotificationHTML(tx *gorm.DB, activities []dao.ProjectActivity, t
 	return content, htmlStripPolicy.Sanitize(content), nil
 }
 
-func newIssue(tx *gorm.DB, user *dao.User, act *dao.ProjectActivity) string {
-	if act.Field != nil && *act.Field == actField.Issue.Field.String() && act.Verb == actField.VerbCreated {
+func newIssue(tx *gorm.DB, user *dao.User, act *dao.ActivityEvent) string {
+	if act.Field == actField.Issue.Field && act.Verb == actField.VerbCreated {
 		var template dao.Template
 		if err := tx.Where("name = ?", "issue_activity_new").First(&template).Error; err != nil {
 			return ""

@@ -60,10 +60,9 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 		data["tg_sender"] = *user.TelegramId
 	}
 
-	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](b.tracker, activities.EntityCreateActivity, data, nil, comment, &user)
+	err := tracker.TrackEvent(b.ta, types.LayerIssue, activities.VerbCreated, tracker.NewTrackerCtx(&data, nil), comment, &user)
 	if err != nil {
 		errStack.GetError(nil, err)
 	}
-
 	return err
 }

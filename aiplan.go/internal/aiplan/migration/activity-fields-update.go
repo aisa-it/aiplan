@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -20,29 +19,40 @@ func NewMigrateActivityFieldsUpdate(db *gorm.DB) *MigrateActivityFieldsUpdate {
 }
 
 func (m *MigrateActivityFieldsUpdate) CheckMigrate() (bool, error) {
+
 	var projectActivitiesExist bool
-
-	if err := m.db.Model(&dao.ProjectActivity{}).
-		Select("EXISTS(?)",
-			m.db.Model(&dao.ProjectActivity{}).
-				Select("1").
-				Where("field = ? OR field = ?", "state", "labels"),
-		).
-		Find(&projectActivitiesExist).Error; err != nil {
-		return false, fmt.Errorf("MigrateActivityFieldsUpdate checkMigrate: %s", err.Error())
+	if m.tableExists("project_activities") {
+		if err := m.db.Model(&ProjectActivity{}).
+			Select("EXISTS(?)",
+				m.db.Model(&ProjectActivity{}).
+					Select("1").
+					Where("field = ? OR field = ?", "state", "labels"),
+			).
+			Find(&projectActivitiesExist).Error; err != nil {
+			return false, fmt.Errorf("MigrateActivityFieldsUpdate checkMigrate: %s", err.Error())
+		}
 	}
 
-	var IssueActivitiesExist bool
-	if err := m.db.Model(&dao.IssueActivity{}).
-		Select("EXISTS(?)",
-			m.db.Model(&dao.IssueActivity{}).
-				Select("1").
-				Where("field = ? OR field = ?", "state", "labels"),
-		).
-		Find(&IssueActivitiesExist).Error; err != nil {
-		return false, fmt.Errorf("MigrateActivityFieldsUpdate checkMigrate: %s", err.Error())
+	var issueActivitiesExist bool
+	if m.tableExists("issue_activities") {
+		if err := m.db.Model(&IssueActivity{}).
+			Select("EXISTS(?)",
+				m.db.Model(&IssueActivity{}).
+					Select("1").
+					Where("field = ? OR field = ?", "state", "labels"),
+			).
+			Find(&issueActivitiesExist).Error; err != nil {
+			return false, fmt.Errorf("MigrateActivityFieldsUpdate checkMigrate: %s", err.Error())
+		}
 	}
-	return projectActivitiesExist || IssueActivitiesExist, nil
+
+	return projectActivitiesExist || issueActivitiesExist, nil
+}
+
+func (m *MigrateActivityFieldsUpdate) tableExists(tableName string) bool {
+	var exists bool
+	m.db.Raw(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?)`, tableName).Scan(&exists)
+	return exists
 }
 
 func (m *MigrateActivityFieldsUpdate) Name() string {
@@ -55,13 +65,13 @@ func (m *MigrateActivityFieldsUpdate) Execute() error {
 }
 
 func activityFieldUpdate(db *gorm.DB) {
-	updateInBatches[dao.IssueActivity](db, "state", "status", "actIssueState")
-	updateInBatches[dao.ProjectActivity](db, "state", "status", "actProjectState")
-	updateInBatches[dao.IssueActivity](db, "labels", "label", "actIssueLabel")
-	updateInBatches[dao.ProjectActivity](db, "labels", "label", "actProjectLabel")
+	updateInBatches[IssueActivity](db, "state", "status", "actIssueState")
+	updateInBatches[ProjectActivity](db, "state", "status", "actProjectState")
+	updateInBatches[IssueActivity](db, "labels", "label", "actIssueLabel")
+	updateInBatches[ProjectActivity](db, "labels", "label", "actProjectLabel")
 }
 
-func updateInBatches[T dao.ActivityI](db *gorm.DB, oldValue, newValue, actionName string) {
+func updateInBatches[T interface{ GetId() uuid.UUID }](db *gorm.DB, oldValue, newValue, actionName string) {
 	var activities []T
 	if err := db.Where("field = ?", oldValue).FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
 		result := tx.Model(new(T)).Where("id IN ?", utils.SliceToSlice(&activities, func(t *T) uuid.UUID {

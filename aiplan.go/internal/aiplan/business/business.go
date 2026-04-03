@@ -11,13 +11,13 @@ import (
 type Business struct {
 	db *gorm.DB
 
-	tracker *tracker.ActivitiesTracker
+	ta *tracker.ActTracker
 }
 
-func NewBL(db *gorm.DB, tracker *tracker.ActivitiesTracker) (*Business, error) {
+func NewBL(db *gorm.DB, ta *tracker.ActTracker) (*Business, error) {
 	b := &Business{
-		db:      db,
-		tracker: tracker,
+		db: db,
+		ta: ta,
 	}
 
 	slog.Info("Populate users table FKs")
@@ -70,7 +70,6 @@ func NewBL(db *gorm.DB, tracker *tracker.ActivitiesTracker) (*Business, error) {
 	return b, nil
 }
 
-// GetTracker возвращает трекер активности для MCP инструментов
-func (b *Business) GetTracker() *tracker.ActivitiesTracker {
-	return b.tracker
+func (b *Business) GetTrackerEvent() *tracker.ActTracker {
+	return b.ta
 }

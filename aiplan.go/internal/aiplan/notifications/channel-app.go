@@ -53,19 +53,11 @@ type AppDelivery struct {
 	event *dao.ActivityEvent
 	msg   WebsocketMsg
 
-	notifications   []dao.UserNotifications
+	notifications   []dao.UserAppNotify
 	userCountNotify map[uuid.UUID]int
 }
 
 func (d *AppDelivery) CanSend(r member_role.MemberNotify) bool {
-	d.wsService.mutex.RLock()
-	defer d.wsService.mutex.RUnlock()
-
-	_, ok := d.wsService.sessions[r.GetUser().GetId()]
-	if !ok {
-		return false
-	}
-
 	if r.GetUser().Settings.AppNotificationMute {
 		return false
 	}
@@ -76,7 +68,7 @@ func (d *AppDelivery) CanSend(r member_role.MemberNotify) bool {
 func (d *AppDelivery) Send(r *member_role.MemberNotify) error {
 	id := dao.GenUUID()
 
-	d.notifications = append(d.notifications, dao.UserNotifications{
+	d.notifications = append(d.notifications, dao.UserAppNotify{
 		ID:              id,
 		UserId:          r.GetUser().ID,
 		User:            r.GetUser(),
@@ -156,7 +148,7 @@ func GetUnreadNotificationCounts(db *gorm.DB, userIDs []uuid.UUID, batchSize int
 			Count  int
 		}
 
-		err := db.Table("user_notifications").
+		err := db.Model(&dao.UserAppNotify{}).
 			Select("user_id, COUNT(*) as count").
 			Where("user_id IN ? AND viewed = ?", batch, false).
 			Group("user_id").

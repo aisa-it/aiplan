@@ -21,8 +21,6 @@ import (
 	"time"
 
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/lib/pq"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -390,30 +388,28 @@ func (project *Project) BeforeDelete(tx *gorm.DB) error {
 	deletingProjects.StartDeletion(project.ID)
 	defer deletingProjects.FinishDeletion(project.ID)
 
-	if err := tx.
-		Where("project_activity_id in (?)", tx.Select("id").Where("project_id = ?", project.ID).
-			Model(&ProjectActivity{})).
-		Unscoped().Delete(&UserNotifications{}).Error; err != nil {
+	query := tx.Where("entity_type = ?", types.LayerProject).Where("project_id = ?", project.ID)
+	if err := CleanupActivityData(tx, query, project.ID, types.LayerWorkspace); err != nil {
 		return err
 	}
-
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", project.ID, "created", project.GetEntityType()).
-		Model(&WorkspaceActivity{}).
-		Update("new_identifier", nil)
 
 	tx.Where("workspace_id = ? ", project.WorkspaceId).
 		Where("target_project_id = ?", project.ID).
 		Model(&Form{}).
 		Update("target_project_id", nil)
 
-	tx.Where("project_id = ? ", project.ID).Delete(&ProjectActivity{})
-
-	tx.Where("new_identifier = ? ", project.ID).
-		Model(&IssueActivity{}).
+	tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("project_id = ?", project.ID).
+		Where("new_identifier = ? ", project.ID).
+		Model(&ActivityEvent{}).
 		Update("new_identifier", nil)
 
-	tx.Where("old_identifier = ?", project.ID).
-		Model(&IssueActivity{}).
+	tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("project_id = ?", project.ID).
+		Where("old_identifier = ?", project.ID).
+		Model(&ActivityEvent{}).
 		Update("old_identifier", nil)
 
 	//delete asset
@@ -457,7 +453,7 @@ func (project *Project) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&Estimate{}).Error; err != nil {
 		return err
 	}
-	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&EntityActivity{}).Error; err != nil {
+	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&ActivityEvent{}).Error; err != nil {
 		return err
 	}
 	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&ProjectFavorites{}).Error; err != nil {
@@ -1013,25 +1009,32 @@ type LabelExtendFields struct {
 
 func (l *Label) BeforeDelete(tx *gorm.DB) error {
 	// ProjectActivity update create to nil
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", l.ID, "created", l.GetEntityType()).
-		Model(&ProjectActivity{}).Update("new_identifier", nil)
+	tx.
+		Where("entity_type = ?", types.LayerProject).
+		Where("project_id = ?", l.ProjectId).
+		Where("new_identifier = ? AND verb = ? AND field = ?", l.ID, "created", l.GetEntityType()).
+		Model(&ActivityEvent{}).Update("new_identifier", nil)
 	// IssueActivity update activity to nil
-	tx.Where("new_identifier = ? ", l.ID).
-		Model(&IssueActivity{}).
+	tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("project_id = ?", l.ProjectId).
+		Where("new_identifier = ? ", l.ID).
+		Model(&ActivityEvent{}).
 		Update("new_identifier", nil)
 
-	tx.Where("old_identifier = ?", l.ID).
-		Model(&IssueActivity{}).
+	tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("project_id = ?", l.ProjectId).
+		Where("old_identifier = ?", l.ID).
+		Model(&ActivityEvent{}).
 		Update("old_identifier", nil)
 
 	//ProjectActivity delete other activity
-	var activities []ProjectActivity
-	if err := tx.Where("new_identifier = ? or old_identifier = ?", l.ID, l.ID).Find(&activities).Error; err != nil {
+	query := tx.Where("entity_type = ?", types.LayerProject).
+		Where("project_id = ?", l.ProjectId).
+		Where("new_identifier = ? or old_identifier = ?", l.ID, l.ID)
+	if err := CleanupActivityData(tx, query, l.ProjectId); err != nil {
 		return err
-	}
-
-	for _, activity := range activities {
-		tx.Delete(&activity)
 	}
 
 	// Remove issue label
@@ -1128,81 +1131,43 @@ func (s State) GetProjectId() uuid.UUID {
 
 func (s *State) BeforeDelete(tx *gorm.DB) error {
 	// ProjectActivity update create to nil
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", s.ID, "created", s.GetEntityType()).Model(&ProjectActivity{}).Update("new_identifier", nil)
+	tx.
+		Where("entity_type = ?", types.LayerProject).
+		Where("project_id = ?", s.ProjectId).
+		Where("new_identifier = ? AND verb = ? AND field = ?", s.ID, actField.VerbCreated, s.GetEntityType()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
 	// IssueActivity update activity to nil
 
-	tx.Where("new_identifier = ? ", s.ID).
-		Model(&IssueActivity{}).
+	tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("project_id = ?", s.ProjectId).
+		Where("new_identifier = ? ", s.ID).
+		Model(&ActivityEvent{}).
 		Update("new_identifier", nil)
 
-	tx.Where("old_identifier = ?", s.ID).
-		Model(&IssueActivity{}).
+	tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("project_id = ?", s.ProjectId).
+		Where("old_identifier = ?", s.ID).
+		Model(&ActivityEvent{}).
 		Update("old_identifier", nil)
 
 	//ProjectActivity delete other activity
-	var activities []ProjectActivity
-	if err := tx.Where("new_identifier = ? or old_identifier = ?", s.ID, s.ID).Find(&activities).Error; err != nil {
+
+	query := tx.Where("entity_type = ?", types.LayerProject).
+		Where("new_identifier = ? or old_identifier = ?", s.ID, s.ID)
+
+	if err := CleanupActivityData(tx, query, s.ProjectId); err != nil {
 		return err
 	}
 
-	for _, activity := range activities {
-		tx.Delete(&activity)
-	}
 	return nil
 }
 
 type ProjectEntityI interface {
 	WorkspaceEntityI
 	GetProjectId() uuid.UUID
-}
-
-type ProjectActivity struct {
-	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time `json:"created_at" gorm:"index:project_activities_project_index,sort:desc,type:btree,priority:2;index:project_activities_actor_index,sort:desc,type:btree,priority:2;index:project_activities_mail_index,type:btree,where:notified = false"`
-	// verb character varying IS_NULL:NO
-	Verb string `json:"verb"`
-	// field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
-	// project_id uuid IS_NULL:YES
-	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;index:project_activities_project_index,priority:1" extensions:"x-nullable"`
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
-	// actor_id uuid IS_NULL:YES
-	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
-
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
-
-	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-
-	UnionCustomFields string `json:"-" gorm:"-"`
-	ProjectActivityExtendFields
-	ActivitySender
-}
-
-func (pa ProjectActivity) GetCustomFields() string {
-	return pa.UnionCustomFields
-}
-
-func (ProjectActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "comment", "project_id", "workspace_id", "actor_id", "new_identifier", "old_identifier", "notified", "telegram_msg_ids"}
-}
-
-func (ProjectActivity) GetEntity() string {
-	return "project"
 }
 
 // ProjectActivityExtendFields
@@ -1213,79 +1178,6 @@ type ProjectActivityExtendFields struct {
 	ProjectMemberExtendFields
 	StateExtendFields
 	LabelExtendFields
-}
-
-func (ProjectActivity) TableName() string { return "project_activities" }
-
-func (activity *ProjectActivity) AfterFind(tx *gorm.DB) error {
-	return EntityActivityAfterFind(activity, tx)
-}
-
-func (activity *ProjectActivity) BeforeDelete(tx *gorm.DB) error {
-	return tx.Where("project_activity_id = ?", activity.Id).Unscoped().Delete(&UserNotifications{}).Error
-}
-
-func (pa ProjectActivity) GetUrl() *string {
-	if pa.Project.URL != nil {
-		urlStr := pa.Project.URL.String()
-		return &urlStr
-	}
-	return nil
-}
-
-func (pa ProjectActivity) SkipPreload() bool {
-	if pa.Field == nil {
-		return true
-	}
-
-	if !pa.NewIdentifier.Valid && !pa.OldIdentifier.Valid {
-		return true
-	}
-	return false
-}
-
-func (pa ProjectActivity) GetField() string {
-	return pointerToStr(pa.Field)
-}
-
-func (pa ProjectActivity) GetVerb() string {
-	return pa.Verb
-}
-
-func (pa ProjectActivity) GetNewIdentifier() uuid.NullUUID {
-	return pa.NewIdentifier
-}
-
-func (pa ProjectActivity) GetOldIdentifier() uuid.NullUUID {
-	return pa.OldIdentifier
-
-}
-
-func (pa ProjectActivity) GetId() uuid.UUID {
-	return pa.Id
-}
-
-func (activity *ProjectActivity) ToLightDTO() *dto.EntityActivityLight {
-	if activity == nil {
-		return nil
-	}
-
-	return &dto.EntityActivityLight{
-		Id:         activity.Id,
-		CreatedAt:  activity.CreatedAt,
-		Verb:       activity.Verb,
-		Field:      activity.Field,
-		OldValue:   activity.OldValue,
-		NewValue:   activity.NewValue,
-		EntityType: "project",
-
-		NewEntity: GetActionEntity(*activity, "New"),
-		OldEntity: GetActionEntity(*activity, "Old"),
-
-		//TargetUser: activity.AffectedUser.ToLightDTO(),
-
-		EntityUrl: activity.GetUrl(),
-	}
 }
 
 //func (pa ProjectActivity) SetAffectedUser(user *User) {
@@ -1469,20 +1361,17 @@ func (it *IssueTemplate) ToDTO() *dto.IssueTemplate {
 
 func (it *IssueTemplate) BeforeDelete(tx *gorm.DB) error {
 	// ProjectActivity update create to nil
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", it.Id, "created", it.GetEntityType()).
-		Model(&ProjectActivity{}).Update("new_identifier", nil)
+	tx.
+		Where("entity_type = ?", types.LayerProject).
+		Where("project_id = ?", it.ProjectId).
+		Where("new_identifier = ? AND verb = ? AND field = ?", it.Id, actField.VerbCreated, it.GetEntityType()).
+		Model(&ActivityEvent{}).Update("new_identifier", nil)
 
-	if err := tx.
-		Where("project_activity_id in (?)", tx.Select("id").
-			Where("project_id = ?", it.ProjectId).
-			Where("new_identifier = ? or old_identifier = ?", it.Id, it.Id).
-			Model(&ProjectActivity{})).
-		Unscoped().Delete(&UserNotifications{}).Error; err != nil {
-		return err
-	}
-
-	//ProjectActivity delete other activity
-	if err := tx.Where("new_identifier = ? or old_identifier = ?", it.Id, it.Id).Delete(&ProjectActivity{}).Error; err != nil {
+	query := tx.
+		Where("entity_type = ?", types.LayerProject).
+		Where("project_id = ?", it.ProjectId).
+		Where("new_identifier = ? or old_identifier = ?", it.Id, it.Id)
+	if err := CleanupActivityData(tx, query, it.Id); err != nil {
 		return err
 	}
 

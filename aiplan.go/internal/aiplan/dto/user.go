@@ -83,6 +83,7 @@ type UserNotificationsFull struct {
 	Comment    *IssueCommentLight `json:"comment,omitempty"  extensions:"x-nullable"`
 	Workspace  *WorkspaceLight    `json:"workspace,omitempty"  extensions:"x-nullable"`
 	Issue      *IssueLight        `json:"issue,omitempty"  extensions:"x-nullable"`
+	Doc        *DocLight          `json:"doc,omitempty"  extensions:"x-nullable"`
 	Author     *UserLight         `json:"author,omitempty"  extensions:"x-nullable"`
 	TargetUser *UserLight         `json:"target_user,omitempty"  extensions:"x-nullable"`
 }

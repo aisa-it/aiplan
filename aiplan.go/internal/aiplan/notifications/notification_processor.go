@@ -245,13 +245,13 @@ func (np *NotificationProcessor) sendToApp(notification *dao.DeferredNotificatio
 	return true
 }
 
-func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNotifications, send INotifySend) (*dao.UserNotifications, int, error) {
+func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNotifications, send INotifySend) (*dao.UserAppNotify, int, error) {
 	un := send.getUserNotification()
 
 	var exist bool
-	if err := np.db.Model(&dao.UserNotifications{}).
+	if err := np.db.Model(&dao.UserAppNotify{}).
 		Select("EXISTS(?)",
-			np.db.Model(&dao.UserNotifications{}).
+			np.db.Model(&dao.UserAppNotify{}).
 				Select("1").
 				Where("id = ?", un.ID),
 		).
@@ -284,7 +284,7 @@ func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNoti
 			Where("viewed = false").
 			Where("user_id = ?", notification.UserID).
 			Where("deleted_at IS NULL").
-			Model(&dao.UserNotifications{}).
+			Model(&dao.UserAppNotify{}).
 			Find(&count).Error; err != nil {
 			return nil, 0, err
 		}
@@ -304,7 +304,7 @@ type emailNotify struct {
 }
 
 type INotifySend interface {
-	getUserNotification() *dao.UserNotifications
+	getUserNotification() *dao.UserAppNotify
 	getAuthor(tx *gorm.DB) *dao.User
 	isNotifyTg(tx *gorm.DB, notification *dao.DeferredNotifications) bool
 	isNotifyEmail(tx *gorm.DB, notification *dao.DeferredNotifications) bool
@@ -329,9 +329,9 @@ func (nm *notifyMessage) getAuthor(tx *gorm.DB) *dao.User {
 	return &user
 }
 
-func (nm *notifyMessage) getUserNotification() *dao.UserNotifications {
+func (nm *notifyMessage) getUserNotification() *dao.UserAppNotify {
 	authorUUID, _ := uuid.FromString(nm.AuthorId)
-	res := dao.UserNotifications{
+	res := dao.UserAppNotify{
 		ID:       nm.Id,
 		Type:     "message",
 		Title:    nm.Title,
@@ -407,9 +407,9 @@ func (nd *notifyDeadline) getAuthor(tx *gorm.DB) *dao.User {
 	return nil
 }
 
-func (nd *notifyDeadline) getUserNotification() *dao.UserNotifications {
+func (nd *notifyDeadline) getUserNotification() *dao.UserAppNotify {
 
-	res := dao.UserNotifications{
+	res := dao.UserAppNotify{
 		ID:     nd.Id,
 		Type:   "message",
 		Title:  "Уведомление об истечении срока выполнения задачи",
@@ -530,8 +530,8 @@ type serviceMessage struct {
 	Msg   string    `json:"msg"`
 }
 
-func (s serviceMessage) getUserNotification() *dao.UserNotifications {
-	res := dao.UserNotifications{
+func (s serviceMessage) getUserNotification() *dao.UserAppNotify {
+	res := dao.UserAppNotify{
 		ID:       s.Id,
 		Type:     "service_message",
 		Title:    s.Title,

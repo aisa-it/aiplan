@@ -14,20 +14,8 @@ var (
 	deletedServiceUser *dao.User
 
 	activitiesFk = []userFK{
-		{Table: dao.WorkspaceActivity{}.TableName(), Field: "new_identifier"},
-		{Table: dao.WorkspaceActivity{}.TableName(), Field: "old_identifier"},
-		{Table: dao.ProjectActivity{}.TableName(), Field: "new_identifier"},
-		{Table: dao.ProjectActivity{}.TableName(), Field: "old_identifier"},
-		{Table: dao.IssueActivity{}.TableName(), Field: "new_identifier"},
-		{Table: dao.IssueActivity{}.TableName(), Field: "old_identifier"},
-		{Table: dao.FormActivity{}.TableName(), Field: "new_identifier"},
-		{Table: dao.FormActivity{}.TableName(), Field: "old_identifier"},
-		{Table: dao.DocActivity{}.TableName(), Field: "new_identifier"},
-		{Table: dao.DocActivity{}.TableName(), Field: "old_identifier"},
-		{Table: dao.SprintActivity{}.TableName(), Field: "new_identifier"},
-		{Table: dao.SprintActivity{}.TableName(), Field: "old_identifier"},
-		{Table: dao.RootActivity{}.TableName(), Field: "new_identifier"},
-		{Table: dao.RootActivity{}.TableName(), Field: "old_identifier"},
+		{Table: dao.ActivityEvent{}.TableName(), Field: "new_identifier"},
+		{Table: dao.ActivityEvent{}.TableName(), Field: "old_identifier"},
 	}
 
 	updateByIdFK = []userFK{

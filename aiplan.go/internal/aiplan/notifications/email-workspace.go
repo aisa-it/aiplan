@@ -33,11 +33,12 @@ func (e *emailNotifyWorkspace) Process() {
 		e.service.sending = false
 	}()
 
-	var activities []dao.WorkspaceActivity
+	var activities []dao.ActivityEvent
 	if err := e.service.db.Unscoped().
 		Joins("Workspace").
 		Joins("Actor").
-		Order("workspace_activities.created_at").
+		Order("activity_events.created_at").
+		Where("entity_type = ?", types.LayerWorkspace).
 		Where("notified = ?", false).
 		Limit(100).
 		Find(&activities).Error; err != nil {
@@ -57,7 +58,7 @@ func (e *emailNotifyWorkspace) Process() {
 		}()
 
 		sorter := workspaceActivitySorter{
-			skipActivities: make([]dao.WorkspaceActivity, 0),
+			skipActivities: make([]dao.ActivityEvent, 0),
 			Workspace:      make(map[uuid.UUID]workspaceActivity),
 		}
 		for i := range activities {
@@ -85,9 +86,9 @@ func (e *emailNotifyWorkspace) Process() {
 
 	if err := e.service.db.Transaction(func(tx *gorm.DB) error {
 		for _, activity := range activities {
-			if err := e.service.db.Model(&dao.WorkspaceActivity{}).
+			if err := e.service.db.Model(&dao.ActivityEvent{}).
 				Unscoped().
-				Where("id = ?", activity.Id).
+				Where("id = ?", activity.ID).
 				Update("notified", true).Error; err != nil {
 				return err
 			}
@@ -109,34 +110,33 @@ type workspaceMember struct {
 }
 
 type workspaceActivitySorter struct {
-	skipActivities []dao.WorkspaceActivity
+	skipActivities []dao.ActivityEvent
 	Workspace      map[uuid.UUID]workspaceActivity //map[workspaceId]
 }
 
 type workspaceActivity struct {
 	workspace  *dao.Workspace
-	activities []dao.WorkspaceActivity
+	activities []dao.ActivityEvent
 	users      map[string]workspaceMember //map[user.Email]
 	AllMember  []dao.WorkspaceMember
 }
 
-func (as *workspaceActivitySorter) sortEntity(tx *gorm.DB, activity dao.WorkspaceActivity) {
-	if activity.WorkspaceId != uuid.Nil { // TODO check it
-		if v, ok := as.Workspace[activity.WorkspaceId]; !ok {
-			wa := newWorkspaceActivity(tx, activity.Workspace)
-			if wa != nil {
-				if !wa.AddActivity(activity) {
-					as.skipActivities = append(as.skipActivities, activity)
-				}
-				as.Workspace[activity.WorkspaceId] = *wa
-			}
-		} else {
-			if !v.AddActivity(activity) {
+func (as *workspaceActivitySorter) sortEntity(tx *gorm.DB, activity dao.ActivityEvent) {
+	if v, ok := as.Workspace[activity.WorkspaceID.UUID]; !ok {
+		wa := newWorkspaceActivity(tx, activity.Workspace)
+		if wa != nil {
+			if !wa.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Workspace[activity.WorkspaceId] = v
+			as.Workspace[activity.WorkspaceID.UUID] = *wa
 		}
+	} else {
+		if !v.AddActivity(activity) {
+			as.skipActivities = append(as.skipActivities, activity)
+		}
+		as.Workspace[activity.WorkspaceID.UUID] = v
 	}
+
 	return
 }
 
@@ -200,7 +200,7 @@ func newWorkspaceActivity(tx *gorm.DB, workspace *dao.Workspace) *workspaceActiv
 	return &res
 }
 
-func (wa *workspaceActivity) AddActivity(activity dao.WorkspaceActivity) bool {
+func (wa *workspaceActivity) AddActivity(activity dao.ActivityEvent) bool {
 	if wa.skip(activity) {
 		return false
 	}
@@ -209,8 +209,8 @@ func (wa *workspaceActivity) AddActivity(activity dao.WorkspaceActivity) bool {
 	return true
 }
 
-func (wa *workspaceActivity) skip(activity dao.WorkspaceActivity) bool {
-	if activity.Field != nil && *activity.Field != actField.Doc.Field.String() {
+func (wa *workspaceActivity) skip(activity dao.ActivityEvent) bool {
+	if activity.Field != actField.Doc.Field {
 		return true
 	}
 
@@ -229,15 +229,15 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		var sendActivities []dao.WorkspaceActivity
+		var sendActivities []dao.ActivityEvent
 		for _, activity := range wa.activities {
 
-			if activity.NewDoc != nil || activity.OldDoc != nil {
+			if activity.WorkspaceActivityExtendFields.NewDoc != nil || activity.WorkspaceActivityExtendFields.OldDoc != nil {
 				var docId uuid.UUID
-				if activity.OldDoc != nil {
+				if activity.WorkspaceActivityExtendFields.OldDoc != nil {
 					docId = activity.OldIdentifier.UUID
 				}
-				if activity.NewDoc != nil {
+				if activity.WorkspaceActivityExtendFields.NewDoc != nil {
 					docId = activity.NewIdentifier.UUID
 				}
 
@@ -256,28 +256,28 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 
 				if isWatcher || isReader || isEditor || doc.CreatedById == member.User.ID {
 					if doc.CreatedById == member.User.ID {
-						if member.WorkspaceAuthorSettings.IsNotify(actField.ActivityField(*activity.Field), types.LayerWorkspace, activity.Verb, member.WorkspaceRole) {
+						if member.WorkspaceAuthorSettings.IsNotify(activity.Field, types.LayerWorkspace, activity.Verb, member.WorkspaceRole) {
 							sendActivities = append(sendActivities, activity)
 							continue
 						}
 						continue
 					}
-					if member.WorkspaceMemberSettings.IsNotify(actField.ActivityField(*activity.Field), types.LayerWorkspace, activity.Verb, member.WorkspaceRole) {
+					if member.WorkspaceMemberSettings.IsNotify(activity.Field, types.LayerWorkspace, activity.Verb, member.WorkspaceRole) {
 						sendActivities = append(sendActivities, activity)
 						continue
 					}
 				}
 				continue
 			}
-			if activity.Field != nil && *activity.Field == actField.Doc.Field.String() && activity.Verb == actField.VerbDeleted {
-				if activity.ActorId.UUID == member.User.ID {
+			if activity.Field == actField.Doc.Field && activity.Verb == actField.VerbDeleted {
+				if activity.ActorID == member.User.ID {
 					sendActivities = append(sendActivities, activity)
 					continue
 				}
 			}
 
 			if member.WorkspaceAdmin {
-				if activity.Field != nil && *activity.Field == actField.Doc.Field.String() {
+				if activity.Field == actField.Doc.Field {
 					continue
 				}
 				//sendActivities = append(sendActivities, activity)
@@ -306,26 +306,24 @@ func (wa *workspaceActivity) getMails(tx *gorm.DB) []mail {
 	return mails
 }
 
-func getWorkspaceNotificationHTML(tx *gorm.DB, activities []dao.WorkspaceActivity, targetUser *dao.User) (string, string, error) {
+func getWorkspaceNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targetUser *dao.User) (string, string, error) {
 	result := ""
 	//actorsChangesMap := make(map[string]map[string]dao.ProjectActivity)
 	//actorsMap := make(map[string]dao.User)
 
 	for _, act := range activities {
-		if act.Field != nil && *act.Field == actField.Doc.Field.String() {
-			a := dao.DocActivity{
+		if act.Field == actField.Doc.Field {
+			a := dao.ActivityEvent{
 				CreatedAt:     act.CreatedAt,
 				Verb:          act.Verb,
 				Field:         act.Field,
 				OldValue:      act.OldValue,
 				NewValue:      act.NewValue,
-				Comment:       act.Comment,
-				WorkspaceId:   act.WorkspaceId,
-				ActorId:       act.ActorId,
+				WorkspaceID:   act.WorkspaceID,
+				ActorID:       act.ActorID,
 				NewIdentifier: act.NewIdentifier,
 				OldIdentifier: act.OldIdentifier,
 				Notified:      act.Notified,
-				TelegramMsgId: act.TelegramMsgId,
 				Workspace:     act.Workspace,
 				Actor:         act.Actor,
 			}

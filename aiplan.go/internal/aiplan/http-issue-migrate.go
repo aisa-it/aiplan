@@ -19,7 +19,6 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -519,48 +518,72 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	if deleteSrc {
 		newId = srcIssue.ID
 		for _, issue := range srcIssues {
-			requestMap := make(map[string]interface{})
-			currentMap := make(map[string]interface{})
+			//var requestMap, currentMap tracker.DataEntity
+			//requestMap = make(map[string]interface{})
+			//currentMap = make(map[string]interface{})
+			//tracker.SetParentWithUUID(requestMap, "project_id", &targetProject.ID)
+			//tracker.SetParentWithUUID(currentMap, "project_id", &srcProject.ID)
+			//tracker.SetField(requestMap, activities.ParentTitleKey, targetProject.Identifier)
+			//tracker.SetField(currentMap, activities.ParentTitleKey, srcProject.Identifier)
+			//tracker.SetField(requestMap, activities.OldEntityKey, activities.Project.Field)
+			//tracker.SetField(requestMap, activities.NewEntityKey, activities.Project.Field)
+			//tracker.SetField(requestMap, activities.OldTitleKey, issue.Name)
 
-			requestMap["parent_key"] = "project_id"
-			requestMap["old_entity"] = "project"
-			requestMap["new_entity"] = "project"
-			requestMap["old_title"] = issue.Name
+			ctx := tracker.NewTrackerCtx(nil, nil)
+			ctx.New.SetParentWithUUID("project_id", &targetProject.ID)
+			ctx.Old.SetParentWithUUID("project_id", &srcProject.ID)
 
-			requestMap["project_id"] = targetProject.ID
-			currentMap["project_id"] = srcProject.ID
-			requestMap["parent_title"] = targetProject.Identifier
-			currentMap["parent_title"] = srcProject.Identifier
+			ctx.New.SetKey(activities.ParentTitleKey, targetProject.Identifier)
+			ctx.Old.SetKey(activities.ParentTitleKey, srcProject.Identifier)
 
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			ctx.New.SetKey(activities.OldEntityKey, activities.Project.Field)
+			ctx.New.SetKey(activities.NewEntityKey, activities.Project.Field)
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			ctx.New.SetKey(activities.OldTitleKey, issue.Name)
+
+			//err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbMove, ctx, issue, &user)
+
+			//err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbAdded, nil, issue, &user)
 
 			delIssue := issue
 			delIssue.Project = &srcProject
 			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			//err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbRemoved, ctx, delIssue, &user)
+
 		}
 	} else {
 		var newIssues []dao.Issue
 		s.db.Joins("Project").Where("issues.id in (?)", newFamilyIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			data := map[string]interface{}{"custom_verb": "copied"}
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, data, nil, issue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			//data := make(tracker.DataEntity)
+			////data := map[string]interface{}{"custom_verb": "copied"}
+			//
+			//tracker.SetField(data, activities.CustomVerbKey, activities.VerbCopied)
+			//err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, data, nil, issue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			ctx := tracker.NewTrackerCtx(nil, nil)
+			ctx.New.SetKey(activities.CustomVerbKey, activities.VerbCopied)
+			tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, ctx, issue, &user)
 		}
 		newId = idsMap[srcIssueUUId]
 	}
@@ -953,47 +976,69 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 
 	if deleteSrc {
 		for _, issue := range srcIssues {
-			requestMap := make(map[string]interface{})
-			currentMap := make(map[string]interface{})
+			//var requestMap, currentMap tracker.DataEntity
+			//requestMap = make(map[string]interface{})
+			//currentMap = make(map[string]interface{})
+			//
+			//tracker.SetParentWithUUID(requestMap, "project_id", &targetProject.ID)
+			//tracker.SetParentWithUUID(currentMap, "project_id", &srcProject.ID)
+			//
+			//tracker.SetField(requestMap, activities.ParentTitleKey, targetProject.Identifier)
+			//tracker.SetField(currentMap, activities.ParentTitleKey, srcProject.Identifier)
+			//
+			//tracker.SetField(requestMap, activities.OldEntityKey, activities.Project.Field)
+			//tracker.SetField(requestMap, activities.NewEntityKey, activities.Project.Field)
+			//tracker.SetField(requestMap, activities.OldTitleKey, issue.Name)
 
-			requestMap["parent_key"] = "project_id"
-			requestMap["old_entity"] = "project"
-			requestMap["new_entity"] = "project"
-			requestMap["old_title"] = issue.Name
+			ctx := tracker.NewTrackerCtx(nil, nil)
+			ctx.New.SetParentWithUUID("project_id", &targetProject.ID)
+			ctx.Old.SetParentWithUUID("project_id", &srcProject.ID)
 
-			requestMap["project_id"] = targetProject.ID
-			currentMap["project_id"] = srcProject.ID
-			requestMap["parent_title"] = targetProject.Identifier
-			currentMap["parent_title"] = srcProject.Identifier
+			ctx.New.SetKey(activities.ParentTitleKey, targetProject.Identifier)
+			ctx.Old.SetKey(activities.ParentTitleKey, srcProject.Identifier)
 
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			ctx.New.SetKey(activities.OldEntityKey, activities.Project.Field)
+			ctx.New.SetKey(activities.NewEntityKey, activities.Project.Field)
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			ctx.New.SetKey(activities.OldTitleKey, issue.Name)
+
+			//err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbMove, ctx, issue, &user)
+
+			//err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbAdded, nil, issue, &user)
 
 			delIssue := issue
 			delIssue.Project = &srcProject
 			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			//err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbRemoved, ctx, delIssue, &user)
 		}
 	} else {
 		var newIssues []dao.Issue
 		s.db.Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issue, &user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
+			//err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issue, &user)
+			//if err != nil {
+			//	errStack.GetError(c, err)
+			//}
+
+			tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, issue, &user)
+
 		}
 	}
 
@@ -1321,7 +1366,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 
 	// Activities
 	{
-		if err := tx.Model(&dao.IssueActivity{}).
+		if err := tx.Model(&dao.ActivityEvent{}).
 			Where("issue_id = ?", srcIssue.ID).
 			Update("project_id", issue.TargetProject.ID).Error; err != nil {
 			return err
@@ -1613,10 +1658,11 @@ func stateRelation(tx *gorm.DB, srcProject, targetProject uuid.UUID) (error, map
 
 func stateActivityUpdate(tx *gorm.DB, ids []uuid.UUID, srcProjectId, targetProjectId uuid.UUID) error {
 	{
-		var activityState []dao.EntityActivity
+		var activityState []dao.ActivityEvent
 		if err := tx.
+			Where("entity_type = ?", types.LayerIssue).
 			Where("issue_id IN ?", ids).
-			Where("field = ?", "state").
+			Where("field = ?", activities.Status.Field.String()).
 			Find(&activityState).Error; err != nil {
 			return err
 		}

@@ -133,9 +133,7 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 				if err == nil {
 					fieldVal.Set(ptr)
 				} else if err != gorm.ErrRecordNotFound {
-					slog.Debug("failed to load new entity",
-						"field", fieldName,
-						"fieldTag", fieldTag,
+					slog.Debug("failed to load new entity", "field", fieldName, "fieldTag", fieldTag,
 						"id", a.NewIdentifier.UUID,
 						"activityId", a.ID,
 						"error", err.Error())
@@ -180,6 +178,14 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 	return walkStruct(val, typ)
 }
 
+func (a *ActivityEvent) Comment() string {
+	oldV := "nil"
+	if a.OldValue != nil {
+		oldV = *a.OldValue
+	}
+	return fmt.Sprintf("layer: %s,  %s %s (%s-%s)", a.EntityType.String(), a.Verb, a.Field.String(), a.NewValue, oldV)
+}
+
 // Создает легкий DTO из ActivityEvent.
 func (e *ActivityEvent) ToLightDTO() *dto.ActivityEventLight {
 	if e == nil {
@@ -194,8 +200,8 @@ func (e *ActivityEvent) ToLightDTO() *dto.ActivityEventLight {
 		EntityType: e.EntityType.String(),
 		EntityUrl:  e.GetUrl(),
 		CreatedAt:  e.CreatedAt,
-		NewEntity:  GetActionEntity2(*e, "New"),
-		OldEntity:  GetActionEntity2(*e, "Old"),
+		NewEntity:  GetActionEntity(*e, "New"),
+		OldEntity:  GetActionEntity(*e, "Old"),
 	}
 }
 
@@ -264,15 +270,29 @@ func (e *ActivityEvent) GetUrl() *string {
 	return nil
 }
 
-type ActivityTelegramMessage struct {
-	ID uuid.UUID `gorm:"primaryKey;type:uuid"`
+// Преобразует Doc в структуру dto.HistoryBodyLight для упрощенной передачи данных в API.
+//
+// Параметры:
+//   - Нет
+//
+// Возвращает:
+//   - dto.HistoryBodyLight: структура, содержащая упрощенные данные Doc.
+func (da *ActivityEvent) ToHistoryLightDTO() *dto.HistoryBodyLight {
+	if da == nil {
+		return nil
+	}
 
+	return &dto.HistoryBodyLight{
+		Id:       da.ID,
+		CratedAt: da.CreatedAt,
+		Author:   da.Actor.ToLightDTO(),
+	}
+}
+
+type ActivityTelegramMessage struct {
+	MessageID  int64          `gorm:"primaryKey;autoIncrement:false"`
 	ActivityID uuid.UUID      `gorm:"type:uuid;not null;index"`
 	Activity   *ActivityEvent `gorm:"foreignKey:ActivityID;references:ID;constraint:OnDelete:CASCADE"`
-
-	MessageID int64 `gorm:"not null;index"`
-
-	CreatedAt time.Time
 }
 
 // -migration

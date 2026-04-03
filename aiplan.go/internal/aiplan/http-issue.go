@@ -277,11 +277,9 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			"attachment_activity_val": fileName,
 		}
 
-		if err := tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, data, nil, issueAttachment, &user); err != nil {
+		if err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, tracker.NewTrackerCtx(&data, nil), issueAttachment, &user); err != nil {
 			errStack.GetError(nil, errStack.TrackErrorStack(fmt.Errorf("track new issue attachment activity")))
-		} // TODO del
-
-		tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbCreated, data, nil, issueAttachment, &user)
+		}
 
 	} else if dOk {
 		var doc dao.Doc
@@ -326,11 +324,9 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 		data := map[string]interface{}{
 			"attachment_activity_val": fileName,
 		}
-		if err := tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, actField.EntityCreateActivity, data, nil, docAttachment, &user); err != nil {
+		if err := tracker.TrackEvent(s.activityTracker, types.LayerDoc, actField.VerbCreated, tracker.NewTrackerCtx(&data, nil), docAttachment, &user); err != nil {
 			errStack.GetError(nil, errStack.TrackErrorStack(fmt.Errorf("track new doc attachment activity")))
-		} // todo del
-
-		tracker.TrackEvent(s.ta, types.LayerDoc, actField.VerbCreated, data, nil, docAttachment, &user)
+		}
 
 	}
 }
@@ -654,7 +650,10 @@ func (s *Services) updateIssue(c echo.Context) error {
 	project := c.(IssueContext).Project
 
 	oldIssue := issue
+	ctx := tracker.NewTrackerCtx(nil, nil)
 	issueMapOld := StructToJSONMap(issue)
+	ctx.OldGormMap = &issueMapOld
+
 	var data tracker.DataEntity
 	form, _ := c.MultipartForm()
 
@@ -765,6 +764,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 				}
 			}
 
+			data["parent"] = parentUUID
 		} else {
 			if issue.Parent != nil {
 				unpinTask = issue.Parent.CreatedById == user.ID && len(data) == 4
@@ -798,11 +798,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		tracker.SetField(data, field.WithUpdateScopeId(), stateUUID)
-		tracker.SetField(data, field.WithActivityVal(), newState.Name)
+		tracker.SetField(data, field.WithScopeID(), stateUUID)
+		tracker.SetField(data, field.AsLogValue(), newState.Name)
 
-		tracker.SetField(issueMapOld, field.WithUpdateScopeId(), issue.State.ID)
-		tracker.SetField(issueMapOld, field.WithActivityVal(), issue.State.Name)
+		tracker.SetField(issueMapOld, field.WithScopeID(), issue.State.ID)
+		tracker.SetField(issueMapOld, field.AsLogValue(), issue.State.Name)
 
 		if newState.Group == "started" && issue.State.Group != "started" {
 			data["start_date"] = &types.TargetDate{Time: time.Now()}
@@ -900,7 +900,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if err := s.db.Where("project_id = ?", project.ID).Find(&allProjectLabels).Error; err != nil {
 			return EError(c, err)
 		}
-		data[actField.Label.Field.WithGetField().String()] = "labels"
+		data[actField.Label.Field.LookupFrom().String()] = "labels"
 	}
 
 	// Reset sort order
@@ -995,7 +995,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return actField.ReqFieldMapping(k) })
-		if hasRecentFieldUpdate[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
+		if hasRecentFieldUpdate(tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
 			return apierrors.ErrUpdateTooFrequent
 		}
 
@@ -1204,13 +1204,10 @@ func (s *Services) updateIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, data, issueMapOld, issue, &user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&data, &issueMapOld), issue, &user)
 	if err != nil {
 		errStack.GetError(c, err)
-	} // TODO del
-
-	tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbUpdated, data, issueMapOld, issue, &user)
-
+	}
 	if statusChange {
 		res, msg, err := rules.AfterStatusChange(user, oldIssue, newState)
 
@@ -1255,20 +1252,13 @@ func (s *Services) deleteIssue(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
 
-	//if err := s.tracker.TrackActivity(tracker.ISSUE_DELETED_ACTIVITY, nil, currentInst, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
-
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 
-		err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, issue, &user)
+		err := tracker.TrackEvent(s.activityTracker, types.LayerProject, actField.VerbDeleted, nil, issue, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
-		} // TODO del
-
-		tracker.TrackEvent(s.ta, types.LayerProject, actField.VerbDeleted, nil, nil, issue, &user) // todo add tx
-
+		}
 		return s.db.Delete(&issue).Error
 	}); err != nil {
 		if err.Error() == "forbidden" {
@@ -1291,7 +1281,7 @@ func (s *Services) deleteIssue(c echo.Context) error {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
-// @Success 200 {object} map[string]dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
+// @Success 200 {array} dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -1314,7 +1304,7 @@ func (s *Services) getAvailableStates(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, utils.SliceToMap(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 // ############# Sub-issues methods ###################
@@ -1481,23 +1471,11 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 
 	// Activity tracking
 	for i := range subIssues {
-		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newSubIssuesData[i], oldSubIssuesData[i], subIssues[i], user)
+
+		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newSubIssuesData[i], &oldSubIssuesData[i]), subIssues[i], user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
-		tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbUpdated, newSubIssuesData[i], oldSubIssuesData[i], subIssues[i], user)
-
-		//if err := s.tracker.TrackActivity(
-		//	tracker.ISSUE_UPDATED_ACTIVITY,
-		//	newSubIssuesData[i],
-		//	oldSubIssuesData[i],
-		//	subIssues[i].ID.String(),
-		//	tracker.ENTITY_TYPE_ISSUE,
-		//	&project,
-		//	*user,
-		//); err != nil {
-		//	return EError(c, err)
-		//}
 	}
 
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
@@ -2038,13 +2016,10 @@ func (s *Services) createIssueLink(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, nil, nil, link, &user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, nil, link, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
-	tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbCreated, nil, nil, link, &user)
-
 	return c.JSON(http.StatusOK, link.ToLightDTO())
 }
 
@@ -2100,7 +2075,7 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 
 	{ //rateLimit
 		dataField := utils.MapToSlice(oldMap, func(k string, v interface{}) string { return fmt.Sprintf("link_%s", actField.ReqFieldMapping(k)) })
-		if hasRecentFieldUpdate[dao.IssueActivity](s.db.Where("issue_id = ?", oldLink.IssueId), user.ID, dataField...) {
+		if hasRecentFieldUpdate(s.db.Where("issue_id = ?", oldLink.IssueId), user.ID, dataField...) {
 			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 		}
 	}
@@ -2114,12 +2089,10 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 	oldMap["updateScope"] = "link"
 	oldMap["updateScopeId"] = oldLink.Id
 
-	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, oldLink, &user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), oldLink, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
-	tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbUpdated, newMap, oldMap, oldLink, &user)
 
 	return c.JSON(http.StatusOK, oldLink.ToLightDTO())
 }
@@ -2157,14 +2130,11 @@ func (s *Services) deleteIssueLink(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, link, &user)
+		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbDeleted, nil, link, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
 		}
-
-		tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbDeleted, nil, nil, link, &user)
-
 		return s.db.Delete(&link).Error
 	}); err != nil {
 		return EError(c, err)
@@ -2196,11 +2166,11 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 	project := c.(IssueContext).Project
 	issueId := c.(IssueContext).Issue.ID
 
-	var issueActivities []dao.EntityActivity
+	var issueActivities []dao.ActivityEvent
 	if err := s.db.Preload(clause.Associations).
 		Where("issue_id = ?", issueId).
 		Where("project_id = ?", project.ID).
-		Where("field != ?", "comment").
+		Where("field != ?", actField.Comment.Field.String()).
 		Order("created_at DESC").Find(&issueActivities).Error; err != nil {
 		return EError(c, err)
 	}
@@ -2214,7 +2184,7 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 
 	result := make([]interface{}, 0)
 	for _, activity := range issueActivities {
-		result = append(result, *activity.ToFullDTO())
+		result = append(result, *activity.ToDTO())
 	}
 	for _, comment := range issueComments {
 		result = append(result, *comment.ToDTO())
@@ -2222,13 +2192,13 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 
 	sort.Slice(result, func(i, j int) bool {
 		var iTime, jTime time.Time
-		if c, ok := result[i].(dto.EntityActivityFull); ok {
+		if c, ok := result[i].(dto.ActivityEventFull); ok {
 			iTime = c.CreatedAt
 		} else {
 			iTime = result[i].(dto.IssueComment).CreatedAt
 		}
 
-		if c, ok := result[j].(dto.EntityActivityFull); ok {
+		if c, ok := result[j].(dto.ActivityEventFull); ok {
 			jTime = c.CreatedAt
 		} else {
 			jTime = result[j].(dto.IssueComment).CreatedAt
@@ -2481,17 +2451,10 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//if err := s.tracker.TrackActivity(tracker.COMMENT_CREATED_ACTIVITY, StructToJSONMap(comment), nil, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
-
-	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, nil, nil, comment, &user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, nil, comment, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
-	tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbCreated, nil, nil, comment, &user)
-
 	return c.JSON(http.StatusCreated, comment.ToDTO())
 }
 
@@ -2571,13 +2534,13 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var comments []dao.IssueActivity
+	var comments []dao.ActivityEvent
 	queryHistory := s.db.
 		Joins("Actor").
-		Where("issue_activities.project_id = ?", project.ID).
-		Where("issue_activities.issue_id = ?", issueId).
-		Where("issue_activities.new_identifier = ? ", commentId).
-		Order("issue_activities.created_at DESC")
+		Where("activity_events.project_id = ?", project.ID).
+		Where("activity_events.issue_id = ?", issueId).
+		Where("activity_events.new_identifier = ? ", commentId).
+		Order("activity_events.created_at DESC")
 
 	resp, err := dao.PaginationRequest(
 		offset,
@@ -2589,8 +2552,8 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	commentHistory := utils.SliceToSlice(resp.Result.(*[]dao.IssueActivity),
-		func(i *dao.IssueActivity) dto.CommentHistory {
+	commentHistory := utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent),
+		func(i *dao.ActivityEvent) dto.CommentHistory {
 
 			var commentUUId uuid.NullUUID
 			if i.NewIssueComment != nil {
@@ -2603,14 +2566,14 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 			commentHistory := dto.CommentHistory{
 				CommentHtml:     comment,
 				CommentStripped: comment.StripTags(),
-				UpdatedById:     i.ActorId.UUID,
+				UpdatedById:     i.ActorID,
 				ActorUpdate:     i.Actor.ToLightDTO(),
 				CommentId:       commentUUId,
 				CreatedAt:       i.CreatedAt,
 				Attachments:     nil,
 			}
 
-			query := s.db.Where("workspace_id = ?", i.WorkspaceId).
+			query := s.db.Where("workspace_id = ?", i.WorkspaceID).
 				Where("comment_id = ?", i.NewIssueComment.Id)
 
 			currentFiles, _ := dao.GetFileAssetFromDescription(query, &comment.Body)
@@ -2797,12 +2760,10 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = commentOld.Id
 
-	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, commentOld, &user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), commentOld, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-	tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbUpdated, newMap, oldMap, commentOld, &user)
-
 	return c.JSON(http.StatusOK, commentOld.ToDTO())
 }
 
@@ -2845,14 +2806,11 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, comment, &user)
+		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbDeleted, nil, comment, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
 		}
-
-		tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbDeleted, nil, nil, comment, &user)
-
 		return s.db.Delete(&comment).Error
 	}); err != nil {
 		return EError(c, err)
@@ -2970,7 +2928,7 @@ func (s *Services) removeCommentReaction(c echo.Context) error {
 // @Param offset query int false "Смещение для пагинации" default(0)
 // @Param limit query int false "Лимит записей" default(100)
 // @Param field query string false "Поле активности для фильтрации (например: state)"
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список активностей с пагинацией"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список активностей с пагинацией"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
@@ -3029,11 +2987,6 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		query = query.Where("activity_events.field = ?", actField.Status.Field.String())
 	} else {
 		query = query.Where("activity_events.field <> ?", actField.Status.Field.String())
-	}
-
-	type fullActivityWithLag struct {
-		dao.FullActivity
-		StateLag int `json:"state_lag,omitempty" gorm:"state_lag"`
 	}
 
 	type events struct {
@@ -3219,12 +3172,10 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, nil, nil, issueAttachment, &user)
+	err = tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, nil, issueAttachment, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-	tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbCreated, nil, nil, issueAttachment, &user)
-
 	return c.JSON(http.StatusCreated, issueAttachment.ToLightDTO())
 }
 
@@ -3338,13 +3289,11 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, attachment, &user)
+		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbDeleted, nil, attachment, &user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
 		}
-
-		tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbDeleted, nil, nil, attachment, &user)
 
 		if err := s.db.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
 			return err
@@ -3468,12 +3417,10 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 
 	newIssue := StructToJSONMap(issue)
 
-	err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newIssue, oldIssue, issue, user)
+	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newIssue, &oldIssue), issue, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
-	tracker.TrackEvent(s.ta, types.LayerIssue, actField.VerbUpdated, newIssue, oldIssue, issue, user)
 
 	return c.JSON(
 		http.StatusOK,
