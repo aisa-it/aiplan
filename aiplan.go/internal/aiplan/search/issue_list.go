@@ -654,7 +654,7 @@ func GetIssueListData(
 			order.Column = clause.Column{Name: "author_sort"}
 		case "state":
 			selectExprs = append(selectExprs, "(?) as state_sort")
-			selectInterface = append(selectInterface, db.Select(`concat(case "group" when 'backlog' then 1 when 'unstarted' then 2 when 'started' then 3 when 'completed' then 4 when 'cancelled' then 5 end, name, color)`).Where("id = issues.state_id").Model(&dao.State{}))
+			selectInterface = append(selectInterface, db.Select(`concat(case "group" when 'backlog' then 1 when 'unstarted' then 2 when 'started' then 3 when 'completed' then 4 when 'cancelled' then 5 end, sequence, name, color)`).Where("id = issues.state_id").Model(&dao.State{}))
 			order.Column = clause.Column{Name: "state_sort"}
 		case "labels":
 			selectExprs = append(selectExprs, "array(?) as labels_sort")

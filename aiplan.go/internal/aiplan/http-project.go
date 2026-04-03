@@ -146,7 +146,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	projectGroup.POST("/project-views/", s.updateProjectView)
 
-	projectGroup.GET("/project-members/me/", s.getProjectMemberMe)
+	projectGroup.GET("/project-members/me/", s.getProjectMemberMe) // Legacy TODO: delete after front
 
 	workspaceGroup.GET("/user-favorite-projects/", s.getFavoriteProjects)
 	workspaceGroup.POST("/user-favorite-projects/", s.addProjectToFavorites)
@@ -759,13 +759,17 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
-// @Success 200 {object} dto.ProjectMember "Информация о членстве пользователя в проекте"
+// @Success 200 {object} dto.ProjectMemberWithLead "Информация о членстве пользователя в проекте"
 // @Failure 404 {object} apierrors.DefinedError "Членство в проекте не найдено"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/me [get]
 func (s *Services) getProjectCurrentMembership(c echo.Context) error {
 	member := c.(ProjectContext).ProjectMember
-	return c.JSON(http.StatusOK, member.ToDTO())
+	res := dao.ProjectMemberWithLead{
+		ProjectMember: member,
+		IsProjectLead: member.MemberId == member.Project.ProjectLeadId,
+	}
+	return c.JSON(http.StatusOK, res.ToDTOWithLead())
 }
 
 // getProjectMember godoc
@@ -2426,7 +2430,7 @@ func (s *Services) updateState(c echo.Context) error {
 		Where(gorm.Expr(`"default" = ?`, true)).
 		First(&currentDefaultState).Error; err == nil {
 		if currentDefaultState.Name != "" {
-			if req.Default != nil && *req.Default == true {
+			if req.Default != nil && *req.Default {
 				oldStateMap["default_activity_val"] = currentDefaultState.Name
 				oldStateMap["updateScopeId"] = currentDefaultState.ID
 			}
@@ -2437,16 +2441,12 @@ func (s *Services) updateState(c echo.Context) error {
 	fields = append(fields, "updated_by")
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if req.Default != nil {
-			if *req.Default {
-				// Change other states to false default
-				if err := tx.Model(&dao.State{}).
-					Where("project_id = ?", project.ID).
-					UpdateColumn("default", false).Error; err != nil {
-					return err
-				}
-			} else {
-				return apierrors.ErrProjectDefaultStateRequired
+		if req.Default != nil && *req.Default {
+			// Change other states to false default
+			if err := tx.Model(&dao.State{}).
+				Where("project_id = ?", project.ID).
+				UpdateColumn("default", false).Error; err != nil {
+				return err
 			}
 		}
 
@@ -2482,7 +2482,7 @@ func (s *Services) updateState(c echo.Context) error {
 
 	newStateMap["updateScope"] = "status"
 	newStateMap["updateScopeId"] = stateId
-	if req.Default != nil && *req.Default == true {
+	if req.Default != nil && *req.Default {
 		newStateMap["default_activity_val"] = state.Name
 	}
 

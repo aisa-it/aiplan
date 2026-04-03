@@ -319,6 +319,23 @@ var issuesTools = []Tool{
 		),
 		getIssueAttachments,
 	},
+	{
+		mcp.NewTool(
+			"create_issue_comment",
+			mcp.WithDescription("Создание комментария к задаче"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithString("comment_html",
+				mcp.Required(),
+				mcp.Description("Текст комментария в HTML формате"),
+			),
+		),
+		createIssueComment,
+	},
 }
 
 func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
@@ -1479,6 +1496,86 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 	}
 
 	return mcp.NewToolResultJSON(utils.SliceToSlice(&attachments, func(ia *dao.IssueAttachment) dto.Attachment { return *ia.ToLightDTO() }))
+}
+
+// createIssueComment создаёт комментарий к задаче
+func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	commentHtml, ok := args["comment_html"].(string)
+	if !ok || strings.TrimSpace(commentHtml) == "" {
+		return apierrors.ErrIssueCommentEmpty.MCPError(), nil
+	}
+
+	// Находим задачу
+	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+	if issue == nil {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	// Проверяем членство в проекте
+	var projectMember dao.ProjectMember
+	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrProjectForbidden.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	// Проверка кулдауна
+	var lastCommentTime time.Time
+	if err := db.Select("created_at").
+		Where("workspace_id = ?", issue.WorkspaceId).
+		Where("actor_id = ?", user.ID).
+		Order("created_at desc").
+		Model(&dao.IssueComment{}).
+		First(&lastCommentTime).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return logger.Error(err), nil
+	}
+	if time.Since(lastCommentTime) <= 5*time.Second {
+		return apierrors.ErrTooManyComments.MCPError(), nil
+	}
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	comment := dao.IssueComment{
+		Id:              dao.GenUUID(),
+		ProjectId:       issue.ProjectId,
+		Project:         issue.Project,
+		IssueId:         issue.ID,
+		WorkspaceId:     issue.WorkspaceId,
+		Workspace:       issue.Workspace,
+		ActorId:         userID,
+		Issue:           issue,
+		CommentHtml:     types.RedactorHTML{Body: commentHtml},
+		CommentStripped: types.RemoveInvisibleChars(commentHtml),
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Create(&comment).Error; err != nil {
+			return err
+		}
+
+		issue.UpdatedAt = time.Now()
+		return tx.Select("updated_at").Updates(issue).Error
+	}); err != nil {
+		return logger.Error(err), nil
+	}
+
+	// Activity tracking
+	comment.Actor = user
+	if err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](bl.GetTracker(), activities.EntityCreateActivity, nil, nil, comment, user); err != nil {
+		return logger.Error(err), nil
+	}
+
+	return mcp.NewToolResultJSON(comment.ToDTO())
 }
 
 // findIssueByIdOrSeq — вспомогательная функция для поиска задачи по ID или sequence

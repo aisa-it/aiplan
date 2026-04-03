@@ -104,7 +104,6 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 				continue
 			}
 
-			// Проверяем наличие тега field
 			fieldTag, ok := structField.Tag.Lookup("field")
 			if !ok {
 				continue
@@ -119,7 +118,6 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 				normalizedTarget = strings.Split(targetField, "_")[0]
 			}
 
-			// Проверяем совпадение тега
 			if fieldTag != normalizedTarget && fieldTag != targetFieldExt {
 				continue
 			}
@@ -133,10 +131,7 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 				if err == nil {
 					fieldVal.Set(ptr)
 				} else if err != gorm.ErrRecordNotFound {
-					slog.Debug("failed to load new entity", "field", fieldName, "fieldTag", fieldTag,
-						"id", a.NewIdentifier.UUID,
-						"activityId", a.ID,
-						"error", err.Error())
+					slog.Debug("failed to load new entity", "field", fieldName, "fieldTag", fieldTag, "id", a.NewIdentifier.UUID, "activityId", a.ID, "error", err.Error())
 					continue
 				} else {
 					slog.Debug("entity not found",
@@ -155,19 +150,10 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 				if err == nil {
 					fieldVal.Set(ptr)
 				} else if err != gorm.ErrRecordNotFound {
-					slog.Debug("failed to load old entity",
-						"field", fieldName,
-						"fieldTag", fieldTag,
-						"id", a.OldIdentifier.UUID,
-						"activityId", a.ID,
-						"error", err.Error())
+					slog.Debug("failed to load old entity", "field", fieldName, "fieldTag", fieldTag, "id", a.OldIdentifier.UUID, "activityId", a.ID, "error", err.Error())
 					continue
 				} else {
-					slog.Debug("entity not found",
-						"field", fieldName,
-						"fieldTag", fieldTag,
-						"id", a.OldIdentifier.UUID,
-						"activityId", a.ID)
+					slog.Debug("entity not found", "field", fieldName, "fieldTag", fieldTag, "id", a.OldIdentifier.UUID, "activityId", a.ID)
 					continue
 				}
 			}
@@ -186,7 +172,6 @@ func (a *ActivityEvent) Comment() string {
 	return fmt.Sprintf("layer: %s,  %s %s (%s-%s)", a.EntityType.String(), a.Verb, a.Field.String(), a.NewValue, oldV)
 }
 
-// Создает легкий DTO из ActivityEvent.
 func (e *ActivityEvent) ToLightDTO() *dto.ActivityEventLight {
 	if e == nil {
 		return nil
@@ -205,7 +190,6 @@ func (e *ActivityEvent) ToLightDTO() *dto.ActivityEventLight {
 	}
 }
 
-// Создает полный DTO из структуры ActivityEvent.
 func (e *ActivityEvent) ToDTO() *dto.ActivityEventFull {
 	if e == nil {
 		return nil
@@ -225,7 +209,6 @@ func (e *ActivityEvent) ToDTO() *dto.ActivityEventFull {
 	}
 }
 
-// Проверяет, следует ли пропустить предварительную загрузку данных.  Возвращает true, если поле не определено или идентификаторы не установлены, что указывает на то, что предварительная загрузка не требуется.  В противном случае возвращает false.
 func (e ActivityEvent) SkipPreload() bool {
 	if !e.NewIdentifier.Valid && !e.OldIdentifier.Valid {
 		return true
@@ -270,13 +253,6 @@ func (e *ActivityEvent) GetUrl() *string {
 	return nil
 }
 
-// Преобразует Doc в структуру dto.HistoryBodyLight для упрощенной передачи данных в API.
-//
-// Параметры:
-//   - Нет
-//
-// Возвращает:
-//   - dto.HistoryBodyLight: структура, содержащая упрощенные данные Doc.
 func (da *ActivityEvent) ToHistoryLightDTO() *dto.HistoryBodyLight {
 	if da == nil {
 		return nil
@@ -293,25 +269,4 @@ type ActivityTelegramMessage struct {
 	MessageID  int64          `gorm:"primaryKey;autoIncrement:false"`
 	ActivityID uuid.UUID      `gorm:"type:uuid;not null;index"`
 	Activity   *ActivityEvent `gorm:"foreignKey:ActivityID;references:ID;constraint:OnDelete:CASCADE"`
-}
-
-// -migration
-type Act struct {
-	db *gorm.DB
-}
-
-func ActQuery(db *gorm.DB) *Act {
-	return &Act{db: db}
-}
-
-func (a *Act) ByEntity(entity interface{}) *gorm.DB {
-	switch e := entity.(type) {
-	case interface{ GetIssueId() uuid.UUID }:
-		return a.db.Where("issue_id = ?", e.GetIssueId())
-	case interface{ GetProjectId() uuid.UUID }:
-		a.db = a.db.Where("project_id = ?", e.GetProjectId())
-	case interface{ GetWorkspaceId() uuid.UUID }:
-		a.db = a.db.Where("workspace_id = ?", e.GetWorkspaceId())
-	}
-	return a.db
 }

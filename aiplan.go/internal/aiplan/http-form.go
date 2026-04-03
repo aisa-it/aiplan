@@ -62,10 +62,11 @@ func (s *Services) FormMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		var form dao.Form
 		if err := s.db.
-			Preload("Author").
-			Preload("Workspace").
+			Joins("Author").
+			Joins("Workspace").
+			Joins("TargetProject").
 			Where("forms.workspace_id = ?", workspace.ID).
-			Where("slug = ?", formSlug).
+			Where("forms.slug = ?", formSlug).
 			First(&form).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return EErrorDefined(c, apierrors.ErrFormNotFound)
@@ -85,9 +86,10 @@ func (s *Services) AnswerFormAuthMiddleware(next echo.HandlerFunc) echo.HandlerF
 		var form dao.Form
 		if err := s.db.
 			Set("userId", userId).
-			Preload("Author").
-			Preload("Workspace").
-			Where("slug = ?", formSlug).
+			Joins("Author").
+			Joins("Workspace").
+			Joins("TargetProject").
+			Where("forms.slug = ?", formSlug).
 			First(&form).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return EErrorDefined(c, apierrors.ErrFormNotFound)
@@ -107,9 +109,10 @@ func (s *Services) AnswerFormNoAuthMiddleware(next echo.HandlerFunc) echo.Handle
 
 		var form dao.Form
 		if err := s.db.
-			Preload("Author").
-			Preload("Workspace").
-			Where("slug = ?", formSlug).
+			Joins("Author").
+			Joins("Workspace").
+			Joins("TargetProject").
+			Where("forms.slug = ?", formSlug).
 			First(&form).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return EErrorDefined(c, apierrors.ErrFormNotFound)
@@ -627,7 +630,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 
 	if form.TargetProjectId.Valid {
 		go func(form *dao.Form, answer *dao.FormAnswer, user *dao.User) {
-			if err := s.createAnswerIssue(form, answer, user); err != nil {
+			if err := s.createAnswerIssue(c, form, answer, user); err != nil {
 				slog.Error("Create answer issue", "formId", form.ID, "err", err)
 			}
 		}(&form, &answer, user)
@@ -668,7 +671,7 @@ func (s *Services) createAnswerNoAuth(c echo.Context) error {
 	return s.createAnswerAuth(c)
 }
 
-func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, user *dao.User) error {
+func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao.FormAnswer, user *dao.User) error {
 	res, err := business.GenBodyAnswer(answer, user)
 	if err != nil {
 		return err
@@ -689,6 +692,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		Name:            fmt.Sprintf("Ответ №%d формы \"%s\"", answer.SeqId, form.Title),
 		CreatedById:     systemUser.ID,
 		ProjectId:       form.TargetProjectId.UUID,
+		Project:         form.TargetProject,
 		WorkspaceId:     form.WorkspaceId,
 		DescriptionHtml: res,
 		//DescriptionStripped: issue.DescriptionStripped,
@@ -714,7 +718,7 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		return err
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
@@ -761,7 +765,15 @@ func (s *Services) createAnswerIssue(form *dao.Form, answer *dao.FormAnswer, use
 		}
 
 		return tx.CreateInBatches(&newAssignees, 10).Error
-	})
+	}); err != nil {
+		return err
+	}
+
+	if err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, *issue, systemUser); err != nil {
+		errStack.GetError(c, err)
+	}
+
+	return nil
 }
 
 // createFormAttachments godoc

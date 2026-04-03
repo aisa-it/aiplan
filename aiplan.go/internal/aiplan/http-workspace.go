@@ -116,7 +116,6 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
 	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
 
-	// ../front/services/workspace.service.ts
 	g.GET("users/me/workspaces/", s.getUserWorkspaceList)
 
 	// Favorites
@@ -151,7 +150,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 
 	g.GET("users/last-visited-workspace/", s.getLastVisitedWorkspace)
 
-	workspaceGroup.GET("/workspace-members/me/", s.getWorkspaceMemberMe)
+	workspaceGroup.GET("/workspace-members/me/", s.getWorkspaceMemberMe) // Legacy TODO: delete after front
 
 	workspaceGroup.GET("/states/", s.getWorkspaceStateList)
 
@@ -618,14 +617,18 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Success 200 {object} dto.WorkspaceMember "Успешный ответ с данными текущего участника рабочего пространства"
+// @Success 200 {object} dto.WorkspaceMemberWithOwner "Успешный ответ с данными текущего участника рабочего пространства"
 // @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
 // @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members/me/ [get]
 func (s *Services) getWorkspaceCurrentMembership(c echo.Context) error {
 	member := c.(WorkspaceContext).WorkspaceMember
-	return c.JSON(http.StatusOK, member.ToDTO())
+	res := dao.WorkspaceMemberWithOwner{
+		WorkspaceMember:  member,
+		IsWorkspaceOwner: member.MemberId == member.Workspace.OwnerId,
+	}
+	return c.JSON(http.StatusOK, res.ToDTOWithOwner())
 }
 
 // updateWorkspaceMember godoc
