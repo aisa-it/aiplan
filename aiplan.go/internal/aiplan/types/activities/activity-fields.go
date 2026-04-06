@@ -126,7 +126,7 @@ var (
 	// FieldMoveKey — поле перемещения (какое именно поле перемещается).
 	//  Используется для указания типа перемещения (внутри сущности или между сущностями).
 	//  - key: "field_move"
-	//  - Пример: "status", "project_id", "sprint"
+	//  - Пример: "move_workspace_to_doc", "move_doc_to_doc"
 	FieldMoveKey = NewKey(fieldMove)
 
 	// EntityKey — основная сущность для операции.
