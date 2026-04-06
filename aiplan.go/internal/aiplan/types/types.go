@@ -28,6 +28,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type TimeValuer interface {
+	GetTime() time.Time
+}
+
 // TargetDate type
 type TargetDate struct {
 	Time time.Time
@@ -82,6 +86,12 @@ func (td *TargetDate) ToNullTime() sql.NullTime {
 		Valid: true,
 	}
 }
+func (d *TargetDate) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
+}
 
 // TargetDateTimeZ type
 type TargetDateTimeZ struct {
@@ -127,6 +137,13 @@ func (d *TargetDateTimeZ) Scan(value interface{}) error {
 
 func (d TargetDateTimeZ) String() string {
 	return d.Time.String()
+}
+
+func (d *TargetDateTimeZ) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
 }
 
 // TimeZone type
@@ -741,16 +758,13 @@ func (ns *ProjectMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns ProjectMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
-	if field == nil {
-		return false
-	}
+func (ns ProjectMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
 
-	isIssue := entity == actField.Issue.Field
-	isProject := entity == actField.Project.Field
-	isPrAdmin := entity == actField.Project.Field && role == AdminRole
+	isIssue := entity == LayerIssue
+	isProject := entity == LayerProject
+	isPrAdmin := entity == LayerProject && role == AdminRole
 
-	switch actField.ActivityField(*field) {
+	switch field {
 	case actField.Name.Field:
 		if isIssue {
 			return !ns.DisableName
@@ -970,17 +984,14 @@ func (ns *WorkspaceMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
-	if field == nil {
-		return false
-	}
+func (ns WorkspaceMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
 
-	isSprint := entity == actField.Sprint.Field
-	isDoc := entity == actField.Doc.Field
-	isWorkspace := entity == actField.Workspace.Field
-	isWorkspaceAdmin := entity == actField.Workspace.Field && role == AdminRole
+	isSprint := entity == LayerSprint
+	isDoc := entity == LayerDoc
+	isWorkspace := entity == LayerWorkspace
+	isWorkspaceAdmin := entity == LayerWorkspace && role == AdminRole
 
-	switch actField.ActivityField(*field) {
+	switch field {
 	case actField.Title.Field:
 		if isDoc {
 			return !ns.DisableDocTitle
@@ -1283,6 +1294,30 @@ func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.D
 	}
 	return query
 }
+
+type EntityLayer int16
+
+func (e EntityLayer) String() string {
+	switch e {
+	case 0:
+		return "root"
+	case 1:
+		return "workspace"
+	case 2:
+		return "project"
+	case 3:
+		return "issue"
+	case 4:
+		return "doc"
+	case 5:
+		return "form"
+	case 6:
+		return "sprint"
+	}
+	return "unknown"
+}
+
+type NotifyChannel int
 
 type UUIDArray struct {
 	Array []uuid.UUID

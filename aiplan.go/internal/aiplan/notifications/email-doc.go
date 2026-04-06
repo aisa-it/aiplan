@@ -32,7 +32,7 @@ func (e *emailNotifyDoc) Process() {
 		e.service.sending = false
 	}()
 
-	var activities []dao.DocActivity
+	var activities []dao.ActivityEvent
 	if err := e.service.db.Unscoped().
 		Joins("Doc").
 		Joins("Actor").
@@ -40,8 +40,9 @@ func (e *emailNotifyDoc) Process() {
 		Preload("Doc.ParentDoc").
 		Preload("Doc.Author").
 		Preload("Doc.AccessRules").
-		Order("doc_activities.created_at").
-		Where("doc_activities.notified = ?", false).
+		Order("activity_events.created_at").
+		Where("activity_events.entity_type = ?", types.LayerDoc).
+		Where("activity_events.notified = ?", false).
 		Limit(100).
 		Find(&activities).Error; err != nil {
 		slog.Error("Get activities", slog.Int("interval", e.service.cfg.NotificationsSleep), "err", err)
@@ -60,7 +61,7 @@ func (e *emailNotifyDoc) Process() {
 		}()
 
 		sorter := docActivitySorter{
-			skipActivities: make([]dao.DocActivity, 0),
+			skipActivities: make([]dao.ActivityEvent, 0),
 			Docs:           make(map[uuid.UUID]docActivity),
 		}
 
@@ -95,9 +96,9 @@ func (e *emailNotifyDoc) Process() {
 
 	if err := e.service.db.Transaction(func(tx *gorm.DB) error {
 		for _, activity := range activities {
-			if err := e.service.db.Model(&dao.DocActivity{}).
+			if err := e.service.db.Model(&dao.ActivityEvent{}).
 				Unscoped().
-				Where("id = ?", activity.Id).
+				Where("id = ?", activity.ID).
 				Update("notified", true).Error; err != nil {
 				return err
 			}
@@ -109,7 +110,7 @@ func (e *emailNotifyDoc) Process() {
 }
 
 type docActivitySorter struct {
-	skipActivities []dao.DocActivity
+	skipActivities []dao.ActivityEvent
 	Docs           map[uuid.UUID]docActivity //map[docId]
 }
 
@@ -129,15 +130,15 @@ type docCommentAuthor struct {
 	WorkspaceAuthorSettings types.WorkspaceMemberNS
 	WorkspaceMemberSettings types.WorkspaceMemberNS
 	WorkspaceRole           int //todo дотянуть
-	activities              []dao.DocActivity
+	activities              []dao.ActivityEvent
 }
 
 type docActivity struct {
 	doc                 *dao.Doc
-	activities          []dao.DocActivity
-	users               map[string]docMember            //map[user.Email]
-	commentActivityMap  map[uuid.UUID][]dao.DocActivity // map[commentId]
-	commentActivityUser map[string]docCommentAuthor     //map[user.Email]
+	activities          []dao.ActivityEvent
+	users               map[string]docMember              //map[user.Email]
+	commentActivityMap  map[uuid.UUID][]dao.ActivityEvent // map[commentId]
+	commentActivityUser map[string]docCommentAuthor       //map[user.Email]
 }
 
 func (da *docActivity) getMails(tx *gorm.DB) []mail {
@@ -156,13 +157,13 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		var sendActivities []dao.DocActivity
+		var sendActivities []dao.ActivityEvent
 
 		for _, activity := range da.activities {
 			var authorNotify, memberNotify bool
-			memberNotify = member.DocMemberSettings.IsNotify(activity.Field, actField.Doc.Field, activity.Verb, member.WorkspaceRole)
+			memberNotify = member.DocMemberSettings.IsNotify(activity.Field, types.LayerDoc, activity.Verb, member.WorkspaceRole)
 			if activity.Doc.CreatedById == member.User.ID {
-				authorNotify = member.DocAuthorSettings.IsNotify(activity.Field, actField.Doc.Field, activity.Verb, member.WorkspaceRole)
+				authorNotify = member.DocAuthorSettings.IsNotify(activity.Field, types.LayerDoc, activity.Verb, member.WorkspaceRole)
 			}
 			if (member.DocAuthor && authorNotify) || (!member.DocAuthor && memberNotify) {
 				sendActivities = append(sendActivities, activity)
@@ -194,7 +195,7 @@ func (da *docActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.WorkspaceMemberSettings.IsNotify(&field, actField.Doc.Field, "all", author.WorkspaceRole) {
+		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.WorkspaceMemberSettings.IsNotify(actField.ActivityField(field), types.LayerDoc, "all", author.WorkspaceRole) {
 			content, textContent, err := getDocNotificationHTML(tx, author.activities, &author.User, da.doc)
 			if err != nil {
 				slog.Error("Make doc notification HTML", "err", err)
@@ -278,8 +279,8 @@ func (ia *docActivity) getCommentNotify(tx *gorm.DB) error {
 }
 
 // Для пропуска активностей
-func (ia *docActivity) skip(activity dao.DocActivity) bool {
-	if activity.Field != nil && *activity.Field == actField.Doc.Field.String() && activity.Verb == actField.VerbCreated && activity.NewDoc == nil {
+func (ia *docActivity) skip(activity dao.ActivityEvent) bool {
+	if activity.Field == actField.Doc.Field && activity.Verb == actField.VerbCreated && activity.DocActivityExtendFields.NewDoc == nil {
 		return true
 	}
 	return false
@@ -294,9 +295,9 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 
 	res := docActivity{
 		doc:                 doc,
-		activities:          make([]dao.DocActivity, 0),
+		activities:          make([]dao.ActivityEvent, 0),
 		users:               make(map[string]docMember),
-		commentActivityMap:  make(map[uuid.UUID][]dao.DocActivity),
+		commentActivityMap:  make(map[uuid.UUID][]dao.ActivityEvent),
 		commentActivityUser: make(map[string]docCommentAuthor),
 	}
 
@@ -350,17 +351,17 @@ func newDocActivity(tx *gorm.DB, doc, newDoc *dao.Doc) *docActivity {
 	return &res
 }
 
-func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
+func (ia *docActivity) AddActivity(activity dao.ActivityEvent) bool {
 	if ia.skip(activity) {
 		return false
 	}
 
 	ia.activities = append(ia.activities, activity)
 
-	if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier.Valid {
+	if activity.Field == actField.Comment.Field && activity.NewIdentifier.Valid {
 		if activity.Verb == "created" || activity.Verb == "updated" {
 			//TODO
-			var arr []dao.DocActivity
+			var arr []dao.ActivityEvent
 			if v, ok := ia.commentActivityMap[activity.NewIdentifier.UUID]; !ok {
 				arr = append(arr, activity)
 			} else {
@@ -372,50 +373,50 @@ func (ia *docActivity) AddActivity(activity dao.DocActivity) bool {
 	return true
 }
 
-func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.DocActivity) {
+func (as *docActivitySorter) sortEntity(tx *gorm.DB, activity dao.ActivityEvent) {
 	var newDocCreate *dao.Doc
-	if activity.Field != nil && *activity.Field == actField.Doc.Field.String() && activity.Verb == actField.VerbCreated && activity.NewDoc != nil {
+	if activity.Field == actField.Doc.Field && activity.Verb == actField.VerbCreated && activity.DocActivityExtendFields.NewDoc != nil {
 
 		if tx.
 			Joins("Author").
 			Joins("Workspace").
 			Joins("ParentDoc").
 			Preload("AccessRules.Member").
-			Where("docs.id = ?", activity.NewDoc.ID).First(&newDocCreate).Error != nil {
+			Where("docs.id = ?", activity.DocActivityExtendFields.NewDoc.ID).First(&newDocCreate).Error != nil {
 		}
 	}
-	if activity.DocId != uuid.Nil { //
-		if v, ok := as.Docs[activity.DocId]; !ok {
-			activity.Doc.Workspace = activity.Workspace
-			da := newDocActivity(tx, activity.Doc, newDocCreate)
-			if da != nil {
-				if !da.AddActivity(activity) {
-					as.skipActivities = append(as.skipActivities, activity)
-				}
-				as.Docs[activity.DocId] = *da
-			}
-		} else {
-			if !v.AddActivity(activity) {
+	if v, ok := as.Docs[activity.DocID.UUID]; !ok {
+		activity.Doc.Workspace = activity.Workspace
+		da := newDocActivity(tx, activity.Doc, newDocCreate)
+		if da != nil {
+			if !da.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Docs[activity.DocId] = v
+			as.Docs[activity.DocID.UUID] = *da
 		}
+	} else {
+		if !v.AddActivity(activity) {
+			as.skipActivities = append(as.skipActivities, activity)
+		}
+		as.Docs[activity.DocID.UUID] = v
 	}
+
 	return
 }
 
-func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUser *dao.User, doc *dao.Doc) (string, string, error) {
+func getDocNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targetUser *dao.User, doc *dao.Doc) (string, string, error) {
 	result := ""
 	//
-	actorsChangesMap := make(map[uuid.UUID]map[string]dao.DocActivity)
+	actorsChangesMap := make(map[uuid.UUID]map[string]dao.ActivityEvent)
 	actorsMap := make(map[uuid.UUID]dao.User)
 	commentCount := 0
-	for _, activity := range activities {
+	for i, activity := range activities {
 		// doc deletion
+		activities[i].Doc.SetUrl()
 		activity.Doc.AfterFind(tx)
 		doc.AfterFind(tx)
 
-		if activity.Field != nil && *activity.Field == actField.Doc.Field.String() && activity.Verb == actField.VerbDeleted {
+		if activity.Field == actField.Doc.Field && activity.Verb == actField.VerbDeleted {
 			var template dao.Template
 			if err := tx.Where("name = ?", "doc_activity_delete").First(&template).Error; err != nil {
 				return "", "", err
@@ -448,7 +449,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		}
 
 		// comment
-		if *activity.Field == actField.Comment.Field.String() {
+		if activity.Field == actField.Comment.Field {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_activity_comment").First(&template).Error; err != nil {
 				return "", "", err
@@ -488,13 +489,13 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			continue
 		}
 
-		changesMap, ok := actorsChangesMap[activity.ActorId.UUID]
+		changesMap, ok := actorsChangesMap[activity.ActorID]
 		if !ok {
-			changesMap = make(map[string]dao.DocActivity)
+			changesMap = make(map[string]dao.ActivityEvent)
 		}
-		field := *activity.Field
+		field := activity.Field
 
-		if field == actField.Description.Field.String() {
+		if field == actField.Description.Field {
 			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
@@ -504,13 +505,13 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 			activity.OldValue = &oldValue
 			activity.NewValue = newValue
 		}
-		if field == actField.Doc.Field.String() && activity.Verb == actField.VerbCreated {
+		if field == actField.Doc.Field && activity.Verb == actField.VerbCreated {
 			continue
 		}
 
-		changesMap[field] = activity
-		actorsMap[activity.ActorId.UUID] = *activity.Actor
-		actorsChangesMap[activity.ActorId.UUID] = changesMap
+		changesMap[field.String()] = activity
+		actorsMap[activity.ActorID] = *activity.Actor
+		actorsChangesMap[activity.ActorID] = changesMap
 	}
 
 	var template dao.Template
@@ -523,8 +524,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 	var attachments []dao.DocAttachment
 	if err := tx.
 		Joins("Asset").
-		Where("doc_attachments.workspace_id = ?", activities[0].WorkspaceId).
-		Where("doc_attachments.doc_id = ?", activities[0].DocId).
+		Where("doc_attachments.workspace_id = ?", activities[0].WorkspaceID).
+		Where("doc_attachments.doc_id = ?", activities[0].DocID).
 		Order("doc_attachments.created_at").
 		Find(&attachments).Error; err != nil {
 		return "", "", err
@@ -534,7 +535,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 		context := struct {
 			Doc         dao.Doc
 			IssueURL    string
-			Changes     map[string]dao.DocActivity
+			Changes     map[string]dao.ActivityEvent
 			Actor       dao.User
 			CreatedAt   time.Time
 			Attachments []dao.DocAttachment
@@ -594,8 +595,8 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.DocActivity, targetUse
 	return content, htmlStripPolicy.Sanitize(content), nil
 }
 
-func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
-	if act.Field != nil && *act.Field != actField.Doc.Field.String() {
+func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.ActivityEvent) string {
+	if act.Field != actField.Doc.Field {
 		return ""
 	}
 
@@ -650,14 +651,14 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.DocActivity) string {
 			return ""
 		}
 
-		if act.NewDoc == nil {
-			act.NewDoc = &newDoc
+		if act.DocActivityExtendFields.NewDoc == nil {
+			act.DocActivityExtendFields.NewDoc = &newDoc
 		}
 		var description string
 		var oldVal uuid.UUID
 
 		if act.Verb != actField.VerbRemoved {
-			description = replaceTablesToText(replaceImageToText(act.NewDoc.Content.Body))
+			description = replaceTablesToText(replaceImageToText(act.DocActivityExtendFields.NewDoc.Content.Body))
 			description = policy.ProcessCustomHtmlTag(description)
 			description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))
 			description = template.ReplaceTxtToSvg(description)

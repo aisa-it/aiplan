@@ -304,3 +304,65 @@ CREATE OR REPLACE TRIGGER deferred_notifications_notify
     ON deferred_notifications
     FOR EACH ROW
     EXECUTE PROCEDURE notify_deferred_notification();
+
+ALTER TABLE activity_events DROP CONSTRAINT IF EXISTS entity_fk_check;
+
+ALTER TABLE activity_events
+    ADD CONSTRAINT entity_fk_check
+        CHECK (
+            (entity_type = 0 AND
+             workspace_id IS NULL AND
+             project_id IS NULL AND
+             issue_id IS NULL AND
+             doc_id IS NULL AND
+             sprint_id IS NULL AND
+             form_id IS NULL)
+                OR
+            (entity_type = 1 AND
+             workspace_id IS NOT NULL AND
+             project_id IS NULL AND
+             issue_id IS NULL AND
+             doc_id IS NULL AND
+             sprint_id IS NULL AND
+             form_id IS NULL)
+                OR
+            (entity_type = 2 AND
+             workspace_id IS NOT NULL AND
+             project_id IS NOT NULL AND
+             issue_id IS NULL AND
+             doc_id IS NULL AND
+             sprint_id IS NULL AND
+             form_id IS NULL)
+                OR
+            (entity_type = 3 AND
+             workspace_id IS NOT NULL AND
+             project_id IS NOT NULL AND
+             issue_id IS NOT NULL AND
+             doc_id IS NULL AND
+             sprint_id IS NULL AND
+             form_id IS NULL)
+                OR
+            (entity_type = 4 AND
+             workspace_id IS NOT NULL AND
+             project_id IS NULL AND
+             issue_id IS NULL AND
+             doc_id IS NOT NULL AND
+             sprint_id IS NULL AND
+             form_id IS NULL)
+                OR
+            (entity_type = 5 AND
+             workspace_id IS NOT NULL AND
+             project_id IS NULL AND
+             issue_id IS NULL AND
+             doc_id IS  NULL AND
+             sprint_id IS NULL AND
+             form_id IS NOT NULL)
+                OR
+            (entity_type = 6 AND
+             workspace_id IS NOT NULL AND
+             project_id IS NULL AND
+             issue_id IS NULL AND
+             doc_id IS NULL AND
+             sprint_id IS NOT NULL AND
+             form_id IS NULL)
+            )

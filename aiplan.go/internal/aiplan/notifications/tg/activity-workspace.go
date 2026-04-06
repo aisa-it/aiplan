@@ -2,19 +2,15 @@ package tg
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"gorm.io/gorm"
 )
 
-type funcWorkspaceMsgFormat func(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg
-
 var (
-	workspaceMap = map[actField.ActivityField]funcWorkspaceMsgFormat{
+	workspaceMap = map[actField.ActivityField]funcTgMsgFormat{
 		actField.Project.Field:     workspaceProject,
 		actField.Doc.Field:         workspaceDoc,
 		actField.Form.Field:        workspaceForm,
@@ -32,48 +28,7 @@ var (
 	}
 )
 
-func notifyFromWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) (*ActivityTgNotification, error) {
-	if act.Field == nil {
-		return nil, nil
-	}
-
-	if err := preloadWorkspaceActivity(tx, act); err != nil {
-		return nil, err
-	}
-
-	msg, err := formatWorkspaceActivity(act)
-	if err != nil {
-		return nil, fmt.Errorf("formatWorkspaceActivity: %w", err)
-	}
-
-	plan := NotifyPlan{
-		TableName:      act.TableName(),
-		settings:       fromWorkspace(act.WorkspaceId),
-		ActivitySender: act.ActivitySender.SenderTg,
-		Entity:         actField.Workspace.Field,
-		AuthorRole:     actionAuthor,
-		Steps: []UsersStep{
-			addUserRole(act.Actor, actionAuthor),
-			addWorkspaceAdmins(act.WorkspaceId),
-		},
-	}
-
-	return NewActivityTgNotification(tx, act, msg, plan), nil
-}
-
-func preloadWorkspaceActivity(tx *gorm.DB, act *dao.WorkspaceActivity) error {
-	if err := tx.Unscoped().
-		Joins("Owner").
-		Where("workspaces.id = ?", act.WorkspaceId).
-		First(&act.Workspace).Error; err != nil {
-		slog.Error("Get workspace for activity", "activityId", act.Id, "err", err)
-		return fmt.Errorf("preloadWorkspaceActivity: %v", err)
-	}
-
-	return nil
-}
-
-func formatWorkspaceActivity(act *dao.WorkspaceActivity) (TgMsg, error) {
+func FormatWorkspaceActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	res, err := formatByField(act, workspaceMap, nil)
 	if err != nil {
 		return res, err
@@ -82,144 +37,146 @@ func formatWorkspaceActivity(act *dao.WorkspaceActivity) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), act.Workspace.Slug, act.Workspace.URL), nil
 }
 
-func workspaceProject(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceProject(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
+	pef := act.WorkspaceActivityExtendFields.ProjectExtendFields
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) в пространстве"
-		msg.body = Stelegramf("*Проект:* [%s](%s)", act.NewProject.Name, act.NewProject.URL.String())
+		msg.Title = "создал(-a) в пространстве"
+		msg.Body = Stelegramf("*Проект:* [%s](%s)", pef.NewProject.Name, pef.NewProject.URL.String())
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) из пространства"
-		msg.body = Stelegramf("*Проект:* ~%s~", fmt.Sprint(*act.OldValue))
+		msg.Title = "удалил(-a) из пространства"
+		msg.Body = Stelegramf("*Проект:* ~%s~", fmt.Sprint(*act.OldValue))
 	}
 	return msg
 }
 
-func workspaceDoc(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceDoc(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
+	def := act.WorkspaceActivityExtendFields.DocExtendFields
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) в пространстве"
-		msg.body = Stelegramf("*Корневой документ:* [%s](%s)", act.NewDoc.Title, act.NewDoc.URL.String())
+		msg.Title = "создал(-a) в пространстве"
+		msg.Body = Stelegramf("*Корневой документ:* [%s](%s)", def.NewDoc.Title, def.NewDoc.URL.String())
 
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) из пространства"
-		msg.body = Stelegramf("*Корневой документ:* ~%s~", fmt.Sprint(*act.OldValue))
+		msg.Title = "удалил(-a) из пространства"
+		msg.Body = Stelegramf("*Корневой документ:* ~%s~", fmt.Sprint(*act.OldValue))
 	}
 	return msg
 }
 
-func workspaceForm(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceForm(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) в пространстве"
-		msg.body = Stelegramf("*Форму:* [%s](%s)", act.NewForm.Title, act.NewForm.URL.String())
+		msg.Title = "создал(-a) в пространстве"
+		msg.Body = Stelegramf("*Форму:* [%s](%s)", act.NewForm.Title, act.NewForm.URL.String())
 
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) из пространства"
-		msg.body = Stelegramf("*Форму:* ~%s~", fmt.Sprint(*act.OldValue))
+		msg.Title = "удалил(-a) из пространства"
+		msg.Body = Stelegramf("*Форму:* ~%s~", fmt.Sprint(*act.OldValue))
 	}
 	return msg
 }
 
-func workspaceSprint(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceSprint(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) в пространстве"
-		msg.body = Stelegramf("*Спринт:* [%s](%s)", act.NewSprint.GetFullName(), act.NewSprint.URL.String())
+		msg.Title = "создал(-a) в пространстве"
+		msg.Body = Stelegramf("*Спринт:* [%s](%s)", act.NewSprint.GetFullName(), act.NewSprint.URL.String())
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) из пространства"
-		msg.body = Stelegramf("*Спринт:* ~%s~", fmt.Sprint(*act.OldValue))
+		msg.Title = "удалил(-a) из пространства"
+		msg.Body = Stelegramf("*Спринт:* ~%s~", fmt.Sprint(*act.OldValue))
 	}
 	return msg
 }
 
-func workspaceDescription(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceDescription(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) в пространстве"
-	msg.body += Stelegramf("*%s*: \n```\n%s```", types.FieldsTranslation[af], utils.HtmlToTg(act.NewValue))
+	msg.Title = "изменил(-a) в пространстве"
+	msg.Body += Stelegramf("*%s*: \n```\n%s```", types.FieldsTranslation[af], utils.HtmlToTg(act.NewValue))
 	return msg
 }
 
-func workspaceToken(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceToken(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) в пространстве"
-	msg.body = Stelegramf("*Токен для работы интеграций*")
+	msg.Title = "изменил(-a) в пространстве"
+	msg.Body = Stelegramf("*Токен для работы интеграций*")
 	return msg
 }
 
-func workspaceOwner(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceOwner(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) лидера пространства"
-	msg.body += Stelegramf("~%s~ %s", getUserName(act.OldOwner), getUserName(act.NewOwner))
+	msg.Title = "изменил(-a) лидера пространства"
+	msg.Body += Stelegramf("~%s~ %s", getUserName(act.OldOwner), getUserName(act.NewOwner))
 	return msg
 }
 
-func workspaceMember(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceMember(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) в пространство"
-		msg.body = Stelegramf("__%s__\n*Роль:* %s", getUserName(act.NewMember), types.TranslateMap(types.RoleTranslation, &act.NewValue))
+		msg.Title = "добавил(-a) в пространство"
+		msg.Body = Stelegramf("__%s__\n*Роль:* %s", getUserName(act.NewMember), types.TranslateMap(types.RoleTranslation, &act.NewValue))
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) из пространства"
-		msg.body = Stelegramf("~%s~", getUserName(act.OldMember))
+		msg.Title = "убрал(-a) из пространства"
+		msg.Body = Stelegramf("~%s~", getUserName(act.OldMember))
 
 	}
 	return msg
 }
 
-func workspaceIntegration(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceIntegration(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	switch act.Verb {
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) интеграцию в пространство"
-		msg.body = Stelegramf("%s", act.NewValue)
+		msg.Title = "добавил(-a) интеграцию в пространство"
+		msg.Body = Stelegramf("%s", act.NewValue)
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) интеграцию из пространства"
-		msg.body += Stelegramf("~%s~", fmt.Sprint(*act.OldValue))
+		msg.Title = "убрал(-a) интеграцию из пространства"
+		msg.Body += Stelegramf("~%s~", fmt.Sprint(*act.OldValue))
 	}
 	return msg
 }
 
-func workspaceRole(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceRole(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) роль пользователя в пространстве"
-	msg.body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
+	msg.Title = "изменил(-a) роль пользователя в пространстве"
+	msg.Body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
 	return msg
 }
 
-func workspaceName(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceName(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) в пространстве"
-	msg.body = Stelegramf("*Имя пространства*: ~%s~ %s", fmt.Sprint(*act.OldValue), act.NewValue)
+	msg.Title = "изменил(-a) в пространстве"
+	msg.Body = Stelegramf("*Имя пространства*: ~%s~ %s", fmt.Sprint(*act.OldValue), act.NewValue)
 
 	return msg
 }
 
-func workspaceLogo(act *dao.WorkspaceActivity, af actField.ActivityField) TgMsg {
+func workspaceLogo(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) в пространстве"
-	msg.body = Stelegramf("*Логотип пространства*")
+	msg.Title = "изменил(-a) в пространстве"
+	msg.Body = Stelegramf("*Логотип пространства*")
 	return msg
 }

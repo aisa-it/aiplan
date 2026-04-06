@@ -24,8 +24,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor"
 	_ "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/editor/tiptap" // Регистрация TipTap парсера и сериализатора
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/lib/pq"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -171,8 +169,8 @@ func (i Issue) GetString() string {
 //
 // Возвращает:
 //   - string: строка, представляющая тип сущности (issue). Определяет, к какому типу относится сущность.
-func (i Issue) GetEntityType() string {
-	return actField.Issue.Field.String()
+func (i Issue) GetEntityType() actField.ActivityField {
+	return actField.Issue.Field
 }
 
 func (i Issue) GetWorkspaceId() uuid.UUID {
@@ -712,25 +710,23 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 		tx = tx.Unscoped().Session(&gorm.Session{})
 	}
 
-	cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-	tx.Where("(new_identifier = ? OR old_identifier = ?) AND (verb = ? OR verb = ? OR verb = ? OR verb = ?) AND field = ?", issue.ID, issue.ID, "created", "removed", "added", "copied", issue.GetEntityType()).
-		Model(&ProjectActivity{}).
-		Updates(cleanId)
+	query := tx.Where("entity_type = ?", types.LayerIssue).Where("issue_id = ?", issue.ID)
+	if err := CleanupActivityData(tx, query, issue.ID, types.LayerProject, types.LayerSprint); err != nil {
+		return err
+	}
 
-	tx.Where("new_identifier = ? OR old_identifier = ?", issue.ID, issue.ID).
-		Model(&SprintActivity{}).
-		Updates(cleanId)
-
-	tx.Where("new_identifier = ? ", issue.ID).
-		Model(&IssueActivity{}).
+	tx.Where("entity_type = ?", types.LayerIssue).
+		Where("new_identifier = ? ", issue.ID).
+		Model(&ActivityEvent{}).
 		Update("new_identifier", nil)
 
-	tx.Where("old_identifier = ?", issue.ID).
-		Model(&IssueActivity{}).
+	tx.Where("entity_type = ?", types.LayerIssue).
+		Where("old_identifier = ?", issue.ID).
+		Model(&ActivityEvent{}).
 		Update("old_identifier", nil)
 
 	// Delete UserNotification
-	if err := tx.Where("issue_id = ?", issue.ID).Delete(&UserNotifications{}).Error; err != nil {
+	if err := tx.Where("issue_id = ?", issue.ID).Delete(&UserAppNotify{}).Error; err != nil {
 		return err
 	}
 
@@ -753,37 +749,6 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Where("issue_id = ?", issue.ID).Delete(&IssueLabel{}).Error; err != nil {
 		return err
 	}
-
-	// Delete activities
-	var activities []IssueActivity
-	if err := tx.Where("issue_id = ?", issue.ID).Find(&activities).Error; err != nil {
-		return err
-	}
-
-	activityIds := utils.SliceToSlice(&activities, func(t *IssueActivity) string {
-		return t.Id.String()
-	})
-
-	if err := tx.Where("issue_activity_id in (?)", activityIds).Unscoped().Delete(&UserNotifications{}).Error; err != nil {
-		return err
-	}
-
-	for _, activity := range activities {
-		if err := tx.Unscoped().Delete(&activity).Error; err != nil {
-			return err
-		}
-	}
-
-	//// Delete activities
-	//var activities []EntityActivity
-	//if err := tx.Where("issue_id = ?", issue.ID).Find(&activities).Error; err != nil {
-	//  return err
-	//}
-	//for _, activity := range activities {
-	//  if err := tx.Unscoped().Delete(&activity).Error; err != nil {
-	//    return err
-	//  }
-	//}
 
 	// Delete comments, reaction
 	var comments []IssueComment
@@ -1153,8 +1118,8 @@ func (i IssueLink) GetString() string {
 	return i.Url
 }
 
-func (i IssueLink) GetEntityType() string {
-	return actField.Link.Field.String()
+func (i IssueLink) GetEntityType() actField.ActivityField {
+	return actField.Link.Field
 }
 
 func (i IssueLink) GetWorkspaceId() uuid.UUID {
@@ -1170,14 +1135,15 @@ func (i IssueLink) GetIssueId() uuid.UUID {
 }
 
 func (il *IssueLink) BeforeDelete(tx *gorm.DB) error {
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", il.Id, "created", "link").Model(&IssueActivity{}).Update("new_identifier", nil)
-	var activities []IssueActivity
-	if err := tx.Where("new_identifier = ? or old_identifier = ? ", il.Id, il.Id).Find(&activities).Error; err != nil {
+	tx.Where("entity_type = ?", types.LayerIssue).
+		Where("new_identifier = ? AND verb = ? AND field = ?", il.Id, actField.VerbCreated, actField.Link.Field.String()).Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
+
+	query := tx.Where("entity_type = ?", types.LayerIssue).Where("new_identifier = ? or old_identifier = ? ", il.Id, il.Id)
+	if err := CleanupActivityData(tx, query, il.IssueId); err != nil {
 		return err
 	}
-	for _, activity := range activities {
-		tx.Delete(&activity)
-	}
+
 	return nil
 }
 
@@ -1260,11 +1226,11 @@ func (ia IssueAttachment) GetString() string {
 	if ia.Asset != nil {
 		return ia.Asset.Name
 	}
-	return ia.GetEntityType()
+	return ia.GetEntityType().String()
 }
 
-func (ia IssueAttachment) GetEntityType() string {
-	return actField.Attachment.Field.String()
+func (ia IssueAttachment) GetEntityType() actField.ActivityField {
+	return actField.Attachment.Field
 }
 
 func (i IssueAttachment) GetWorkspaceId() uuid.UUID {
@@ -1284,7 +1250,10 @@ func (attachment *IssueAttachment) AfterFind(tx *gorm.DB) error {
 }
 
 func (attachment *IssueAttachment) BeforeDelete(tx *gorm.DB) error {
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, "created", "attachment").Model(&IssueActivity{}).Update("new_identifier", nil)
+	tx.Where("entity_type = ?", types.LayerIssue).
+		Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, actField.VerbCreated, actField.Attachment.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
 	return nil
 }
 
@@ -1583,8 +1552,8 @@ func (i IssueComment) GetString() string {
 	return fmt.Sprint(i.CommentHtml)
 }
 
-func (i IssueComment) GetEntityType() string {
-	return actField.Comment.Field.String()
+func (i IssueComment) GetEntityType() actField.ActivityField {
+	return actField.Comment.Field
 }
 
 func (i IssueComment) GetWorkspaceId() uuid.UUID {
@@ -1758,11 +1727,23 @@ func (i *IssueComment) SetUrl() {
 // Возвращает:
 //   - error: ошибка, если при удалении произошла ошибка, nil в противном случае.
 func (ic *IssueComment) BeforeDelete(tx *gorm.DB) error {
-	if err := tx.Where("comment_id = ?", ic.Id).Unscoped().Delete(&UserNotifications{}).Error; err != nil {
+	if err := tx.Where("issue_comment_id = ?", ic.Id).Unscoped().Delete(&UserAppNotify{}).Error; err != nil {
 		return err
 	}
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", ic.Id, "created", "comment").Model(&IssueActivity{}).Update("new_identifier", nil)
-	tx.Where("new_identifier = ? or old_identifier = ? ", ic.Id, ic.Id).Delete(&IssueActivity{})
+
+	tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("new_identifier = ? AND verb = ? AND field = ?", ic.Id, actField.VerbCreated, actField.Comment.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
+
+	query := tx.
+		Where("entity_type = ?", types.LayerIssue).
+		Where("new_identifier = ? or old_identifier = ? ", ic.Id, ic.Id)
+
+	if err := CleanupActivityData(tx, query, ic.IssueId); err != nil {
+		return err
+	}
 
 	for _, attach := range ic.Attachments {
 		if err := tx.Delete(&attach).Error; err != nil {
@@ -1773,6 +1754,7 @@ func (ic *IssueComment) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Model(&IssueComment{}).Where("reply_to_comment_id = ?", ic.Id).Update("reply_to_comment_id", nil).Error; err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -1887,50 +1869,6 @@ type RulesLog struct {
 //   - string: имя таблицы.
 func (RulesLog) TableName() string { return "rules_log" }
 
-type IssueActivity struct {
-	IssueActivityExtendFields
-	ActivitySender
-	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-
-	CreatedAt time.Time `json:"created_at" gorm:"index:issue_activities_issue_index,sort:desc,type:btree,priority:2;index:issue_activities_actor_index,sort:desc,type:btree,priority:2;index:issue_activities_mail_index,type:btree,where:notified = false"`
-	// verb character varying IS_NULL:NO
-	Verb string `json:"verb"`
-	//field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
-	// issue_id uuid IS_NULL:YES
-	IssueId uuid.UUID `json:"issue_id" gorm:"type:uuid;index:issue_activities_issue_index,priority:1" extensions:"x-nullable"`
-	// project_id uuid IS_NULL:YES
-	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
-	// actor_id uuid IS_NULL:YES
-	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:issue_activities_actor_index,priority:1" extensions:"x-nullable"`
-
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
-
-	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	Issue     *Issue     `json:"issue_detail" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
-	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-
-	//AffectedUser *User `json:"affected_user,omitempty" gorm:"-" extensions:"x-nullable"`
-
-	UnionCustomFields string `json:"-" gorm:"-"`
-
-	//NewIssueComment *IssueComment `json:"-" gorm:"-" field:"comment" extensions:"x-nullable"`
-}
-
 // IssueActivityExtendFields
 // -migration
 type IssueActivityExtendFields struct {
@@ -1954,128 +1892,9 @@ type IssueEntityI interface {
 	GetIssueId() uuid.UUID
 }
 
-func (IssueActivity) TableName() string { return "issue_activities" }
-
-// IssueActivityWithLag
-// -migration
-type IssueActivityWithLag struct {
-	IssueActivity
-	StateLag int `json:"state_lag_ms,omitempty" gorm:"->;-:migration"`
-}
-
 //func (IssueActivity) GetCustomFields(fields []string) []string {
 //	return append(fields, "'issue' AS entity_type")
 //}
-
-func (IssueActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "issue_id", "project_id", "workspace_id", "actor_id", "new_identifier", "old_identifier", "telegram_msg_ids"}
-}
-
-func (IssueActivity) GetEntity() string {
-	return "issue"
-}
-
-func (ia IssueActivity) GetCustomFields() string {
-	return ia.UnionCustomFields
-}
-
-func (ia IssueActivity) SkipPreload() bool {
-	if ia.Field == nil {
-		return true
-	}
-
-	if !ia.NewIdentifier.Valid && !ia.OldIdentifier.Valid {
-		return true
-	}
-	return false
-}
-
-func (ia IssueActivity) GetField() string {
-	return pointerToStr(ia.Field)
-}
-
-func (ia IssueActivity) GetVerb() string {
-	return ia.Verb
-}
-
-func (ia IssueActivity) GetNewIdentifier() uuid.NullUUID {
-	return ia.NewIdentifier
-}
-func (ia IssueActivity) GetOldIdentifier() uuid.NullUUID {
-	return ia.OldIdentifier
-}
-
-func (ia IssueActivity) GetId() uuid.UUID {
-	return ia.Id
-}
-
-func (ia IssueActivity) GetUrl() *string {
-	if ia.Issue != nil && ia.Issue.URL != nil {
-		urlStr := ia.Issue.URL.String()
-		return &urlStr
-	}
-	return nil
-}
-
-func (activity *IssueActivity) AfterFind(tx *gorm.DB) error {
-	return EntityActivityAfterFind(activity, tx)
-}
-
-func (activity *IssueActivity) BeforeDelete(tx *gorm.DB) error {
-	return tx.Where("issue_activity_id = ?", activity.Id).Unscoped().Delete(&UserNotifications{}).Error
-}
-
-func (activity *IssueActivity) ToLightDTO() *dto.EntityActivityLight {
-	if activity == nil {
-		return nil
-	}
-
-	return &dto.EntityActivityLight{
-		Id:         activity.Id,
-		CreatedAt:  activity.CreatedAt,
-		Verb:       activity.Verb,
-		Field:      activity.Field,
-		OldValue:   activity.OldValue,
-		NewValue:   activity.NewValue,
-		EntityType: "issue",
-
-		NewEntity: GetActionEntity(*activity, "New"),
-		OldEntity: GetActionEntity(*activity, "Old"),
-
-		//TargetUser: activity.AffectedUser.ToLightDTO(),
-
-		EntityUrl: activity.GetUrl(),
-	}
-}
-
-func (activity *IssueActivity) ToDTO() *dto.EntityActivityFull {
-	if activity == nil {
-		return nil
-	}
-
-	return &dto.EntityActivityFull{
-		EntityActivityLight: *activity.ToLightDTO(),
-		Workspace:           activity.Workspace.ToLightDTO(),
-		Actor:               activity.Actor.ToLightDTO(),
-		Issue:               activity.Issue.ToLightDTO(),
-		Project:             activity.Project.ToLightDTO(),
-		NewIdentifier:       activity.NewIdentifier,
-		OldIdentifier:       activity.OldIdentifier,
-
-		//NewEntity:           GetActionEntity(*activity, "New"),
-		//OldEntity:           GetActionEntity(*activity, "Old"),
-		//TargetUser:          activity.AffectedUser.ToLightDTO(),
-	}
-}
-
-func (activity *IssueActivityWithLag) ToDTOWithLag() *dto.EntityActivityFull {
-	if activity == nil {
-		return nil
-	}
-	d := activity.ToDTO()
-	d.StateLag = activity.StateLag
-	return d
-}
 
 // ToDTO преобразует объект RulesLog в структуру dto.RulesLog для упрощения передачи данных в клиентский код.
 //

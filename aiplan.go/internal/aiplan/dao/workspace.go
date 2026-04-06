@@ -16,10 +16,8 @@ import (
 	"net/url"
 	"time"
 
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/lib/pq"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
@@ -80,8 +78,8 @@ func (w Workspace) GetString() string {
 	return w.Name
 }
 
-func (w Workspace) GetEntityType() string {
-	return actField.Workspace.Field.String()
+func (w Workspace) GetEntityType() actField.ActivityField {
+	return actField.Workspace.Field
 }
 
 // WorkspaceExtendFields
@@ -179,18 +177,15 @@ func (workspace *Workspace) SetUrl() {
 
 func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 
-	if err := tx.
-		Where("workspace_activity_id in (?)", tx.Select("id").Where("workspace_id = ?", workspace.ID).
-			Model(&WorkspaceActivity{})).
-		Unscoped().Delete(&UserNotifications{}).Error; err != nil {
+	tx.Where("entity_type = ?", types.LayerRoot).
+		Where("new_identifier = ? AND verb = ? AND field = ?", workspace.ID, actField.VerbCreated, workspace.GetEntityType()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
+
+	query := tx.Where("entity_type = ?", types.LayerWorkspace).Where("workspace_id = ?", workspace.ID)
+	if err := CleanupActivityData(tx, query, workspace.ID); err != nil {
 		return err
 	}
-
-	tx.Where("workspace_id = ? ", workspace.ID).Delete(&WorkspaceActivity{})
-
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", workspace.ID, "created", workspace.GetEntityType()).
-		Model(&RootActivity{}).
-		Update("new_identifier", nil)
 
 	//delete asset
 	if workspace.LogoId.Valid {
@@ -270,18 +265,18 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
-	// delete EntityActivity
-	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&EntityActivity{}).Error; err != nil {
+	// delete DeferredNotifications
+	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&DeferredNotifications{}).Error; err != nil {
 		return err
 	}
 
 	// delete UserNotifications
-	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&UserNotifications{}).Error; err != nil {
+	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&UserAppNotify{}).Error; err != nil {
 		return err
 	}
 
-	// delete DeferredNotifications
-	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&DeferredNotifications{}).Error; err != nil {
+	// delete EntityActivity
+	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&ActivityEvent{}).Error; err != nil {
 		return err
 	}
 
@@ -389,8 +384,8 @@ func (wm WorkspaceMember) GetString() string {
 	return wm.Member.GetString()
 }
 
-func (wm WorkspaceMember) GetEntityType() string {
-	return actField.Member.Field.String()
+func (wm WorkspaceMember) GetEntityType() actField.ActivityField {
+	return actField.Member.Field
 }
 
 func (wm WorkspaceMember) GetWorkspaceId() uuid.UUID {
@@ -509,11 +504,13 @@ func (wm *WorkspaceMember) AfterUpdate(tx *gorm.DB) error {
 
 func (wm *WorkspaceMember) BeforeDelete(tx *gorm.DB) error {
 
-	// WorkspacetActivity update create to nil
-	//tx.Where("workspace_id = ? AND new_identifier = ? AND verb = ? AND field = ?", wm.WorkspaceId, wm.MemberId, "created", wm.GetEntityType()).
-	//  Model(&WorkspaceActivity{}).Update("new_identifier", nil)
+	// WorkspaceActivity update create to nil
+	tx.Where("entity_type = ?", types.LayerWorkspace).
+		Where("workspace_id = ? AND new_identifier = ? AND verb = ? AND field = ?", wm.WorkspaceId, wm.MemberId, "created", wm.GetEntityType()).
+		Model(&ActivityEvent{}).Update("new_identifier", nil)
 	//ProjectActivity delete other activity
-	//tx.Where("workspace_id = ? and verb <> ? and (new_identifier = ? or old_identifier = ?)", wm.WorkspaceId, "deleted", wm.MemberId, wm.MemberId).Delete(&WorkspaceActivity{})
+	tx.Where("entity_type = ?", types.LayerWorkspace).
+		Where("workspace_id = ? and verb <> ? and (new_identifier = ? or old_identifier = ?)", wm.WorkspaceId, "deleted", wm.MemberId, wm.MemberId).Delete(&ActivityEvent{})
 
 	if err := tx.Exec("delete from project_favorites where user_id = ? and workspace_id = ?",
 		wm.MemberId, wm.WorkspaceId).Error; err != nil {
@@ -621,124 +618,6 @@ func (WorkspaceFavorites) TableName() string {
 
 type WorkspaceEntityI interface {
 	GetWorkspaceId() uuid.UUID
-}
-
-type WorkspaceActivity struct {
-	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time `json:"created_at" gorm:"index:workspace_activities_workspace_index,sort:desc,type:btree,priority:2;index:workspace_activities_actor_index,sort:desc,type:btree,priority:2;index:workspace_activities_mail_index,type:btree,where:notified = false"`
-	// verb character varying IS_NULL:NO
-	Verb string `json:"verb"`
-	// field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid;index:workspace_activities_workspace_index,priority:1"`
-	// actor_id uuid IS_NULL:YES
-	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:workspace_activities_actor_index,priority:1" extensions:"x-nullable"`
-
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
-
-	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-
-	NewProject *Project `json:"-" gorm:"-" field:"project" extensions:"x-nullable"`
-
-	//AffectedUser      *User  `json:"affected_user,omitempty" gorm:"-" extensions:"x-nullable"`
-	UnionCustomFields string `json:"-" gorm:"-"`
-	WorkspaceActivityExtendFields
-	ActivitySender
-}
-
-func (wa WorkspaceActivity) GetCustomFields() string {
-	return wa.UnionCustomFields
-}
-
-func (wa WorkspaceActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "workspace_id", "actor_id", "new_identifier", "old_identifier", "telegram_msg_ids"}
-}
-
-func (WorkspaceActivity) GetEntity() string {
-	return "workspace"
-}
-
-func (WorkspaceActivity) TableName() string { return "workspace_activities" }
-
-func (wa WorkspaceActivity) SkipPreload() bool {
-	if wa.Field == nil {
-		return true
-	}
-
-	if !wa.NewIdentifier.Valid && !wa.OldIdentifier.Valid {
-		return true
-	}
-	return false
-}
-
-func (wa WorkspaceActivity) GetField() string {
-	return pointerToStr(wa.Field)
-}
-
-func (wa WorkspaceActivity) GetVerb() string {
-	return wa.Verb
-}
-
-func (wa WorkspaceActivity) GetNewIdentifier() uuid.NullUUID {
-	return wa.NewIdentifier
-}
-
-func (wa WorkspaceActivity) GetOldIdentifier() uuid.NullUUID {
-	return wa.OldIdentifier
-}
-
-func (wa WorkspaceActivity) GetId() uuid.UUID {
-	return wa.Id
-}
-
-func (wa WorkspaceActivity) SetTgSender(id int64) {
-	wa.ActivitySender.SenderTg = id
-}
-
-func (wa WorkspaceActivity) GetUrl() *string {
-	if wa.Workspace.URL != nil {
-		urlStr := wa.Workspace.URL.String()
-		return &urlStr
-	}
-	return nil
-}
-
-func (activity *WorkspaceActivity) ToLightDTO() *dto.EntityActivityLight {
-	if activity == nil {
-		return nil
-	}
-
-	return &dto.EntityActivityLight{
-		Id:         activity.Id,
-		CreatedAt:  activity.CreatedAt,
-		Verb:       activity.Verb,
-		Field:      activity.Field,
-		OldValue:   activity.OldValue,
-		NewValue:   activity.NewValue,
-		EntityType: "workspace",
-
-		NewEntity: GetActionEntity(*activity, "New"),
-		OldEntity: GetActionEntity(*activity, "Old"),
-
-		EntityUrl: activity.GetUrl(),
-	}
-}
-
-func (wa *WorkspaceActivity) AfterFind(tx *gorm.DB) error {
-	return EntityActivityAfterFind(wa, tx)
 }
 
 // WorkspaceActivityExtendFields

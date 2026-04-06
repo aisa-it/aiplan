@@ -1,7 +1,6 @@
 // Содержит структуры данных (DTO) для представления различных сущностей и данных, используемых в приложении.  Предназначен для обеспечения структурированного обмена данными между компонентами приложения и внешними системами.
 //
 // Основные возможности:
-//   - Представление сущностей активности (EntityActivityLight, EntityActivityFull).
 //   - Работа с Release Notes (ReleaseNoteLight).
 //   - Описание файлов (FileAsset).
 //   - Определение состояний (StateLight).
@@ -14,44 +13,9 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 )
-
-type EntityActivityLight struct {
-	Id        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	Verb      string    `json:"verb"`
-	Field     *string   `json:"field,omitempty"  extensions:"x-nullable"`
-
-	OldValue *string `json:"old_value,omitempty"  extensions:"x-nullable"`
-	NewValue string  `json:"new_value"`
-
-	EntityType string `json:"entity_type"`
-
-	NewEntity any `json:"new_entity_detail,omitempty" extensions:"x-nullable"`
-	OldEntity any `json:"old_entity_detail,omitempty" extensions:"x-nullable"`
-
-	//TargetUser *UserLight `json:"target_user,omitempty"  extensions:"x-nullable"`
-
-	EntityUrl *string `json:"entity_url,omitempty"`
-}
-
-type EntityActivityFull struct {
-	EntityActivityLight
-
-	Workspace *WorkspaceLight `json:"workspace_detail,omitempty"  extensions:"x-nullable"`
-	Actor     *UserLight      `json:"actor_detail,omitempty"  extensions:"x-nullable"`
-	Issue     *IssueLight     `json:"issue_detail,omitempty" extensions:"x-nullable"`
-	Project   *ProjectLight   `json:"project_detail,omitempty" extensions:"x-nullable"`
-	Form      *FormLight      `json:"form_detail,omitempty"  extensions:"x-nullable"`
-	Doc       *DocLight       `json:"doc_detail,omitempty" extensions:"x-nullable"`
-	Sprint    *SprintLight    `json:"sprint_detail,omitempty" extensions:"x-nullable"`
-
-	NewIdentifier uuid.NullUUID `json:"new_identifier,omitempty" extensions:"x-nullable"`
-	OldIdentifier uuid.NullUUID `json:"old_identifier,omitempty" extensions:"x-nullable"`
-
-	StateLag int `json:"state_lag_ms,omitempty"`
-}
 
 type ReleaseNoteLight struct {
 	ID          uuid.UUID          ` json:"id"`
@@ -128,6 +92,41 @@ type GitConfigInfo struct {
 	GitRepositoriesPath string `json:"git_repositories_path"`
 }
 
+type ActivityEventLight struct {
+	Id        uuid.UUID              `json:"id"`
+	CreatedAt time.Time              `json:"created_at"`
+	Verb      string                 `json:"verb"`
+	Field     actField.ActivityField `json:"field,omitempty"  extensions:"x-nullable"`
+
+	OldValue *string `json:"old_value,omitempty"  extensions:"x-nullable"`
+	NewValue string  `json:"new_value"`
+
+	EntityType string `json:"entity_type"`
+
+	NewEntity any `json:"new_entity_detail,omitempty" extensions:"x-nullable"`
+	OldEntity any `json:"old_entity_detail,omitempty" extensions:"x-nullable"`
+
+	//TargetUser *UserLight `json:"target_user,omitempty"  extensions:"x-nullable"`
+
+	EntityUrl *string `json:"entity_url,omitempty"`
+}
+
+type ActivityEventFull struct {
+	ActivityEventLight
+
+	Workspace *WorkspaceLight `json:"workspace_detail,omitempty"  extensions:"x-nullable"`
+	Actor     *UserLight      `json:"actor_detail,omitempty"  extensions:"x-nullable"`
+	Issue     *IssueLight     `json:"issue_detail,omitempty" extensions:"x-nullable"`
+	Project   *ProjectLight   `json:"project_detail,omitempty" extensions:"x-nullable"`
+	Form      *FormLight      `json:"form_detail,omitempty"  extensions:"x-nullable"`
+	Doc       *DocLight       `json:"doc_detail,omitempty" extensions:"x-nullable"`
+	Sprint    *SprintLight    `json:"sprint_detail,omitempty" extensions:"x-nullable"`
+
+	NewIdentifier uuid.NullUUID `json:"new_identifier,omitempty" extensions:"x-nullable"`
+	OldIdentifier uuid.NullUUID `json:"old_identifier,omitempty" extensions:"x-nullable"`
+
+	StateLag int `json:"state_lag_ms,omitempty"`
+}
 type JitsiTokenLog struct {
 	ID          uint64        `json:"id"`
 	UserId      uuid.UUID     `json:"user_id"`

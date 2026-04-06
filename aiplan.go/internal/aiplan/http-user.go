@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/golang-jwt/jwt/v5"
 
@@ -180,7 +180,7 @@ func (s *Services) getCurrentUser(c echo.Context) error {
 		Where("viewed = false").
 		Where("user_id = ?", user.ID).
 		Where("deleted_at IS NULL").
-		Model(&dao.UserNotifications{}).
+		Model(&dao.UserAppNotify{}).
 		Find(&count).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
@@ -434,7 +434,7 @@ func (s *Services) updateUserViewProps(c echo.Context) error {
 // @Param day query string false "День выборки активностей" default("")
 // @Param offset query int false "Смещение для пагинации" default(-1)
 // @Param limit query int false "Лимит результатов" default(100)
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список действий пользователя"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список действий пользователя"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -454,34 +454,27 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project)
-
-	query := unionTable.
+	var activities []dao.ActivityEvent
+	query := s.db.
 		Joins("Workspace").
 		Joins("Actor").
 		Joins("Issue").
 		Joins("Project").
-		Joins("Form").
 		Joins("Doc").
-		Order("fa.created_at desc").
-		Where("fa.actor_id = ?", userId).
-		Where("field NOT IN (?)", []string{"start_date", "end_date"}).
-		Where("fa.entity_type = 'issue' OR (fa.entity_type = 'project' AND fa.field = 'issue')").
+		Order("created_at desc").
+		Where("actor_id = ?", userId).
+		Where("field NOT IN (?)", []string{actField.StartDate.Field.String(), actField.EndDate.Field.String()}).
+		Where("entity_type = ? OR (entity_type = ? AND field = ?)", types.LayerIssue, types.LayerProject, actField.Issue.Field).
 		Set("userId", currentUser.ID)
 
 	if !currentUser.IsSuperuser {
-		query.Where("fa.workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
+		query.Where("workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
 	}
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("fa.created_at >= ?", time.Time(day)).Where("fa.created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("created_at >= ?", time.Time(day)).Where("created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
-	var activities []dao.FullActivity
 	resp, err := dao.PaginationRequest(
 		offset,
 		limit,
@@ -492,7 +485,7 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(pa *dao.FullActivity) dto.EntityActivityFull { return *pa.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(pa *dao.ActivityEvent) dto.ActivityEventFull { return *pa.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }
@@ -509,7 +502,7 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 // @Param limit query int false "Лимит результатов" default(100)
 // @Param workspace query []string false "Workspace IDs"
 // @Param project query []string false "Project IDs"
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список действий пользователя"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список действий пользователя"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -532,23 +525,9 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var root dao.RootActivity
-	root.UnionCustomFields = "'root' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
+	var activities []dao.ActivityEvent
 
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc, sprint)
-	query := unionTable.
+	query := s.db.
 		Joins("Actor").
 		Joins("Project").
 		Joins("Workspace").
@@ -556,22 +535,21 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 		Joins("Doc").
 		Joins("Form").
 		Joins("Sprint").
-		Order("fa.created_at desc").
-		Where("fa.actor_id = ?", user.ID).
+		Order("activity_events.created_at desc").
+		Where("activity_events.actor_id = ?", user.ID).
 		//Where("field NOT IN (?)", []string{"start_date", "end_date"}). //TODO create & move to ActivitySkipper
 		Set("userId", user.ID)
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("fa.created_at >= ?", time.Time(day)).Where("fa.created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("activity_events.created_at >= ?", time.Time(day)).Where("activity_events.created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
-	var activities []dao.FullActivity
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
+		query = query.Where("workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id::text IN (?)", projectIds)
+		query = query.Where("project_id::text IN (?)", projectIds)
 	}
 
 	resp, err := dao.PaginationRequest(
@@ -584,7 +562,7 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(ea *dao.FullActivity) dto.EntityActivityFull { return *ea.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(ea *dao.ActivityEvent) dto.ActivityEventFull { return *ea.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }
@@ -622,32 +600,16 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var root dao.RootActivity
-	root.UnionCustomFields = "'root' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc, sprint)
-	query := unionTable.
-		Where("fa.actor_id = ?", user.ID)
+	query := s.db.
+		Where("actor_id = ?", user.ID)
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper
 
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
+		query = query.Where("workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id::text IN (?)", projectIds)
+		query = query.Where("project_id::text IN (?)", projectIds)
 	}
 
 	tables, err := GetActivitiesTable(query, from, to)
@@ -703,16 +665,10 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 		}
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project)
-
-	query := unionTable.
-		Where("fa.actor_id = ?", userId).
-		Where("field NOT IN (?)", []string{"start_date", "end_date"}).
-		Where("fa.entity_type = 'issue' OR (fa.entity_type = 'project' AND fa.field = 'issue')")
+	query := s.db.
+		Where("actor_id = ?", userId).
+		Where("field NOT IN (?)", []string{actField.StartDate.Field.String(), actField.EndDate.Field.String()}).
+		Where("entity_type = ? OR (entity_type = ? AND field = ?)", types.LayerIssue, types.LayerProject, actField.Issue.Field)
 
 	//Where("entity_type NOT IN (?)", []string{tracker.ENTITY_TYPE_PROJECT, tracker.ENTITY_TYPE_WORKSPACE})
 	//query := s.db.
@@ -721,7 +677,7 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper
 
 	if !currentUser.IsSuperuser {
-		query = query.Where("fa.workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
+		query = query.Where("workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
 	}
 
 	tables, err := GetActivitiesTable(query, from, to)
@@ -1505,90 +1461,30 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// TODO refactoring & add other Activities
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "ua", dao.FullActivity{}, issue, project, doc, form, workspace, sprint)
-
-	var userNotifications []dao.UserNotifications
-
-	getActivityId := func(u *dao.UserNotifications) uuid.NullUUID {
-		if u.IssueActivityId.Valid {
-			return u.IssueActivityId
-		}
-		if u.ProjectActivityId.Valid {
-			return u.ProjectActivityId
-		}
-		if u.DocActivityId.Valid {
-			return u.DocActivityId
-		}
-		if u.FormActivityId.Valid {
-			return u.FormActivityId
-		}
-		if u.WorkspaceActivityId.Valid {
-			return u.WorkspaceActivityId
-		}
-		if u.SprintActivityId.Valid {
-			return u.SprintActivityId
-		}
-
-		return uuid.NullUUID{}
-	}
-
+	var userNotifications []dao.UserAppNotify
 	query := s.db.
-		//Preload("EntityActivity").
-		//Preload("EntityActivity.Actor").
-		//Preload("EntityActivity.Issue").
-		//Preload("EntityActivity.Project").
-		//Preload("EntityActivity.Workspace").
-		Joins("IssueActivity").
-		Joins("ProjectActivity").
-		Joins("DocActivity").
-		Joins("FormActivity").
-		Joins("SprintActivity").
-
-		//Joins("IssueActivity").
-		//Preload("IssueActivity.Actor").
-		//Preload("IssueActivity.Issue").
-		//Preload("IssueActivity.Project").
-		//Preload("IssueActivity.Workspace").
-		//Joins("ProjectActivity").
-		//Preload("ProjectActivity.Actor").
-		//Preload("ProjectActivity.Project").
-		//Preload("ProjectActivity.Workspace").
-		//Joins("WorkspaceActivity").
-		//Preload("WorkspaceActivity.Actor").
-		//Preload("WorkspaceActivity.Workspace").
-		//Joins("DocActivity").
-		//Preload("DocActivity.Actor").
-		//Preload("DocActivity.Workspace").
-		//Preload("DocActivity.Doc").
-		//Preload("FormActivity.Actor").
-		//Preload("FormActivity.Workspace").
-		//Preload("FormActivity.Form").
-		//Joins("RootActivity").
-		//Preload("RootActivity.Actor").
-		Joins("Comment").
-		Preload("Comment.Actor").
-		Preload("Comment.Issue").
-		Preload("Comment.Project").
-		Preload("Comment.Workspace").
+		Preload("ActivityEvent",
+			func(db *gorm.DB) *gorm.DB {
+				return db.
+					Joins("Actor").
+					Joins("Issue").
+					Joins("Project").
+					Joins("Workspace").
+					Joins("Doc").
+					Joins("Form").
+					Joins("Sprint")
+			}).
+		Joins("IssueComment").
+		Joins("IssueComment.Actor").
+		Joins("IssueComment.Issue").
+		Joins("IssueComment.Project").
+		Joins("IssueComment.Workspace").
 		Joins("Workspace").
 		Joins("Author").
 		Joins("Issue").
-		Preload("Issue.Project").
-		Where("user_id = ?", user.ID).Order("created_at desc")
+		Joins("Issue.Project").
+		Where("user_app_notifies.user_id = ?", user.ID).
+		Order("user_app_notifies.created_at desc")
 
 	resp, err := dao.PaginationRequest(
 		offset,
@@ -1600,64 +1496,12 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	elementsRes := utils.Filter(
-		slices.All(*resp.Result.(*[]dao.UserNotifications)),
-		func(t dao.UserNotifications) bool {
-			if id := getActivityId(&t); id.Valid {
-				return true
-			}
-			return false
-		})
-
-	res := slices.Collect(elementsRes)
-
-	qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) uuid.UUID {
-		if id := getActivityId(t); id.Valid {
-			return id.UUID
-		}
-		return uuid.Nil
-	})
-
-	var fa []dao.FullActivity
-	if err := unionTable.
-		Joins("Project").
-		Joins("Workspace").
-		Joins("Actor").
-		Joins("Issue").
-		Joins("Doc").
-		Joins("Form").
-		Joins("Sprint").
-		Where("ua.id::text IN (?)", qqq).
-		Find(&fa).Error; err != nil {
-		if err != gorm.ErrRecordNotFound {
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		}
-	}
-
-	idMap := utils.SliceToMap(&fa, func(t *dao.FullActivity) uuid.UUID {
-		return t.Id
-	})
-
-	for i := 0; i < len(*resp.Result.(*[]dao.UserNotifications)); i++ {
-		var id uuid.NullUUID
-		if results, ok := resp.Result.(*[]dao.UserNotifications); ok {
-			id = getActivityId(&(*results)[i])
-			if !id.Valid {
-				continue
-			}
-
-			if v, ok := idMap[id.UUID]; ok {
-				(*resp.Result.(*[]dao.UserNotifications))[i].FullActivity = &v
-			}
-		}
-	}
-
 	resp.Result = userNotifyToSimple(resp.Result)
 	return c.JSON(http.StatusOK, resp)
 }
 
 func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse {
-	temp := from.(*[]dao.UserNotifications)
+	temp := from.(*[]dao.UserAppNotify)
 	res := make([]notifications.NotificationResponse, 0, len(*temp))
 	for _, notify := range *temp {
 		tmp := notifications.NotificationResponse{
@@ -1690,45 +1534,31 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 				Msg:   notify.Msg,
 			}
 		case "comment":
-			if notify.Comment != nil {
+			if notify.IssueComment != nil {
 				tmp.Detail = notifications.NotificationDetailResponse{
-					User:      notify.Comment.Actor.ToLightDTO(),
-					Issue:     notify.Comment.Issue.ToLightDTO(),
-					Project:   notify.Comment.Project.ToLightDTO(),
-					Workspace: notify.Comment.Workspace.ToLightDTO(),
+					User:      notify.IssueComment.Actor.ToLightDTO(),
+					Issue:     notify.IssueComment.Issue.ToLightDTO(),
+					Project:   notify.IssueComment.Project.ToLightDTO(),
+					Workspace: notify.IssueComment.Workspace.ToLightDTO(),
 				}
 			}
-			tmp.Data = notify.Comment.ToLightDTO()
+			tmp.Data = notify.IssueComment.ToLightDTO()
 		case "activity":
-			if notify.FullActivity != nil {
+			if notify.ActivityEvent != nil {
 				tmp.Detail = notifications.NotificationDetailResponse{
-					User:      notify.FullActivity.Actor.ToLightDTO(),
-					Issue:     notify.FullActivity.Issue.ToLightDTO(),
-					Project:   notify.FullActivity.Project.ToLightDTO(),
-					Workspace: notify.FullActivity.Workspace.ToLightDTO(),
-					Doc:       notify.FullActivity.Doc.ToLightDTO(),
-					Form:      notify.FullActivity.Form.ToLightDTO(),
-					Sprint:    notify.FullActivity.Sprint.ToLightDTO(),
+					User:      notify.ActivityEvent.Actor.ToLightDTO(),
+					Issue:     notify.ActivityEvent.Issue.ToLightDTO(),
+					Project:   notify.ActivityEvent.Project.ToLightDTO(),
+					Workspace: notify.ActivityEvent.Workspace.ToLightDTO(),
+					Doc:       notify.ActivityEvent.Doc.ToLightDTO(),
+					Form:      notify.ActivityEvent.Form.ToLightDTO(),
+					Sprint:    notify.ActivityEvent.Sprint.ToLightDTO(),
 				}
-				entityActivity := notify.FullActivity.ToLightDTO()
+				entityActivity := notify.ActivityEvent.ToLightDTO()
 				//entityActivity.NewEntity = dao.GetActionEntity(*notify.FullActivity, "New")
 				//entityActivity.OldEntity = dao.GetActionEntity(*notify.FullActivity, "Old")
 				tmp.Data = entityActivity
 			}
-			if notify.EntityActivity != nil {
-				tmp.Detail = notifications.NotificationDetailResponse{
-					User:      notify.EntityActivity.Actor.ToLightDTO(),
-					Issue:     notify.EntityActivity.Issue.ToLightDTO(),
-					Project:   notify.EntityActivity.Project.ToLightDTO(),
-					Workspace: notify.EntityActivity.Workspace.ToLightDTO(),
-					//Doc:       notify.EntityActivity.Doc.ToLightDTO(),
-				}
-				entityActivity := notify.EntityActivity.ToLightDTO()
-				entityActivity.NewEntity = dao.GetActionEntity(*notify.EntityActivity, "New")
-				entityActivity.OldEntity = dao.GetActionEntity(*notify.EntityActivity, "Old")
-				tmp.Data = entityActivity
-			}
-
 		}
 		res = append(res, tmp)
 
@@ -1753,7 +1583,7 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 func (s *Services) deleteMyNotifications(c echo.Context) error {
 	user := c.(AuthContext).User
 
-	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserNotifications{}).Error; err != nil {
+	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserAppNotify{}).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 	return c.NoContent(http.StatusOK)
@@ -1784,7 +1614,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 	}
 
 	if notification.ViewedAll == true {
-		if err := s.db.Model(&dao.UserNotifications{}).
+		if err := s.db.Model(&dao.UserAppNotify{}).
 			Where("user_id = ?", user.ID).
 			Where("viewed = false").
 			Where("deleted_at is NULL").
@@ -1794,7 +1624,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 		}
 		count = 0
 	} else {
-		if err := s.db.Model(&dao.UserNotifications{}).
+		if err := s.db.Model(&dao.UserAppNotify{}).
 			Where("user_id = ?", user.ID).
 			Where("id IN ?", notification.Ids).
 			Where("deleted_at is NULL").
@@ -1807,7 +1637,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 			Where("viewed = false").
 			Where("user_id = ?", user.ID).
 			Where("deleted_at IS NULL").
-			Model(&dao.UserNotifications{}).
+			Model(&dao.UserAppNotify{}).
 			Find(&count).Error; err != nil {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}

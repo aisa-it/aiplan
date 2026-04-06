@@ -33,7 +33,7 @@ func (e *emailNotifyIssue) Process() {
 		e.service.sending = false
 	}()
 
-	var activities []dao.IssueActivity
+	var activities []dao.ActivityEvent
 	if err := e.service.db.Unscoped().
 		Preload("Issue").
 		Preload("Actor").
@@ -48,8 +48,9 @@ func (e *emailNotifyIssue) Process() {
 		Preload("Issue.Project.DefaultWatchersDetails", "is_default_watcher = ?", true).
 		Preload("Issue.Project.DefaultWatchersDetails.Member").
 		Preload("Issue.Parent.Project").
-		Order("created_at").
-		Where("notified = ?", false).
+		Order("activity_events.created_at").
+		Where("activity_events.entity_type = ?", types.LayerIssue).
+		Where("activity_events.notified = ?", false).
 		Limit(100).
 		Find(&activities).Error; err != nil {
 		slog.Error("Get activities", slog.Int("interval", e.service.cfg.NotificationsSleep), "err", err)
@@ -68,7 +69,7 @@ func (e *emailNotifyIssue) Process() {
 		}()
 
 		sorter := issueActivitySorter{
-			skipActivities: make([]dao.IssueActivity, 0),
+			skipActivities: make([]dao.ActivityEvent, 0),
 			Issues:         make(map[uuid.UUID]issueActivity),
 		}
 
@@ -103,9 +104,9 @@ func (e *emailNotifyIssue) Process() {
 
 	if err := e.service.db.Transaction(func(tx *gorm.DB) error {
 		for _, activity := range activities {
-			if err := e.service.db.Model(&dao.IssueActivity{}).
+			if err := e.service.db.Model(&dao.ActivityEvent{}).
 				Unscoped().
-				Where("id = ?", activity.Id).
+				Where("id = ?", activity.ID).
 				Update("notified", true).Error; err != nil {
 				return err
 			}
@@ -117,7 +118,7 @@ func (e *emailNotifyIssue) Process() {
 }
 
 type issueActivitySorter struct {
-	skipActivities []dao.IssueActivity
+	skipActivities []dao.ActivityEvent
 	Issues         map[uuid.UUID]issueActivity //map[issueId]
 }
 
@@ -135,16 +136,16 @@ type issueCommentAuthor struct {
 	User                  dao.User
 	ProjectAuthorSettings types.ProjectMemberNS
 	ProjectMemberSettings types.ProjectMemberNS
-	activities            []dao.IssueActivity
+	activities            []dao.ActivityEvent
 	ProjectRole           int //todo дополнить
 }
 
 type issueActivity struct {
 	issue      *dao.Issue
-	activities []dao.IssueActivity
+	activities []dao.ActivityEvent
 	users      map[string]issueMember //map[user.Email]
 
-	commentActivityMap  map[uuid.UUID][]dao.IssueActivity // map[commentId]
+	commentActivityMap  map[uuid.UUID][]dao.ActivityEvent // map[commentId]
 	commentActivityUser map[string]issueCommentAuthor     //map[user.Email]
 }
 
@@ -160,13 +161,13 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		var sendActivities []dao.IssueActivity
+		var sendActivities []dao.ActivityEvent
 
 		for _, activity := range ia.activities {
 			var authorNotify, memberNotify bool
-			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, actField.Issue.Field, activity.Verb, member.ProjectRole)
+			memberNotify = member.ProjectMemberSettings.IsNotify(activity.Field, types.LayerIssue, activity.Verb, member.ProjectRole)
 			if activity.Issue.CreatedById == member.User.ID {
-				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, actField.Issue.Field, activity.Verb, member.ProjectRole)
+				authorNotify = member.ProjectAuthorSettings.IsNotify(activity.Field, types.LayerIssue, activity.Verb, member.ProjectRole)
 			}
 			if (member.IssueAuthor && authorNotify) || (!member.IssueAuthor && memberNotify) {
 				sendActivities = append(sendActivities, activity)
@@ -198,7 +199,7 @@ func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 			continue
 		}
 
-		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.ProjectMemberSettings.IsNotify(&field, actField.Issue.Field, "all", author.ProjectRole) {
+		if author.User.CanReceiveNotifications() && !author.User.Settings.EmailNotificationMute && author.ProjectMemberSettings.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", author.ProjectRole) {
 			content, textContent, err := getIssueNotificationHTML(tx, author.activities, &author.User)
 			if err != nil {
 				slog.Error("Make issue notification HTML", "err", err)
@@ -301,7 +302,7 @@ func (ia *issueActivity) getNotifySettings(tx *gorm.DB) error {
 }
 
 // Для пропуска активностей
-func (ia *issueActivity) skip(activity dao.IssueActivity) bool {
+func (ia *issueActivity) skip(activity dao.ActivityEvent) bool {
 	if activity.Verb == "cloned" {
 		return true
 	}
@@ -309,15 +310,15 @@ func (ia *issueActivity) skip(activity dao.IssueActivity) bool {
 		return true
 	}
 
-	if activity.Field != nil && *activity.Field == actField.StartDate.Field.String() {
+	if activity.Field == actField.StartDate.Field {
 		return true
 	}
 
-	if activity.Field != nil && *activity.Field == actField.CompletedAt.Field.String() {
+	if activity.Field == actField.CompletedAt.Field {
 		return true
 	}
 
-	if activity.Field != nil && *activity.Field == actField.Link.Field.String() && activity.Verb == "deleted" {
+	if activity.Field == actField.Link.Field && activity.Verb == actField.VerbDeleted {
 		return true
 	}
 
@@ -331,9 +332,9 @@ func newIssueActivity(issue *dao.Issue) *issueActivity {
 
 	res := issueActivity{
 		issue:               issue,
-		activities:          make([]dao.IssueActivity, 0),
+		activities:          make([]dao.ActivityEvent, 0),
 		users:               make(map[string]issueMember),
-		commentActivityMap:  make(map[uuid.UUID][]dao.IssueActivity),
+		commentActivityMap:  make(map[uuid.UUID][]dao.ActivityEvent),
 		commentActivityUser: make(map[string]issueCommentAuthor),
 	}
 
@@ -400,17 +401,17 @@ func newIssueActivity(issue *dao.Issue) *issueActivity {
 	return &res
 }
 
-func (ia *issueActivity) AddActivity(activity dao.IssueActivity) bool {
+func (ia *issueActivity) AddActivity(activity dao.ActivityEvent) bool {
 	if ia.skip(activity) {
 		return false
 	}
 
 	ia.activities = append(ia.activities, activity)
 
-	if activity.Field != nil && *activity.Field == actField.Comment.Field.String() && activity.NewIdentifier.Valid {
-		if activity.Verb == "created" || activity.Verb == "updated" {
+	if activity.Field == actField.Comment.Field && activity.NewIdentifier.Valid {
+		if activity.Verb == actField.VerbCreated || activity.Verb == actField.VerbUpdated {
 			//TODO
-			var arr []dao.IssueActivity
+			var arr []dao.ActivityEvent
 			if v, ok := ia.commentActivityMap[activity.NewIdentifier.UUID]; !ok {
 				arr = append(arr, activity)
 			} else {
@@ -422,35 +423,35 @@ func (ia *issueActivity) AddActivity(activity dao.IssueActivity) bool {
 	return true
 }
 
-func (as *issueActivitySorter) sortEntity(activity dao.IssueActivity) {
-	if activity.IssueId != uuid.Nil { // TODO check it
-		if v, ok := as.Issues[activity.IssueId]; !ok {
-			ia := newIssueActivity(activity.Issue)
-			if ia != nil {
-				if !ia.AddActivity(activity) {
-					as.skipActivities = append(as.skipActivities, activity)
-				}
-				as.Issues[activity.IssueId] = *ia
-			}
-		} else {
-			if !v.AddActivity(activity) {
+func (as *issueActivitySorter) sortEntity(activity dao.ActivityEvent) {
+	if v, ok := as.Issues[activity.IssueID.UUID]; !ok {
+		ia := newIssueActivity(activity.Issue)
+		if ia != nil {
+			if !ia.AddActivity(activity) {
 				as.skipActivities = append(as.skipActivities, activity)
 			}
-			as.Issues[activity.IssueId] = v
+			as.Issues[activity.IssueID.UUID] = *ia
 		}
+	} else {
+		if !v.AddActivity(activity) {
+			as.skipActivities = append(as.skipActivities, activity)
+		}
+		as.Issues[activity.IssueID.UUID] = v
 	}
+
 	return
 }
 
-func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targetUser *dao.User) (string, string, error) {
+func getIssueNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targetUser *dao.User) (string, string, error) {
 	result := ""
 
-	actorsChangesMap := make(map[uuid.UUID]map[string]dao.IssueActivity)
+	actorsChangesMap := make(map[uuid.UUID]map[string]dao.ActivityEvent)
 	actorsMap := make(map[uuid.UUID]dao.User)
 	commentCount := 0
-	for _, activity := range activities {
+	for i, activity := range activities {
+		activities[i].Issue.SetUrl()
 		// issue deletion
-		if activity.Field != nil && *activity.Field == actField.Issue.Field.String() && activity.Verb == "deleted" {
+		if activity.Field == actField.Issue.Field && activity.Verb == actField.VerbDeleted {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_activity_delete").First(&template).Error; err != nil {
 				return "", "", err
@@ -473,44 +474,11 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			continue
 		}
 
-		// new issue
-		if activity.Field == nil {
-			var template dao.Template
-			if err := tx.Where("name = ?", "issue_activity_new").First(&template).Error; err != nil {
-				return "", "", err
-			}
-			var p string
-			p = types.TranslateMap(types.PriorityTranslation, activity.Issue.Priority)
-
-			activity.Issue.Priority = &p
-			description := replaceTablesToText(replaceImageToText(activity.Issue.DescriptionHtml))
-			description = policy.ProcessCustomHtmlTag(description)
-			description = prepareToMail(prepareHtmlBody(htmlStripPolicy, description))
-			description = template.ReplaceTxtToSvg(description)
-			var buf bytes.Buffer
-			if err := template.ParsedTemplate.Execute(&buf, struct {
-				Actor       *dao.User
-				Issue       dao.Issue
-				CreatedAt   time.Time
-				Description string
-			}{
-				activity.Actor,
-				*activity.Issue,
-				activity.CreatedAt.In((*time.Location)(&targetUser.UserTimezone)),
-				description,
-			}); err != nil {
-				return "", "", err
-			}
-
-			result += buf.String()
+		if activity.Field == actField.IssueTransfer.Field && activity.Verb == "cloned" {
 			continue
 		}
 
-		if *activity.Field == actField.IssueTransfer.Field.String() && activity.Verb == "cloned" {
-			continue
-		}
-
-		if *activity.Field == actField.IssueTransfer.Field.String() && (activity.Verb == "copied" || activity.Verb == "move") {
+		if activity.Field == actField.IssueTransfer.Field && (activity.Verb == actField.VerbCopied || activity.Verb == "move") {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_migrate").First(&template).Error; err != nil {
 				return "", "", err
@@ -553,7 +521,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		}
 
 		// comment
-		if *activity.Field == actField.Comment.Field.String() {
+		if activity.Field == actField.Comment.Field {
 			var template dao.Template
 			if err := tx.Where("name = ?", "issue_activity_comment").First(&template).Error; err != nil {
 				return "", "", err
@@ -595,18 +563,18 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			continue
 		}
 
-		changesMap, ok := actorsChangesMap[activity.ActorId.UUID]
+		changesMap, ok := actorsChangesMap[activity.ActorID]
 		if !ok {
-			changesMap = make(map[string]dao.IssueActivity)
+			changesMap = make(map[string]dao.ActivityEvent)
 		}
-		field := *activity.Field
+		field := activity.Field
 
-		if field == actField.Priority.Field.String() {
+		if field == actField.Priority.Field {
 			activity.NewValue = types.TranslateMap(types.PriorityTranslation, utils.ToPtr(activity.NewValue))
 			activity.OldValue = utils.ToPtr(types.TranslateMap(types.PriorityTranslation, activity.OldValue))
 		}
 
-		if field == actField.TargetDate.Field.String() {
+		if field == actField.TargetDate.Field {
 			newT, errNew := FormatDate(activity.NewValue, "02.01.2006 15:04", &targetUser.UserTimezone)
 
 			if activity.OldValue != nil {
@@ -621,7 +589,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 
 		}
 
-		if field == actField.Description.Field.String() {
+		if field == actField.Description.Field {
 			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
@@ -632,13 +600,13 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 			activity.NewValue = newValue
 		}
 
-		if field == actField.LinkTitle.Field.String() || field == actField.LinkUrl.Field.String() {
-			field = actField.Link.Field.String()
+		if field == actField.LinkTitle.Field || field == actField.LinkUrl.Field {
+			field = actField.Link.Field
 		}
 
-		changesMap[field] = activity
-		actorsMap[activity.ActorId.UUID] = *activity.Actor
-		actorsChangesMap[activity.ActorId.UUID] = changesMap
+		changesMap[field.String()] = activity
+		actorsMap[activity.ActorID] = *activity.Actor
+		actorsChangesMap[activity.ActorID] = changesMap
 	}
 
 	var template dao.Template
@@ -655,7 +623,7 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.IssueActivity, targe
 		context := struct {
 			IssueURL  string
 			SubIssues []dao.Issue
-			Changes   map[string]dao.IssueActivity
+			Changes   map[string]dao.ActivityEvent
 			Actor     dao.User
 			CreatedAt time.Time
 		}{

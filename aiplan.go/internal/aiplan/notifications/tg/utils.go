@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/go-telegram/bot"
 	"golang.org/x/net/html"
@@ -28,26 +29,13 @@ func Stelegramf(format string, a ...any) string {
 	return fmt.Sprintf(format, a...)
 }
 
-func getUserTg(user *dao.User, roles ...role) (userTg, bool) {
-	if user.TelegramId == nil {
-		return userTg{}, false
-	}
-	if !user.CanReceiveNotifications() {
-		return userTg{}, false
-	}
-	if user.Settings.TgNotificationMute {
-		return userTg{}, false
-	}
-	return userTg{id: *user.TelegramId, loc: user.UserTimezone, roles: combineRoles(roles...)}, true
-}
-
 func strReplace(in string) string {
 	out := strings.Split(in, "_")
 	return "$$$" + strings.Join(out, "$$$") + "$$$"
 }
 
-func msgReplace(user userTg, msg TgMsg) TgMsg {
-	for k, v := range msg.replace {
+func MsgReplace(user member_role.MemberNotify, msg TgMsg) TgMsg {
+	for k, v := range msg.Replace {
 		key := k
 		keys := strings.Split(k, "_")
 		if len(keys) > 1 {
@@ -55,14 +43,14 @@ func msgReplace(user userTg, msg TgMsg) TgMsg {
 		}
 		switch key {
 		case targetDateTimeZ:
-			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006 15:04", &user.loc); err == nil {
-				msg.body = strings.ReplaceAll(msg.body, strReplace(k), Stelegramf("%s", strNeW))
+			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006 15:04", user.GetLoc()); err == nil {
+				msg.Body = strings.ReplaceAll(msg.Body, strReplace(k), Stelegramf("%s", strNeW))
 			} else {
 				return NewTgMsg()
 			}
 		case userMentioned:
-			if user.Has(commentMentioned) {
-				msg.title += Stelegramf("\n__%s__", "Вас упомянули в комментарии")
+			if user.Has(member_role.CommentMentioned) {
+				msg.Title += Stelegramf("\n__%s__", "Вас упомянули в комментарии")
 			}
 		}
 	}

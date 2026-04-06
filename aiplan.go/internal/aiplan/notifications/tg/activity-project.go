@@ -9,13 +9,10 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-	"gorm.io/gorm"
 )
 
-type funcProjectMsgFormat func(act *dao.ProjectActivity, af actField.ActivityField) TgMsg
-
 var (
-	projectMap = map[actField.ActivityField]funcProjectMsgFormat{
+	projectMap = map[actField.ActivityField]funcTgMsgFormat{
 		actField.Issue.Field:            projectIssue,
 		actField.Template.Field:         projectTemplate,
 		actField.TemplateTemplate.Field: projectTemplate,
@@ -45,57 +42,7 @@ var (
 	}
 )
 
-func notifyFromProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) (*ActivityTgNotification, error) {
-	if act.Field == nil {
-		return nil, nil
-	}
-
-	if err := preloadProjectActivity(tx, act); err != nil {
-		return nil, err
-	}
-
-	msg, err := formatProjectActivity(act)
-	if err != nil {
-		return nil, fmt.Errorf("formatProjectActivity: %w", err)
-	}
-
-	steps := []UsersStep{
-		addUserRole(act.Actor, actionAuthor),
-		addDefaultWatchers(act.ProjectId),
-		addIssueUsers(act.NewIssue),
-		addProjectAdmin(act.ProjectId),
-	}
-
-	plan := NotifyPlan{
-		TableName:      act.TableName(),
-		settings:       fromProject(act.ProjectId),
-		ActivitySender: act.ActivitySender.SenderTg,
-		Entity:         actField.Project.Field,
-		AuthorRole:     actionAuthor,
-		Steps:          steps,
-	}
-
-	return NewActivityTgNotification(tx, act, msg, plan), nil
-}
-
-func preloadProjectActivity(tx *gorm.DB, act *dao.ProjectActivity) error {
-	if err := tx.Unscoped().
-		Joins("Workspace").
-		Joins("ProjectLead").
-		Where("projects.id = ?", act.ProjectId).
-		First(&act.Project).Error; err != nil {
-		return fmt.Errorf("preloadProjectActivity: %v", err)
-	}
-	act.Workspace = act.Project.Workspace
-
-	if act.NewIssue != nil {
-		act.NewIssue = preloadIssueActivity(tx, act.NewIssue.ID)
-	}
-
-	return nil
-}
-
-func formatProjectActivity(act *dao.ProjectActivity) (TgMsg, error) {
+func FormatProjectActivity(act *dao.ActivityEvent) (TgMsg, error) {
 	res, err := formatByField(act, projectMap, projectDefault)
 	if err != nil {
 		return res, err
@@ -106,25 +53,23 @@ func formatProjectActivity(act *dao.ProjectActivity) (TgMsg, error) {
 	return finalizeActivityTitle(res, act.Actor.GetName(), entity, act.Project.URL), nil
 }
 
-var issueRolesNotified = []role{actionAuthor, issueAuthor, projectDefaultWatcher, issueWatcher, issueAssigner}
-
-func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectIssue(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) задачу в проекте"
+		msg.Title = "создал(-a) задачу в проекте"
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) задачу в проект"
+		msg.Title = "добавил(-a) задачу в проект"
 	case actField.VerbCopied:
-		msg.title = "создал(-a) копию задачи в проекте"
+		msg.Title = "создал(-a) копию задачи в проекте"
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) задачу из"
-		msg.body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
+		msg.Title = "убрал(-a) задачу из"
+		msg.Body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
 		return msg
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) задачу из"
-		msg.body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
+		msg.Title = "удалил(-a) задачу из"
+		msg.Body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
 		return msg
 	}
 
@@ -165,33 +110,22 @@ func projectIssue(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 		}
 	}
 
-	msg.body += Stelegramf(format, values...)
-
-	msg.Skip = func(u userTg) bool { // пропустить уведомления для всех кроме ролей из списка okRoles
-		var ok bool
-		for _, r := range issueRolesNotified {
-			if u.Has(r) {
-				ok = true
-			}
-		}
-		return !ok
-	}
-
+	msg.Body += Stelegramf(format, values...)
 	return msg
 }
 
-func projectTemplate(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectTemplate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	format := "*Название*: "
 	var values []any
 
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) шаблон задачи в"
+		msg.Title = "создал(-a) шаблон задачи в"
 		format += "%s\n```\n%s```"
 		values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 	case actField.VerbUpdated:
-		msg.title = "изменил(-a) шаблон задачи в"
+		msg.Title = "изменил(-a) шаблон задачи в"
 		switch af {
 		case actField.TemplateTemplate.Field:
 			format += "%s\n```\n%s```"
@@ -209,24 +143,24 @@ func projectTemplate(act *dao.ProjectActivity, af actField.ActivityField) TgMsg 
 		if act.OldValue == nil {
 			return msg
 		}
-		msg.title = "удалил(-a) из"
+		msg.Title = "удалил(-a) из"
 		format = "*Шаблон*: ~%s~"
 		values = []any{fmt.Sprintf(*act.OldValue)}
 	}
 
-	msg.body += Stelegramf(format, values...)
+	msg.Body += Stelegramf(format, values...)
 	return msg
 }
 
-func projectStatus(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectStatus(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 
 	var format string
 	var values []any
-
-	if act.NewState != nil {
+	sef := act.ProjectActivityExtendFields.StateExtendFields
+	if sef.NewState != nil {
 		format = "__Статус %s__"
-		values = append(values, act.NewState.Name)
+		values = append(values, sef.NewState.Name)
 	}
 
 	switch af {
@@ -243,34 +177,34 @@ func projectStatus(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 		values = append(values, fmt.Sprint(*act.OldValue), act.NewValue)
 	case actField.StatusDefault.Field:
 		format = "*статус по умолчанию:* ~%s~ %s"
-		values = []any{act.OldState.Name, act.NewState.Name}
+		values = []any{sef.OldState.Name, sef.NewState.Name}
 	}
 
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) статус в"
+		msg.Title = "создал(-a) статус в"
 		format = "*Название*: %s\n*Группа*: %s"
-		values = []any{act.NewState.Name, types.TranslateMap(types.StatusTranslation, &act.NewState.Group)}
+		values = []any{sef.NewState.Name, types.TranslateMap(types.StatusTranslation, &sef.NewState.Group)}
 	case actField.VerbUpdated:
-		msg.title = "изменил(-a) в"
+		msg.Title = "изменил(-a) в"
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) из"
+		msg.Title = "удалил(-a) из"
 		format = "*Статус*: ~%s~"
 		values = []any{fmt.Sprint(*act.OldValue)}
 	}
 
-	msg.body += Stelegramf(format, values...)
+	msg.Body += Stelegramf(format, values...)
 	return msg
 }
 
-func projectLabel(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectLabel(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	var format string
 	var values []any
-
-	if act.NewLabel != nil {
+	lef := act.ProjectActivityExtendFields.LabelExtendFields
+	if lef.NewLabel != nil {
 		format = "__Тег %s__"
-		values = append(values, act.NewLabel.Name)
+		values = append(values, lef.NewLabel.Name)
 	}
 
 	switch af {
@@ -284,83 +218,83 @@ func projectLabel(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
 
 	switch act.Verb {
 	case actField.VerbCreated:
-		msg.title = "создал(-a) тег в"
+		msg.Title = "создал(-a) тег в"
 		format = "*Название*: %s"
-		values = []any{act.NewLabel.Name}
+		values = []any{lef.NewLabel.Name}
 	case actField.VerbUpdated:
-		msg.title = "изменил(-a) в"
+		msg.Title = "изменил(-a) в"
 	case actField.VerbDeleted:
-		msg.title = "удалил(-a) из"
+		msg.Title = "удалил(-a) из"
 		format = "*Тег*: ~%s~"
 		values = []any{fmt.Sprint(*act.OldValue)}
 	}
 
-	msg.body += Stelegramf(format, values...)
+	msg.Body += Stelegramf(format, values...)
 	return msg
 }
 
-func projectMember(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectMember(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	var format string
 	var values []any
 
 	switch act.Verb {
 	case actField.VerbAdded:
-		msg.title = "добавил(-a) участника в"
+		msg.Title = "добавил(-a) участника в"
 		format = "__%s__\n*Роль:* %s"
 		values = []any{getUserName(act.NewMember), types.TranslateMap(types.RoleTranslation, &act.NewValue)}
 	case actField.VerbRemoved:
-		msg.title = "убрал(-a) участника из"
+		msg.Title = "убрал(-a) участника из"
 		format = "~%s~"
 		values = []any{getUserName(act.OldMember)}
 	}
-	msg.body = Stelegramf(format, values...)
+	msg.Body = Stelegramf(format, values...)
 	return msg
 }
 
-func projectRole(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectRole(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	if act.Verb != actField.VerbUpdated && act.NewRole == nil {
 		return NewTgMsg()
 	}
 	msg := NewTgMsg()
-	msg.title = "изменил(-a) роль пользователя в"
-	msg.body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
+	msg.Title = "изменил(-a) роль пользователя в"
+	msg.Body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
 	return msg
 }
 
-func projectLead(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectLead(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	if act.Verb != actField.VerbUpdated && act.NewProjectLead == nil {
 		return NewTgMsg()
 	}
 	msg := NewTgMsg()
-	msg.title = "изменил(-a) лидера проекта в"
-	msg.body = Stelegramf("~%s~ %s", getUserName(act.OldProjectLead), getUserName(act.NewProjectLead))
+	msg.Title = "изменил(-a) лидера проекта в"
+	msg.Body = Stelegramf("~%s~ %s", getUserName(act.OldProjectLead), getUserName(act.NewProjectLead))
 	return msg
 }
 
-func projectPublic(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectPublic(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
 	if act.NewValue == "true" {
-		msg.title = "сделал(-a) публичным"
+		msg.Title = "сделал(-a) публичным"
 	} else {
-		msg.title = "сделал(-a) приватным"
+		msg.Title = "сделал(-a) приватным"
 	}
 	return msg
 }
 
-func projectLogo(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectLogo(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	if act.Verb != actField.VerbUpdated {
 		return msg
 	}
-	msg.title = "изменил(-a) логотип в проекте"
+	msg.Title = "изменил(-a) логотип в проекте"
 	return msg
 }
 
-func projectDefaultMember(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectDefaultMember(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	user := utils.GetFirstOrNil(act.NewDefaultWatcher, act.NewDefaultAssignee, act.OldDefaultWatcher, act.OldDefaultAssignee)
 	if user == nil {
@@ -376,24 +310,24 @@ func projectDefaultMember(act *dao.ProjectActivity, af actField.ActivityField) T
 
 	switch act.Verb {
 	case actField.VerbAdded:
-		msg.title = fmt.Sprintf("добавил(-a) %s по умолчанию в", role)
-		msg.body = Stelegramf("%s", getUserName(user))
+		msg.Title = fmt.Sprintf("добавил(-a) %s по умолчанию в", role)
+		msg.Body = Stelegramf("%s", getUserName(user))
 	case actField.VerbRemoved:
-		msg.title = fmt.Sprintf("убрал(-a) %s по умолчанию из", role)
-		msg.body = Stelegramf("~%s~", getUserName(user))
+		msg.Title = fmt.Sprintf("убрал(-a) %s по умолчанию из", role)
+		msg.Body = Stelegramf("~%s~", getUserName(user))
 
 	}
 	return msg
 }
 
-func projectDefault(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	return genDefault(act.OldValue, act.NewValue, af, "изменил(-a) в")
 }
 
-func projectEmoj(act *dao.ProjectActivity, af actField.ActivityField) TgMsg {
+func projectEmoj(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
-	msg.title = "изменил(-a) в"
-	msg.body = Stelegramf("*%s*: ~%s~ %s", "Emoji", emojiFromCode(fmt.Sprint(*act.OldValue)), emojiFromCode(act.NewValue))
+	msg.Title = "изменил(-a) в"
+	msg.Body = Stelegramf("*%s*: ~%s~ %s", "Emoji", emojiFromCode(fmt.Sprint(*act.OldValue)), emojiFromCode(act.NewValue))
 	return msg
 }
 

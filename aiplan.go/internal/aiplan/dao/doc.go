@@ -20,7 +20,6 @@ import (
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -150,8 +149,8 @@ func (d Doc) GetString() string {
 }
 
 // Возвращает тип сущности документа (doc). Используется для определения типа данных при работе с базой данных.
-func (d Doc) GetEntityType() string {
-	return actField.Doc.Field.String()
+func (d Doc) GetEntityType() actField.ActivityField {
+	return actField.Doc.Field
 }
 
 func (d Doc) GetWorkspaceId() uuid.UUID {
@@ -269,33 +268,20 @@ func (d *Doc) BeforeDelete(tx *gorm.DB) error {
 		}
 	}
 
-	cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+	tx.Where("entity_type in (?)", []types.EntityLayer{types.LayerDoc, types.LayerWorkspace}).
+		Where("old_identifier = ? AND field = ?", d.ID, d.GetEntityType()).
+		Model(&ActivityEvent{}).
+		Update("old_identifier", nil)
 
-	tx.
-		Where("(new_identifier = ? OR old_identifier = ?) AND (verb = ? OR verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "created", "removed", "added", d.GetEntityType()).
-		Model(&DocActivity{}).
-		Updates(cleanId)
+	tx.Where("entity_type in (?)", []types.EntityLayer{types.LayerDoc, types.LayerWorkspace}).
+		Where("new_identifier = ? AND field = ?", d.ID, d.GetEntityType()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
 
-	tx.
-		Where("(new_identifier = ? OR old_identifier = ?) AND (verb = ? OR verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "created", "removed", "added", d.GetEntityType()).
-		Model(&WorkspaceActivity{}).
-		Updates(cleanId)
-
-	tx.Where("new_identifier = ? AND (verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "move_workspace_to_doc", "move_doc_to_doc", d.GetEntityType()).Update("new_identifier", nil)
-	tx.Where("old_identifier = ? AND (verb = ? OR verb = ?) AND field = ?", d.ID, d.ID, "move_doc_to_workspace", "move_doc_to_doc", d.GetEntityType()).Update("old_identifier", nil)
-
-	if err := tx.Where("workspace_id = ?", d.WorkspaceId).
-		Where("doc_activity_id IN (?)",
-			tx.Select("id").
-				Where("doc_id = ?", d.ID).
-				Model(&DocActivity{})).
-		Unscoped().
-		Delete(&UserNotifications{}).Error; err != nil {
+	query := tx.Where("entity_type = ?", types.LayerDoc).Where("doc_id = ?", d.ID)
+	if err := CleanupActivityData(tx, query, d.ID); err != nil {
 		return err
 	}
-
-	tx.Where("doc_id = ?", d.ID).Unscoped().
-		Delete(&DocActivity{})
 
 	if err := tx.Unscoped().Where("doc_id = ?", d.ID).Delete(&DocFavorites{}).Error; err != nil {
 		return err
@@ -464,8 +450,8 @@ func (dc DocComment) GetString() string {
 }
 
 // Возвращает тип сущности Doc (doc). Используется для представления сущности Doc в API.
-func (dс DocComment) GetEntityType() string {
-	return actField.Comment.Field.String()
+func (dс DocComment) GetEntityType() actField.ActivityField {
+	return actField.Comment.Field
 }
 
 func (dc DocComment) GetWorkspaceId() uuid.UUID {
@@ -502,22 +488,19 @@ func (dc *DocComment) AfterFind(tx *gorm.DB) error {
 // Возвращает:
 //   - error: ошибка, если при выполнении каких-либо операций с базой данных возникает ошибка.
 func (dc *DocComment) BeforeDelete(tx *gorm.DB) error {
-	if err := tx.Where("workspace_id = ?", dc.WorkspaceId).
-		Where("doc_activity_id IN (?)",
-			tx.Select("id").
-				Where("doc_id = ?", dc.DocId).
-				Where("new_identifier = ? or old_identifier = ? ", dc.Id, dc.Id).
-				Model(&DocActivity{})).
-		Unscoped().
-		Delete(&UserNotifications{}).Error; err != nil {
+	tx.
+		Where("entity_type = ?", types.LayerDoc).
+		Where("new_identifier = ? AND verb = ? AND field = ?", dc.Id, actField.VerbCreated, actField.Comment.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
+
+	query := tx.
+		Where("entity_type = ?", types.LayerDoc).
+		Where("new_identifier = ? or old_identifier = ? ", dc.Id, dc.Id)
+
+	if err := CleanupActivityData(tx, query, dc.DocId); err != nil {
 		return err
 	}
-
-	// DocActivity update create to nil
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", dc.Id, "created", "comment").Model(&DocActivity{}).Update("new_identifier", nil)
-
-	//DocActivity delete other activity
-	tx.Where("new_identifier = ? or old_identifier = ? ", dc.Id, dc.Id).Delete(&DocActivity{})
 
 	for _, attach := range dc.Attachments {
 		if err := tx.Delete(&attach).Error; err != nil {
@@ -623,63 +606,6 @@ type DocEntityI interface {
 	GetDocId() uuid.UUID
 }
 
-type DocActivity struct {
-	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time `json:"created_at" gorm:"index:doc_activities_doc_index,sort:desc,type:btree,priority:2;index:doc_activities_actor_index,sort:desc,type:btree,priority:2;index:doc_activities_mail_index,type:btree,where:notified = false"`
-	// verb character varying IS_NULL:NO
-	Verb string `json:"verb"`
-	// field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
-	// doc_id uuid IS_NULL:YES
-	DocId uuid.UUID `json:"doc" gorm:"type:uuid;index:doc_activities_doc_index,priority:1" `
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
-	// actor_id uuid IS_NULL:YES
-	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:doc_activities_actor_index,priority:1" extensions:"x-nullable"`
-
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
-
-	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	Doc       *Doc       `json:"doc_detail" gorm:"foreignKey:DocId" extensions:"x-nullable"`
-
-	OldDoc *Doc `json:"-" gorm:"-" field:"doc" extensions:"x-nullable"`
-	NewDoc *Doc `json:"-" gorm:"-" field:"doc" extensions:"x-nullable"`
-
-	//AffectedUser      *User  `json:"affected_user,omitempty" gorm:"-" extensions:"x-nullable"`
-	UnionCustomFields string `json:"-" gorm:"-"`
-
-	DocActivityExtendFields
-	ActivitySender
-}
-
-func (da DocActivity) GetCustomFields() string {
-	return da.UnionCustomFields
-}
-
-func (da DocActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "workspace_id", "actor_id", "doc_id", "new_identifier", "old_identifier", "telegram_msg_ids"}
-
-}
-
-func (DocActivity) GetEntity() string {
-	return "doc"
-}
-
-// Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
-func (DocActivity) TableName() string { return "doc_activities" }
-
 // DocActivityExtendFields
 // -migration
 type DocActivityExtendFields struct {
@@ -687,156 +613,6 @@ type DocActivityExtendFields struct {
 	DocExtendFields
 	DocAttachmentExtendFields
 	DocMemberExtendFields
-}
-
-// Выполняет дополнительные операции после успешного поиска записи в базе данных. В частности, обновляет информацию об URL, получает итоги реакции на комментарии и другие необходимые действия после извлечения данных из базы.
-func (da *DocActivity) AfterFind(tx *gorm.DB) error {
-	return EntityActivityAfterFind(da, tx)
-}
-
-// Пропускает презагрузку связанных данных. Возвращает true, если презагрузка не нужна, false - если нужна.
-func (da DocActivity) SkipPreload() bool {
-	if da.Field == nil {
-		return true
-	}
-
-	if !da.NewIdentifier.Valid && !da.OldIdentifier.Valid {
-		return true
-	}
-	return false
-}
-
-// Возвращает поле, соответствующее указанному полю в структуре Doc.  Параметр - имя поля, которое необходимо вернуть. Возвращает строку, представляющую значение указанного поля.
-func (da DocActivity) GetField() string {
-	return pointerToStr(da.Field)
-}
-
-func (da DocActivity) GetVerb() string {
-	return da.Verb
-}
-
-// Добавляет новый идентификатор к объекту Doc. Используется для уникальной идентификации документа в базе данных.
-func (da DocActivity) GetNewIdentifier() uuid.NullUUID {
-	return da.NewIdentifier
-}
-
-// Возвращает старый идентификатор Doc, если он существует.  Используется для отслеживания изменений идентификаторов Doc при репликации или других операциях.
-func (da DocActivity) GetOldIdentifier() uuid.NullUUID {
-	return da.OldIdentifier
-}
-
-func (da DocActivity) GetId() uuid.UUID {
-	return da.Id
-}
-
-// Преобразует Doc в структуру dto.EntityActivityLight для упрощения передачи данных в API.
-//
-// Параметры:
-//   - Нет
-//
-// Возвращает:
-//   - dto.EntityActivityLight: структура, содержащая упрощенные данные Doc.
-//func (da *DocActivity) ToLightDTO() *dto.EntityActivityLight {
-//	if da == nil {
-//		return nil
-//	}
-
-//func (da *DocActivity) ToLightDTO() *dto.EntityActivityLight {
-//	if da == nil {
-//		return nil
-//	}
-//
-//	return &dto.EntityActivityLight{
-//		Id:         da.Id,
-//		CreatedAt:  da.CreatedAt,
-//		Verb:       da.Verb,
-//		Field:      da.Field,
-//		OldValue:   da.OldValue,
-//		NewValue:   da.NewValue,
-//		EntityType: "doc",
-//		//TargetUser: da.AffectedUser.ToLightDTO(),
-//		EntityUrl: nil,
-//	}
-//}
-
-func (da *DocActivity) ToLightDTO() *dto.EntityActivityLight {
-	if da == nil {
-		return nil
-	}
-
-	res := dto.EntityActivityLight{
-		Id:         da.Id,
-		CreatedAt:  da.CreatedAt,
-		Verb:       da.Verb,
-		Field:      da.Field,
-		OldValue:   da.OldValue,
-		NewValue:   da.NewValue,
-		EntityType: "doc",
-
-		NewEntity: GetActionEntity(*da, "New"),
-		OldEntity: GetActionEntity(*da, "Old"),
-
-		//TargetUser: activity.AffectedUser.ToLightDTO(),
-
-		//EntityUrl: da.GetUrl(),
-	}
-
-	return &res
-}
-
-// Преобразует структуру Doc в структуру dto.EntityActivityFull для удобства использования в API.
-//
-// Параметры:
-//   - Нет
-//
-// Возвращает:
-//   - dto.EntityActivityFull: структура, содержащая преобразованные данные Doc.
-//func (da *DocActivity) ToDTO() *dto.EntityActivityFull {
-//	if da == nil {
-//		return nil
-//	}
-//
-//	res := dto.EntityActivityFull{
-//		EntityActivityLight: *da.ToLightDTO(),
-//		Actor:               da.Actor.ToLightDTO(),
-//		Workspace:           da.Workspace.ToLightDTO(),
-//		Doc:                 da.Doc.ToLightDTO(),
-//		NewIdentifier:       nil,
-//		OldIdentifier:       nil,
-//	}
-//
-//	if da.Field != nil {
-//		switch *da.Field {
-//		case "doc":
-//			if da.OldIdentifier != nil {
-//				res.OldEntity = da.OldDoc.ToLightDTO()
-//			}
-//			if da.NewIdentifier != nil {
-//				res.NewEntity = da.NewDoc.ToLightDTO()
-//			}
-//		}
-//	}
-//
-//	return &res
-//}
-
-// Преобразует Doc в структуру dto.HistoryBodyLight для упрощенной передачи данных в API.
-//
-// Параметры:
-//   - Нет
-//
-// Возвращает:
-//   - dto.HistoryBodyLight: структура, содержащая упрощенные данные Doc.
-func (da *DocActivity) ToHistoryLightDTO() *dto.HistoryBodyLight {
-	if da == nil {
-		return nil
-	}
-
-	return &dto.HistoryBodyLight{
-		Id:       da.Id,
-		CratedAt: da.CreatedAt,
-		Author:   da.Actor.ToLightDTO(),
-	}
 }
 
 type DocAttachment struct {
@@ -891,12 +667,12 @@ func (da DocAttachment) GetString() string {
 	if da.Asset != nil {
 		return da.Asset.Name
 	}
-	return da.GetEntityType()
+	return da.GetEntityType().String()
 }
 
 // Возвращает тип сущности Doc (doc). Используется для представления сущности Doc в API.
-func (da DocAttachment) GetEntityType() string {
-	return actField.Attachment.Field.String()
+func (da DocAttachment) GetEntityType() actField.ActivityField {
+	return actField.Attachment.Field
 }
 
 func (da DocAttachment) GetWorkspaceId() uuid.UUID {
@@ -933,7 +709,10 @@ func (da *DocAttachment) ToLightDTO() *dto.Attachment {
 // Возвращает:
 //   - error: ошибка, если при выполнении каких-либо операций с базой данных возникает ошибка.
 func (attachment *DocAttachment) BeforeDelete(tx *gorm.DB) error {
-	tx.Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, "created", "attachment").Model(&DocActivity{}).Update("new_identifier", nil)
+	tx.Where("entity_type = ?", types.LayerDoc).
+		Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, actField.VerbCreated, actField.Attachment.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
 	return nil
 }
 

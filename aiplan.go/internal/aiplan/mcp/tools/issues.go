@@ -592,7 +592,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	// Activity tracking
 	issueNew.Project = &project
 	issueNew.Workspace = project.Workspace
-	if err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](bl.GetTracker(), activities.EntityCreateActivity, nil, nil, issueNew, user); err != nil {
+	if err := tracker.TrackEvent(bl.GetTrackerEvent(), types.LayerProject, activities.VerbCreated, nil, issueNew, user); err != nil {
 		return logger.Error(err), nil
 	}
 
@@ -873,7 +873,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	// Activity tracking
 	if len(data) > 0 {
 		oldData := structToMap(oldIssue)
-		if err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](bl.GetTracker(), activities.EntityUpdatedActivity, data, oldData, issue, user); err != nil {
+		if err := tracker.TrackEvent(bl.GetTrackerEvent(), types.LayerIssue, activities.VerbUpdated, tracker.NewTrackerCtx(&data, &oldData), issue, user); err != nil {
 			return logger.Error(err), nil
 		}
 	}
@@ -1238,8 +1238,9 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	// Получаем историю
 	query := db.
 		Joins("Actor").
-		Where("issue_activities.issue_id = ?", issue.ID).
-		Order("issue_activities.created_at DESC").
+		Where("activity_events.entity_type = ?", types.LayerIssue).
+		Where("activity_events.issue_id = ?", issue.ID).
+		Order("activity_events.created_at DESC").
 		Limit(limit).
 		Offset(offset)
 
@@ -1247,14 +1248,16 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		query = query.Where("issue_activities.field = ?", field)
 	}
 
-	var activities []dao.IssueActivity
+	var activities []dao.ActivityEvent
 	if err := query.Find(&activities).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
 	// Подсчёт общего количества
 	var total int64
-	countQuery := db.Model(&dao.IssueActivity{}).Where("issue_id = ?", issue.ID)
+	countQuery := db.Model(&dao.ActivityEvent{}).
+		Where("activity_events.entity_type = ?", types.LayerIssue).
+		Where("issue_id = ?", issue.ID)
 	if field != "" {
 		countQuery = countQuery.Where("field = ?", field)
 	}
@@ -1278,18 +1281,16 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	result := make([]activityResponse, len(activities))
 	for i, a := range activities {
 		resp := activityResponse{
-			ID:            a.Id.String(),
+			ID:            a.ID.String(),
 			CreatedAt:     a.CreatedAt,
 			Verb:          a.Verb,
 			NewValue:      a.NewValue,
-			Comment:       a.Comment,
+			Comment:       a.Comment(),
+			Field:         a.Field.String(),
 			NewIdentifier: a.NewIdentifier,
 			OldIdentifier: a.OldIdentifier,
 		}
 
-		if a.Field != nil {
-			resp.Field = *a.Field
-		}
 		if a.OldValue != nil {
 			resp.OldValue = *a.OldValue
 		}
@@ -1570,7 +1571,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 
 	// Activity tracking
 	comment.Actor = user
-	if err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](bl.GetTracker(), activities.EntityCreateActivity, nil, nil, comment, user); err != nil {
+	if err := tracker.TrackEvent(bl.GetTrackerEvent(), types.LayerIssue, activities.VerbCreated, nil, comment, user); err != nil {
 		return logger.Error(err), nil
 	}
 
