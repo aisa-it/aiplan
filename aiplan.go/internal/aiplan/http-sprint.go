@@ -133,7 +133,6 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Param sprintId path string true "Идентификатор или номер последовательности спринта"
 // @Success 200 {array} dto.SprintFolder "Список директорий спринтов"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
@@ -341,13 +340,15 @@ func (s *Services) updateSprint(c echo.Context) error {
 		case "end_date":
 			sprint.EndDate = req.EndDate.ToNullTime()
 		case "sprint_folder_id":
+			var folder *dao.SprintFolder
 			if eerr := s.db.Where("workspace_id = ?", sprint.WorkspaceId).
 				Where("id = ?", req.Folder).
-				First(&sprint.SprintFolder).Error; eerr != nil {
+				First(&folder).Error; eerr != nil {
 				sprint.SprintFolderId = uuid.NullUUID{}
 				sprint.SprintFolder = nil
 			} else {
 				sprint.SprintFolderId = req.Folder
+				sprint.SprintFolder = folder
 			}
 		}
 	}
@@ -864,6 +865,7 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param sprintFolderId path string true "Идентификатор директории спринта"
+// @Param data body dto.RequestSprintFolder true "Данные папки спринтов"
 // @Success 200 {array} dto.SprintFolder "Обновленная директория спринтов"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
