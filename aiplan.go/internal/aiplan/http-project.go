@@ -179,6 +179,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectGroup.GET("/states/:stateId/", s.getState)
 	projectGroup.PATCH("/states/:stateId/", s.updateState)
 	projectGroup.DELETE("/states/:stateId/", s.deleteState)
+	projectGroup.GET("/states/start", s.getProjectStartStates)
 
 	projectGroup.POST("/rules-log/", s.getRulesLog)
 
@@ -768,9 +769,10 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/me [get]
 func (s *Services) getProjectCurrentMembership(c echo.Context) error {
 	member := c.(ProjectContext).ProjectMember
+	project := c.(ProjectContext).Project
 	res := dao.ProjectMemberWithLead{
 		ProjectMember: member,
-		IsProjectLead: member.MemberId == member.Project.ProjectLeadId,
+		IsProjectLead: member.MemberId == project.ProjectLeadId,
 	}
 	return c.JSON(http.StatusOK, res.ToDTOWithLead())
 }
@@ -2555,6 +2557,41 @@ func (s *Services) deleteState(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+// getStartStates godoc
+// @id getStartStates
+// @Summary Задачи: получение доступных стартовых статусов
+// @Description Возвращает список статусов, в которые можно перевести новую задачу. Для администраторов возвращаются все статусы проекта, для остальных пользователей — только те статусы, которые разрешены в начале БП.
+// @Tags Projects StatesFlow
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {array} dto.StateLight "Список доступных статусов"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/start [get]
+func (s *Services) getProjectStartStates(c echo.Context) error {
+	projectMember := c.(IssueContext).ProjectMember
+
+	query := s.db.Where("project_id = ?", projectMember.ProjectId).Order("sequence")
+
+	if projectMember.Role != types.AdminRole {
+		query = query.Where(s.db.Where("array_length(from_states, 1) IS NULL"). // States that allow transition from all states
+											Or("? = any(from_states)", uuid.Nil), // States that has start state ability
+		)
+	}
+
+	var states []dao.State
+	if err := query.Find(&states).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 func updateStatesGroup(tx *gorm.DB, state *dao.State, action string) error {

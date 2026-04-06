@@ -16186,6 +16186,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/start": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список статусов, в которые можно перевести новую задачу. Для администраторов возвращаются все статусы проекта, для остальных пользователей — только те статусы, которые разрешены в начале БП.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects StatesFlow"
+                ],
+                "summary": "Задачи: получение доступных стартовых статусов",
+                "operationId": "getStartStates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список доступных статусов",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.StateLight"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/{stateId}": {
             "get": {
                 "security": [
@@ -16964,6 +17036,15 @@ const docTemplate = `{
                         "name": "sprintFolderId",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Данные папки спринтов",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RequestSprintFolder"
+                        }
                     }
                 ],
                 "responses": {
@@ -17030,13 +17111,6 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Slug рабочего пространства",
                         "name": "workspaceSlug",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Идентификатор или номер последовательности спринта",
-                        "name": "sprintId",
                         "in": "path",
                         "required": true
                     }
