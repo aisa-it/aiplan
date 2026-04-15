@@ -1229,15 +1229,15 @@ func formatDate(dateStr string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unsuported date format")
 }
 
-// JSON time in unix seconds
+// JSONTime time in unix seconds
 type JSONTime time.Time
 
 func (d *JSONTime) UnmarshalJSON(b []byte) error {
-	ms, err := strconv.ParseInt(string(b), 10, 64)
+	msFloat, err := strconv.ParseFloat(string(b), 64)
 	if err != nil {
 		return err
 	}
-	*d = JSONTime(time.Unix(ms, 0))
+	*d = JSONTime(time.Unix(int64(msFloat), 0))
 	return nil
 }
 
