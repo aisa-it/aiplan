@@ -16053,6 +16053,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/start-states": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает список статусов, в которые можно перевести новую задачу. Для администраторов возвращаются все статусы проекта, для остальных пользователей — только те статусы, которые разрешены в начале БП.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects StatesFlow"
+                ],
+                "summary": "Задачи: получение доступных стартовых статусов",
+                "operationId": "getStartStates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список доступных статусов",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.StateLight"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states": {
             "get": {
                 "security": [
@@ -16173,78 +16245,6 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Статус с таким именем уже существует",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    },
-                    "500": {
-                        "description": "Ошибка сервера",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/start": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Возвращает список статусов, в которые можно перевести новую задачу. Для администраторов возвращаются все статусы проекта, для остальных пользователей — только те статусы, которые разрешены в начале БП.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Projects StatesFlow"
-                ],
-                "summary": "Задачи: получение доступных стартовых статусов",
-                "operationId": "getStartStates",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Slug рабочего пространства",
-                        "name": "workspaceSlug",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "ID проекта",
-                        "name": "projectId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Список доступных статусов",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/dto.StateLight"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры запроса",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    },
-                    "401": {
-                        "description": "Необходима авторизация",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    },
-                    "403": {
-                        "description": "Доступ запрещен",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -23635,16 +23635,16 @@ const docTemplate = `{
                     }
                 },
                 "completed_at_from": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "completed_at_to": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "created_at_from": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "created_at_to": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "labels": {
                     "$ref": "#/definitions/types.FilterUUIDs"
@@ -23674,10 +23674,10 @@ const docTemplate = `{
                     }
                 },
                 "start_date_from": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "start_date_to": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "states": {
                     "type": "array",
@@ -23686,16 +23686,16 @@ const docTemplate = `{
                     }
                 },
                 "target_date_from": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "target_date_to": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "updated_at_from": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "updated_at_to": {
-                    "type": "string"
+                    "type": "number"
                 },
                 "watched_by_me": {
                     "type": "boolean"
