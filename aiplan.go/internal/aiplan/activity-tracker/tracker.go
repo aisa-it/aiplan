@@ -29,6 +29,14 @@ func (t *ActTracker) RegisterHandler(handler ActHandler) {
 	t.handlers = append(t.handlers, handler)
 }
 
+func (t *ActTracker) GetDB() *gorm.DB {
+	return t.db
+}
+
+func (t *ActTracker) GetHandlers() []ActHandler {
+	return t.handlers
+}
+
 func (t *ActTracker) RunHandlers(activity dao.ActivityEvent) {
 
 	for _, handler := range t.handlers {

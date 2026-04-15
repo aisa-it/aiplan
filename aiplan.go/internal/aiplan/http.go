@@ -91,6 +91,7 @@ import (
 type Services struct {
 	db                  *gorm.DB
 	activityTracker     *tracker.ActTracker
+	snapshotTracker     *tracker.SnapshotTracker
 	storage             filestorage.FileStorage
 	emailService        *notifications.EmailService
 	memDB               *mem.AIPlanMemAPI
@@ -202,6 +203,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	es := notifications.NewEmailService(cfg, db)
 	at := tracker.NewTracker(db)
+
+	sst := tracker.NewSnapshotTracker(db)
+
 	bl, err := business.NewBL(db, at)
 	if err != nil {
 		os.Exit(1)
@@ -273,6 +277,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s := &Services{
 		db:              db,
 		activityTracker: at,
+		snapshotTracker: sst,
 		storage:         storage,
 		emailService:    es,
 		//telegramService:       ts,
@@ -346,6 +351,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	sendPasswordDefaultAdmin(db, es)
 
 	at.RegisterHandler(notifications.NewEventNotificationService(ns))
+
+	sst.RegisterHandler(notifications.NewEventNotificationService(ns))
 
 	// Global middlewares
 	e.Use(ServerHeader)
