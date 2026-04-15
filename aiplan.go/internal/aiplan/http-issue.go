@@ -648,7 +648,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 	issue := c.(IssueContext).Issue
 	projectMember := c.(IssueContext).ProjectMember
 	project := c.(IssueContext).Project
-
+	oldSnapshot := tracker.IssueToSnapshot(issue)
 	oldIssue := issue
 	ctx := tracker.NewTrackerCtx(nil, nil)
 	issueMapOld := StructToJSONMap(issue)
@@ -797,6 +797,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 			First(&newState).Error; err != nil {
 			return EError(c, err)
 		}
+
+		issue.State = &newState
 
 		tracker.SetField(data, field.WithScopeID(), stateUUID)
 		tracker.SetField(data, field.AsLogValue(), newState.Name)
@@ -1197,17 +1199,19 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return err
 		}
 
-		return err
+		newSnapshot := tracker.UpdateSnapshotFromMap[tracker.IssueSnapshot](oldSnapshot, data)
+
+		err = s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, &user)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}); err != nil {
 		if err.Error() == "forbidden" {
 			return EErrorDefined(c, apierrors.ErrIssueUpdateForbidden)
 		}
 		return EError(c, err)
-	}
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&data, &issueMapOld), issue, &user)
-	if err != nil {
-		errStack.GetError(c, err)
 	}
 	if statusChange {
 		res, msg, err := rules.AfterStatusChange(user, oldIssue, newState)

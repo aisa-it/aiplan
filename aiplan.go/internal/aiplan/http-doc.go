@@ -40,28 +40,35 @@ func (s *Services) DocMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		workspace := c.(WorkspaceContext).Workspace
 		workspaceMember := c.(WorkspaceContext).WorkspaceMember
 		var doc dao.Doc
-		if err := s.db.
-			Set("member_id", workspaceMember.MemberId).
-			Set("member_role", workspaceMember.Role).
-			Set("breadcrumbs", true).
-			Preload("AccessRules.Member").
-			Preload("ParentDoc").
-			Preload("Author").
-			Preload("Workspace").
-			Preload("InlineAttachments").
-			Where("docs.workspace_id = ?", workspace.ID).
-			Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
-				workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
-			Where("docs.id = ?", docId).
-			First(&doc).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrDocNotFound)
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
+		if err := loadDoc(s.db, &doc, workspaceMember.Role, workspaceMember.MemberId, workspace.ID, docId); err != nil {
+			return EError(c, err)
 		}
 
 		return next(DocContext{c.(WorkspaceContext), doc})
 	}
+}
+
+func loadDoc(tx *gorm.DB, doc *dao.Doc, memberRole int, memberId, workspaceId uuid.UUID, docId string) error {
+	if err := tx.
+		Set("member_id", memberId).
+		Set("member_role", memberRole).
+		Set("breadcrumbs", true).
+		Preload("AccessRules.Member").
+		Preload("ParentDoc").
+		Preload("Author").
+		Preload("Workspace").
+		Preload("InlineAttachments").
+		Where("docs.workspace_id = ?", workspaceId).
+		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			memberRole, memberRole, memberId, memberId).
+		Where("docs.id = ?", docId).
+		First(&doc).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrDocNotFound
+		}
+		return apierrors.ErrGeneric
+	}
+	return nil
 }
 
 func (s *Services) AddDocServices(g *echo.Group) {
@@ -365,8 +372,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	oldDocMap := StructToJSONMap(doc)
-	ctxTrack := tracker.NewTrackerCtx(nil, &oldDocMap)
+	oldSnapshot := tracker.DocToSnapshot(&doc)
 
 	newDoc, fields, err := BindDoc(c, &doc)
 	if err != nil {
@@ -380,7 +386,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 		}
 	}
 
-	var editorListOk, readerListOk, watcherListOk bool
+	var editorListOk, readerListOk bool
 
 	if hasRecentFieldUpdate(
 		s.db.Where("doc_id = ?", doc.ID),
@@ -442,37 +448,45 @@ func (s *Services) updateDoc(c echo.Context) error {
 				}
 			}
 
-			updateMember := func(id uuid.UUID, editor, watcher *bool) {
-				if v, exists := oldRoleAccess[id]; exists {
-					if editor != nil {
-						v.Edit = *editor
+			type MemberUpdate struct {
+				ID        uuid.UUID
+				IsEditor  *bool
+				IsWatcher *bool
+			}
+
+			updateMember := func(updates ...MemberUpdate) {
+				for _, upd := range updates {
+					id := upd.ID
+
+					var access dao.DocAccessRules
+					var exists bool
+
+					if v, ok := oldRoleAccess[id]; ok {
+						access = v
+						exists = true
+					} else if v, ok := memberAccess[id]; ok {
+						access = v
+						exists = true
+					} else {
+						access = newMemberAccess(id)
+						exists = false
 					}
-					if watcher != nil {
-						v.Watch = *watcher
+
+					if upd.IsEditor != nil {
+						access.Edit = *upd.IsEditor
 					}
-					v.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
-					memberAccess[id] = v
-					updateIdsSet[id] = true
-				} else if val, ok := memberAccess[id]; ok {
-					if editor != nil {
-						val.Edit = *editor
+					if upd.IsWatcher != nil {
+						access.Watch = *upd.IsWatcher
 					}
-					if watcher != nil {
-						val.Watch = *watcher
+
+					access.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
+
+					memberAccess[id] = access
+					if !exists {
+						newIdsSet[id] = true
+					} else {
+						updateIdsSet[id] = true
 					}
-					val.UpdatedById = uuid.NullUUID{UUID: userUUID, Valid: true}
-					memberAccess[id] = val
-					updateIdsSet[id] = true
-				} else {
-					ma := newMemberAccess(id)
-					if editor != nil {
-						ma.Edit = *editor
-					}
-					if watcher != nil {
-						ma.Watch = *watcher
-					}
-					memberAccess[id] = ma
-					newIdsSet[id] = true
 				}
 			}
 
@@ -487,17 +501,12 @@ func (s *Services) updateDoc(c echo.Context) error {
 						if newDoc.ParentDoc != nil && newRole < newDoc.ParentDoc.ReaderRole {
 							return apierrors.ErrDocRoleLowerThanParent
 						}
-						ctxTrack.New.SetKey(actField.ReaderRole.Field.AsLogValue(), fmt.Sprint(newRole))
-						ctxTrack.Old.SetKey(actField.ReaderRole.Field.AsLogValue(), fmt.Sprint(oldDocMap["reader_role"]))
-
 					}
 					if field == "editor_role" {
 						newRole = newDoc.EditorRole
 						if newDoc.ParentDoc != nil && newRole < newDoc.ParentDoc.EditorRole {
 							return apierrors.ErrDocRoleLowerThanParent
 						}
-						ctxTrack.New.SetKey(actField.EditorRole.Field.AsLogValue(), fmt.Sprint(newRole))
-						ctxTrack.Old.SetKey(actField.ReaderRole.Field.AsLogValue(), fmt.Sprint(oldDocMap["editor_role"]))
 					}
 
 					if cascadeRoles {
@@ -523,24 +532,29 @@ func (s *Services) updateDoc(c echo.Context) error {
 							}
 						}
 					}
-
+// todo refactor
 				case "reader_list":
 					readerListOk = true
-					for _, readerID := range newDoc.ReaderIDs {
-						updateMember(readerID, utils.ToPtr(false), nil)
+					updates := make([]MemberUpdate, len(newDoc.ReaderIDs))
+					for i, readerID := range newDoc.ReaderIDs {
+						updates[i] = MemberUpdate{ID: readerID, IsEditor: utils.ToPtr(false)}
 					}
+					updateMember(updates...)
 
 				case "editor_list":
 					editorListOk = true
-					for _, editorID := range newDoc.EditorsIDs {
-						updateMember(editorID, utils.ToPtr(true), nil)
+					updates := make([]MemberUpdate, len(newDoc.EditorsIDs))
+					for i, editorID := range newDoc.EditorsIDs {
+						updates[i] = MemberUpdate{ID: editorID, IsEditor: utils.ToPtr(true)}
 					}
+					updateMember(updates...)
 
 				case "watcher_list":
-					watcherListOk = true
-					for _, watcherID := range newDoc.WatcherIDs {
-						updateMember(watcherID, nil, utils.ToPtr(true))
+					updates := make([]MemberUpdate, len(newDoc.WatcherIDs))
+					for i, watcherID := range newDoc.WatcherIDs {
+						updates[i] = MemberUpdate{ID: watcherID, IsWatcher: utils.ToPtr(true)}
 					}
+					updateMember(updates...)
 
 					_, removedWatchers := calculateChanges(newDoc.WatcherIDs, doc.WatcherIDs)
 					for _, removedID := range removedWatchers {
@@ -615,25 +629,32 @@ func (s *Services) updateDoc(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newDocMap := StructToJSONMap(newDoc)
-	ctxTrack.GormMap = &newDocMap
-	if watcherListOk {
-		newDocMap["watchers_list"] = utils.SliceToSlice(&newDoc.WatcherIDs, func(t *uuid.UUID) interface{} {
-			return *t
-		})
-	}
-	if editorListOk {
-		newDocMap["editors_list"] = utils.SliceToSlice(&newDoc.EditorsIDs, func(t *uuid.UUID) interface{} {
-			return *t
-		})
-	}
-	if readerListOk {
-		newDocMap["readers_list"] = utils.SliceToSlice(&newDoc.ReaderIDs, func(t *uuid.UUID) interface{} {
-			return *t
-		})
-	}
+	//// Create new snapshot for change tracking
+	//data := make(map[string]interface{})
+	//
+	//// Always include collections for snapshots
+	//data["watchers_list"] = utils.SliceToSlice(&newDoc.WatcherIDs, func(t *uuid.UUID) interface{} {
+	//	return *t
+	//})
+	//data["editors_list"] = utils.SliceToSlice(&newDoc.EditorsIDs, func(t *uuid.UUID) interface{} {
+	//	return *t
+	//})
+	//data["readers_list"] = utils.SliceToSlice(&newDoc.ReaderIDs, func(t *uuid.UUID) interface{} {
+	//	return *t
+	//})
+	//
+	//// Always include current parent to avoid false parent changes
+	//if newDoc.ParentDocID.Valid {
+	//	data["parent_doc_id"] = newDoc.ParentDocID.UUID
+	//} else {
+	//	data["parent_doc_id"] = nil
+	//}
 
-	err = tracker.TrackEvent(s.activityTracker, types.LayerDoc, actField.VerbUpdated, ctxTrack, doc, user)
+	if err := loadDoc(s.db, newDoc, workspaceMember.Role, workspaceMember.MemberId, workspace.ID, doc.ID.String()); err != nil {
+		return EError(c, err)
+	}
+	newSnapshot := tracker.DocToSnapshot(newDoc)
+	err = s.snapshotTracker.TrackChanges(types.LayerDoc, oldSnapshot, newSnapshot, newDoc, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -750,7 +771,7 @@ type DocMoveAction int
 
 const (
 	ActionAdd DocMoveAction = iota
-	ActionDelete
+	ActionRemove
 )
 
 type docMove struct {
@@ -782,6 +803,15 @@ type docChanges struct {
 // @Failure 404 {object} apierrors.DefinedError "Ошибка: не найдено"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/move/  [post]
+
+// shouldLogMove checks if document move should be logged
+func shouldLogMove(docID uuid.UUID, changes map[uuid.UUID]docMove) bool {
+	if move, exists := changes[docID]; exists {
+		return move.ActionDoc
+	}
+	return false
+}
+
 func (s *Services) moveDoc(c echo.Context) error {
 	doc := c.(DocContext).Doc
 	user := c.(DocContext).User
@@ -849,7 +879,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 
 			doc.ParentDocID = req.ParentId
 
-			if err := groupChanges.reorderDocs(&currentGroup, ActionDelete, &doc, uuid.NullUUID{}, uuid.NullUUID{}, changes); err != nil {
+			if err := groupChanges.reorderDocs(&currentGroup, ActionRemove, &doc, uuid.NullUUID{}, uuid.NullUUID{}, changes); err != nil {
 				return err
 			}
 
@@ -869,30 +899,26 @@ func (s *Services) moveDoc(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	var newParentDoc *dao.Doc
+	if req.ParentId.Valid {
+		newParentDoc = &dao.Doc{}
+		if err := s.db.Where("id = ?", req.ParentId.UUID).Select("id", "title").First(newParentDoc).Error; err != nil {
+			if !errors.Is(gorm.ErrRecordNotFound, err) {
+				errStack.GetError(c, err)
+				return c.NoContent(http.StatusOK)
+			}
+			newParentDoc = nil
+		}
+	}
+
 	for _, docTmp := range allDocs {
-		if v, ok := changes[docTmp.ID]; ok {
-			newDocMap := make(map[string]interface{})
-			oldDocMap := make(map[string]interface{})
-
-			if v.ActionDoc {
-				docTmp.ParentDocID = req.ParentId
-
-				switch v.Type {
-				case ActionAdd, ActionDelete:
-
-					if err := createDocActivity(s.activityTracker, actField.VerbMove, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
-						errStack.GetError(c, err)
-					}
-					if err := createDocActivity(s.activityTracker, actField.VerbAdded, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
-						errStack.GetError(c, err)
-					}
-					if err := createDocActivity(s.activityTracker, actField.VerbRemoved, newDocMap, oldDocMap, docTmp, user, &groupChanges); err != nil {
-						errStack.GetError(c, err)
-					}
-				}
+		if shouldLogMove(docTmp.ID, changes) {
+			if err := s.snapshotTracker.TrackDocMove(&docTmp, groupChanges.FromDoc, newParentDoc, user); err != nil {
+				errStack.GetError(c, err)
 			}
 		}
 	}
+
 	return c.NoContent(http.StatusOK)
 }
 
@@ -932,7 +958,7 @@ func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, current
 	}
 
 	switch action {
-	case ActionDelete:
+	case ActionRemove:
 		if currentIdx != -1 {
 			*docs = append((*docs)[:currentIdx], (*docs)[currentIdx+1:]...)
 		}
