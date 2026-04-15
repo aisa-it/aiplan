@@ -179,7 +179,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectGroup.GET("/states/:stateId/", s.getState)
 	projectGroup.PATCH("/states/:stateId/", s.updateState)
 	projectGroup.DELETE("/states/:stateId/", s.deleteState)
-	projectGroup.GET("/states/start", s.getProjectStartStates)
+	projectGroup.GET("/start-states/", s.getProjectStartStates)
 
 	projectGroup.POST("/rules-log/", s.getRulesLog)
 
@@ -2574,7 +2574,7 @@ func (s *Services) deleteState(c echo.Context) error {
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
-// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/start [get]
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/start-states [get]
 func (s *Services) getProjectStartStates(c echo.Context) error {
 	projectMember := c.(IssueContext).ProjectMember
 
