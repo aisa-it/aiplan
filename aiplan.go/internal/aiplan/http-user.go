@@ -887,7 +887,7 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return err
 	}
 
-	err = s.emailService.UserChangeEmailNotify(user, newEmail, fmt.Sprintf("%s/api/auth/users/me/verify-email/%s", cfg.WebURL, token))
+	err = s.emailService.UserChangeEmailNotify(user, newEmail, fmt.Sprintf("%s/api/auth/users/me/verify-email/%s", cfg.WebURL.URL.String(), token))
 	if err != nil {
 		return EError(c, err)
 	}
