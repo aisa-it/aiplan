@@ -2576,7 +2576,7 @@ func (s *Services) deleteState(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/start-states [get]
 func (s *Services) getProjectStartStates(c echo.Context) error {
-	projectMember := c.(IssueContext).ProjectMember
+	projectMember := c.(ProjectContext).ProjectMember
 
 	query := s.db.Where("project_id = ?", projectMember.ProjectId).Order("sequence")
 
