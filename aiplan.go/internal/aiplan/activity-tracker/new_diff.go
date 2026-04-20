@@ -11,6 +11,13 @@ import (
 
 func Diff(old, new any) []FieldChange {
 	var changes []FieldChange
+	var snapshotID uuid.UUID
+
+	if oldSnap, ok := old.(SnapshotI); ok {
+		snapshotID = oldSnap.GetID()
+	} else if newSnap, ok := new.(SnapshotI); ok {
+		snapshotID = newSnap.GetID()
+	}
 
 	oldVal := reflect.ValueOf(old)
 	newVal := reflect.ValueOf(new)
@@ -50,14 +57,14 @@ func Diff(old, new any) []FieldChange {
 		case "collection":
 			changes = append(changes, diffCollection(spec, oldValue, newValue)...)
 		default: // scalar
-			changes = append(changes, diffScalar(spec, oldValue, newValue, oldSet, newSet)...)
+			changes = append(changes, diffScalar(spec, oldValue, newValue, oldSet, newSet, snapshotID)...)
 		}
 	}
 
 	return changes
 }
 
-func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet bool) []FieldChange {
+func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet bool, snapshotID uuid.UUID) []FieldChange {
 	oldStr := formatValueToString(oldValue)
 	newStr := formatValueToString(newValue)
 
@@ -75,36 +82,44 @@ func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet b
 		newId.Valid = true
 	}
 
+	if spec.PreserveID && snapshotID != uuid.Nil {
+		oldId = uuid.NullUUID{UUID: snapshotID, Valid: true}
+		newId = uuid.NullUUID{UUID: snapshotID, Valid: true}
+	}
+
 	if oldSet && newSet {
 		return []FieldChange{{
-			Verb:   "updated",
-			Field:  actField.ActivityField(spec.Field),
-			OldVal: oldStr,
-			NewVal: newStr,
-			OldID:  oldId,
-			NewID:  newId,
+			Verb:       "updated",
+			Field:      actField.ActivityField(spec.Field),
+			OldVal:     oldStr,
+			NewVal:     newStr,
+			OldID:      oldId,
+			NewID:      newId,
+			PreserveID: spec.PreserveID,
 		}}
 	}
 
 	if oldSet && !newSet {
 		return []FieldChange{{
-			Verb:   "updated",
-			Field:  actField.ActivityField(spec.Field),
-			OldVal: oldStr,
-			NewVal: "",
-			OldID:  oldId,
-			NewID:  newId,
+			Verb:       "updated",
+			Field:      actField.ActivityField(spec.Field),
+			OldVal:     oldStr,
+			NewVal:     "",
+			OldID:      oldId,
+			NewID:      newId,
+			PreserveID: spec.PreserveID,
 		}}
 	}
 
 	if !oldSet && newSet {
 		return []FieldChange{{
-			Verb:   "updated",
-			Field:  actField.ActivityField(spec.Field),
-			OldVal: "",
-			NewVal: newStr,
-			OldID:  oldId,
-			NewID:  newId,
+			Verb:       "updated",
+			Field:      actField.ActivityField(spec.Field),
+			OldVal:     "",
+			NewVal:     newStr,
+			OldID:      oldId,
+			NewID:      newId,
+			PreserveID: spec.PreserveID,
 		}}
 	}
 
@@ -146,10 +161,11 @@ func diffCollection(spec ActivityFieldSpec, oldValue, newValue any) []FieldChang
 	for _, id := range changesList.DelIds {
 		if oldRef, exists := oldMap[id]; exists {
 			changes = append(changes, FieldChange{
-				Verb:   "removed",
-				Field:  actField.ActivityField(spec.Field),
-				OldVal: oldRef.NameValue,
-				OldID:  uuid.NullUUID{UUID: id, Valid: true},
+				Verb:       "removed",
+				Field:      actField.ActivityField(spec.Field),
+				OldVal:     oldRef.NameValue,
+				OldID:      uuid.NullUUID{UUID: id, Valid: true},
+				PreserveID: spec.PreserveID,
 			})
 		}
 	}
@@ -157,10 +173,11 @@ func diffCollection(spec ActivityFieldSpec, oldValue, newValue any) []FieldChang
 	for _, id := range changesList.AddIds {
 		if newRef, exists := newMap[id]; exists {
 			changes = append(changes, FieldChange{
-				Verb:   "added",
-				Field:  actField.ActivityField(spec.Field),
-				NewVal: newRef.NameValue,
-				NewID:  uuid.NullUUID{UUID: id, Valid: true},
+				Verb:       "added",
+				Field:      actField.ActivityField(spec.Field),
+				NewVal:     newRef.NameValue,
+				NewID:      uuid.NullUUID{UUID: id, Valid: true},
+				PreserveID: spec.PreserveID,
 			})
 		}
 	}

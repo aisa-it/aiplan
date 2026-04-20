@@ -12,18 +12,20 @@ type EntityRef struct {
 }
 
 type FieldChange struct {
-	Field  actField.ActivityField
-	Verb   string
-	OldVal string
-	NewVal string
-	OldID  uuid.NullUUID
-	NewID  uuid.NullUUID
+	Field      actField.ActivityField
+	Verb       string
+	OldVal     string
+	NewVal     string
+	OldID      uuid.NullUUID
+	NewID      uuid.NullUUID
+	PreserveID bool // нужно ли сохранять ID для этого поля
 }
 
 type ActivityFieldSpec struct {
-	Req       string
-	Field     string
-	Kind      string
-	Transform string
-	Table     string
+	Req        string
+	Field      string
+	Kind       string
+	Transform  string
+	Table      string
+	PreserveID bool // по умолчанию true - сохранять ID для этого поля
 }

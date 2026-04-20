@@ -154,55 +154,98 @@ func (t *SnapshotTracker) configureMoveActivity(event *dao.ActivityEvent, doc *d
 	}
 }
 
-func (t *SnapshotTracker) TrackChanges(layer types.EntityLayer, oldSnapshot, newSnapshot any, entity dao.IDaoAct, actor *dao.User) error {
-	changes := Diff(oldSnapshot, newSnapshot)
+func (t *SnapshotTracker) TrackChanges(layer types.EntityLayer, oldSnapshot, newSnapshot SnapshotI, entity dao.IDaoAct, actor *dao.User) error {
+	if oldSnapshot == nil && newSnapshot != nil {
+		return t.trackCreate(layer, newSnapshot, entity, actor)
+	}
 
+	if newSnapshot == nil && oldSnapshot != nil {
+		return t.trackDelete(layer, oldSnapshot, entity, actor)
+	}
+
+	oldAny, newAny := any(oldSnapshot), any(newSnapshot)
+	if oldAny == nil || newAny == nil {
+		return nil
+	}
+	return t.continueUpdate(layer, oldAny, newAny, entity, actor)
+}
+
+func (t *SnapshotTracker) trackCreate(layer types.EntityLayer, snapshot SnapshotI, entity dao.IDaoAct, actor *dao.User) error {
+	var name string
+	var entityID uuid.UUID
+	var field actField.ActivityField
+
+	if snapshot != nil {
+		name = snapshot.GetName()
+		entityID = snapshot.GetID()
+		field = snapshot.GetField()
+	}
+	if field == "" {
+		field = entity.GetEntityType()
+	}
+	if entityID == uuid.Nil {
+		entityID = entity.GetId()
+	}
+	if name == "" {
+		name = entity.GetString()
+	}
+
+	ev := NewActivityEvent(
+		actField.VerbCreated,
+		field,
+		nil,
+		name,
+		uuid.NullUUID{UUID: entityID, Valid: true},
+		uuid.NullUUID{},
+		actor,
+	)
+	if err := SetEntityRefs(layer, &ev, entity); err != nil {
+		return fmt.Errorf("set entity refs create: %w", err)
+	}
+
+	return t.saveAndNotifyActivity(&ev)
+}
+
+// trackDelete logs deletion of an entity
+func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot SnapshotI, entity dao.IDaoAct, actor *dao.User) error {
+	var name string
+	var field actField.ActivityField
+
+	if snapshot != nil {
+		name = snapshot.GetName()
+		field = snapshot.GetField()
+	}
+	if field == "" {
+		field = entity.GetEntityType()
+	}
+	if name == "" {
+		name = entity.GetString()
+	}
+
+	ev := NewActivityEvent(
+		actField.VerbDeleted,
+		field,
+		&name,
+		"",
+		uuid.NullUUID{},
+		uuid.NullUUID{},
+		actor,
+	)
+	if err := SetEntityRefs(layer, &ev, entity); err != nil {
+		return fmt.Errorf("set entity refs delete: %w", err)
+	}
+
+	return t.saveAndNotifyActivity(&ev)
+}
+
+// Continue with update logic
+func (t *SnapshotTracker) continueUpdate(layer types.EntityLayer, oldSnapshot, newSnapshot any, entity dao.IDaoAct, actor *dao.User) error {
+	changes := Diff(oldSnapshot, newSnapshot)
 	if len(changes) == 0 {
 		return nil
 	}
 
-	if layer == types.LayerDoc {
-		hasParentChange := false
-		for _, change := range changes {
-			if change.Field == "parent" {
-				hasParentChange = true
-				break
-			}
-		}
-
-		if hasParentChange {
-			oldDocSnapshot, ok := oldSnapshot.(DocSnapshot)
-			if !ok {
-				return fmt.Errorf("oldSnapshot is not DocSnapshot")
-			}
-			newDocSnapshot, ok := newSnapshot.(DocSnapshot)
-			if !ok {
-				return fmt.Errorf("newSnapshot is not DocSnapshot")
-			}
-
-			doc, ok := entity.(*dao.Doc)
-			if !ok {
-				return fmt.Errorf("entity is not *dao.Doc")
-			}
-
-			var oldParent, newParent *dao.Doc
-			if oldDocSnapshot.Parent.IsSet() {
-				parentRef := oldDocSnapshot.Parent.Value()
-				if parentRef.ID != uuid.Nil {
-					oldParent = &dao.Doc{ID: parentRef.ID, Title: parentRef.NameValue}
-				}
-			}
-			if newDocSnapshot.Parent.IsSet() {
-				parentRef := newDocSnapshot.Parent.Value()
-				if parentRef.ID != uuid.Nil {
-					newParent = &dao.Doc{ID: parentRef.ID, Title: parentRef.NameValue}
-				}
-			}
-
-			return t.TrackDocMove(doc, oldParent, newParent, actor)
-		}
-	}
-
+	// BuildActivityEvents учитывает preserve_id в тэгах полей
 	activityEvents := BuildActivityEvents(layer, changes, entity, actor)
 
 	for _, event := range activityEvents {

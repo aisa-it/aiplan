@@ -10,7 +10,7 @@ import (
 )
 
 func ParseActivityTag(tag string) (ActivityFieldSpec, error) {
-	spec := ActivityFieldSpec{Kind: "scalar"} // default
+	spec := ActivityFieldSpec{Kind: "scalar", PreserveID: false} // default - не сохранять ID
 
 	for _, param := range strings.Split(tag, ";") {
 		parts := strings.SplitN(param, ":", 2)
@@ -29,6 +29,8 @@ func ParseActivityTag(tag string) (ActivityFieldSpec, error) {
 			spec.Transform = parts[1]
 		case "table":
 			spec.Table = parts[1]
+		case "preserve_id":
+			spec.PreserveID = parts[1] == "true"
 		}
 	}
 
