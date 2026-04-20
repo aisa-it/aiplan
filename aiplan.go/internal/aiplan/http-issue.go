@@ -1272,6 +1272,12 @@ func (s *Services) deleteIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// New snapshot tracker: log issue deletion
+	oldSnapshot := tracker.IssueToSnapshot(issue)
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, nil, &issue, &user); err != nil {
+		errStack.GetError(c, err)
+	}
+
 	return c.NoContent(http.StatusOK)
 }
 

@@ -1884,6 +1884,13 @@ func (s *Services) createIssue(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
+	// New snapshot tracker: log issue creation
+	newSnapshot := tracker.IssueToSnapshot(issueNew)
+	err = s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issueNew, &user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
 	if issueNew.ParentId.Valid {
 
 		data := make(map[string]interface{})

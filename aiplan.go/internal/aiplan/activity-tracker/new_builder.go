@@ -31,6 +31,11 @@ func BuildActivityEvents(layer types.EntityLayer, changes []FieldChange, entity 
 			EntityType:    layer,
 		}
 
+		if !change.PreserveID {
+			event.OldIdentifier = uuid.NullUUID{}
+			event.NewIdentifier = uuid.NullUUID{}
+		}
+
 		if layer == types.LayerDoc && change.Field == "parent" {
 			event.Verb = "move"
 		}
