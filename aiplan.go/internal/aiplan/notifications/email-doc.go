@@ -422,7 +422,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targetU
 				return "", "", err
 			}
 
-			if activity.OldValue == nil {
+			if activity.OldValue == "" {
 				continue
 			}
 
@@ -433,7 +433,7 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targetU
 				CreatedAt time.Time
 			}{
 				activity.Actor,
-				*activity.OldValue,
+				activity.OldValue,
 				activity.CreatedAt.In((*time.Location)(&targetUser.UserTimezone)),
 			}); err != nil {
 				return "", "", err
@@ -496,13 +496,13 @@ func getDocNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targetU
 		field := activity.Field
 
 		if field == actField.Description.Field {
-			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
+			oldValue := replaceTablesToText(replaceImageToText(activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
 			newValue = policy.ProcessCustomHtmlTag(newValue)
 			oldValue = prepareToMail(prepareHtmlBody(htmlStripPolicy, oldValue))
 			newValue = prepareToMail(prepareHtmlBody(htmlStripPolicy, newValue))
-			activity.OldValue = &oldValue
+			activity.OldValue = oldValue
 			activity.NewValue = newValue
 		}
 		if field == actField.Doc.Field && activity.Verb == actField.VerbCreated {
@@ -606,7 +606,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.ActivityEvent) string
 			return ""
 		}
 
-		if act.OldValue == nil {
+		if act.OldValue == "" {
 			return ""
 		}
 
@@ -617,7 +617,7 @@ func gocGetEmailHtml(tx *gorm.DB, user *dao.User, act *dao.ActivityEvent) string
 			CreatedAt time.Time
 		}{
 			act.Actor,
-			*act.OldValue,
+			act.OldValue,
 			act.CreatedAt.In((*time.Location)(&user.UserTimezone)),
 		}); err != nil {
 			return ""

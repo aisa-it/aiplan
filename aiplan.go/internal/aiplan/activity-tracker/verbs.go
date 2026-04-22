@@ -53,7 +53,7 @@ func remove[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error
 	oldV = GetAsOrDefault[string](c.RequestedData, key.AsLogValue(), oldV)
 	oldV = GetAsOrDefault[string](c.RequestedData, actField.New(oldV).AsLogValue(), oldV)
 
-	change := activityChange[E]{verb: actField.VerbRemoved, field: key, oldVal: &oldV, oldID: ToNullUUID(oldIdentifier), entity: current}
+	change := activityChange[E]{verb: actField.VerbRemoved, field: key, oldVal: oldV, oldID: ToNullUUID(oldIdentifier), entity: current}
 
 	return buildEvents(c, []activityChange[E]{change})
 }
@@ -75,7 +75,7 @@ func create[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error
 
 func del[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) {
 	oldVal := GetAsOrDefault[string](c.RequestedData, actField.OldTitleKey, entity.GetString())
-	change := activityChange[E]{verb: actField.VerbDeleted, field: entity.GetEntityType(), oldVal: &oldVal, entity: entity}
+	change := activityChange[E]{verb: actField.VerbDeleted, field: entity.GetEntityType(), oldVal: oldVal, entity: entity}
 	return buildEvents(c, []activityChange[E]{change})
 }
 
@@ -106,7 +106,7 @@ func move[E dao.IDaoAct](c *ActivityCtx, entity E) ([]dao.ActivityEvent, error) 
 	newVal := GetAsOrDefault[string](c.RequestedData, actField.ParentTitleKey, "")
 	oldVal := GetAsOrDefault[string](c.CurrentInstance, actField.ParentTitleKey, "")
 
-	change := activityChange[E]{verb: verb, field: field, oldVal: &oldVal, newVal: newVal, newID: ToNullUUID(newId), oldID: ToNullUUID(oldId), entity: entity}
+	change := activityChange[E]{verb: verb, field: field, oldVal: oldVal, newVal: newVal, newID: ToNullUUID(newId), oldID: ToNullUUID(oldId), entity: entity}
 
 	return buildEvents(c, []activityChange[E]{change})
 }

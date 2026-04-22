@@ -74,9 +74,9 @@ func sprintDate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	format := "*%s*: "
 	values := []any{types.FieldsTranslation[af]}
 
-	if act.OldValue != nil && *act.OldValue != "<nil>" {
+	if act.OldValue != "" && act.OldValue != "<nil>" {
 		format += "~%s~ "
-		str, err := utils.FormatDateStr(*act.OldValue, "02.01.2006", nil)
+		str, err := utils.FormatDateStr(act.OldValue, "02.01.2006", nil)
 		if err != nil {
 			return TgMsg{}
 		}

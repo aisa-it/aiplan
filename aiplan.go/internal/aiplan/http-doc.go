@@ -1197,17 +1197,6 @@ func (s *Services) createDocComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityCreateActivity, nil, nil, *comment, user)
-	//if err != nil {
-	//  errStack.GetError(c, err)
-	//}
-
-	//err = tracker.TrackEvent(s.activityTracker, types.LayerDoc, actField.VerbCreated, tracker.NewTrackerCtx(nil, nil), *comment, user)
-	//if err != nil {
-	//	errStack.GetError(c, err)
-	//}
-
-	// New snapshot tracker: log comment creation
 	newSnapshot := tracker.CommentToSnapshot(comment)
 	doc := c.(DocContext).Doc
 	err = s.snapshotTracker.TrackChanges(types.LayerDoc, nil, newSnapshot, &doc, user)
@@ -1298,8 +1287,6 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	}
 	oldSnapshot = tracker.CommentToSnapshot(&commentOld)
 
-	//oldMap := StructToJSONMap(commentOld)
-	//ctx := tracker.NewTrackerCtx(nil, &oldMap)
 	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
@@ -1350,18 +1337,6 @@ func (s *Services) updateDocComment(c echo.Context) error {
 		}
 		return EError(c, err)
 	}
-	//newMap := StructToJSONMap(comment)
-	//ctx.GormMap = &newMap
-	//
-	//ctx.New.SetKey(actField.NewKey(actField.KindScopeID), comment.Id)
-	//ctx.New.SetKey(actField.NewKey(actField.KindLogOverride), actField.Comment.Field)
-	//ctx.Old.SetKey(actField.NewKey(actField.KindScopeID), comment.Id)
-	//ctx.Old.SetKey(actField.UpdateScopeKey, actField.Comment.Field)
-	//
-	//err = tracker.TrackEvent(s.activityTracker, types.LayerDoc, actField.VerbUpdated, ctx, *comment, &user)
-	//if err != nil {
-	//	errStack.GetError(c, err)
-	//}
 
 	err = s.snapshotTracker.TrackChanges(types.LayerDoc, oldSnapshot, newSnapshot, &doc, &user)
 	if err != nil {
@@ -1404,35 +1379,19 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 		First(&comment).Error; err != nil {
 		return EError(c, err)
 	}
+	oldSnapshot := tracker.CommentToSnapshot(&comment)
 
 	if workspaceMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		//err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, comment, &user)
-		//if err != nil {
-		//	errStack.GetError(c, err)
-		//	return err
-		//}
-
-		//err := tracker.TrackEvent(s.activityTracker, types.LayerDoc, actField.VerbDeleted, nil, comment, &user)
-		//if err != nil {
-		//	errStack.GetError(c, err)
-		//	return err
-		//}
-
-		// New snapshot tracker: log comment deletion
-		oldSnapshot := tracker.CommentToSnapshot(&comment)
-		doc := c.(DocContext).Doc
-		err := s.snapshotTracker.TrackChanges(types.LayerDoc, oldSnapshot, nil, &doc, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
-
-		return s.db.Delete(&comment).Error
-	}); err != nil {
+	if err := s.db.Delete(&comment).Error; err != nil {
 		return EError(c, err)
+	}
+
+	err := s.snapshotTracker.TrackChanges(types.LayerDoc, oldSnapshot, nil, &doc, &user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2112,7 +2071,7 @@ func (s *Services) getDocHistory(c echo.Context) error {
 	}
 
 	query := s.db.Where("workspace_id = ?", doc.WorkspaceId).Where("doc_id = ?", doc.ID)
-	oldFiles, err := dao.GetFileAssetFromDescription(query, activity.OldValue)
+	oldFiles, err := dao.GetFileAssetFromDescription(query, &activity.OldValue)
 	if err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
@@ -2124,7 +2083,7 @@ func (s *Services) getDocHistory(c echo.Context) error {
 	}
 
 	resp := activity.ToHistoryLightDTO().ToFullHistory(
-		activity.OldValue,
+		&activity.OldValue,
 		&doc.Content.Body,
 		utils.SliceToSlice(&oldFiles, func(fa *dao.FileAsset) dto.FileAsset { return *fa.ToDTO() }),
 		utils.SliceToSlice(&currentFiles, func(fa *dao.FileAsset) dto.FileAsset { return *fa.ToDTO() }),
@@ -2169,11 +2128,11 @@ func (s *Services) updateDocFromHistory(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	if activity.OldValue == nil {
+	if activity.OldValue == "" {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	doc.Content.Body = *activity.OldValue
+	doc.Content.Body = activity.OldValue
 
 	if err := s.db.Omit(clause.Associations).Save(&doc).Error; err != nil {
 		return EError(c, err)

@@ -102,6 +102,7 @@ type Issue struct {
 	WatcherIDs      []uuid.UUID `json:"watchers" gorm:"-"`
 	LabelIDs        []uuid.UUID `json:"labels" gorm:"-"`
 	LinkedIssuesIDs []uuid.UUID `json:"linked_issues_ids" gorm:"-"`
+	LinkedIssues    []Issue     `json:"linked_issues" gorm:"-"`
 
 	BlockerIssuesIDs []IssueBlocker `json:"blocker_issues" gorm:"-"`
 	BlockedIssuesIDs []IssueBlocker `json:"blocked_issues" gorm:"-"`
@@ -967,16 +968,22 @@ func (issue Issue) IsAssignee(id uuid.UUID) bool {
 //   - error: ошибка, если произошла ошибка при извлечении связанных задач.
 func (issue *Issue) FetchLinkedIssues(tx *gorm.DB) error {
 	var ids []LinkedIssues
-	if err := tx.Where("id1 = ?", issue.ID).Or("id2 = ?", issue.ID).Find(&ids).Error; err != nil {
+	if err := tx.
+		Joins("Issue1").
+		Joins("Issue2").
+		Where("id1 = ?", issue.ID).Or("id2 = ?", issue.ID).Find(&ids).Error; err != nil {
 		return err
 	}
 	issue.LinkedIssuesIDs = make([]uuid.UUID, len(ids))
+	issue.LinkedIssues = make([]Issue, len(ids))
 
 	for i, id := range ids {
 		if id.Id1 == issue.ID {
 			issue.LinkedIssuesIDs[i] = id.Id2
+			issue.LinkedIssues[i] = id.Issue2
 		} else {
 			issue.LinkedIssuesIDs[i] = id.Id1
+			issue.LinkedIssues[i] = id.Issue1
 		}
 	}
 	return nil

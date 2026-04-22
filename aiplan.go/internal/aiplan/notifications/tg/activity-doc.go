@@ -67,20 +67,20 @@ func docDoc(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	case actField.VerbDeleted:
 		msg.Title = "удалил(-a) из документа"
 		format = "*Вложенный документ*:  ~%s~"
-		values = append(values, fmt.Sprint(*act.OldValue))
+		values = append(values, fmt.Sprint(act.OldValue))
 	case actField.VerbRemoved:
 		msg.Title = "убрал(-a) из документа"
-		values = append(values, *act.OldValue, def.OldDoc.URL.String())
+		values = append(values, act.OldValue, def.OldDoc.URL.String())
 	case actField.VerbMoveDocWorkspace:
 		msg.Title = "сделал(-a) корневым документ"
-		if act.OldValue != nil {
+		if act.OldValue != "" {
 			format = "*Из документа*: [%s](%s)"
-			values = append(values, *act.OldValue, def.OldDoc.URL.String())
+			values = append(values, act.OldValue, def.OldDoc.URL.String())
 		}
 	case actField.VerbMoveDocDoc:
 		msg.Title = "переместил(-a) документ"
 		format = "*Из документа*: [%s](%s)\n*В документ*: [%s](%s)"
-		values = append(values, *act.OldValue, def.OldDoc.URL.String(), act.NewValue, def.NewDoc.URL.String())
+		values = append(values, act.OldValue, def.OldDoc.URL.String(), act.NewValue, def.NewDoc.URL.String())
 	case actField.VerbMoveWorkspaceDoc:
 		msg.Title = "переместил(-a) документ"
 		format = "*Из корневой директории*\n*В документ*: [%s](%s)"
@@ -125,7 +125,7 @@ func docMember(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 func docRole(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	var format string
-	values := []any{types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue)}
+	values := []any{types.TranslateMap(types.RoleTranslation, &act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue)}
 	msg.Title = "изменил(-a) роли в документе"
 	switch af {
 	case actField.ReaderRole.Field:
@@ -156,8 +156,8 @@ func docDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 
 	msg.Title = "изменил(-a) в документе"
 
-	if act.OldValue != nil {
-		msg.Body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *act.OldValue, act.NewValue)
+	if act.OldValue != "" {
+		msg.Body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], act.OldValue, act.NewValue)
 	} else {
 		msg.Body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], act.NewValue)
 	}

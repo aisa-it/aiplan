@@ -52,8 +52,8 @@ func issueDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 
 	oldValue := ""
 	newValue := act.NewValue
-	if act.OldValue != nil && *act.OldValue != "<nil>" {
-		oldValue = *act.OldValue
+	if act.OldValue != "" && act.OldValue != "<nil>" {
+		oldValue = act.OldValue
 	}
 
 	if oldValue == "<p></p>" {
@@ -62,7 +62,7 @@ func issueDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg.Title = "изменил(-a)"
 
 	if af == actField.Priority.Field {
-		oldValue = types.TranslateMap(types.PriorityTranslation, act.OldValue)
+		oldValue = types.TranslateMap(types.PriorityTranslation, &act.OldValue)
 		newValue = types.TranslateMap(types.PriorityTranslation, &act.NewValue)
 	}
 
@@ -183,12 +183,12 @@ func issueLink(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 		msg.Title = "удалил(-a) ссылку из"
 		format = ""
 	case actField.VerbUpdated:
-		if act.OldValue != nil {
+		if act.OldValue != "" {
 			format = "~%s~ " + format
 			if af == actField.LinkUrl.Field {
-				values = append([]any{*act.OldValue}, values[1], values[1])
+				values = append([]any{act.OldValue}, values[1], values[1])
 			} else {
-				values = append([]any{*act.OldValue}, values...)
+				values = append([]any{act.OldValue}, values...)
 			}
 		}
 	}
@@ -300,10 +300,10 @@ func issueTargetDate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg.Title = "изменил(-a)"
 	format := "*%s*: "
 	values := []any{types.FieldsTranslation[af]}
-	if act.OldValue != nil && *act.OldValue != "<nil>" {
+	if act.OldValue != "" && act.OldValue != "<nil>" {
 		format += "~%s~ "
 		key := targetDateTimeZ + "_old"
-		msg.Replace[key] = utils.FormatDateToSqlNullTime(*act.OldValue)
+		msg.Replace[key] = utils.FormatDateToSqlNullTime(act.OldValue)
 		values = append(values, strReplace(key))
 	}
 

@@ -103,6 +103,7 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		project.Workspace = &workspace
+		projectMember.Project = &project
 
 		return next(ProjectContext{c.(WorkspaceContext), project, projectMember})
 	}
@@ -1879,14 +1880,24 @@ func (s *Services) createIssue(c echo.Context) error {
 
 	issueNew.Project = &project
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, issueNew, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	// Reload issue with assignees and watchers after transaction
+	if err := s.db.
+		Preload("Assignees").
+		Preload("Watchers").
+		Preload("State").
+		Where("id = ?", issueNew.ID).
+		First(&issueNew).Error; err != nil {
+		return EError(c, err)
 	}
+
+	//err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, issueNew, &user)
+	//if err != nil {
+	//	errStack.GetError(c, err)
+	//}
 
 	// New snapshot tracker: log issue creation
 	newSnapshot := tracker.IssueToSnapshot(issueNew)
-	err = s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issueNew, &user)
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issueNew, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

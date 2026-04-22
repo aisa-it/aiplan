@@ -3,6 +3,7 @@ package tracker
 import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/opt"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
@@ -16,12 +17,19 @@ type SnapshotI interface {
 }
 
 type IssueSnapshot struct {
-	ID          uuid.UUID
-	Name        opt.Field[string]      `act:"req:name;field:name;kind:scalar"`
-	Assignees   opt.Field[[]EntityRef] `act:"req:assignees_list;field:assignees;kind:collection;transform:uuid;table:users;preserve_id:true"`
-	Watchers    opt.Field[[]EntityRef] `act:"req:watchers_list;field:watchers;kind:collection;transform:uuid;table:users;preserve_id:true"`
-	Description opt.Field[string]      `act:"req:description_html;field:description;kind:scalar"`
-	State       opt.Field[EntityRef]   `act:"req:state;field:status;kind:scalar;transform:uuid;table:states;preserve_id:true"`
+	ID           uuid.UUID
+	Name         opt.Field[string]      `act:"req:name;field:name;kind:scalar"`
+	Assignees    opt.Field[[]EntityRef] `act:"req:assignees_list;field:assignees;kind:collection;transform:uuid;table:users;preserve_id:true"`
+	Watchers     opt.Field[[]EntityRef] `act:"req:watchers_list;field:watchers;kind:collection;transform:uuid;table:users;preserve_id:true"`
+	Description  opt.Field[string]      `act:"req:description_html;field:description;kind:scalar"`
+	Priority     opt.Field[*string]     `act:"req:priority;field:priority;kind:scalar"`
+	State        opt.Field[EntityRef]   `act:"req:state;field:status;kind:scalar;transform:uuid;table:states;preserve_id:true"`
+	Parent       opt.Field[EntityRef]   `act:"req:parent;field:parent;kind:scalar;transform:uuid;table:issues;preserve_id:true;linked_field:sub_issue"`
+	BlockerList  opt.Field[[]EntityRef] `act:"req:blocker_issues;field:blocking;kind:collection;table:issues;preserve_id:true;linked_field:blocks"`
+	BlockedList  opt.Field[[]EntityRef] `act:"req:blocked_issues;field:blocks;kind:collection;table:issues;preserve_id:true;linked_field:blocking"`
+	SubIssues    opt.Field[[]EntityRef] `act:"req:sub_issues;field:sub_issue;kind:collection;table:issues;preserve_id:true;linked_field:parent"`
+	Links        opt.Field[[]EntityRef] `act:"req:links;field:link;kind:collection;preserve_id:true"`
+	LinkedIssues opt.Field[[]EntityRef] `act:"req:linked_issues;field:linked;kind:collection;preserve_id:true;linked_field:linked"`
 }
 
 func (i IssueSnapshot) GetName() string {
@@ -44,9 +52,39 @@ func IssueToSnapshot(i dao.Issue) IssueSnapshot {
 		ID:          i.ID,
 		Name:        opt.Some(i.Name),
 		Description: opt.Some(i.DescriptionHtml),
+		Priority:    opt.Some(i.Priority),
 		Assignees:   opt.Some(utils.SliceToSlice(i.Assignees, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
 		Watchers:    opt.Some(utils.SliceToSlice(i.Watchers, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
 		State:       opt.Some(daoToEntityRef(i.State)),
+
+		BlockerList: opt.Some(utils.SliceToSlice(&i.BlockerIssuesIDs, func(t *dao.IssueBlocker) EntityRef {
+			t.BlockedBy.Project = i.Project
+			return daoToEntityRef(t.BlockedBy)
+		})),
+		BlockedList: opt.Some(utils.SliceToSlice(&i.BlockedIssuesIDs, func(t *dao.IssueBlocker) EntityRef {
+			t.Block.Project = i.Project
+			return daoToEntityRef(t.Block)
+		})),
+		SubIssues: opt.None[[]EntityRef](), // TODO: load sub issues when FullLoad is implemented
+		Parent: func() opt.Field[EntityRef] {
+			if i.ParentId.Valid && i.Parent != nil {
+				i.Parent.Project = i.Project
+				return opt.Some(EntityRef{ID: i.ParentId.UUID, NameValue: i.Parent.String(), NameField: "issue"})
+			}
+			return opt.None[EntityRef]()
+		}(),
+		Links: opt.Some(utils.SliceToSlice(i.Links, func(t *dao.IssueLink) EntityRef {
+			return EntityRef{ID: t.Id, NameValue: t.Url, NameField: "link"}
+		})),
+		LinkedIssues: func() opt.Field[[]EntityRef] {
+
+			refs := make([]EntityRef, len(i.LinkedIssues))
+			for j, li := range i.LinkedIssues {
+				li.Project = i.Project
+				refs[j] = EntityRef{ID: li.ID, NameValue: li.String(), NameField: "issue"}
+			}
+			return opt.Some(refs)
+		}(),
 	}
 }
 
@@ -117,10 +155,22 @@ func (c CommentSnapshot) GetField() actField.ActivityField {
 	return actField.Comment.Field
 }
 
-func CommentToSnapshot(comment *dao.DocComment) CommentSnapshot {
+func CommentToSnapshot[T dao.IssueComment | dao.DocComment](comment *T) CommentSnapshot {
+	var id uuid.UUID
+	var html types.RedactorHTML
+
+	switch c := any(comment).(type) {
+	case *dao.IssueComment:
+		id = c.Id
+		html = c.CommentHtml
+	case *dao.DocComment:
+		id = c.Id
+		html = c.CommentHtml
+	}
+
 	return CommentSnapshot{
-		ID:          comment.Id,
-		CommentHtml: opt.Some(comment.CommentHtml.String()),
+		ID:          id,
+		CommentHtml: opt.Some(html.String()),
 	}
 }
 
@@ -146,10 +196,22 @@ func (c AttachmentSnapshot) GetField() actField.ActivityField {
 	return actField.Attachment.Field
 }
 
-func AttachmentToSnapshot(a *dao.DocAttachment) AttachmentSnapshot {
+func AttachmentToSnapshot[T dao.IssueAttachment | dao.DocAttachment](a *T) AttachmentSnapshot {
+	var id uuid.UUID
+	var name string
+
+	switch c := any(a).(type) {
+	case *dao.IssueAttachment:
+		id = c.Id
+		name = c.Asset.Name
+	case *dao.DocAttachment:
+		id = c.Id
+		name = c.Asset.Name
+	}
+
 	return AttachmentSnapshot{
-		ID:   a.Id,
-		Name: opt.Some(a.Asset.Name),
+		ID:   id,
+		Name: opt.Some(name),
 	}
 }
 
@@ -157,20 +219,9 @@ func daoToEntityRef(entity dao.IDaoAct) EntityRef {
 	if entity == nil {
 		return EntityRef{}
 	}
-	nameField := string(entity.GetEntityType())
-	switch entity.GetEntityType() {
-	case actField.Doc.Field:
-		nameField = "docs"
-	case actField.Issue.Field:
-		nameField = "issues"
-	case actField.Project.Field:
-		nameField = "projects"
-	case actField.Workspace.Field:
-		nameField = "workspaces"
-	}
 	return EntityRef{
 		ID:        entity.GetId(),
 		NameValue: entity.GetString(),
-		NameField: nameField,
+		NameField: string(entity.GetEntityType()),
 	}
 }

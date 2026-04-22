@@ -12,7 +12,7 @@ import (
 type activityChange[E dao.IDaoAct] struct {
 	verb   string
 	field  actField.ActivityField
-	oldVal *string
+	oldVal string
 	newVal string
 	newID  uuid.NullUUID
 	oldID  uuid.NullUUID
@@ -32,7 +32,7 @@ func buildEvents[E dao.IDaoAct](c *ActivityCtx, changes []activityChange[E]) ([]
 	return result, nil
 }
 
-func NewActivityEvent(verb string, field actField.ActivityField, oldVal *string, newVal string, newId, oldId uuid.NullUUID, actor *dao.User) dao.ActivityEvent {
+func NewActivityEvent(verb string, field actField.ActivityField, oldVal string, newVal string, newId, oldId uuid.NullUUID, actor *dao.User) dao.ActivityEvent {
 
 	return dao.ActivityEvent{
 		ID:            dao.GenUUID(),

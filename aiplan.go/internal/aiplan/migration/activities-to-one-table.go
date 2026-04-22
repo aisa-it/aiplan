@@ -102,7 +102,7 @@ func (a *ActivitiesToOneTable) Execute() error {
 					Notified:      act.Notified,
 					Verb:          act.Verb,
 					Field:         actField.ActivityField(*act.Field),
-					OldValue:      act.OldValue,
+					OldValue:      ptrStrToString(act.OldValue),
 					NewValue:      act.NewValue,
 					NewIdentifier: act.NewIdentifier,
 					OldIdentifier: act.OldIdentifier,
@@ -153,7 +153,7 @@ func (a *ActivitiesToOneTable) Execute() error {
 					Notified:      act.Notified,
 					Verb:          act.Verb,
 					Field:         actField.ActivityField(*act.Field),
-					OldValue:      act.OldValue,
+					OldValue:      ptrStrToString(act.OldValue),
 					NewValue:      act.NewValue,
 					NewIdentifier: act.NewIdentifier,
 					OldIdentifier: act.OldIdentifier,
@@ -210,7 +210,7 @@ func (a *ActivitiesToOneTable) Execute() error {
 					Notified:      act.Notified,
 					Verb:          act.Verb,
 					Field:         actField.ActivityField(*act.Field),
-					OldValue:      act.OldValue,
+					OldValue:      ptrStrToString(act.OldValue),
 					NewValue:      newVal,
 					NewIdentifier: act.NewIdentifier,
 					OldIdentifier: act.OldIdentifier,
@@ -261,7 +261,7 @@ func (a *ActivitiesToOneTable) Execute() error {
 					Notified:      act.Notified,
 					Verb:          act.Verb,
 					Field:         actField.ActivityField(*act.Field),
-					OldValue:      act.OldValue,
+					OldValue:      ptrStrToString(act.OldValue),
 					NewValue:      act.NewValue,
 					NewIdentifier: act.NewIdentifier,
 					OldIdentifier: act.OldIdentifier,
@@ -313,7 +313,7 @@ func (a *ActivitiesToOneTable) Execute() error {
 					Notified:      act.Notified,
 					Verb:          act.Verb,
 					Field:         actField.ActivityField(*act.Field),
-					OldValue:      act.OldValue,
+					OldValue:      ptrStrToString(act.OldValue),
 					NewValue:      act.NewValue,
 					NewIdentifier: act.NewIdentifier,
 					OldIdentifier: act.OldIdentifier,
@@ -364,7 +364,7 @@ func (a *ActivitiesToOneTable) Execute() error {
 					Notified:      act.Notified,
 					Verb:          act.Verb,
 					Field:         actField.ActivityField(*act.Field),
-					OldValue:      act.OldValue,
+					OldValue:      ptrStrToString(act.OldValue),
 					NewValue:      act.NewValue,
 					NewIdentifier: act.NewIdentifier,
 					OldIdentifier: act.OldIdentifier,
@@ -415,7 +415,7 @@ func (a *ActivitiesToOneTable) Execute() error {
 					Notified:      act.Notified,
 					Verb:          act.Verb,
 					Field:         actField.ActivityField(*act.Field),
-					OldValue:      act.OldValue,
+					OldValue:      ptrStrToString(act.OldValue),
 					NewValue:      act.NewValue,
 					NewIdentifier: act.NewIdentifier,
 					OldIdentifier: act.OldIdentifier,
@@ -451,4 +451,11 @@ func (a *ActivitiesToOneTable) Execute() error {
 	}
 
 	return nil
+}
+
+func ptrStrToString(str *string) string {
+	if str == nil {
+		return ""
+	}
+	return *str
 }

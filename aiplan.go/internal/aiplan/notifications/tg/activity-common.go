@@ -7,7 +7,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 )
 
-func genComment[R dao.IRedactorHTML](comment *R, oldV *string, verb, titleUpdate, titleCreate, titleDelete string) TgMsg {
+func genComment[R dao.IRedactorHTML](comment *R, oldV string, verb, titleUpdate, titleCreate, titleDelete string) TgMsg {
 	msg := NewTgMsg()
 
 	if comment != nil {
@@ -15,9 +15,9 @@ func genComment[R dao.IRedactorHTML](comment *R, oldV *string, verb, titleUpdate
 			utils.HtmlToTg((*comment).GetRedactorHtml().Body),
 		)
 	} else {
-		if oldV != nil {
+		if oldV != "" {
 			msg.Body = Stelegramf("```\n%s```",
-				utils.HtmlToTg(*oldV))
+				utils.HtmlToTg(oldV))
 		}
 	}
 	msg.Replace[userMentioned] = struct{}{}
@@ -33,7 +33,7 @@ func genComment[R dao.IRedactorHTML](comment *R, oldV *string, verb, titleUpdate
 	return msg
 }
 
-func genAttachment(oldV *string, newV, verb, titleCreate, titleDelete string) TgMsg {
+func genAttachment(oldV string, newV, verb, titleCreate, titleDelete string) TgMsg {
 	msg := NewTgMsg()
 	switch verb {
 	case actField.VerbCreated:
@@ -41,18 +41,18 @@ func genAttachment(oldV *string, newV, verb, titleCreate, titleDelete string) Tg
 		msg.Body += Stelegramf("*Файл*: %s", newV)
 	case actField.VerbDeleted:
 		msg.Title = titleDelete
-		msg.Body += Stelegramf("*Файл*: ~%s~", *oldV)
+		msg.Body += Stelegramf("*Файл*: ~%s~", oldV)
 	}
 	return msg
 }
 
-func genDefault(oldV *string, newV string, af actField.ActivityField, title string) TgMsg {
+func genDefault(oldV string, newV string, af actField.ActivityField, title string) TgMsg {
 	msg := NewTgMsg()
 
 	msg.Title = title
 
-	if oldV != nil {
-		msg.Body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *oldV, newV)
+	if oldV != "" {
+		msg.Body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], oldV, newV)
 	} else {
 		msg.Body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], newV)
 	}

@@ -18,14 +18,17 @@ type FieldChange struct {
 	NewVal     string
 	OldID      uuid.NullUUID
 	NewID      uuid.NullUUID
-	PreserveID bool // нужно ли сохранять ID для этого поля
+	PreserveID bool      // нужно ли сохранять ID для этого поля
+	EntityID   uuid.UUID // target entity ID (для linked-событий, иначе основной entity)
+	IsLinked   bool      // является ли это linked-событием
 }
 
 type ActivityFieldSpec struct {
-	Req        string
-	Field      string
-	Kind       string
-	Transform  string
-	Table      string
-	PreserveID bool // по умолчанию true - сохранять ID для этого поля
+	Req         string
+	Field       string
+	Kind        string
+	Transform   string
+	Table       string
+	PreserveID  bool   // по умолчанию true - сохранять ID для этого поля
+	LinkedField string // для linked-коллекций: обратное поле (blocking -> blocked)
 }

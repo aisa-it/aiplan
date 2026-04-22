@@ -308,9 +308,9 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 		if field == actField.StartDate.Field || field == actField.EndDate.Field {
 			newT, errNew := FormatDate(activity.NewValue, "02.01.2006", &targetUser.UserTimezone)
 
-			if activity.OldValue != nil {
-				if oldT, errOld := FormatDate(*activity.OldValue, "02.01.2006", &targetUser.UserTimezone); errOld == nil {
-					activity.OldValue = &oldT
+			if activity.OldValue != "" {
+				if oldT, errOld := FormatDate(activity.OldValue, "02.01.2006", &targetUser.UserTimezone); errOld == nil {
+					activity.OldValue = oldT
 				}
 			}
 
@@ -336,13 +336,13 @@ func getSprintNotificationHTML(tx *gorm.DB, sprint *dao.Sprint, activities []dao
 		}
 
 		if field == actField.Description.Field {
-			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
+			oldValue := replaceTablesToText(replaceImageToText(activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
 			newValue = policy.ProcessCustomHtmlTag(newValue)
 			oldValue = prepareToMail(prepareHtmlBody(htmlStripPolicy, oldValue))
 			newValue = prepareToMail(prepareHtmlBody(htmlStripPolicy, newValue))
-			activity.OldValue = &oldValue
+			activity.OldValue = oldValue
 			activity.NewValue = newValue
 		}
 
