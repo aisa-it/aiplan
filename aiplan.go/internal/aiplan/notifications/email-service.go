@@ -97,7 +97,7 @@ func (es *EmailService) ProjectInvitation(projectMember dao.ProjectMember) {
 	if projectMember.Workspace != nil {
 		workspace = projectMember.Workspace.Slug
 	}
-	link := fmt.Sprintf("%s/%s/projects/%s/issues", es.cfg.WebURL, workspace, projectMember.ProjectId)
+	link := fmt.Sprintf("%s/%s/projects/%s/issues", es.cfg.WebURL.URL.String(), workspace, projectMember.ProjectId)
 
 	subject := fmt.Sprintf("Пользователь %s %s добавил Вас в проект %s системы AIPlan", projectMember.CreatedBy.FirstName, projectMember.CreatedBy.LastName, projectMember.Project.Name)
 
@@ -258,7 +258,7 @@ func (es *EmailService) FormAnswerNotify(form *dao.Form, answer *dao.FormAnswer,
 
 func (es *EmailService) UserPasswordForgotNotify(user dao.User, token string) error {
 	subject := "Сброс пароля для входа в АИПлан"
-	link := fmt.Sprintf("%s/reset-password?uidb64=%s&token=%s", es.cfg.WebURL, base64.StdEncoding.EncodeToString([]byte(user.ID.String())), token)
+	link := fmt.Sprintf("%s/reset-password?uidb64=%s&token=%s", es.cfg.WebURL.URL.String(), base64.StdEncoding.EncodeToString([]byte(user.ID.String())), token)
 	context := struct {
 		URL string
 	}{
@@ -445,7 +445,7 @@ func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, ms
 		Workspace  *dao.Workspace
 		TextButton string
 	}{
-		WebUrl:     fmt.Sprintf("%s/%s", es.cfg.WebURL, msg.AddRout),
+		WebUrl:     fmt.Sprintf("%s/%s", es.cfg.WebURL.URL.String(), msg.AddRout),
 		Actor:      msg.Author,
 		TitleMsg:   msg.Title,
 		Msg:        msg.Msg,
