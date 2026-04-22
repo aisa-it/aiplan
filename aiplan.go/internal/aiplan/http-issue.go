@@ -1199,18 +1199,27 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return err
 		}
 
-		newSnapshot := tracker.UpdateSnapshotFromMap[tracker.IssueSnapshot](oldSnapshot, data)
-
-		err = s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, &user)
-		if err != nil {
-			return err
-		}
-
 		return nil
 	}); err != nil {
 		if err.Error() == "forbidden" {
 			return EErrorDefined(c, apierrors.ErrIssueUpdateForbidden)
 		}
+		return EError(c, err)
+	}
+
+	// Reload issue with updated assignees/watchers/blockers/linked issues after transaction
+	issue.FullLoad = true
+	if err := s.db.
+		Joins("Project").
+		Joins("Parent").
+		Where("issues.id = ?", issue.ID).
+		First(&issue).Error; err != nil {
+		return err
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, &user); err != nil {
 		return EError(c, err)
 	}
 	if statusChange {
@@ -2011,6 +2020,8 @@ func (s *Services) createIssueLink(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrURLAndTitleRequired)
 	}
 
+	oldSnapshot := tracker.IssueToSnapshot(issue)
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	link := dao.IssueLink{
 		Id:          dao.GenUUID(),
@@ -2027,10 +2038,17 @@ func (s *Services) createIssueLink(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, nil, link, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	// Reload issue with updated links
+	if err := s.db.Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+		return EError(c, err)
 	}
+
+	newSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, &user); err != nil {
+		return EError(c, err)
+	}
+
 	return c.JSON(http.StatusOK, link.ToLightDTO())
 }
 
@@ -2055,17 +2073,20 @@ func (s *Services) createIssueLink(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-links/{linkId} [patch]
 func (s *Services) updateIssueLink(c echo.Context) error {
 	user := *c.(IssueContext).User
-	//project := c.(IssueContext).Project
-	//issueId := c.(IssueContext).Issue.ID.String()
-
 	linkId := c.Param("linkId")
 
-	var oldLink dao.IssueLink
-	if err := s.db.Where("id = ?", linkId).First(&oldLink).Error; err != nil {
+	var link dao.IssueLink
+	if err := s.db.Where("id = ?", linkId).First(&link).Error; err != nil {
 		return EError(c, err)
 	}
 
-	oldMap := StructToJSONMap(oldLink)
+	var issue dao.Issue
+	if err := s.db.Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
+		return EError(c, err)
+	}
+
+	oldSnapshot := tracker.IssueToSnapshot(issue)
+
 	var newLink IssueLinkRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&newLink); err != nil {
 		return EError(c, err)
@@ -2074,38 +2095,32 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 	if newLink.Url == "" || newLink.Title == "" {
 		return EErrorDefined(c, apierrors.ErrURLAndTitleRequired)
 	}
-	if newLink.Url == oldLink.Url && newLink.Title == oldLink.Title {
-		return c.JSON(http.StatusOK, oldLink)
+	if newLink.Url == link.Url && newLink.Title == link.Title {
+		return c.JSON(http.StatusOK, link)
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	oldLink.UpdatedAt = time.Now()
-	oldLink.UpdatedById = userID
-	oldLink.Title = newLink.Title
-	oldLink.Url = newLink.Url
+	link.UpdatedAt = time.Now()
+	link.UpdatedById = userID
+	link.Title = newLink.Title
+	link.Url = newLink.Url
 
-	{ //rateLimit
-		dataField := utils.MapToSlice(oldMap, func(k string, v interface{}) string { return fmt.Sprintf("link_%s", actField.ReqFieldMapping(k)) })
-		if hasRecentFieldUpdate(s.db.Where("issue_id = ?", oldLink.IssueId), user.ID, dataField...) {
-			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
-		}
-	}
-
-	if err := s.db.Omit(clause.Associations).Save(&oldLink).Error; err != nil {
+	if err := s.db.Omit(clause.Associations).Save(&link).Error; err != nil {
 		return EError(c, err)
 	}
-	newMap := StructToJSONMap(oldLink)
-	newMap["updateScopeId"] = oldLink.Id
 
-	oldMap["updateScope"] = "link"
-	oldMap["updateScopeId"] = oldLink.Id
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), oldLink, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	// Reload issue with updated links
+	if err := s.db.Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, oldLink.ToLightDTO())
+	newSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, &user); err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, link.ToLightDTO())
 }
 
 // deleteIssueLink godoc
@@ -2129,25 +2144,30 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 func (s *Services) deleteIssueLink(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	issue := c.(IssueContext).Issue
 	linkId := c.Param("linkId")
 
 	var link dao.IssueLink
-
 	if err := s.db.Where("project_id = ?", project.ID).
-		Where("issue_id = ?", issueId).
+		Where("issue_id = ?", issue.ID).
 		Where("issue_links.id = ?", linkId).First(&link).Error; err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbDeleted, nil, link, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-		return s.db.Delete(&link).Error
-	}); err != nil {
+	oldSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := s.db.Delete(&link).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// Reload issue with updated links
+	if err := s.db.Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, &user); err != nil {
 		return EError(c, err)
 	}
 
@@ -2462,10 +2482,12 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, nil, comment, &user)
+	newSnapshot := tracker.CommentToSnapshot(&comment)
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issue, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
+
 	return c.JSON(http.StatusCreated, comment.ToDTO())
 }
 
@@ -2621,7 +2643,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 	user := *c.(IssueContext).User
 	issue := c.(IssueContext).Issue
 	commentId := c.Param("commentId")
-
+	var oldSnapshot, newSnapshot tracker.CommentSnapshot
 	var comment dao.IssueComment
 	var commentOld dao.IssueComment
 	if err := s.db.
@@ -2632,8 +2654,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
-
-	oldMap := StructToJSONMap(commentOld)
+	oldSnapshot = tracker.CommentToSnapshot(&commentOld)
 
 	form, _ := c.MultipartForm()
 
@@ -2676,6 +2697,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		if err := tx.Omit(clause.Associations).Save(&commentOld).Error; err != nil {
 			return err
 		}
+		newSnapshot = tracker.CommentToSnapshot(&commentOld)
 
 		if form != nil {
 			// Save issue attachments to
@@ -2764,17 +2786,11 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newMap := StructToJSONMap(commentOld)
-	newMap["updateScopeId"] = commentOld.Id
-	newMap["field_log"] = actField.Comment.Field
-
-	oldMap["updateScope"] = "comment"
-	oldMap["updateScopeId"] = commentOld.Id
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), commentOld, &user)
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, &issue, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
+
 	return c.JSON(http.StatusOK, commentOld.ToDTO())
 }
 
@@ -2800,31 +2816,31 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
 	projectMember := c.(IssueContext).ProjectMember
-	issueId := c.(IssueContext).Issue.ID
+	issue := c.(IssueContext).Issue
 	commentId := c.Param("commentId")
 
 	var comment dao.IssueComment
 	if err := s.db.Where("project_id = ?", project.ID).
-		Where("issue_id = ?", issueId).
+		Where("issue_id = ?", issue.ID).
 		Where("id = ?", commentId).
 		Preload("Attachments").
 		First(&comment).Error; err != nil {
 		return EError(c, err)
 	}
 
+	oldSnapshot := tracker.CommentToSnapshot(&comment)
+
 	if projectMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbDeleted, nil, comment, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-		return s.db.Delete(&comment).Error
-	}); err != nil {
+	if err := s.db.Delete(&comment).Error; err != nil {
 		return EError(c, err)
+	}
+
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, nil, issue, &user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -3155,7 +3171,8 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, nil, issueAttachment, &user)
+	newSnapshot := tracker.AttachmentToSnapshot(&issueAttachment)
+	err = s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issue, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -3257,7 +3274,7 @@ func (s *Services) downloadIssueAttachments(c echo.Context) error {
 func (s *Services) deleteIssueAttachment(c echo.Context) error {
 	user := *c.(IssueContext).User
 	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	issue := c.(IssueContext).Issue
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.IssueAttachment
@@ -3265,19 +3282,14 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 		Preload("Project").
 		Preload("Asset").
 		Where("project_id = ?", project.ID).
-		Where("issue_id = ?", issueId).
+		Where("issue_id = ?", issue.ID).
 		Where("issue_attachments.id = ?", attachmentId).
 		Find(&attachment).Error; err != nil {
 		return EError(c, err)
 	}
+	oldSnapshot := tracker.AttachmentToSnapshot(&attachment)
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbDeleted, nil, attachment, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-
 		if err := s.db.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
 			return err
 		}
@@ -3286,6 +3298,10 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, nil, &issue, &user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
 	return c.NoContent(http.StatusOK)
 }
 
@@ -3350,31 +3366,11 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	oldIssue := StructToJSONMap(issue)
+	oldSnapshot := tracker.IssueToSnapshot(issue)
 
 	var issues []dao.Issue
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Clean all links with this issue
-		var linkedIssues []dao.LinkedIssues
-		var oldIDs []interface{}
-		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Find(&linkedIssues).Error; err != nil {
-			return err
-		}
-
-		for _, v := range linkedIssues {
-			if v.Id1 != issue.ID {
-				oldIDs = append(oldIDs, v.Id1)
-			}
-			if v.Id2 != issue.ID {
-				oldIDs = append(oldIDs, v.Id2)
-			}
-		}
-
-		newIDs := make([]interface{}, len(param.IssueIDs))
-		for i, v := range param.IssueIDs {
-			newIDs[i] = v
-		}
-
 		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Delete(&dao.LinkedIssues{}).Error; err != nil {
 			return err
 		}
@@ -3392,17 +3388,17 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 		if err := tx.Where("id in (?)", issue.LinkedIssuesIDs).Find(&issues).Error; err != nil {
 			return err
 		}
+		issue.LinkedIssues = issues
 
 		return nil
 	}); err != nil {
 		return EError(c, err)
 	}
 
-	newIssue := StructToJSONMap(issue)
+	newSnapshot := tracker.IssueToSnapshot(issue)
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newIssue, &oldIssue), issue, user)
-	if err != nil {
-		errStack.GetError(c, err)
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(

@@ -98,8 +98,8 @@ type ActivityEventLight struct {
 	Verb      string                 `json:"verb"`
 	Field     actField.ActivityField `json:"field,omitempty"  extensions:"x-nullable"`
 
-	OldValue *string `json:"old_value,omitempty"  extensions:"x-nullable"`
-	NewValue string  `json:"new_value"`
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
 
 	EntityType string `json:"entity_type"`
 

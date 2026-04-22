@@ -1285,15 +1285,13 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 			CreatedAt:     a.CreatedAt,
 			Verb:          a.Verb,
 			NewValue:      a.NewValue,
+			OldValue:      a.OldValue,
 			Comment:       a.Comment(),
 			Field:         a.Field.String(),
 			NewIdentifier: a.NewIdentifier,
 			OldIdentifier: a.OldIdentifier,
 		}
 
-		if a.OldValue != nil {
-			resp.OldValue = *a.OldValue
-		}
 		if a.Actor != nil {
 			resp.ActorID = a.Actor.ID.String()
 			resp.ActorName = a.Actor.GetName()

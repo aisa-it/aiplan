@@ -114,7 +114,7 @@ func (t *SnapshotTracker) configureRemovedActivity(event *dao.ActivityEvent, doc
 
 	event.NewValue = ""
 	event.NewIdentifier = uuid.NullUUID{}
-	event.OldValue = &doc.Title
+	event.OldValue = doc.Title
 	event.OldIdentifier = uuid.NullUUID{UUID: doc.ID, Valid: true}
 }
 
@@ -127,18 +127,18 @@ func (t *SnapshotTracker) configureAddedActivity(event *dao.ActivityEvent, doc *
 
 	event.NewValue = doc.Title
 	event.NewIdentifier = uuid.NullUUID{UUID: doc.ID, Valid: true}
-	event.OldValue = &[]string{""}[0]
+	event.OldValue = ""
 }
 
 func (t *SnapshotTracker) configureMoveActivity(event *dao.ActivityEvent, doc *dao.Doc, oldParent, newParent *dao.Doc) {
 	event.DocID = uuid.NullUUID{UUID: doc.ID, Valid: true}
 
 	if oldParent != nil {
-		event.OldValue = &oldParent.Title
+		event.OldValue = oldParent.Title
 		event.OldIdentifier = uuid.NullUUID{UUID: oldParent.ID, Valid: true}
 	} else {
 		if doc.Workspace != nil {
-			event.OldValue = &doc.Workspace.Name
+			event.OldValue = doc.Workspace.Name
 		}
 		event.OldIdentifier = uuid.NullUUID{UUID: doc.WorkspaceId, Valid: true}
 	}
@@ -193,7 +193,7 @@ func (t *SnapshotTracker) trackCreate(layer types.EntityLayer, snapshot Snapshot
 	ev := NewActivityEvent(
 		actField.VerbCreated,
 		field,
-		nil,
+		"",
 		name,
 		uuid.NullUUID{UUID: entityID, Valid: true},
 		uuid.NullUUID{},
@@ -206,7 +206,6 @@ func (t *SnapshotTracker) trackCreate(layer types.EntityLayer, snapshot Snapshot
 	return t.saveAndNotifyActivity(&ev)
 }
 
-// trackDelete logs deletion of an entity
 func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot SnapshotI, entity dao.IDaoAct, actor *dao.User) error {
 	var name string
 	var field actField.ActivityField
@@ -225,7 +224,7 @@ func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot Snapshot
 	ev := NewActivityEvent(
 		actField.VerbDeleted,
 		field,
-		&name,
+		name,
 		"",
 		uuid.NullUUID{},
 		uuid.NullUUID{},
@@ -238,15 +237,13 @@ func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot Snapshot
 	return t.saveAndNotifyActivity(&ev)
 }
 
-// Continue with update logic
 func (t *SnapshotTracker) continueUpdate(layer types.EntityLayer, oldSnapshot, newSnapshot any, entity dao.IDaoAct, actor *dao.User) error {
-	changes := Diff(oldSnapshot, newSnapshot)
+	changes := Diff(oldSnapshot, newSnapshot, entity.GetId(), entity.GetString())
 	if len(changes) == 0 {
 		return nil
 	}
 
-	// BuildActivityEvents учитывает preserve_id в тэгах полей
-	activityEvents := BuildActivityEvents(layer, changes, entity, actor)
+	activityEvents := BuildActivityEvents(layer, changes, entity, actor, t.db)
 
 	for _, event := range activityEvents {
 		if err := t.saveAndNotifyActivity(&event); err != nil {

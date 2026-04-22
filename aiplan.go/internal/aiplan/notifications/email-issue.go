@@ -571,15 +571,15 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targe
 
 		if field == actField.Priority.Field {
 			activity.NewValue = types.TranslateMap(types.PriorityTranslation, utils.ToPtr(activity.NewValue))
-			activity.OldValue = utils.ToPtr(types.TranslateMap(types.PriorityTranslation, activity.OldValue))
+			activity.OldValue = types.TranslateMap(types.PriorityTranslation, &activity.OldValue)
 		}
 
 		if field == actField.TargetDate.Field {
 			newT, errNew := FormatDate(activity.NewValue, "02.01.2006 15:04", &targetUser.UserTimezone)
 
-			if activity.OldValue != nil {
-				if oldT, errOld := FormatDate(*activity.OldValue, "02.01.2006 15:04", &targetUser.UserTimezone); errOld == nil {
-					activity.OldValue = &oldT
+			if activity.OldValue != "" {
+				if oldT, errOld := FormatDate(activity.OldValue, "02.01.2006 15:04", &targetUser.UserTimezone); errOld == nil {
+					activity.OldValue = oldT
 				}
 			}
 
@@ -590,13 +590,13 @@ func getIssueNotificationHTML(tx *gorm.DB, activities []dao.ActivityEvent, targe
 		}
 
 		if field == actField.Description.Field {
-			oldValue := replaceTablesToText(replaceImageToText(*activity.OldValue))
+			oldValue := replaceTablesToText(replaceImageToText(activity.OldValue))
 			newValue := replaceTablesToText(replaceImageToText(activity.NewValue))
 			oldValue = policy.ProcessCustomHtmlTag(oldValue)
 			newValue = policy.ProcessCustomHtmlTag(newValue)
 			oldValue = prepareToMail(prepareHtmlBody(htmlStripPolicy, oldValue))
 			newValue = prepareToMail(prepareHtmlBody(htmlStripPolicy, newValue))
-			activity.OldValue = &oldValue
+			activity.OldValue = oldValue
 			activity.NewValue = newValue
 		}
 

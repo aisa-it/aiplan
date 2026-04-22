@@ -65,11 +65,11 @@ func projectIssue(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 		msg.Title = "создал(-a) копию задачи в проекте"
 	case actField.VerbRemoved:
 		msg.Title = "убрал(-a) задачу из"
-		msg.Body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
+		msg.Body = Stelegramf("*Задача:* %s", fmt.Sprint(act.OldValue))
 		return msg
 	case actField.VerbDeleted:
 		msg.Title = "удалил(-a) задачу из"
-		msg.Body = Stelegramf("*Задача:* %s", fmt.Sprint(*act.OldValue))
+		msg.Body = Stelegramf("*Задача:* %s", fmt.Sprint(act.OldValue))
 		return msg
 	}
 
@@ -132,7 +132,7 @@ func projectTemplate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 			values = append(values, act.NewIssueTemplate.Name, utils.HtmlToTg(act.NewIssueTemplate.Template.Body))
 		case actField.TemplateName.Field:
 			format += "~%s~ %s"
-			values = append(values, fmt.Sprint(*act.OldValue), act.NewValue)
+			values = append(values, fmt.Sprint(act.OldValue), act.NewValue)
 		default:
 			if act.NewIssueTemplate != nil {
 				format += "%s\n```\n%s```"
@@ -140,12 +140,12 @@ func projectTemplate(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 			}
 		}
 	case actField.VerbDeleted:
-		if act.OldValue == nil {
+		if act.OldValue == "" {
 			return msg
 		}
 		msg.Title = "удалил(-a) из"
 		format = "*Шаблон*: ~%s~"
-		values = []any{fmt.Sprintf(*act.OldValue)}
+		values = []any{fmt.Sprintf(act.OldValue)}
 	}
 
 	msg.Body += Stelegramf(format, values...)
@@ -166,7 +166,7 @@ func projectStatus(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	switch af {
 	case actField.StatusGroup.Field:
 		format += "\n*Группу Статуса:* ~%s~ %s"
-		values = append(values, types.TranslateMap(types.StatusTranslation, act.OldValue), types.TranslateMap(types.StatusTranslation, &act.NewValue))
+		values = append(values, types.TranslateMap(types.StatusTranslation, &act.OldValue), types.TranslateMap(types.StatusTranslation, &act.NewValue))
 	case actField.StatusDescription.Field:
 		format += "\n```\n%s```"
 		values = append(values, utils.HtmlToTg(act.NewValue))
@@ -174,7 +174,7 @@ func projectStatus(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 		format += "\nизменен цвет"
 	case actField.StatusName.Field:
 		format += "\n*Название:* ~%s~ %s"
-		values = append(values, fmt.Sprint(*act.OldValue), act.NewValue)
+		values = append(values, fmt.Sprint(act.OldValue), act.NewValue)
 	case actField.StatusDefault.Field:
 		format = "*статус по умолчанию:* ~%s~ %s"
 		values = []any{sef.OldState.Name, sef.NewState.Name}
@@ -190,7 +190,7 @@ func projectStatus(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	case actField.VerbDeleted:
 		msg.Title = "удалил(-a) из"
 		format = "*Статус*: ~%s~"
-		values = []any{fmt.Sprint(*act.OldValue)}
+		values = []any{fmt.Sprint(act.OldValue)}
 	}
 
 	msg.Body += Stelegramf(format, values...)
@@ -213,7 +213,7 @@ func projectLabel(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 
 	case actField.LabelName.Field:
 		format += "\n*Название:* ~%s~ %s"
-		values = append(values, fmt.Sprint(*act.OldValue), act.NewValue)
+		values = append(values, fmt.Sprint(act.OldValue), act.NewValue)
 	}
 
 	switch act.Verb {
@@ -226,7 +226,7 @@ func projectLabel(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	case actField.VerbDeleted:
 		msg.Title = "удалил(-a) из"
 		format = "*Тег*: ~%s~"
-		values = []any{fmt.Sprint(*act.OldValue)}
+		values = []any{fmt.Sprint(act.OldValue)}
 	}
 
 	msg.Body += Stelegramf(format, values...)
@@ -258,7 +258,7 @@ func projectRole(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	}
 	msg := NewTgMsg()
 	msg.Title = "изменил(-a) роль пользователя в"
-	msg.Body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
+	msg.Body = Stelegramf("__%s__\n*Роль*: ~%s~ %s", getUserName(act.NewRole), types.TranslateMap(types.RoleTranslation, &act.OldValue), types.TranslateMap(types.RoleTranslation, &act.NewValue))
 	return msg
 }
 
@@ -327,7 +327,7 @@ func projectDefault(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 func projectEmoj(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	msg := NewTgMsg()
 	msg.Title = "изменил(-a) в"
-	msg.Body = Stelegramf("*%s*: ~%s~ %s", "Emoji", emojiFromCode(fmt.Sprint(*act.OldValue)), emojiFromCode(act.NewValue))
+	msg.Body = Stelegramf("*%s*: ~%s~ %s", "Emoji", emojiFromCode(fmt.Sprint(act.OldValue)), emojiFromCode(act.NewValue))
 	return msg
 }
 

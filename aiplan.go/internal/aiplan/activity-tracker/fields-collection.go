@@ -31,7 +31,7 @@ func actSeveral[E dao.IDaoAct, T dao.IDaoAct](field actField.FieldMapping) func(
 				changes = append(changes, activityChange[E]{
 					verb:   actField.VerbRemoved,
 					field:  field.Field,
-					oldVal: utils.ToPtr(e.GetString()),
+					oldVal: e.GetString(),
 					oldID:  uuid.NullUUID{UUID: id, Valid: true},
 					entity: entity,
 				})

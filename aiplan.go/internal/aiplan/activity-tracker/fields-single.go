@@ -36,7 +36,7 @@ func fieldUpdate[E dao.IDaoAct](
 	change := activityChange[E]{
 		verb:   actField.VerbUpdated,
 		field:  resolvedField,
-		oldVal: &oldV,
+		oldVal: oldV,
 		newVal: newV,
 		newID:  newIdentifier,
 		oldID:  oldIdentifier,

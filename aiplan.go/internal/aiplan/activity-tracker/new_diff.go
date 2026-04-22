@@ -9,7 +9,7 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-func Diff(old, new any) []FieldChange {
+func Diff(old, new any, entityID uuid.UUID, entityName string) []FieldChange {
 	var changes []FieldChange
 	var snapshotID uuid.UUID
 
@@ -55,16 +55,16 @@ func Diff(old, new any) []FieldChange {
 
 		switch spec.Kind {
 		case "collection":
-			changes = append(changes, diffCollection(spec, oldValue, newValue)...)
+			changes = append(changes, diffCollection(spec, oldValue, newValue, entityID, entityName)...)
 		default: // scalar
-			changes = append(changes, diffScalar(spec, oldValue, newValue, oldSet, newSet, snapshotID)...)
+			changes = append(changes, diffScalar(spec, oldValue, newValue, oldSet, newSet, snapshotID, entityID, entityName)...)
 		}
 	}
 
 	return changes
 }
 
-func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet bool, snapshotID uuid.UUID) []FieldChange {
+func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet bool, snapshotID uuid.UUID, linkedEntityID uuid.UUID, entityName string) []FieldChange {
 	oldStr := formatValueToString(oldValue)
 	newStr := formatValueToString(newValue)
 
@@ -72,117 +72,203 @@ func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet b
 		return nil
 	}
 
-	var oldId, newId uuid.NullUUID
-	if entityRef, ok := oldValue.(EntityRef); ok {
-		oldId.UUID = entityRef.ID
-		oldId.Valid = true
-	}
-	if entityRef, ok := newValue.(EntityRef); ok {
-		newId.UUID = entityRef.ID
-		newId.Valid = true
-	}
+	oldId := extractEntityRefID(oldValue)
+	newId := extractEntityRefID(newValue)
 
-	if spec.PreserveID && snapshotID != uuid.Nil {
+	if spec.PreserveID && snapshotID != uuid.Nil && !oldId.Valid && !newId.Valid {
 		oldId = uuid.NullUUID{UUID: snapshotID, Valid: true}
 		newId = uuid.NullUUID{UUID: snapshotID, Valid: true}
 	}
 
+	changes := []FieldChange{}
+	hasLinked := spec.LinkedField != "" && linkedEntityID != uuid.Nil
+
 	if oldSet && newSet {
-		return []FieldChange{{
-			Verb:       "updated",
-			Field:      actField.ActivityField(spec.Field),
-			OldVal:     oldStr,
-			NewVal:     newStr,
-			OldID:      oldId,
-			NewID:      newId,
-			PreserveID: spec.PreserveID,
-		}}
+		changes = append(changes, makeUpdateChange(spec, oldStr, newStr, oldId, newId))
+		if hasLinked {
+			changes = appendLinkedChangesForScalar(changes, spec, oldId, newId, linkedEntityID, entityName)
+		}
+	} else if oldSet && !newSet {
+		changes = append(changes, makeUpdateChange(spec, oldStr, "", oldId, newId))
+		if hasLinked && oldId.Valid {
+			changes = append(changes, makeLinkedRemovedChange(spec, oldId.UUID, linkedEntityID, entityName))
+		}
+	} else if !oldSet && newSet {
+		changes = append(changes, makeUpdateChange(spec, "", newStr, oldId, newId))
+		if hasLinked && newId.Valid {
+			changes = append(changes, makeLinkedAddedChange(spec, newId.UUID, linkedEntityID, entityName))
+		}
 	}
 
-	if oldSet && !newSet {
-		return []FieldChange{{
-			Verb:       "updated",
-			Field:      actField.ActivityField(spec.Field),
-			OldVal:     oldStr,
-			NewVal:     "",
-			OldID:      oldId,
-			NewID:      newId,
-			PreserveID: spec.PreserveID,
-		}}
-	}
-
-	if !oldSet && newSet {
-		return []FieldChange{{
-			Verb:       "updated",
-			Field:      actField.ActivityField(spec.Field),
-			OldVal:     "",
-			NewVal:     newStr,
-			OldID:      oldId,
-			NewID:      newId,
-			PreserveID: spec.PreserveID,
-		}}
-	}
-
-	return nil
+	return changes
 }
 
-func diffCollection(spec ActivityFieldSpec, oldValue, newValue any) []FieldChange {
-	var changes []FieldChange
-
+func diffCollection(spec ActivityFieldSpec, oldValue, newValue any, linkedEntityID uuid.UUID, entityName string) []FieldChange {
 	oldSlice := toEntityRefSlice(oldValue, spec.Table)
 	newSlice := toEntityRefSlice(newValue, spec.Table)
 	if len(oldSlice) == 0 && len(newSlice) == 0 {
-		return changes
+		return nil
 	}
 
-	oldMap := make(map[uuid.UUID]EntityRef)
-	newMap := make(map[uuid.UUID]EntityRef)
-	for _, ref := range oldSlice {
-		oldMap[ref.ID] = ref
-	}
-	for _, ref := range newSlice {
-		newMap[ref.ID] = ref
-	}
+	oldMap := sliceToMap(oldSlice)
+	newMap := sliceToMap(newSlice)
 
-	oldIDs := make([]any, 0, len(oldSlice))
-	newIDs := make([]any, 0, len(newSlice))
-	for _, ref := range oldSlice {
-		oldIDs = append(oldIDs, ref.ID)
-	}
-	for _, ref := range newSlice {
-		newIDs = append(newIDs, ref.ID)
-	}
+	oldIDs := entityRefsToIDs(oldSlice)
+	newIDs := entityRefsToIDs(newSlice)
 
 	changesList := utils.CalculateIDChanges(newIDs, oldIDs)
 	if len(changesList.InvolvedIds) == 0 {
-		return changes
+		return nil
 	}
+
+	hasLinked := spec.LinkedField != "" && linkedEntityID != uuid.Nil
+
+	var result []FieldChange
 
 	for _, id := range changesList.DelIds {
 		if oldRef, exists := oldMap[id]; exists {
-			changes = append(changes, FieldChange{
-				Verb:       "removed",
-				Field:      actField.ActivityField(spec.Field),
-				OldVal:     oldRef.NameValue,
-				OldID:      uuid.NullUUID{UUID: id, Valid: true},
-				PreserveID: spec.PreserveID,
-			})
+			result = append(result, makeRemovedChange(spec, oldRef.NameValue, id))
+			if hasLinked {
+				result = append(result, makeLinkedRemovedChange(spec, id, linkedEntityID, entityName))
+			}
 		}
 	}
 
 	for _, id := range changesList.AddIds {
 		if newRef, exists := newMap[id]; exists {
-			changes = append(changes, FieldChange{
-				Verb:       "added",
-				Field:      actField.ActivityField(spec.Field),
-				NewVal:     newRef.NameValue,
-				NewID:      uuid.NullUUID{UUID: id, Valid: true},
-				PreserveID: spec.PreserveID,
-			})
+			result = append(result, makeAddedChange(spec, newRef.NameValue, id))
+			if hasLinked {
+				result = append(result, makeLinkedAddedChange(spec, id, linkedEntityID, entityName))
+			}
 		}
 	}
 
+	return result
+}
+
+// diffScalar helpers
+
+func makeUpdateChange(spec ActivityFieldSpec, oldVal, newVal string, oldID, newID uuid.NullUUID) FieldChange {
+	return FieldChange{
+		Verb:       "updated",
+		Field:      actField.ActivityField(spec.Field),
+		OldVal:     oldVal,
+		NewVal:     newVal,
+		OldID:      oldID,
+		NewID:      newID,
+		PreserveID: spec.PreserveID,
+	}
+}
+
+func appendLinkedChangesForScalar(changes []FieldChange, spec ActivityFieldSpec, oldId, newId uuid.NullUUID, linkedEntityID uuid.UUID, entityName string) []FieldChange {
+	if oldId.Valid {
+		changes = append(changes, makeLinkedRemovedChange(spec, oldId.UUID, linkedEntityID, entityName))
+	}
+	if newId.Valid {
+		changes = append(changes, makeLinkedAddedChange(spec, newId.UUID, linkedEntityID, entityName))
+	}
 	return changes
+}
+
+// diffCollection helpers
+
+func makeRemovedChange(spec ActivityFieldSpec, name string, id uuid.UUID) FieldChange {
+	oldID := uuid.NullUUID{}
+	if id != uuid.Nil {
+		oldID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+	return FieldChange{
+		Verb:       "removed",
+		Field:      actField.ActivityField(spec.Field),
+		OldVal:     name,
+		OldID:      oldID,
+		PreserveID: spec.PreserveID,
+	}
+}
+
+func makeAddedChange(spec ActivityFieldSpec, name string, id uuid.UUID) FieldChange {
+	newID := uuid.NullUUID{}
+	if id != uuid.Nil {
+		newID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+	return FieldChange{
+		Verb:       "added",
+		Field:      actField.ActivityField(spec.Field),
+		NewVal:     name,
+		NewID:      newID,
+		PreserveID: spec.PreserveID,
+	}
+}
+
+// shared linked helpers
+
+func makeLinkedRemovedChange(spec ActivityFieldSpec, targetID, linkedEntityID uuid.UUID, entityName string) FieldChange {
+	//if entityName == "" {
+	//	entityName = linkedEntityID.String()
+	//}
+	oldID := uuid.NullUUID{}
+	if linkedEntityID != uuid.Nil {
+		oldID = uuid.NullUUID{UUID: linkedEntityID, Valid: true}
+	}
+	return FieldChange{
+		Verb:       "removed",
+		Field:      actField.ActivityField(spec.LinkedField),
+		OldVal:     entityName,
+		NewVal:     "",
+		OldID:      oldID,
+		NewID:      uuid.NullUUID{},
+		PreserveID: spec.PreserveID,
+		EntityID:   targetID,
+		IsLinked:   true,
+	}
+}
+
+func makeLinkedAddedChange(spec ActivityFieldSpec, targetID, linkedEntityID uuid.UUID, entityName string) FieldChange {
+	//if entityName == "" {
+	//	entityName = linkedEntityID.String()
+	//}
+	newID := uuid.NullUUID{}
+	if linkedEntityID != uuid.Nil {
+		newID = uuid.NullUUID{UUID: linkedEntityID, Valid: true}
+	}
+	return FieldChange{
+		Verb:       "added",
+		Field:      actField.ActivityField(spec.LinkedField),
+		OldVal:     "",
+		NewVal:     entityName,
+		OldID:      uuid.NullUUID{},
+		NewID:      newID,
+		PreserveID: spec.PreserveID,
+		EntityID:   targetID,
+		IsLinked:   true,
+	}
+}
+
+// utility functions
+
+func extractEntityRefID(value any) uuid.NullUUID {
+	if entityRef, ok := value.(EntityRef); ok {
+		if entityRef.ID != uuid.Nil {
+			return uuid.NullUUID{UUID: entityRef.ID, Valid: true}
+		}
+	}
+	return uuid.NullUUID{}
+}
+
+func sliceToMap(refs []EntityRef) map[uuid.UUID]EntityRef {
+	result := make(map[uuid.UUID]EntityRef)
+	for _, ref := range refs {
+		result[ref.ID] = ref
+	}
+	return result
+}
+
+func entityRefsToIDs(refs []EntityRef) []any {
+	ids := make([]any, 0, len(refs))
+	for _, ref := range refs {
+		ids = append(ids, ref.ID)
+	}
+	return ids
 }
 
 func getOptValueViaMethods(field reflect.Value) interface{} {
@@ -213,6 +299,12 @@ func formatValueToString(v interface{}) string {
 	}
 	if entityRef, ok := v.(EntityRef); ok {
 		return entityRef.NameValue
+	}
+	if ptrStr, ok := v.(*string); ok {
+		if ptrStr == nil {
+			return ""
+		}
+		return *ptrStr
 	}
 	return fmt.Sprintf("%v", v)
 }

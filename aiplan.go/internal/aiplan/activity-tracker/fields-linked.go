@@ -54,11 +54,11 @@ func fieldRelationsUpdate[E dao.IDaoAct](c *ActivityCtx, field actField.FieldMap
 			oldStr := related.GetString()
 			// событие для source
 			changes = append(changes, activityChange[E]{
-				verb: actField.VerbUpdated, field: sourceField, oldVal: &oldStr, oldID: uuid.NullUUID{UUID: id, Valid: true}, entity: entity,
+				verb: actField.VerbUpdated, field: sourceField, oldVal: oldStr, oldID: uuid.NullUUID{UUID: id, Valid: true}, entity: entity,
 			})
 			// событие для target
 			changes = append(changes, activityChange[E]{
-				verb: actField.VerbUpdated, field: targetField, oldVal: &selfString, oldID: uuid.NullUUID{UUID: selfID, Valid: true}, entity: related})
+				verb: actField.VerbUpdated, field: targetField, oldVal: selfString, oldID: uuid.NullUUID{UUID: selfID, Valid: true}, entity: related})
 		}
 	}
 

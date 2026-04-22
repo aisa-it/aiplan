@@ -50,11 +50,11 @@ func parentUpdate[E dao.IDaoAct](field actField.ActivityField) func(c *ActivityC
 				entity: is,
 			}
 			if verb == actField.VerbAdded {
-				change.oldVal = nil
+				change.oldVal = ""
 				change.newVal = issueStr
 				change.newID = uuid.NullUUID{UUID: issue.ID, Valid: true}
 			} else { // VerbRemoved
-				change.oldVal = utils.ToPtr(issueStr)
+				change.oldVal = issueStr
 				change.newVal = ""
 				change.oldID = uuid.NullUUID{UUID: issue.ID, Valid: true}
 			}

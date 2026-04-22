@@ -24,7 +24,7 @@ type ActivityEvent struct {
 	Notified      bool `gorm:"default:false"`
 	Verb          string
 	Field         actField.ActivityField
-	OldValue      *string
+	OldValue      string
 	NewValue      string
 	NewIdentifier uuid.NullUUID     `gorm:"type:uuid"`
 	OldIdentifier uuid.NullUUID     `gorm:"type:uuid"`
@@ -71,11 +71,11 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 			}
 		}
 
-		if a.OldValue != nil && *a.OldValue != "" {
-			if formatted, err := utils.FormatDateStr(*a.OldValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
-				a.OldValue = &formatted
+		if a.OldValue != "" {
+			if formatted, err := utils.FormatDateStr(a.OldValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
+				a.OldValue = formatted
 			} else {
-				slog.Error("date format", "oldValue", *a.OldValue, "id", a.ID, "error", err)
+				slog.Error("date format", "oldValue", a.OldValue, "id", a.ID, "error", err)
 			}
 		}
 	}
@@ -166,8 +166,8 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 
 func (a *ActivityEvent) Comment() string {
 	oldV := "nil"
-	if a.OldValue != nil {
-		oldV = *a.OldValue
+	if a.OldValue != "" {
+		oldV = a.OldValue
 	}
 	return fmt.Sprintf("layer: %s,  %s %s (%s-%s)", a.EntityType.String(), a.Verb, a.Field.String(), a.NewValue, oldV)
 }
@@ -176,11 +176,12 @@ func (e *ActivityEvent) ToLightDTO() *dto.ActivityEventLight {
 	if e == nil {
 		return nil
 	}
+	oldValue := e.OldValue
 	return &dto.ActivityEventLight{
 		Id:         e.ID,
 		Verb:       e.Verb,
 		Field:      e.Field,
-		OldValue:   e.OldValue,
+		OldValue:   oldValue,
 		NewValue:   e.NewValue,
 		EntityType: e.EntityType.String(),
 		EntityUrl:  e.GetUrl(),
