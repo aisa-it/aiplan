@@ -81,8 +81,7 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		var workspace dao.Workspace
 		workspaceQuery := s.db.
 			Joins("Owner").
-			Joins("LogoAsset").
-			Set("userID", user.ID) // TODO: Remove when front remove current_membership
+			Joins("LogoAsset") // TODO: Remove when front remove current_membership
 
 		if id, err := uuid.FromString(slugOrId); err == nil {
 			workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
