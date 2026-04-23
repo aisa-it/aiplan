@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
@@ -305,6 +306,14 @@ func formatValueToString(v interface{}) string {
 			return ""
 		}
 		return *ptrStr
+	}
+	// Handle TargetDateTimeZ
+	if targetDate, ok := v.(*types.TargetDateTimeZ); ok {
+		if targetDate == nil {
+			return ""
+		}
+		// Format to UTC to ignore timezone differences
+		return targetDate.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
 	return fmt.Sprintf("%v", v)
 }

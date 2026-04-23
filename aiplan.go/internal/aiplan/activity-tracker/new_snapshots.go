@@ -1,6 +1,8 @@
 package tracker
 
 import (
+	"reflect"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/opt"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -18,18 +20,22 @@ type SnapshotI interface {
 
 type IssueSnapshot struct {
 	ID           uuid.UUID
-	Name         opt.Field[string]      `act:"req:name;field:name;kind:scalar"`
-	Assignees    opt.Field[[]EntityRef] `act:"req:assignees_list;field:assignees;kind:collection;transform:uuid;table:users;preserve_id:true"`
-	Watchers     opt.Field[[]EntityRef] `act:"req:watchers_list;field:watchers;kind:collection;transform:uuid;table:users;preserve_id:true"`
-	Description  opt.Field[string]      `act:"req:description_html;field:description;kind:scalar"`
-	Priority     opt.Field[*string]     `act:"req:priority;field:priority;kind:scalar"`
-	State        opt.Field[EntityRef]   `act:"req:state;field:status;kind:scalar;transform:uuid;table:states;preserve_id:true"`
-	Parent       opt.Field[EntityRef]   `act:"req:parent;field:parent;kind:scalar;transform:uuid;table:issues;preserve_id:true;linked_field:sub_issue"`
-	BlockerList  opt.Field[[]EntityRef] `act:"req:blocker_issues;field:blocking;kind:collection;table:issues;preserve_id:true;linked_field:blocks"`
-	BlockedList  opt.Field[[]EntityRef] `act:"req:blocked_issues;field:blocks;kind:collection;table:issues;preserve_id:true;linked_field:blocking"`
-	SubIssues    opt.Field[[]EntityRef] `act:"req:sub_issues;field:sub_issue;kind:collection;table:issues;preserve_id:true;linked_field:parent"`
-	Links        opt.Field[[]EntityRef] `act:"req:links;field:link;kind:collection;preserve_id:true"`
-	LinkedIssues opt.Field[[]EntityRef] `act:"req:linked_issues;field:linked;kind:collection;preserve_id:true;linked_field:linked"`
+	Name         opt.Field[string]                 `act:"req:name;field:name;kind:scalar"`
+	Assignees    opt.Field[[]EntityRef]            `act:"req:assignees_list;field:assignees;kind:collection;transform:uuid;table:users;preserve_id:true"`
+	Watchers     opt.Field[[]EntityRef]            `act:"req:watchers_list;field:watchers;kind:collection;transform:uuid;table:users;preserve_id:true"`
+	Description  opt.Field[string]                 `act:"req:description_html;field:description;kind:scalar"`
+	Priority     opt.Field[*string]                `act:"req:priority;field:priority;kind:scalar"`
+	State        opt.Field[EntityRef]              `act:"req:state;field:status;kind:scalar;transform:uuid;table:states;preserve_id:true"`
+	TargetDate   opt.Field[*types.TargetDateTimeZ] `act:"req:target_date;field:target_date;kind:scalar"`
+	StartDate    opt.Field[*types.TargetDateTimeZ] `act:"req:start_date;field:start_date;kind:scalar"`
+	CompletedAt  opt.Field[*types.TargetDateTimeZ] `act:"req:completed_at;field:completed_at;kind:scalar"`
+	Parent       opt.Field[EntityRef]              `act:"req:parent;field:parent;kind:scalar;transform:uuid;table:issues;preserve_id:true;linked_field:sub_issue"`
+	BlockerList  opt.Field[[]EntityRef]            `act:"req:blocker_issues;field:blocking;kind:collection;table:issues;preserve_id:true;linked_field:blocks"`
+	BlockedList  opt.Field[[]EntityRef]            `act:"req:blocked_issues;field:blocks;kind:collection;table:issues;preserve_id:true;linked_field:blocking"`
+	SubIssues    opt.Field[[]EntityRef]            `act:"req:sub_issues;field:sub_issue;kind:collection;table:issues;preserve_id:true;linked_field:parent"`
+	Links        opt.Field[[]EntityRef]            `act:"req:links;field:link;kind:collection;preserve_id:true"`
+	LinkedIssues opt.Field[[]EntityRef]            `act:"req:linked_issues;field:linked;kind:collection;preserve_id:true;linked_field:linked"`
+	Labels       opt.Field[[]EntityRef]            `act:"req:labels_list;field:label;kind:collection;transform:uuid;table:labels;preserve_id:true"`
 }
 
 func (i IssueSnapshot) GetName() string {
@@ -44,7 +50,7 @@ func (i IssueSnapshot) GetID() uuid.UUID {
 }
 
 func (i IssueSnapshot) GetField() actField.ActivityField {
-	return ""
+	return actField.Issue.Field
 }
 
 func IssueToSnapshot(i dao.Issue) IssueSnapshot {
@@ -53,6 +59,9 @@ func IssueToSnapshot(i dao.Issue) IssueSnapshot {
 		Name:        opt.Some(i.Name),
 		Description: opt.Some(i.DescriptionHtml),
 		Priority:    opt.Some(i.Priority),
+		TargetDate:  opt.Some(i.TargetDate),
+		StartDate:   opt.Some(i.StartDate),
+		CompletedAt: opt.Some(i.CompletedAt),
 		Assignees:   opt.Some(utils.SliceToSlice(i.Assignees, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
 		Watchers:    opt.Some(utils.SliceToSlice(i.Watchers, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
 		State:       opt.Some(daoToEntityRef(i.State)),
@@ -65,7 +74,7 @@ func IssueToSnapshot(i dao.Issue) IssueSnapshot {
 			t.Block.Project = i.Project
 			return daoToEntityRef(t.Block)
 		})),
-		SubIssues: opt.None[[]EntityRef](), // TODO: load sub issues when FullLoad is implemented
+		SubIssues: opt.None[[]EntityRef](),
 		Parent: func() opt.Field[EntityRef] {
 			if i.ParentId.Valid && i.Parent != nil {
 				i.Parent.Project = i.Project
@@ -75,6 +84,9 @@ func IssueToSnapshot(i dao.Issue) IssueSnapshot {
 		}(),
 		Links: opt.Some(utils.SliceToSlice(i.Links, func(t *dao.IssueLink) EntityRef {
 			return EntityRef{ID: t.Id, NameValue: t.Url, NameField: "link"}
+		})),
+		Labels: opt.Some(utils.SliceToSlice(i.Labels, func(t *dao.Label) EntityRef {
+			return EntityRef{ID: t.ID, NameValue: t.Name, NameField: "label"}
 		})),
 		LinkedIssues: func() opt.Field[[]EntityRef] {
 
@@ -112,7 +124,7 @@ func (d DocSnapshot) GetID() uuid.UUID {
 }
 
 func (d DocSnapshot) GetField() actField.ActivityField {
-	return ""
+	return actField.Doc.Field
 }
 
 func DocToSnapshot(doc *dao.Doc) DocSnapshot {
@@ -217,6 +229,9 @@ func AttachmentToSnapshot[T dao.IssueAttachment | dao.DocAttachment](a *T) Attac
 
 func daoToEntityRef(entity dao.IDaoAct) EntityRef {
 	if entity == nil {
+		return EntityRef{}
+	}
+	if reflect.ValueOf(entity).IsNil() {
 		return EntityRef{}
 	}
 	return EntityRef{

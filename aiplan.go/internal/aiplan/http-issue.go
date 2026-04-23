@@ -272,13 +272,11 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			slog.Error("Save attachment info to db", "err", err)
 			return
 		}
-		//TODO check it
-		data := map[string]interface{}{
-			"attachment_activity_val": fileName,
-		}
-
-		if err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbCreated, tracker.NewTrackerCtx(&data, nil), issueAttachment, &user); err != nil {
-			errStack.GetError(nil, errStack.TrackErrorStack(fmt.Errorf("track new issue attachment activity")))
+		issueAttachment.Asset = &fa
+		newSnapshot := tracker.AttachmentToSnapshot(&issueAttachment)
+		err = s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issue, &user)
+		if err != nil {
+			slog.Error("Error create activities issue attachment", "err", err)
 		}
 
 	} else if dOk {
@@ -321,13 +319,13 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			slog.Error("Save attachment info to db", "err", err)
 			return
 		}
-		data := map[string]interface{}{
-			"attachment_activity_val": fileName,
-		}
-		if err := tracker.TrackEvent(s.activityTracker, types.LayerDoc, actField.VerbCreated, tracker.NewTrackerCtx(&data, nil), docAttachment, &user); err != nil {
-			errStack.GetError(nil, errStack.TrackErrorStack(fmt.Errorf("track new doc attachment activity")))
-		}
 
+		docAttachment.Asset = &fa
+		newSnapshot := tracker.AttachmentToSnapshot(&docAttachment)
+		err = s.snapshotTracker.TrackChanges(types.LayerDoc, nil, newSnapshot, &doc, &user)
+		if err != nil {
+			slog.Error("Error create activities doc attachment", "err", err)
+		}
 	}
 }
 
@@ -807,7 +805,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		tracker.SetField(issueMapOld, field.AsLogValue(), issue.State.Name)
 
 		if newState.Group == "started" && issue.State.Group != "started" {
-			data["start_date"] = &types.TargetDate{Time: time.Now()}
+			data["start_date"] = &types.TargetDateTimeZ{Time: time.Now()}
 		}
 
 		if issue.State.Group == "started" && (newState.Group == "backlog" || newState.Group == "unstarted") {
@@ -816,14 +814,15 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 		if (newState.Group == "completed" || newState.Group == "cancelled") &&
 			issue.State.Group != "completed" && issue.State.Group != "cancelled" {
-			data["completed_at"] = &types.TargetDate{Time: time.Now()}
+			data["completed_at"] = &types.TargetDateTimeZ{Time: time.Now()}
 		} else if newState.Group != "completed" {
 			if newState.Group == "started" {
-				data["start_date"] = &types.TargetDate{Time: time.Now()}
+				data["start_date"] = &types.TargetDateTimeZ{Time: time.Now()}
 			}
 			// Reset completed at date on open status
 			data["completed_at"] = nil
 		} else {
+			issue.CompletedAt = &types.TargetDateTimeZ{Time: time.Now()}
 			data["completed_at"] = issue.CompletedAt
 		}
 
@@ -1206,18 +1205,39 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 		return EError(c, err)
 	}
-
+	//err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&data, &issueMapOld), issue, &user)
+	//if err != nil {
+	//	errStack.GetError(c, err)
+	//}
 	// Reload issue with updated assignees/watchers/blockers/linked issues after transaction
-	issue.FullLoad = true
-	if err := s.db.
-		Joins("Project").
+	var updatedIssue dao.Issue
+	query := s.db.
 		Joins("Parent").
-		Where("issues.id = ?", issue.ID).
-		First(&issue).Error; err != nil {
-		return err
+		//Joins("Workspace").
+		Joins("State").
+		//Joins("Project").
+		Preload("Sprints").
+		Preload("Assignees").
+		Preload("Watchers").
+		Preload("Labels").
+		Preload("Links").
+		Joins("Author").
+		Preload("Links.CreatedBy").
+		Preload("Labels.Workspace").
+		Preload("Labels.Project").
+		Where("issues.project_id = ?", project.ID).
+		Where("issues.id = ?", issue.ID)
+
+	updatedIssue.Project = &project
+	updatedIssue.Workspace = project.Workspace
+	updatedIssue.FullLoad = true
+
+	if err := query.
+		First(&updatedIssue).Error; err != nil {
+		return EError(c, err)
 	}
 
-	newSnapshot := tracker.IssueToSnapshot(issue)
+	newSnapshot := tracker.IssueToSnapshot(updatedIssue)
 
 	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, &user); err != nil {
 		return EError(c, err)
@@ -1265,25 +1285,16 @@ func (s *Services) deleteIssue(c echo.Context) error {
 	if !isAdmin && (issue.CreatedById != user.ID || !project.IssueDeletionAllowed) {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
+	oldSnapshot := tracker.IssueToSnapshot(issue)
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-
-		err := tracker.TrackEvent(s.activityTracker, types.LayerProject, actField.VerbDeleted, nil, issue, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-		return s.db.Delete(&issue).Error
-	}); err != nil {
+	if err := s.db.Delete(&issue).Error; err != nil {
 		if err.Error() == "forbidden" {
 			return EErrorDefined(c, apierrors.ErrDocUpdateForbidden)
 		}
 		return EError(c, err)
 	}
 
-	// New snapshot tracker: log issue deletion
-	oldSnapshot := tracker.IssueToSnapshot(issue)
-	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, nil, &issue, &user); err != nil {
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, nil, &project, &user); err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -1457,10 +1468,9 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	}
 
 	// Save old data for activity tracking
-	oldSubIssuesData := make([]map[string]interface{}, len(subIssues))
+	oldSubIssuesData := make([]tracker.IssueSnapshot, len(subIssues))
 	for i, issue := range subIssues {
-		oldSubIssuesData[i] = StructToJSONMap(issue)
-		oldSubIssuesData[i]["parent"] = uuid.NullUUID{}
+		oldSubIssuesData[i] = tracker.IssueToSnapshot(issue)
 	}
 
 	id, err := uuid.FromString(parentIssue.ID.String())
@@ -1483,19 +1493,24 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	}
 
 	// Save new data for activity tracking
-	newSubIssuesData := make([]map[string]interface{}, len(subIssues))
-	for i := range subIssues {
-		newSubIssuesData[i] = make(map[string]interface{})
-		newSubIssuesData[i]["parent"] = parentId.UUID
-	}
+	//newSubIssuesData := make([]map[string]interface{}, len(subIssues))
+	//for i := range subIssues {
+	//	newSubIssuesData[i] = make(map[string]interface{})
+	//	newSubIssuesData[i]["parent"] = parentId.UUID
+	//}
 
-	// Activity tracking
-	for i := range subIssues {
+	//// Activity tracking
+	for i, subIssue := range subIssues {
+		subIssue.Parent = &parentIssue
+		newSnapshot := tracker.IssueToSnapshot(subIssue)
 
-		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newSubIssuesData[i], &oldSubIssuesData[i]), subIssues[i], user)
-		if err != nil {
+		if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSubIssuesData[i], newSnapshot, subIssue, user); err != nil {
 			errStack.GetError(c, err)
 		}
+		//err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newSubIssuesData[i], &oldSubIssuesData[i]), subIssues[i], user)
+		//if err != nil {
+		//	errStack.GetError(c, err)
+		//}
 	}
 
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
