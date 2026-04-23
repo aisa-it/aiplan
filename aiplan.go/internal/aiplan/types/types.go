@@ -112,11 +112,10 @@ func (d *TargetDateTimeZ) UnmarshalJSON(b []byte) error {
 }
 
 func (d *TargetDateTimeZ) MarshalJSON() ([]byte, error) {
-	str, err := formatDateStr(d.Time.String(), time.RFC3339, nil)
-	if err != nil {
-		return nil, err
+	if d == nil {
+		return []byte("null"), nil
 	}
-	return []byte(`"` + str + `"`), nil
+	return []byte(`"` + d.Time.Format(time.RFC3339) + `"`), nil
 }
 
 func (d *TargetDateTimeZ) Value() (driver.Value, error) {

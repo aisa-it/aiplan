@@ -1899,7 +1899,7 @@ func (s *Services) createIssue(c echo.Context) error {
 
 	// New snapshot tracker: log issue creation
 	newSnapshot := tracker.IssueToSnapshot(issueNew)
-	err := s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issueNew, &user)
+	err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, &issueNew, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

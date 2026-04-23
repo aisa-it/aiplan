@@ -27,21 +27,6 @@ func BuildActivityEvents(layer types.EntityLayer, changes []FieldChange, entity 
 			continue
 		}
 
-		var targetWorkspaceID, targetProjectID uuid.UUID
-		isLinkedEntity := targetEntityID != entity.GetId()
-		//if isLinkedEntity {
-		//	switch layer {
-		//	case types.LayerIssue:
-		//		var targetIssue dao.Issue
-		//		if err := db.Select("workspace_id", "project_id").Where("id = ?", targetEntityID).First(&targetIssue).Error; err != nil {
-		//			continue
-		//		} else {
-		//			targetWorkspaceID = targetIssue.WorkspaceId
-		//			targetProjectID = targetIssue.ProjectId
-		//		}
-		//	}
-		//}
-
 		for _, change := range entityChanges {
 			if change.NewVal == "" && change.OldVal == "" {
 				continue
@@ -59,11 +44,6 @@ func BuildActivityEvents(layer types.EntityLayer, changes []FieldChange, entity 
 				OldIdentifier: change.OldID,
 				NewIdentifier: change.NewID,
 				EntityType:    layer,
-			}
-
-			if isLinkedEntity {
-				event.WorkspaceID = uuid.NullUUID{UUID: targetWorkspaceID, Valid: true}
-				event.ProjectID = uuid.NullUUID{UUID: targetProjectID, Valid: true}
 			}
 
 			if err := SetEntityRefs2(layer, &event, entity, targetEntityID); err != nil {
