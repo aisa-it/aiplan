@@ -76,7 +76,6 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		projectQuery := s.db.
 			Joins("ProjectLead").
 			Where("projects.workspace_id = ?", workspace.ID).
-			Set("userId", user.ID).
 			Preload("DefaultAssigneesDetails", "is_default_assignee = ?", true).
 			Preload("DefaultWatchersDetails", "is_default_watcher = ?", true)
 
@@ -103,6 +102,17 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		project.Workspace = &workspace
+
+		if err := s.db.Model(&dao.ProjectFavorites{}).
+			Select("EXISTS(?)",
+				s.db.Model(&dao.ProjectFavorites{}).
+					Select("1").
+					Where("user_id = ?", user.ID).
+					Where("project_id = ?", project.ID),
+			).
+			Find(&project.IsFavorite).Error; err != nil {
+			return EError(c, err)
+		}
 
 		return next(ProjectContext{c.(WorkspaceContext), project, projectMember})
 	}

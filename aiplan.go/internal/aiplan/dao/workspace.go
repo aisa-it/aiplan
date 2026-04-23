@@ -158,18 +158,6 @@ func (workspace *Workspace) AfterFind(tx *gorm.DB) error {
 		workspace.LogoAsset = nil
 	}
 
-	if userID, ok := tx.Get("userID"); ok {
-		if err := tx.Where("workspace_id = ?", workspace.ID).
-			Where("member_id = ?", userID).
-			First(&workspace.CurrentUserMembership).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				workspace.CurrentUserMembership = nil
-			} else {
-				return err
-			}
-		}
-	}
-
 	return nil
 }
 

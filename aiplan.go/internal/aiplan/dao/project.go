@@ -14,7 +14,6 @@
 package dao
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -316,29 +315,6 @@ func (project *Project) AfterCreate(tx *gorm.DB) error {
 // Возвращает:
 //   - error: ошибка, если произошла ошибка при обновлении статуса участника проекта.
 func (project *Project) AfterFind(tx *gorm.DB) error {
-	if userId, ok := tx.Get("userId"); ok {
-		if err := tx.Model(&ProjectFavorites{}).
-			Select("EXISTS(?)",
-				tx.Model(&ProjectFavorites{}).
-					Select("1").
-					Where("user_id = ?", userId).
-					Where("project_id = ?", project.ID),
-			).
-			Find(&project.IsFavorite).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Where("member_id = ?", userId).
-			Where("project_id = ?", project.ID).
-			First(&project.CurrentUserMembership).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				project.CurrentUserMembership = nil
-			} else {
-				return err
-			}
-		}
-	}
-
 	if project.Workspace == nil {
 		if err := tx.Unscoped().Where("id = ?", project.WorkspaceId).
 			First(&project.Workspace).Error; err != nil {
