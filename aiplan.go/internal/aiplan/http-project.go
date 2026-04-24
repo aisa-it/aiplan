@@ -285,10 +285,10 @@ var allowedFields []string = []string{"name", "description", "description_text",
 func (s *Services) updateProject(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-
+	oldSnapshot := tracker.ProjectToSnapshot(&project)
 	// Pre-update activity tracking
 	oldProjectMap := StructToJSONMap(project)
-	ctx := tracker.NewTrackerCtx(nil, &oldProjectMap)
+	//ctx := tracker.NewTrackerCtx(nil, &oldProjectMap)
 	oldLead := project.ProjectLeadId
 	id := project.ID
 	if err := c.Bind(&project); err != nil {
@@ -319,8 +319,6 @@ func (s *Services) updateProject(c echo.Context) error {
 			}
 			return EError(c, err)
 		}
-		ctx.Old.SetKey(activities.ProjectLead.Field.AsLogValue(), project.ProjectLead.Email)
-		ctx.Old.SetKey(activities.ProjectLead.Field.WithScopeID(), project.ProjectLead.ID)
 	}
 
 	if !user.IsSuperuser && user.ID != oldLead && changeProjectLead {
@@ -363,17 +361,10 @@ func (s *Services) updateProject(c echo.Context) error {
 	}
 
 	// Post-update activity tracking
-	newProjectMap := StructToJSONMap(project)
-	if changeProjectLead {
-		ctx.New.SetKey(activities.ProjectLead.Field.AsLogValue(), newLead.Member.Email)
-		ctx.New.SetKey(activities.ProjectLead.Field.WithScopeID(), newLead.Member.ID)
-	}
+	newSnapshot := tracker.ProjectToSnapshot(&project)
 
-	ctx.GormMap = &newProjectMap
-
-	err = tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, ctx, project, user)
-	if err != nil {
-		errStack.GetError(c, err)
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, user); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, project.ToDTO())
@@ -2008,9 +1999,9 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, label, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	newSnapshot := tracker.LabelToSnapshot(&label)
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, &project, &user); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusCreated, label.ToLightDTO())
@@ -2074,10 +2065,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Pre-update activity tracking
-	oldLabelMap := StructToJSONMap(label)
-	oldLabelMap["updateScope"] = "label"
-	oldLabelMap["updateScopeId"] = labelId
+	oldSnapshot := tracker.LabelToSnapshot(&label)
 
 	if err := c.Bind(&label); err != nil {
 		return EError(c, err)
@@ -2087,25 +2075,19 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 	label.UpdatedAt = time.Now()
 	label.Name = strings.TrimSpace(label.Name)
 
-	// Обновляем только выбранные поля
 	if err := s.db.Model(&label).
-		Select([]string{"name", "description", "parent_id", "color"}).
+		Select("name", "color", "description", "updated_at", "updated_by_id").
 		Updates(&label).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrTagAlreadyExists)
 		}
 		return EError(c, err)
-
 	}
 
-	// Post-update activity tracking
-	newLabelMap := StructToJSONMap(label)
-	newLabelMap["updateScope"] = "label"
-	newLabelMap["updateScopeId"] = label.ID
+	newSnapshot := tracker.LabelToSnapshot(&label)
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, tracker.NewTrackerCtx(&newLabelMap, &oldLabelMap), project, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, &user); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, label.ToLightDTO())
@@ -2150,15 +2132,13 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrLabelNotEmptyCannotDelete)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		errr := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbDeleted, nil, label, &user)
-		if errr != nil {
-			errStack.GetError(c, errr)
-			return errr
-		}
+	oldSnapshot := tracker.LabelToSnapshot(&label)
 
-		return s.db.Delete(&label).Error
-	}); err != nil {
+	if err := s.db.Delete(&label).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, nil, &label, &user); err != nil {
 		return EError(c, err)
 	}
 
