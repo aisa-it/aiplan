@@ -53,6 +53,37 @@ func (i IssueSnapshot) GetField() actField.ActivityField {
 	return actField.Issue.Field
 }
 
+type LabelSnapshot struct {
+	ID          uuid.UUID
+	Name        opt.Field[string] `act:"req:name;field:label_name;kind:scalar;preserve_id:true"`
+	Color       opt.Field[string] `act:"req:color;field:label_color;kind:scalar;preserve_id:true"`
+	Description opt.Field[string] `act:"req:description;field:label_description;kind:scalar;preserve_id:true"`
+}
+
+func (l LabelSnapshot) GetName() string {
+	if l.Name.IsSet() {
+		return l.Name.Value()
+	}
+	return ""
+}
+
+func (l LabelSnapshot) GetID() uuid.UUID {
+	return l.ID
+}
+
+func (l LabelSnapshot) GetField() actField.ActivityField {
+	return actField.Label.Field
+}
+
+func LabelToSnapshot(label *dao.Label) LabelSnapshot {
+	return LabelSnapshot{
+		ID:          label.ID,
+		Name:        opt.Some(label.Name),
+		Color:       opt.Some(label.Color),
+		Description: opt.Some(label.Description),
+	}
+}
+
 func IssueToSnapshot(i dao.Issue) IssueSnapshot {
 	return IssueSnapshot{
 		ID:          i.ID,
@@ -145,6 +176,74 @@ func DocToSnapshot(doc *dao.Doc) DocSnapshot {
 		snapshot.Parent = opt.Some(EntityRef{ID: doc.ParentDocID.UUID, NameValue: doc.Title, NameField: "docs"})
 	}
 	return snapshot
+}
+
+type ProjectSnapshot struct {
+	ID               uuid.UUID
+	Name             opt.Field[string]        `act:"req:name;field:name;kind:scalar"`
+	Public           opt.Field[bool]          `act:"req:public;field:public;kind:scalar"`
+	Identifier       opt.Field[string]        `act:"req:identifier;field:identifier;kind:scalar"`
+	ProjectLead      opt.Field[EntityRef]     `act:"req:project_lead;field:project_lead;kind:scalar;transform:uuid;table:users;preserve_id:true"`
+	Emoji            opt.Field[int32]         `act:"req:emoji;field:emoji;kind:scalar"`
+	LogoId           opt.Field[uuid.NullUUID] `act:"req:logo_id;field:logo;kind:scalar"`
+	CoverImage       opt.Field[*string]       `act:"req:cover_image;field:cover_image;kind:scalar"`
+	EstimateId       opt.Field[*string]       `act:"req:estimate;field:estimate;kind:scalar"`
+	RulesScript      opt.Field[*string]       `act:"req:rules_script;field:rules_script;kind:scalar"`
+	DefaultAssignees opt.Field[[]EntityRef]   `act:"req:default_assignees;field:default_assignees;kind:collection;transform:uuid;table:users;preserve_id:true"`
+	DefaultWatchers  opt.Field[[]EntityRef]   `act:"req:default_watchers;field:default_watchers;kind:collection;transform:uuid;table:users;preserve_id:true"`
+}
+
+func ProjectToSnapshot(p *dao.Project) ProjectSnapshot {
+	return ProjectSnapshot{
+		ID:         p.ID,
+		Name:       opt.Some(p.Name),
+		Public:     opt.Some(p.Public),
+		Identifier: opt.Some(p.Identifier),
+		ProjectLead: func() opt.Field[EntityRef] {
+			if p.ProjectLead != nil {
+				return opt.Some(daoToEntityRef(p.ProjectLead))
+			}
+			return opt.None[EntityRef]()
+		}(),
+		Emoji:       opt.Some(p.Emoji),
+		LogoId:      opt.Some(p.LogoId),
+		CoverImage:  opt.Some(p.CoverImage),
+		EstimateId:  opt.Some(p.EstimateId),
+		RulesScript: opt.Some(p.RulesScript),
+		DefaultAssignees: func() opt.Field[[]EntityRef] {
+			refs := make([]EntityRef, len(p.DefaultAssigneesDetails))
+			for i, pm := range p.DefaultAssigneesDetails {
+				if pm.Member != nil {
+					refs[i] = daoToEntityRef(pm.Member)
+				}
+			}
+			return opt.Some(refs)
+		}(),
+		DefaultWatchers: func() opt.Field[[]EntityRef] {
+			refs := make([]EntityRef, len(p.DefaultWatchersDetails))
+			for i, pm := range p.DefaultWatchersDetails {
+				if pm.Member != nil {
+					refs[i] = daoToEntityRef(pm.Member)
+				}
+			}
+			return opt.Some(refs)
+		}(),
+	}
+}
+
+func (p ProjectSnapshot) GetName() string {
+	if p.Name.IsSet() {
+		return p.Name.Value()
+	}
+	return ""
+}
+
+func (p ProjectSnapshot) GetID() uuid.UUID {
+	return p.ID
+}
+
+func (p ProjectSnapshot) GetField() actField.ActivityField {
+	return actField.Project.Field
 }
 
 type CommentSnapshot struct {
