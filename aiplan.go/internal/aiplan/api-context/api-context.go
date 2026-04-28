@@ -39,6 +39,9 @@ type APIContext struct {
 
 	sprint Sprint
 
+	searchFilter *dao.SearchFilter
+	releaseNote  *dao.ReleaseNote
+
 	error error
 }
 
@@ -323,6 +326,58 @@ func (a *APIContext) GetSprint(options ...SprintFetchOption) *dao.Sprint {
 	}
 
 	return a.sprint.Sprint
+}
+
+func (a *APIContext) GetSearchFilter() *dao.SearchFilter {
+	if a.searchFilter != nil {
+		return a.searchFilter
+	}
+
+	id, err := uuid.FromString(a.Param("filterId"))
+	if err != nil {
+		a.error = apierrors.ErrSearchFilterNotFound
+		return nil
+	}
+
+	var filter dao.SearchFilter
+	if err := a.db.Where("id = ?", id).First(&filter).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			a.error = apierrors.ErrSearchFilterNotFound
+			return nil
+		}
+		a.error = err
+		return nil
+	}
+
+	a.searchFilter = &filter
+	return a.searchFilter
+}
+
+func (a *APIContext) GetReleaseNote() *dao.ReleaseNote {
+	if a.releaseNote != nil {
+		return a.releaseNote
+	}
+
+	noteId := a.Param("noteId")
+	query := a.db.Session(&gorm.Session{})
+	if id, err := uuid.FromString(noteId); err == nil {
+		query = query.Where("id = ?", id)
+	} else {
+		query = query.Where("tag_name = ?", noteId)
+	}
+
+	var note dao.ReleaseNote
+	if err := query.First(&note).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			a.error = apierrors.ErrReleaseNoteNotFound
+			return nil
+		}
+		a.error = err
+		return nil
+	}
+
+	a.releaseNote = &note
+	return a.releaseNote
 }
 
 func (a *APIContext) fetchSprint(fetchOptions *SprintFetchOptions) {

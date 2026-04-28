@@ -1006,3 +1006,21 @@ func IsSprintExists(db *gorm.DB, workspaceId uuid.UUID, idOrSeq string) (bool, e
 	}
 	return Exists(db, sprintQuery.Select("1"))
 }
+
+func IsSearchFilterExists(db *gorm.DB, filterId string) (bool, error) {
+	id := uuid.FromStringOrNil(filterId)
+	if id.IsNil() {
+		return false, nil
+	}
+	return Exists(db, db.Session(&gorm.Session{}).Model(&SearchFilter{}).Where("id = ?", id).Select("1"))
+}
+
+func IsReleaseNoteExists(db *gorm.DB, idOrTag string) (bool, error) {
+	query := db.Session(&gorm.Session{}).Model(&ReleaseNote{})
+	if id, err := uuid.FromString(idOrTag); err == nil {
+		query = query.Where("id = ?", id)
+	} else {
+		query = query.Where("tag_name = ?", idOrTag)
+	}
+	return Exists(db, query.Select("1"))
+}

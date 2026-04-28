@@ -1964,7 +1964,11 @@ func (s *Services) createSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/{filterId}/ [get]
 func (s *Services) getSearchFilter(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, filter.ToFullDTO())
 }
 
@@ -1985,14 +1989,18 @@ func (s *Services) getSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/{filterId}/ [patch]
 func (s *Services) updateSearchFilter(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if filter.AuthorID != user.ID {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
-	newFilter, fields, err := bindSearchFilter(c, &filter)
+	newFilter, fields, err := bindSearchFilter(c, filter)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -2016,14 +2024,18 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/{filterId}/ [delete]
 func (s *Services) deleteSearchFilter(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if filter.AuthorID != user.ID && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
-	if err := s.DB(c).Select(clause.Associations).Delete(&filter).Error; err != nil {
+	if err := s.DB(c).Select(clause.Associations).Delete(filter).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -2070,14 +2082,18 @@ func (s *Services) getMySearchFilterList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/filters/{filterId}/ [post]
 func (s *Services) addSearchFilterToMe(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if !filter.Public && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrCannotAddNonPublicFilter)
 	}
 
-	if err := s.DB(c).Model(&user).Association("SearchFilters").Append(&filter); err != nil {
+	if err := s.DB(c).Model(user).Association("SearchFilters").Append(filter); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2096,14 +2112,18 @@ func (s *Services) addSearchFilterToMe(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/filters/{filterId}/ [delete]
 func (s *Services) deleteSearchFilterFromMe(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if filter.AuthorID == user.ID {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveOwnFilter)
 	}
 
-	if err := s.DB(c).Model(&user).Association("SearchFilters").Delete(&filter); err != nil {
+	if err := s.DB(c).Model(user).Association("SearchFilters").Delete(filter); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2290,15 +2310,19 @@ func (s *Services) getFilterLabelList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/release-notes/{noteId} [get]
 func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
-	noteContext := c.(ReleaseNoteContext)
+	apiContext := apicontext.GetContext(c)
+	note := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var notes []dao.ReleaseNote
-	if err := s.DB(c).Where("tag_name >= ?", noteContext.ReleaseNote.TagName).Find(&notes).Error; err != nil {
+	if err := s.DB(c).Where("tag_name >= ?", note.TagName).Find(&notes).Error; err != nil {
 		return EError(c, err)
 	}
 	notesDTO := make([]dto.ReleaseNoteLight, 0)
-	for _, note := range notes {
-		notesDTO = append(notesDTO, *note.ToLightDTO())
+	for _, n := range notes {
+		notesDTO = append(notesDTO, *n.ToLightDTO())
 	}
 	return c.JSON(http.StatusOK, notesDTO)
 }

@@ -37,24 +37,16 @@ func DemoMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-type SearchFilterContext struct {
-	echo.Context
-	Filter dao.SearchFilter
-}
-
 func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		filterId := c.Param("filterId")
-
-		var filter dao.SearchFilter
-		if err := s.DB(c).Where("id = ?", filterId).First(&filter).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return c.NoContent(http.StatusNotFound)
-			}
+		exists, err := dao.IsSearchFilterExists(s.DB(c), c.Param("filterId"))
+		if err != nil {
 			return EError(c, err)
 		}
-
-		return next(SearchFilterContext{c, filter})
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrSearchFilterNotFound)
+		}
+		return next(c)
 	}
 }
 
