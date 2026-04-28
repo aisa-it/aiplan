@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -115,7 +116,7 @@ type RepoInfoDTO struct {
 // @Router /api/auth/git/config/ [get]
 func (s *Services) getGitConfig(c echo.Context) error {
 	// Проверяем, что пользователь авторизован (middleware уже проверил это)
-	_ = c.(AuthContext).User
+	_ = apicontext.GetContext(c).GetUser()
 
 	gitConfig := dto.GitConfigInfo{
 		GitEnabled:          cfg.GitEnabled,
@@ -141,7 +142,7 @@ func (s *Services) getGitConfig(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [post]
 func (s *Services) createGitRepository(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что Git функциональность включена
 	if !cfg.GitEnabled {
@@ -341,7 +342,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 	}
 
 	// 2. Получение пользователя
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// 3. Проверка существования workspace в БД
 	var workspace dao.Workspace
@@ -429,7 +430,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [delete]
 func (s *Services) deleteGitRepository(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем наличие пути к репозиториям
 	if cfg.GitRepositoriesPath == "" {
@@ -533,7 +534,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 // @Router /api/auth/git/ssh-config/ [get]
 func (s *Services) getGitSSHConfig(c echo.Context) error {
 	// Проверяем авторизацию (middleware уже проверил это)
-	_ = c.(AuthContext).User
+	_ = apicontext.GetContext(c).GetUser()
 
 	// Получаем hostname из WebURL
 	sshHost := cfg.WebURL.URL.Host
@@ -564,7 +565,7 @@ func (s *Services) getGitSSHConfig(c echo.Context) error {
 // @Failure 409 {object} apierrors.DefinedError "SSH ключ с таким fingerprint уже существует"
 // @Router /api/auth/git/ssh-keys/ [post]
 func (s *Services) addGitSSHKey(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -637,7 +638,7 @@ func (s *Services) addGitSSHKey(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Git или SSH отключены"
 // @Router /api/auth/git/ssh-keys/ [get]
 func (s *Services) listGitSSHKeys(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -695,7 +696,7 @@ func (s *Services) listGitSSHKeys(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "SSH ключ не найден"
 // @Router /api/auth/git/ssh-keys/{keyId} [delete]
 func (s *Services) deleteGitSSHKey(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -957,7 +958,7 @@ func (s *Services) checkRepositoryAccess(user *dao.User, workspaceSlug, repoName
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/tree [get]
 func (s *Services) getRepositoryTree(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1080,7 +1081,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/blob [get]
 func (s *Services) getRepositoryBlob(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1206,7 +1207,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/commits [get]
 func (s *Services) getRepositoryCommits(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1331,7 +1332,7 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/branches [get]
 func (s *Services) getRepositoryBranches(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 
@@ -1435,7 +1436,7 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/info [get]
 func (s *Services) getRepositoryInfo(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 

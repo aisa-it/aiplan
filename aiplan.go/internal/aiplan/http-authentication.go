@@ -49,14 +49,6 @@ type Authentication struct {
 	ldapProvider    *authprovider.LdapProvider
 }
 
-type AuthContext struct {
-	echo.Context
-	User         *dao.User
-	AccessToken  *token.Token
-	RefreshToken *token.Token
-	TokenAuth    bool
-}
-
 type AuthConfig struct {
 	Secret      []byte
 	DB          *gorm.DB
@@ -138,7 +130,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 					RefreshToken: nil,
 					TokenAuth:    true,
 				})
-				return next(AuthContext{c, &user, accessToken, nil, true})
+				return next(c)
 			}
 
 			var err error
@@ -254,7 +246,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				TokenAuth:    false,
 			})
 
-			return next(AuthContext{c, user, accessToken, refreshToken, false})
+			return next(c)
 		}
 	}
 }

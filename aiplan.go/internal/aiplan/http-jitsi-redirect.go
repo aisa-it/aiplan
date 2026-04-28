@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/labstack/echo/v4"
 )
 
@@ -12,7 +13,7 @@ func (s *Services) redirectToJitsiConf(c echo.Context) error {
 		return c.NoContent(http.StatusNotFound)
 	}
 
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	room := c.Param("room")
 
 	token, err := s.jitsiTokenIss.IssueToken(user, false, room)

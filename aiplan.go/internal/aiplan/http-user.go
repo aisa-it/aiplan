@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
@@ -174,7 +175,7 @@ func (s *Services) getUser(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/ [get]
 func (s *Services) getCurrentUser(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	var count int
 	if err := s.db.Select("count(*)").
 		Where("viewed = false").
@@ -207,7 +208,7 @@ func (s *Services) getCurrentUser(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/ [patch]
 func (s *Services) updateCurrentUser(c echo.Context) error {
-	user := c.(AuthContext).User // c.MustGet("User").(dao.User)
+	user := apicontext.GetContext(c).GetUser() // c.MustGet("User").(dao.User)
 
 	var req UserUpdateRequest
 	if err := c.Bind(&req); err != nil {
@@ -284,7 +285,7 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/avatar/ [post]
 func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -323,7 +324,7 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/avatar/ [delete]
 func (s *Services) deleteCurrentUserAvatar(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		user.AvatarId = uuid.NullUUID{}
@@ -363,7 +364,7 @@ func (s *Services) deleteCurrentUserAvatar(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/onboard/ [post]
 func (s *Services) updateUserOnBoard(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if user.IsOnboarded {
 		return c.NoContent(http.StatusNotModified)
@@ -410,7 +411,7 @@ func (s *Services) updateUserOnBoard(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/view-props/ [post]
 func (s *Services) updateUserViewProps(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var props types.ViewProps
 	if err := c.Bind(&props); err != nil {
@@ -440,7 +441,7 @@ func (s *Services) updateUserViewProps(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/:userId/activities/ [get]
 func (s *Services) getUserActivityList(c echo.Context) error {
-	currentUser := *c.(AuthContext).User
+	currentUser := apicontext.GetContext(c).GetUser()
 	userId := c.Param("userId")
 
 	var day DayRequest
@@ -515,7 +516,7 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/activities/ [get]
 func (s *Services) getMyActivityList(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspaceIds, projectIds []string
 	var day DayRequest
@@ -607,7 +608,7 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/users/me/activities/table/ [get]
 func (s *Services) getMyActivitiesTable(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspaceIds, projectIds []string
 
@@ -680,7 +681,7 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/users/{userId}/activities/table/ [get]
 func (s *Services) getUserActivitiesTable(c echo.Context) error {
-	currentUser := c.(AuthContext).User
+	currentUser := apicontext.GetContext(c).GetUser()
 	userId := c.Param("userId")
 
 	var from, to DayRequest
@@ -798,8 +799,8 @@ func (s *Services) forgotPassword(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/change-my-password/ [post]
 func (s *Services) updateMyPassword(c echo.Context) error {
-	user := *c.(AuthContext).User
-	accessToken := c.(AuthContext).AccessToken
+	user := apicontext.GetContext(c).GetUser()
+	accessToken := apicontext.GetContext(c).GetAccessToken()
 
 	var data PasswordRequest
 	if err := c.Bind(&data); err != nil {
@@ -831,13 +832,13 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 	}
 
 	//Reset all user sessions
-	if err := dao.ResetUserSessions(s.db, &user); err != nil {
+	if err := dao.ResetUserSessions(s.db, user); err != nil {
 		return EError(c, err)
 	}
 	s.notificationsService.Ws.CloseUserSessions(user.ID)
 
 	//Email notification
-	if err := s.emailService.ChangePasswordNotify(user); err != nil {
+	if err := s.emailService.ChangePasswordNotify(*user); err != nil {
 		return EError(c, err)
 	}
 
@@ -865,7 +866,7 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/change-email/ [post]
 func (s *Services) changeMyEmail(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var data EmailRequest
 	if err := c.Bind(&data); err != nil {
@@ -887,7 +888,7 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return err
 	}
 
-	err = s.emailService.UserChangeEmailNotify(user, newEmail, fmt.Sprintf("%s/api/auth/users/me/verify-email/%s", cfg.WebURL.URL.String(), token))
+	err = s.emailService.UserChangeEmailNotify(*user, newEmail, fmt.Sprintf("%s/api/auth/users/me/verify-email/%s", cfg.WebURL.URL.String(), token))
 	if err != nil {
 		return EError(c, err)
 	}
@@ -910,7 +911,7 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/verify-email/{token}/ [get]
 func (s *Services) confirmEmail(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	token := c.Param("token")
 
 	ref, _ := url.Parse("/not-found")
@@ -945,12 +946,13 @@ func (s *Services) confirmEmail(c echo.Context) error {
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 
-		if !c.(AuthContext).TokenAuth {
-			if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		auth := apicontext.GetContext(c).GetAuthInfo()
+		if !auth.TokenAuth {
+			if err := s.memDB.BlacklistToken(auth.AccessToken.JWT.Signature); err != nil {
 				return err
 			}
 
-			if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+			if err := s.memDB.BlacklistToken(auth.RefreshToken.JWT.Signature); err != nil {
 				return err
 			}
 
@@ -962,7 +964,7 @@ func (s *Services) confirmEmail(c echo.Context) error {
 				return err
 			}
 			//Reset all old user sessions
-			if err := dao.ResetUserSessions(tx, &user); err != nil {
+			if err := dao.ResetUserSessions(tx, user); err != nil {
 				return err
 			}
 			s.notificationsService.Ws.CloseUserSessions(user.ID)
@@ -1066,22 +1068,23 @@ func (s *Services) resetPassword(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/sign-out/ [post]
 func (s *Services) signOut(c echo.Context) error {
-	if c.(AuthContext).TokenAuth {
+	auth := apicontext.GetContext(c).GetAuthInfo()
+	if auth.TokenAuth {
 		return c.NoContent(http.StatusOK)
 	}
 
-	if refreshToken := c.(AuthContext).RefreshToken; refreshToken == nil {
+	if refreshToken := auth.RefreshToken; refreshToken == nil {
 		return EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	} else {
-		u := *c.(AuthContext).User
+		u := apicontext.GetContext(c).GetUser()
 		tm := time.Now()
 		u.LastLogoutTime = &tm
 		u.LastLogoutIp = c.RealIP()
-		if err := s.db.Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
+		if err := s.db.Model(u).Select("LastLogoutTime", "LastLogoutIp").Updates(u).Error; err != nil {
 			return EError(c, err)
 		}
 
-		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(auth.AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
@@ -1106,28 +1109,29 @@ func (s *Services) signOut(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/sign-out-everywhere/ [post]
 func (s *Services) signOutEverywhere(c echo.Context) error {
-	if refreshToken := c.(AuthContext).RefreshToken; refreshToken == nil {
+	auth := apicontext.GetContext(c).GetAuthInfo()
+	if refreshToken := auth.RefreshToken; refreshToken == nil {
 		return EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	} else {
-		u := *c.(AuthContext).User
+		u := apicontext.GetContext(c).GetUser()
 		tm := time.Now()
 		u.LastLogoutTime = &tm
 		u.LastLogoutIp = c.RealIP()
-		if err := s.db.Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
+		if err := s.db.Model(u).Select("LastLogoutTime", "LastLogoutIp").Updates(u).Error; err != nil {
 			return EError(c, err)
 		}
 
 		//Reset all user sessions
-		if err := dao.ResetUserSessions(s.db, &u); err != nil {
+		if err := dao.ResetUserSessions(s.db, u); err != nil {
 			return EError(c, err)
 		}
 		s.notificationsService.Ws.CloseUserSessions(u.ID)
 
-		if c.(AuthContext).TokenAuth {
+		if auth.TokenAuth {
 			return c.NoContent(http.StatusOK)
 		}
 
-		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(auth.AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
@@ -1158,7 +1162,7 @@ func (s *Services) signOutEverywhere(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/reset-user-password/{uidb64}/ [post]
 func (s *Services) resetUserPassword(c echo.Context) error {
-	admin := *c.(AuthContext).User
+	admin := apicontext.GetContext(c).GetUser()
 	uidb64 := c.Param("uidb64")
 
 	if !admin.IsSuperuser {
@@ -1241,7 +1245,7 @@ func (s *Services) getTGBotLink(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/all/projects/ [get]
 func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	searchQuery := ""
 	if err := echo.QueryParamsBinder(c).
@@ -1290,7 +1294,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/token/ [get]
 func (s *Services) getMyAuthToken(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	if user.AuthToken == nil {
 		return c.NoContent(http.StatusNoContent)
 	}
@@ -1309,7 +1313,7 @@ func (s *Services) getMyAuthToken(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/token/reset/ [post]
 func (s *Services) resetMyAuthToken(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if err := s.db.Model(&user).UpdateColumn("auth_token", password.MustGenerate(64, 30, 0, false, true)).Error; err != nil {
 		return EError(c, err)
@@ -1409,7 +1413,7 @@ func (s *Services) signUp(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/feedback/ [get]
 func (s *Services) getMyFeedback(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var feedback dao.UserFeedback
 	if err := s.db.Where("user_id = ?", user.ID).Preload(clause.Associations).First(&feedback).Error; err != nil {
@@ -1436,7 +1440,7 @@ func (s *Services) getMyFeedback(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/feedback/ [post]
 func (s *Services) createMyFeedback(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var feedback PostFeedbackRequest
 	if err := c.Bind(&feedback); err != nil {
@@ -1470,7 +1474,7 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/feedback/ [delete]
 func (s *Services) deleteMyFeedback(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserFeedback{}).Error; err != nil {
 		return EError(c, err)
@@ -1495,7 +1499,7 @@ func (s *Services) deleteMyFeedback(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/notifications [get]
 func (s *Services) getMyNotificationList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	offset := -1
 	limit := 100
 
@@ -1751,7 +1755,7 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/notifications [delete]
 func (s *Services) deleteMyNotifications(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserNotifications{}).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
@@ -1775,7 +1779,7 @@ func (s *Services) deleteMyNotifications(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/notifications [post]
 func (s *Services) updateToReadMyNotifications(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	var count int
 
 	var notification NotificationViewRequest
@@ -1833,7 +1837,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/tutorial/ [post]
 func (s *Services) updateUserTutorial(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	var step int
 
 	if err := echo.QueryParamsBinder(c).
@@ -1871,7 +1875,7 @@ func (s *Services) updateUserTutorial(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/ [get]
 func (s *Services) getSearchFilterList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	offset := -1
 	limit := 100
@@ -1932,7 +1936,7 @@ func (s *Services) getSearchFilterList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/ [post]
 func (s *Services) createSearchFilter(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	filter, _, err := bindSearchFilter(c, nil)
 	if err != nil {
@@ -1982,7 +1986,7 @@ func (s *Services) getSearchFilter(c echo.Context) error {
 // @Router /api/auth/filters/{filterId}/ [patch]
 func (s *Services) updateSearchFilter(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if filter.AuthorID != user.ID {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
@@ -2013,7 +2017,7 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 // @Router /api/auth/filters/{filterId}/ [delete]
 func (s *Services) deleteSearchFilter(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if filter.AuthorID != user.ID && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
@@ -2038,7 +2042,7 @@ func (s *Services) deleteSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/filters/ [get]
 func (s *Services) getMySearchFilterList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var filters []dao.SearchFilter
 	if err := s.db.Model(&user).Association("SearchFilters").Find(&filters); err != nil {
@@ -2067,7 +2071,7 @@ func (s *Services) getMySearchFilterList(c echo.Context) error {
 // @Router /api/auth/users/me/filters/{filterId}/ [post]
 func (s *Services) addSearchFilterToMe(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if !filter.Public && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrCannotAddNonPublicFilter)
@@ -2093,7 +2097,7 @@ func (s *Services) addSearchFilterToMe(c echo.Context) error {
 // @Router /api/auth/users/me/filters/{filterId}/ [delete]
 func (s *Services) deleteSearchFilterFromMe(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if filter.AuthorID == user.ID {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveOwnFilter)
@@ -2314,7 +2318,7 @@ func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/memberships/workspaces/ [post]
 func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspaces []uuid.UUID
 	if err := c.Bind(&workspaces); err != nil {
@@ -2350,7 +2354,7 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/memberships/projects/ [post]
 func (s *Services) getCurrentUserProjectMemberships(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var projects []uuid.UUID
 	if err := c.Bind(&projects); err != nil {
@@ -2417,12 +2421,7 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 	}
 
 	if filter == nil {
-		var user *dao.User
-		if authCtx, ok := c.(AuthContext); ok {
-			user = authCtx.User
-		} else {
-			user = c.(SearchFilterContext).User
-		}
+		user := apicontext.GetContext(c).GetUser()
 		return &dao.SearchFilter{
 			ID: dao.GenUUID(),
 			//CreatedAt:   time.Now(),

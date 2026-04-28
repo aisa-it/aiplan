@@ -47,14 +47,14 @@ func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
 		return false, apiContext.Error()
 	}
 	doc := docContext.Doc
-	user := docContext.User
+	user := apiContext.GetUser()
 
 	// Allow Author
 	if user.ID == doc.CreatedById {
 		return true, nil
 	}
 
-	if docContext.User.IsSuperuser {
+	if user.IsSuperuser {
 		return true, nil
 	}
 

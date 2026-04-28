@@ -62,13 +62,13 @@ type UserCreateRequest struct {
 }
 
 type ReleaseNoteContext struct {
-	AuthContext
+	echo.Context
 	ReleaseNote dao.ReleaseNote
 }
 
 func (s *Services) StaffPermissionsMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		user := *c.(AuthContext).User
+		user := apicontext.GetContext(c).GetUser()
 		if !user.IsSuperuser {
 			return EErrorDefined(c, apierrors.ErrNotEnoughRights)
 		}
@@ -92,7 +92,7 @@ func (s *Services) ReleaseNotesMiddleware(next echo.HandlerFunc) echo.HandlerFun
 			return EError(c, err)
 		}
 
-		return next(ReleaseNoteContext{c.(AuthContext), note})
+		return next(ReleaseNoteContext{c, note})
 	}
 }
 
@@ -293,7 +293,7 @@ func (s *Services) getWorkspaceByAdmin(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/workspaces/{slug} [delete]
 func (s *Services) deleteWorkspaceByAdmin(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	slugOrId := c.Param("slug")
 
 	var workspace dao.Workspace
@@ -535,7 +535,7 @@ func getBoolCSV(b bool) string {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/users [post]
 func (s *Services) createUser(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var req UserCreateRequest
 	if err := c.Bind(&req); err != nil {
@@ -641,12 +641,7 @@ func (s *Services) getUserById(c echo.Context) error {
 func (s *Services) updateUser(c echo.Context) error {
 	userId := c.Param("userId")
 
-	var admin *dao.User
-	if context, ok := c.(AuthContext); ok {
-		admin = context.User
-	} else {
-		admin = apicontext.GetContext(c).GetUser()
-	}
+	admin := apicontext.GetContext(c).GetUser()
 
 	var user dao.User
 	if err := s.db.Where("id = ?", userId).First(&user).Error; err != nil {
@@ -1013,7 +1008,7 @@ func (s *Services) createMessageForMember(c echo.Context) error {
 func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 	userId := c.Param("userId")
 	workspaceId := c.Param("workspaceId")
-	superUser := *c.(AuthContext).User
+	superUser := apicontext.GetContext(c).GetUser()
 
 	var role roleUpdRequest
 
@@ -1165,7 +1160,7 @@ func (s *Services) deleteWorkspaceMemberAdmin(c echo.Context) error {
 			First(&requestedMember).Error; err != nil {
 			return err
 		}
-		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != c.(AuthContext).User.ID {
+		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != apicontext.GetContext(c).GetUser().ID {
 			return apierrors.ErrDeleteSuperUser
 		}
 
@@ -1196,7 +1191,7 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 	userId := c.Param("userId")
 	workspaceId := c.Param("workspaceId")
 	projectId := c.Param("projectId")
-	superUser := *c.(AuthContext).User
+	superUser := apicontext.GetContext(c).GetUser()
 
 	var role roleUpdRequest
 
@@ -1355,7 +1350,7 @@ func (s *Services) createReleaseNote(c echo.Context) error {
 	if err := c.Bind(&note); err != nil {
 		return EError(c, err)
 	}
-	note.AuthorId = c.(AuthContext).User.ID
+	note.AuthorId = apicontext.GetContext(c).GetUser().ID
 	note.TagName = appVersion
 	note.PublishedAt = time.Now()
 	if len(note.Body.Body) == 0 {
@@ -1413,7 +1408,7 @@ func (s *Services) updateReleaseNote(c echo.Context) error {
 
 	data.ID = c.(ReleaseNoteContext).ReleaseNote.ID
 	data.TagName = c.(ReleaseNoteContext).ReleaseNote.TagName
-	data.AuthorId = c.(ReleaseNoteContext).User.ID
+	data.AuthorId = apicontext.GetContext(c).GetUser().ID
 	if len(data.Body.Body) == 0 {
 		return EErrorDefined(c, apierrors.ErrReleaseNoteEmptyBody)
 	}
