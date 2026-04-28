@@ -106,6 +106,21 @@ type Services struct {
 	business *business.Business
 }
 
+// DB возвращает *gorm.DB, привязанный к контексту HTTP-запроса.
+// При cancel/timeout контекста pgx отправит pg_cancel_backend в Postgres,
+// что не даёт зависшим запросам копиться в пуле.
+func (s *Services) DB(c echo.Context) *gorm.DB {
+	return s.db.WithContext(c.Request().Context())
+}
+
+// RawDB возвращает исходный *gorm.DB без привязки к запросу.
+// Использовать только в фоновых задачах, кронах и не-HTTP-обработчиках.
+func (s *Services) RawDB() *gorm.DB {
+	return s.db
+}
+
+const requestTimeout = time.Second * 10
+
 var cfg *config.Config
 var appVersion string
 
@@ -403,6 +418,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}))
 	e.Use(echoprometheus.NewMiddleware("aiplan"))
 	e.Pre(
+		middleware.ContextTimeout(requestTimeout),
 		middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 			Skipper: func(c echo.Context) bool {
 				return !strings.HasPrefix(c.Path(), "/api")

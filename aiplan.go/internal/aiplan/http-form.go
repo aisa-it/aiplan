@@ -66,7 +66,7 @@ func (s *Services) FormMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		var form dao.Form
-		if err := s.db.
+		if err := s.DB(c).
 			Joins("Author").
 			Joins("Workspace").
 			Joins("TargetProject").
@@ -89,7 +89,7 @@ func (s *Services) AnswerFormAuthMiddleware(next echo.HandlerFunc) echo.HandlerF
 		formSlug := c.Param("formSlug")
 		userId := apicontext.GetContext(c).GetUser().ID
 		var form dao.Form
-		if err := s.db.
+		if err := s.DB(c).
 			Set("userId", userId).
 			Joins("Author").
 			Joins("Workspace").
@@ -113,7 +113,7 @@ func (s *Services) AnswerFormNoAuthMiddleware(next echo.HandlerFunc) echo.Handle
 		formSlug := c.Param("formSlug")
 
 		var form dao.Form
-		if err := s.db.
+		if err := s.DB(c).
 			Joins("Author").
 			Joins("Workspace").
 			Joins("TargetProject").
@@ -189,7 +189,7 @@ func (s *Services) getFormList(c echo.Context) error {
 	}
 
 	var forms []dao.Form
-	query := s.db.Preload("Workspace")
+	query := s.DB(c).Preload("Workspace")
 
 	if err := query.Where("workspace_id", workspace.ID).Order("lower(title)").Find(&forms).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
@@ -249,7 +249,7 @@ func (s *Services) createForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
 	}
 
-	if err := s.db.Create(&form).Error; err != nil {
+	if err := s.DB(c).Create(&form).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -341,7 +341,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	for k := range requestMap {
 		updateFields = append(updateFields, k)
 	}
-	if err := s.db.Select(updateFields).Updates(&newForm).Error; err != nil {
+	if err := s.DB(c).Select(updateFields).Updates(&newForm).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 	data := StructToJSONMap(form)
@@ -380,7 +380,7 @@ func (s *Services) deleteForm(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
-	if err := s.db.Omit(clause.Associations).Delete(&form).Error; err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Delete(&form).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -461,7 +461,7 @@ func (s *Services) getAnswers(c echo.Context) error {
 
 	var answers []dao.FormAnswer
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Form").
 		Joins("Responder").
 		Preload("Attachments.Asset").
@@ -512,7 +512,7 @@ func (s *Services) getAnswer(c echo.Context) error {
 	}
 	var answer dao.FormAnswer
 
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Responder").
 		Preload("Attachment.Asset").
 		Preload("Form").
@@ -583,7 +583,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	}
 
 	var answer dao.FormAnswer
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var seqId int
 		// Calculate sequence id
 		var lastId sql.NullInt64
@@ -630,13 +630,13 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		return EError(c, err)
 	}
 	if user == nil {
-		if err := s.db.Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
+		if err := s.DB(c).Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
 			return EError(c, err)
 		}
 	}
 
 	if len(attachmentUUIDs) > 0 {
-		if err := s.db.Preload("Asset").Where("answer_id = ?", answer.ID).Find(&answer.Attachments).Error; err != nil {
+		if err := s.DB(c).Preload("Asset").Where("answer_id = ?", answer.ID).Find(&answer.Attachments).Error; err != nil {
 			return EError(c, err)
 		}
 	}
@@ -696,7 +696,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	}
 
 	var defaultAssignees []uuid.UUID
-	if err := s.db.Select("member_id").
+	if err := s.DB(c).Select("member_id").
 		Model(&dao.ProjectMember{}).
 		Where("project_id = ? and is_default_assignee = true", form.TargetProjectId.UUID).
 		Find(&defaultAssignees).Error; err != nil {
@@ -724,19 +724,19 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 
 	var createWatcher bool
 	if user != nil {
-		if err := s.db.Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
+		if err := s.DB(c).Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
 			return err
 		}
 	}
 
 	var formAttachments []dao.FormAttachment
-	if err := s.db.Where("form_id = ?", form.ID).
+	if err := s.DB(c).Where("form_id = ?", form.ID).
 		Where("answer_id = ?", answer.ID).
 		Find(&formAttachments).Error; err != nil {
 		return err
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
@@ -876,12 +876,12 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 		FileSize:    int(asset.Size),
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.db.Create(&fa).Error; err != nil {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		if err := s.DB(c).Create(&fa).Error; err != nil {
 			return err
 		}
 
-		if err := s.db.Create(&formAttachment).Error; err != nil {
+		if err := s.DB(c).Create(&formAttachment).Error; err != nil {
 			return err
 		}
 		formAttachment.Asset = &fa
@@ -919,7 +919,7 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.FormAttachment
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Asset").
 		Where("workspace_id = ?", workspaceId).
 		Where("form_id = ?", formId).
@@ -935,7 +935,7 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormForbidden)
 	}
 
-	if err := s.db.Omit(clause.Associations).
+	if err := s.DB(c).Omit(clause.Associations).
 		Delete(&attachment).Error; err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			return EErrorDefined(c, apierrors.ErrAttachmentInUse)

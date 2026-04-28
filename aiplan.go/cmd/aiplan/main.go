@@ -249,8 +249,8 @@ func main() {
 		slog.Error("Fail set settings to conn pool", "err", err)
 		os.Exit(1)
 	}
-	sqlDB.SetMaxOpenConns(90)
-	sqlDB.SetMaxIdleConns(50)
+	sqlDB.SetMaxOpenConns(70)
+	sqlDB.SetMaxIdleConns(30)
 	sqlDB.SetConnMaxLifetime(time.Minute * 10)
 	sqlDB.SetConnMaxIdleTime(time.Minute * 5)
 

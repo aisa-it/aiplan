@@ -180,7 +180,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Получаем workspace по slug
 	var workspace dao.Workspace
-	if err := s.db.
+	if err := s.DB(c).
 		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
@@ -188,7 +188,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Проверяем права пользователя на workspace (должен быть как минимум членом)
 	var workspaceMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).
 		First(&workspaceMember).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
@@ -276,7 +276,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Загружаем пользователя для ответа
 	var creator dao.User
-	if err := s.db.Where("id = ?", user.ID).First(&creator).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", user.ID).First(&creator).Error; err != nil {
 		slog.Warn("Failed to load creator user", "err", err)
 	}
 
@@ -346,7 +346,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 
 	// 3. Проверка существования workspace в БД
 	var workspace dao.Workspace
-	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+	if err := s.DB(c).Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
@@ -356,7 +356,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 
 	// 4. Проверка прав доступа к workspace (любая роль - достаточно быть участником)
 	var member dao.WorkspaceMember
-	err := s.db.Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
+	err := s.DB(c).Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
@@ -463,7 +463,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 
 	// Получаем workspace по slug
 	var workspace dao.Workspace
-	if err := s.db.
+	if err := s.DB(c).
 		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -476,7 +476,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 	// Проверяем права пользователя на workspace
 	// Для удаления репозитория требуется роль администратора workspace
 	var workspaceMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).
 		First(&workspaceMember).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -920,12 +920,12 @@ func (s *Services) checkRepositoryAccess(user *dao.User, workspaceSlug, repoName
 
 	// Приватный репозиторий - проверяем membership в workspace
 	var workspace dao.Workspace
-	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+	if err := s.RawDB().Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		return false, fmt.Errorf("workspace not found: %w", err)
 	}
 
 	var membership dao.WorkspaceMember
-	err = s.db.Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).First(&membership).Error
+	err = s.RawDB().Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).First(&membership).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, nil // Не является членом workspace
