@@ -153,7 +153,7 @@ func (s *Services) getUser(c echo.Context) error {
 	userId := c.Param("userId")
 
 	var user dao.User
-	if err := s.db.Where("id = ? or email = ?", userId, userId).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ? or email = ?", userId, userId).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrUserNotFound)
 		}
@@ -176,7 +176,7 @@ func (s *Services) getUser(c echo.Context) error {
 func (s *Services) getCurrentUser(c echo.Context) error {
 	user := *c.(AuthContext).User
 	var count int
-	if err := s.db.Select("count(*)").
+	if err := s.DB(c).Select("count(*)").
 		Where("viewed = false").
 		Where("user_id = ?", user.ID).
 		Where("deleted_at IS NULL").
@@ -239,7 +239,7 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 		if settings.DeadlineNotification != user.Settings.DeadlineNotification {
 			diff := user.Settings.DeadlineNotification - settings.DeadlineNotification
 
-			err := s.db.
+			err := s.DB(c).
 				Model(&dao.DeferredNotifications{}).
 				Where("user_id = ?", user.ID).
 				Where("sent_at IS NULL").
@@ -259,7 +259,7 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 		updateMap["status_end_date"] = nil
 	}
 
-	if err := s.db.Model(&user).Updates(updateMap).Error; err != nil {
+	if err := s.DB(c).Model(&user).Updates(updateMap).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrUsernameConflict)
 		}
@@ -297,7 +297,7 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 		CreatedById: userID,
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := s.uploadAvatarForm(tx, file, &fileAsset); err != nil {
 			return err
 		}
@@ -325,7 +325,7 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 func (s *Services) deleteCurrentUserAvatar(c echo.Context) error {
 	user := *c.(AuthContext).User
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		user.AvatarId = uuid.NullUUID{}
 		user.Avatar = ""
 		if err := tx.Omit(clause.Associations).Save(&user).Error; err != nil {
@@ -385,7 +385,7 @@ func (s *Services) updateUserOnBoard(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(&user).Select("first_name", "last_name", "username", "role", "telegram_id", "is_onboarded").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("first_name", "last_name", "username", "role", "telegram_id", "is_onboarded").Updates(&user).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrUsernameConflict)
 		} else {
@@ -417,7 +417,7 @@ func (s *Services) updateUserViewProps(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(&user).Update("view_props", props).Error; err != nil {
+	if err := s.DB(c).Model(&user).Update("view_props", props).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -474,7 +474,7 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 		Set("userId", currentUser.ID)
 
 	if !currentUser.IsSuperuser {
-		query.Where("fa.workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
+		query.Where("fa.workspace_id in (?)", s.DB(c).Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
 	}
 
 	if !time.Time(day).IsZero() {
@@ -695,7 +695,7 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 	// If email provided
 	userUUID, err := uuid.FromString(userId)
 	if err != nil {
-		if err := s.db.Select("id").Where("email = ?", userId).Model(&dao.User{}).Find(&userId).Error; err != nil {
+		if err := s.DB(c).Select("id").Where("email = ?", userId).Model(&dao.User{}).Find(&userId).Error; err != nil {
 			return EError(c, err)
 		}
 		if userId == "" {
@@ -715,13 +715,13 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 		Where("fa.entity_type = 'issue' OR (fa.entity_type = 'project' AND fa.field = 'issue')")
 
 	//Where("entity_type NOT IN (?)", []string{tracker.ENTITY_TYPE_PROJECT, tracker.ENTITY_TYPE_WORKSPACE})
-	//query := s.db.
+	//query := s.DB(c).
 	//	Where("actor_id = ?", userId).
 	//	Where("entity_type NOT IN (?)", []string{tracker.ENTITY_TYPE_PROJECT, tracker.ENTITY_TYPE_WORKSPACE}).
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper
 
 	if !currentUser.IsSuperuser {
-		query = query.Where("fa.workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
+		query = query.Where("fa.workspace_id in (?)", s.DB(c).Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
 	}
 
 	tables, err := GetActivitiesTable(query, from, to)
@@ -760,7 +760,7 @@ func (s *Services) forgotPassword(c echo.Context) error {
 	}
 
 	var user dao.User
-	if err := s.db.Where("email = ?", data.Email).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("email = ?", data.Email).First(&user).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return EError(c, err)
 		}
@@ -772,7 +772,7 @@ func (s *Services) forgotPassword(c echo.Context) error {
 	}
 
 	user.Token = dao.GenID()
-	if err := s.db.Model(&user).Select("Token").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("Token").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -815,7 +815,7 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 	user.LastLogoutTime = &tm
 	user.LastLogoutIp = c.RealIP()
 	user.Token = ""
-	if err := s.db.Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
 		log.Println(err)
 	}
 
@@ -939,11 +939,11 @@ func (s *Services) confirmEmail(c echo.Context) error {
 	}
 
 	var existUser dao.User
-	if err := s.db.Where("email = ?", newEmail).Find(&existUser).Error; err != nil {
+	if err := s.DB(c).Where("email = ?", newEmail).Find(&existUser).Error; err != nil {
 		return c.Redirect(http.StatusTemporaryRedirect, ErrPath.String())
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		if !c.(AuthContext).TokenAuth {
 			if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
@@ -1011,7 +1011,7 @@ func (s *Services) resetPassword(c echo.Context) error {
 	}
 
 	var user dao.User
-	if err := s.db.Where("id = ?", string(id)).Where("token = ?", token).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", string(id)).Where("token = ?", token).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrInvalidResetToken)
 		}
@@ -1032,7 +1032,7 @@ func (s *Services) resetPassword(c echo.Context) error {
 	user.LastLogoutTime = &tm
 	user.LastLogoutIp = c.RealIP()
 	user.Token = ""
-	if err := s.db.Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1077,7 +1077,7 @@ func (s *Services) signOut(c echo.Context) error {
 		tm := time.Now()
 		u.LastLogoutTime = &tm
 		u.LastLogoutIp = c.RealIP()
-		if err := s.db.Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
+		if err := s.DB(c).Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
 			return EError(c, err)
 		}
 
@@ -1113,7 +1113,7 @@ func (s *Services) signOutEverywhere(c echo.Context) error {
 		tm := time.Now()
 		u.LastLogoutTime = &tm
 		u.LastLogoutIp = c.RealIP()
-		if err := s.db.Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
+		if err := s.DB(c).Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
 			return EError(c, err)
 		}
 
@@ -1171,7 +1171,7 @@ func (s *Services) resetUserPassword(c echo.Context) error {
 	}
 
 	var user dao.User
-	if err := s.db.Where("id = ?", string(id)).Find(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", string(id)).Find(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1188,7 +1188,7 @@ func (s *Services) resetUserPassword(c echo.Context) error {
 	tm := time.Now()
 	user.LastLogoutTime = &tm
 	user.LastLogoutIp = c.RealIP()
-	if err := s.db.Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password").Updates(&user).Error; err != nil {
 		log.Println(err)
 	}
 
@@ -1251,7 +1251,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 	}
 	var projects []dao.Project
 	query := dao.PreloadProjectMembersWithFilters(
-		s.db.
+		s.DB(c).
 			Preload(clause.Associations).
 			Preload("Workspace.Owner").
 			Order("name"))
@@ -1262,7 +1262,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 	}
 
 	query = query.Where("id in (?)",
-		s.db.Model(&dao.ProjectMember{}).
+		s.DB(c).Model(&dao.ProjectMember{}).
 			Select("project_id").
 			Where("member_id = ?", user.ID))
 
@@ -1311,7 +1311,7 @@ func (s *Services) getMyAuthToken(c echo.Context) error {
 func (s *Services) resetMyAuthToken(c echo.Context) error {
 	user := *c.(AuthContext).User
 
-	if err := s.db.Model(&user).UpdateColumn("auth_token", password.MustGenerate(64, 30, 0, false, true)).Error; err != nil {
+	if err := s.DB(c).Model(&user).UpdateColumn("auth_token", password.MustGenerate(64, 30, 0, false, true)).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusCreated)
@@ -1351,9 +1351,9 @@ func (s *Services) signUp(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Model(&dao.User{}).
+	if err := s.DB(c).Model(&dao.User{}).
 		Select("EXISTS(?)",
-			s.db.Model(&dao.User{}).
+			s.DB(c).Model(&dao.User{}).
 				Select("1").
 				Where("email = ?", req.Email),
 		).
@@ -1375,7 +1375,7 @@ func (s *Services) signUp(c echo.Context) error {
 		IsActive: true,
 	}
 
-	if err := s.db.Create(&user).Error; err != nil {
+	if err := s.DB(c).Create(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1388,7 +1388,7 @@ func (s *Services) signUp(c echo.Context) error {
 		time.Sleep(time.Second * 5)
 	}
 	// If failed to deliver mail delete user and return error
-	if err := s.db.Unscoped().Delete(&user).Error; err != nil {
+	if err := s.DB(c).Unscoped().Delete(&user).Error; err != nil {
 		slog.Error("Delete failed user", "err", err)
 	}
 	return EErrorDefined(c, apierrors.ErrNewUserMailFailed)
@@ -1412,7 +1412,7 @@ func (s *Services) getMyFeedback(c echo.Context) error {
 	user := c.(AuthContext).User
 
 	var feedback dao.UserFeedback
-	if err := s.db.Where("user_id = ?", user.ID).Preload(clause.Associations).First(&feedback).Error; err != nil {
+	if err := s.DB(c).Where("user_id = ?", user.ID).Preload(clause.Associations).First(&feedback).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.NoContent(http.StatusNoContent)
 		}
@@ -1447,7 +1447,7 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 		feedback.Stars = 5
 	}
 
-	if err := s.db.Save(&dao.UserFeedback{
+	if err := s.DB(c).Save(&dao.UserFeedback{
 		UserID:    user.ID,
 		UpdatedAt: time.Now(),
 		Stars:     feedback.Stars,
@@ -1472,7 +1472,7 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 func (s *Services) deleteMyFeedback(c echo.Context) error {
 	user := c.(AuthContext).User
 
-	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserFeedback{}).Error; err != nil {
+	if err := s.DB(c).Where("user_id = ?", user.ID).Delete(&dao.UserFeedback{}).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -1546,7 +1546,7 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return uuid.NullUUID{}
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		//Preload("EntityActivity").
 		//Preload("EntityActivity.Actor").
 		//Preload("EntityActivity.Issue").
@@ -1753,7 +1753,7 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 func (s *Services) deleteMyNotifications(c echo.Context) error {
 	user := c.(AuthContext).User
 
-	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserNotifications{}).Error; err != nil {
+	if err := s.DB(c).Where("user_id = ?", user.ID).Delete(&dao.UserNotifications{}).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 	return c.NoContent(http.StatusOK)
@@ -1784,7 +1784,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 	}
 
 	if notification.ViewedAll == true {
-		if err := s.db.Model(&dao.UserNotifications{}).
+		if err := s.DB(c).Model(&dao.UserNotifications{}).
 			Where("user_id = ?", user.ID).
 			Where("viewed = false").
 			Where("deleted_at is NULL").
@@ -1794,7 +1794,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 		}
 		count = 0
 	} else {
-		if err := s.db.Model(&dao.UserNotifications{}).
+		if err := s.DB(c).Model(&dao.UserNotifications{}).
 			Where("user_id = ?", user.ID).
 			Where("id IN ?", notification.Ids).
 			Where("deleted_at is NULL").
@@ -1803,7 +1803,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 
-		if err := s.db.Select("count(*)").
+		if err := s.DB(c).Select("count(*)").
 			Where("viewed = false").
 			Where("user_id = ?", user.ID).
 			Where("deleted_at IS NULL").
@@ -1846,7 +1846,7 @@ func (s *Services) updateUserTutorial(c echo.Context) error {
 	}
 	user.Tutorial = step
 
-	if err := s.db.Model(&user).Select("tutorial").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("tutorial").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1885,7 +1885,7 @@ func (s *Services) getSearchFilterList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.Preload(clause.Associations)
+	query := s.DB(c).Preload(clause.Associations)
 	if !user.IsSuperuser {
 		query = query.Where("public = true")
 	}
@@ -1939,7 +1939,7 @@ func (s *Services) createSearchFilter(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(user).Association("SearchFilters").Append(filter); err != nil {
+	if err := s.DB(c).Model(user).Association("SearchFilters").Append(filter); err != nil {
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusCreated, filter.ToFullDTO())
@@ -1993,7 +1993,7 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Select(fields).Updates(newFilter).Error; err != nil {
+	if err := s.DB(c).Select(fields).Updates(newFilter).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2019,7 +2019,7 @@ func (s *Services) deleteSearchFilter(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
-	if err := s.db.Select(clause.Associations).Delete(&filter).Error; err != nil {
+	if err := s.DB(c).Select(clause.Associations).Delete(&filter).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -2041,7 +2041,7 @@ func (s *Services) getMySearchFilterList(c echo.Context) error {
 	user := c.(AuthContext).User
 
 	var filters []dao.SearchFilter
-	if err := s.db.Model(&user).Association("SearchFilters").Find(&filters); err != nil {
+	if err := s.DB(c).Model(&user).Association("SearchFilters").Find(&filters); err != nil {
 		return EError(c, err)
 	}
 
@@ -2073,7 +2073,7 @@ func (s *Services) addSearchFilterToMe(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotAddNonPublicFilter)
 	}
 
-	if err := s.db.Model(&user).Association("SearchFilters").Append(&filter); err != nil {
+	if err := s.DB(c).Model(&user).Association("SearchFilters").Append(&filter); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2099,7 +2099,7 @@ func (s *Services) deleteSearchFilterFromMe(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveOwnFilter)
 	}
 
-	if err := s.db.Model(&user).Association("SearchFilters").Delete(&filter); err != nil {
+	if err := s.DB(c).Model(&user).Association("SearchFilters").Delete(&filter); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2131,7 +2131,7 @@ func (s *Services) getFilterMemberList(c echo.Context) error {
 
 	var users []dao.User
 
-	query := s.db.Preload(clause.Associations).
+	query := s.DB(c).Preload(clause.Associations).
 		Where("is_integration = ? AND is_bot = ?", false, false).
 		Where("id IN (?)", userIds)
 
@@ -2191,7 +2191,7 @@ func (s *Services) getFilterStateList(c echo.Context) error {
 
 	var states []dao.State
 
-	stateQuery := s.db.Preload("Project").
+	stateQuery := s.DB(c).Preload("Project").
 		Joins("JOIN projects ON projects.id = states.project_id").
 		Where("project_id IN (?)", projectQuery)
 
@@ -2245,7 +2245,7 @@ func (s *Services) getFilterLabelList(c echo.Context) error {
 
 	var labels []dao.Label
 
-	labelQuery := s.db.Preload("Project").
+	labelQuery := s.DB(c).Preload("Project").
 		Joins("JOIN projects ON projects.id = labels.project_id").
 		Where("project_id IN (?)", projectQuery)
 
@@ -2289,7 +2289,7 @@ func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
 	noteContext := c.(ReleaseNoteContext)
 
 	var notes []dao.ReleaseNote
-	if err := s.db.Where("tag_name >= ?", noteContext.ReleaseNote.TagName).Find(&notes).Error; err != nil {
+	if err := s.DB(c).Where("tag_name >= ?", noteContext.ReleaseNote.TagName).Find(&notes).Error; err != nil {
 		return EError(c, err)
 	}
 	notesDTO := make([]dto.ReleaseNoteLight, 0)
@@ -2321,7 +2321,7 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.Select("workspace_members.*, owner_id = ? as is_workspace_owner", user.ID).
+	query := s.DB(c).Select("workspace_members.*, owner_id = ? as is_workspace_owner", user.ID).
 		Joins("Workspace").
 		Where("member_id = ?", user.ID)
 	if len(workspaces) > 0 {
@@ -2357,7 +2357,7 @@ func (s *Services) getCurrentUserProjectMemberships(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.Select("project_members.*, project_lead_id = ? as is_project_lead", user.ID).
+	query := s.DB(c).Select("project_members.*, project_lead_id = ? as is_project_lead", user.ID).
 		Joins("Project").
 		Where("member_id = ?", user.ID)
 	if len(projects) > 0 {

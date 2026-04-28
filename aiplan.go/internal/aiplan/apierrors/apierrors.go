@@ -111,6 +111,7 @@ var (
 	ErrUserAlreadyExist         = DefinedError{Code: 1008, Err: "user already exist", RuErr: "Пользователь с указанным email уже зарегистрирован в системе"}
 	ErrBlockedUntil             = DefinedError{Code: 1009, StatusCode: http.StatusUnauthorized, Err: "blocked until %s", RuErr: "Учетная запись заблокирована до %s"}
 	ErrNewUserMailFailed        = DefinedError{Code: 1010, Err: "failed to deliver email with password to new user", RuErr: "Не удалось отправить пароль на указанную почту. Проверьте корректность указанного адреса"}
+	ErrRequestTimeout           = DefinedError{Code: 1000, StatusCode: http.StatusRequestTimeout, Err: "request timeout", RuErr: "Время ожидания запроса истекло, повторите позже"}
 
 	// 11** - session errors
 	ErrRefreshTokenRequired = DefinedError{Code: 1101, StatusCode: http.StatusUnauthorized, Err: "refresh token is required", RuErr: "Требуется токен обновления"}

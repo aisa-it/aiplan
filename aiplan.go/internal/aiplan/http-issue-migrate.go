@@ -115,7 +115,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 	var targetProject, srcProject dao.Project
 
-	if err := s.db.Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"errors": []ErrClause{
@@ -130,7 +130,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	var srcIssue dao.Issue
-	if err := s.db.Where("id = ?", srcIssueId).
+	if err := s.DB(c).Where("id = ?", srcIssueId).
 		Preload(clause.Associations).
 		First(&srcIssue).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -149,7 +149,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 		if v, ok := param.StateId.GetValue(); ok && v != nil {
 			var state dao.State
-			if err := s.db.Where("workspace_id = ?", srcIssue.WorkspaceId).
+			if err := s.DB(c).Where("workspace_id = ?", srcIssue.WorkspaceId).
 				Where("project_id = ?", targetProject.ID).
 				Where("id = ?", *v).
 				First(&state).Error; err != nil {
@@ -290,7 +290,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 
 		var comments []dao.IssueComment
-		if err := s.db.Where("issue_id in ?", familyIds).Find(&comments).Error; err != nil {
+		if err := s.DB(c).Where("issue_id in ?", familyIds).Find(&comments).Error; err != nil {
 			return EError(c, err)
 		}
 		for _, comment := range comments {
@@ -321,7 +321,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if len(labelIds) > 0 {
 			var labels []dao.Label
 			if err := tx.
@@ -397,7 +397,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	// Create issues
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		for _, issue := range preparedIssues {
 			if deleteSrc {
@@ -553,7 +553,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 	} else {
 		var newIssues []dao.Issue
-		s.db.Joins("Project").Where("issues.id in (?)", newFamilyIds).Find(&newIssues)
+		s.DB(c).Joins("Project").Where("issues.id in (?)", newFamilyIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
 			data := map[string]interface{}{"custom_verb": "copied"}
@@ -611,7 +611,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	stateMap := make(map[uuid.UUID]dao.State)
 
 	var targetProject, srcProject dao.Project
-	if err := s.db.Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"errors": []ErrClause{
@@ -626,7 +626,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	var srcLabel dao.Label
-	if err := s.db.Where("id = ?", srcLabelId).
+	if err := s.DB(c).Where("id = ?", srcLabelId).
 		Preload(clause.Associations).
 		First(&srcLabel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -645,7 +645,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	srcProject = *srcLabel.Project
 
 	var srcIssues []dao.Issue
-	if err := s.db.Preload(clause.Associations).Where("id in (?)", s.db.Select("issue_id").Where("label_id = ?", srcLabel.ID).Model(&dao.IssueLabel{})).
+	if err := s.DB(c).Preload(clause.Associations).Where("id in (?)", s.DB(c).Select("issue_id").Where("label_id = ?", srcLabel.ID).Model(&dao.IssueLabel{})).
 		Where("project_id = ?", srcLabel.ProjectId).
 		Find(&srcIssues).Error; err != nil {
 		return EError(c, err)
@@ -724,7 +724,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		}
 
 		var comments []dao.IssueComment
-		if err := s.db.Where("issue_id in ?", targetIds).Find(&comments).Error; err != nil {
+		if err := s.DB(c).Where("issue_id in ?", targetIds).Find(&comments).Error; err != nil {
 			return EError(c, err)
 		}
 		for _, comment := range comments {
@@ -755,7 +755,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if len(labelIds) > 0 {
 			var labels []dao.Label
 			if err := tx.
@@ -831,7 +831,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	// Create issues
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		for _, issue := range preparedIssues {
 			if deleteSrc {
@@ -987,7 +987,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		}
 	} else {
 		var newIssues []dao.Issue
-		s.db.Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
+		s.DB(c).Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
 			err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issue, &user)
@@ -1110,7 +1110,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 	// Check state
 	{
 		if migrateWithNewState == false {
-			if err := s.db.Where("project_id = ?", targetProject.ID).
+			if err := s.RawDB().Where("project_id = ?", targetProject.ID).
 				Where("name = ?", srcIssue.State.Name).
 				Where("\"group\" = ?", srcIssue.State.Group).
 				Where("color = ?", srcIssue.State.Color).
@@ -1144,7 +1144,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 		for _, label := range *srcIssue.Labels {
 			var targetLabel dao.Label
-			if err := s.db.Where("name = ?", label.Name).
+			if err := s.RawDB().Where("name = ?", label.Name).
 				Where("color = ?", label.Color).
 				Where("project_id = ?", targetProject.ID).
 				First(&targetLabel).Error; err != nil {
