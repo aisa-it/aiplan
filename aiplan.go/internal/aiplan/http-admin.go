@@ -61,11 +61,6 @@ type UserCreateRequest struct {
 	Role        int    `json:"role"`         // optional
 }
 
-type ReleaseNoteContext struct {
-	echo.Context
-	ReleaseNote dao.ReleaseNote
-}
-
 func (s *Services) StaffPermissionsMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		user := apicontext.GetContext(c).GetUser()
@@ -84,15 +79,15 @@ func (s *Services) ReleaseNotesMiddleware(next echo.HandlerFunc) echo.HandlerFun
 			return next(c)
 		}
 
-		var note dao.ReleaseNote
-		if err := s.DB(c).Where("id = ?", noteId).Or("tag_name = ?", noteId).First(&note).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrReleaseNoteNotFound)
-			}
+		exists, err := dao.IsReleaseNoteExists(s.DB(c), noteId)
+		if err != nil {
 			return EError(c, err)
 		}
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrReleaseNoteNotFound)
+		}
 
-		return next(ReleaseNoteContext{c, note})
+		return next(c)
 	}
 }
 
@@ -1380,7 +1375,11 @@ func (s *Services) createReleaseNote(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/release-notes/{noteId} [get]
 func (s *Services) getReleaseNote(c echo.Context) error {
-	rn := c.(ReleaseNoteContext).ReleaseNote
+	apiContext := apicontext.GetContext(c)
+	rn := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, rn.ToLightDTO())
 }
 
@@ -1406,9 +1405,15 @@ func (s *Services) updateReleaseNote(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	data.ID = c.(ReleaseNoteContext).ReleaseNote.ID
-	data.TagName = c.(ReleaseNoteContext).ReleaseNote.TagName
-	data.AuthorId = apicontext.GetContext(c).GetUser().ID
+	apiContext := apicontext.GetContext(c)
+	rn := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	data.ID = rn.ID
+	data.TagName = rn.TagName
+	data.AuthorId = apiContext.GetUser().ID
 	if len(data.Body.Body) == 0 {
 		return EErrorDefined(c, apierrors.ErrReleaseNoteEmptyBody)
 	}
@@ -1434,8 +1439,12 @@ func (s *Services) updateReleaseNote(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/release-notes/{noteId} [delete]
 func (s *Services) deleteReleaseNote(c echo.Context) error {
-	note := c.(ReleaseNoteContext).ReleaseNote
-	if err := s.DB(c).Delete(&note).Error; err != nil {
+	apiContext := apicontext.GetContext(c)
+	note := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	if err := s.DB(c).Delete(note).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)

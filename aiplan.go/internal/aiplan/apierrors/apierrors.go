@@ -298,6 +298,7 @@ var (
 	ErrEmailIsExist             = DefinedError{Code: 6014, StatusCode: http.StatusBadRequest, Err: "email is exist", RuErr: "Пользователь с таким Email уже существует"}
 	ErrEmailChangeLimit         = DefinedError{Code: 6015, StatusCode: http.StatusTooManyRequests, Err: "the code was sent less than a minute ago", RuErr: "Запрос нового кода верификации можно делать раз в минуту"}
 	ErrEmailVerify              = DefinedError{Code: 6016, StatusCode: http.StatusBadRequest, Err: "invalid or expired code", RuErr: "Неверный или просроченный код"}
+	ErrSearchFilterNotFound     = DefinedError{Code: 6017, StatusCode: http.StatusNotFound, Err: "search filter not found", RuErr: "Фильтр не найден"}
 
 	// 7*** - integration errors
 	ErrInvalidEventType      = DefinedError{Code: 7001, StatusCode: http.StatusBadRequest, Err: "invalid event type", RuErr: "Указан неверный тип события"}
