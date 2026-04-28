@@ -1,7 +1,6 @@
 package aiplan
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -22,72 +22,23 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type SprintContext struct {
-	WorkspaceContext
-	Sprint dao.Sprint
-}
-
 func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		sprintId := c.Param("sprintId")
-		workspace := c.(WorkspaceContext).Workspace
-		user := c.(WorkspaceContext).User
-
-		var sprint dao.Sprint
-		query := s.db.
-			Joins("Workspace").
-			Joins("CreatedBy").
-			Joins("UpdatedBy").
-			Joins("SprintFolder").
-			Preload("Watchers").
-			Preload("Issues.State").
-			Where("sprints.workspace_id = ?", workspace.ID).
-			Set("issueProgress", true).
-			Set("userId", user.ID)
-
-		if val, err := uuid.FromString(sprintId); err != nil {
-			query = query.Where("sprints.sequence_id = ?", sprintId)
-		} else {
-			query = query.Where("sprints.id = ?", val)
+		apiContext := apicontext.GetContext(c)
+		workspace := apiContext.GetWorkspace()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
 		}
 
-		if err := query.First(&sprint).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return EErrorDefined(c, apierrors.ErrSprintNotFound)
-			}
+		exists, err := dao.IsSprintExists(s.db, workspace.ID, c.Param("sprintId"))
+		if err != nil {
 			return EError(c, err)
 		}
-
-		sprintStatsUpdate(&sprint)
-
-		// Для получения списка задач спринта отсортированных по sequence_id
-		//err := s.db.
-		//  Preload("State").
-		//  Joins("JOIN sprint_issues ON issues.id = sprint_issues.issue_id").
-		//  Where("sprint_issues.sprint_id = ?", sprint.Id).
-		//  Order("sprint_issues.position ASC").
-		//  Find(&sprint.Issues).Error
-
-		//if err != nil {
-		//  return EError(c, err)
-		//}
-		return next(SprintContext{c.(WorkspaceContext), sprint})
-	}
-}
-
-func sprintStatsUpdate(sprint *dao.Sprint) {
-	sprint.Stats.AllIssues = len(sprint.Issues)
-	for _, issue := range sprint.Issues {
-		switch issue.IssueProgress.Status {
-		case types.InProgress:
-			sprint.Stats.InProgress++
-		case types.Pending:
-			sprint.Stats.Pending++
-		case types.Cancelled:
-			sprint.Stats.Cancelled++
-		case types.Completed:
-			sprint.Stats.Completed++
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrSprintNotFound)
 		}
+
+		return next(c.(AuthContext))
 	}
 }
 
@@ -141,7 +92,11 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/ [get]
 func (s *Services) getSprintList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var sprints []dao.Sprint
 	if err := s.db.
@@ -155,7 +110,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 	}
 
 	for i := range sprints {
-		sprintStatsUpdate(&sprints[i])
+		sprints[i].UpdateStats()
 	}
 
 	var folders []dao.SprintFolder
@@ -229,7 +184,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/ [post]
 func (s *Services) createSprint(c echo.Context) error {
 	var req dto.RequestSprint
-	user := c.(WorkspaceContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	err := c.Bind(&req)
 	if err != nil {
@@ -296,7 +251,11 @@ func (s *Services) createSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/ [get]
 func (s *Services) GetSprint(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
+	apiContext := apicontext.GetContext(c)
+	sprint := apiContext.GetSprint(apicontext.WithSprintAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, sprint.ToDTO())
 }
 
@@ -319,9 +278,17 @@ func (s *Services) GetSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/ [patch]
 func (s *Services) updateSprint(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
-	oldSprintMap := StructToJSONMap(sprint)
+	apiContext := apicontext.GetContext(c)
+	sprint := apiContext.GetSprint(
+		apicontext.WithSprintCreatedBy(),
+		apicontext.WithSprintUpdatedBy(),
+		apicontext.WithSprintFolder(),
+	)
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
+	oldSprintMap := StructToJSONMap(*sprint)
 
 	var req dto.RequestSprint
 	fields, err := BindData(c, "", &req)
@@ -362,13 +329,13 @@ func (s *Services) updateSprint(c echo.Context) error {
 				return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
 			}
 		}
-		if err := s.db.Omit(clause.Associations).Select(fields).Updates(&sprint).Error; err != nil {
+		if err := s.db.Omit(clause.Associations).Select(fields).Updates(sprint).Error; err != nil {
 			return EError(c, err)
 		}
 	}
-	newSprintMap := StructToJSONMap(sprint)
+	newSprintMap := StructToJSONMap(*sprint)
 
-	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, newSprintMap, oldSprintMap, sprint, user)
+	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, newSprintMap, oldSprintMap, *sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -395,9 +362,13 @@ func (s *Services) updateSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/issues/ [post]
 func (s *Services) sprintIssuesUpdate(c echo.Context) error {
-	workspace := c.(SprintContext).Workspace
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	sprint := apiContext.GetSprint(apicontext.WithSprintIssues())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID })
 
@@ -489,7 +460,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	}
 
 	{ // reg activity
-		err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, sprint, user)
+		err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, *sprint, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -543,16 +514,20 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/ [delete]
 func (s *Services) deleteSprint(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
+	apiContext := apicontext.GetContext(c)
+	sprint := apiContext.GetSprint()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
-	err := tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, sprint, user)
+	err := tracker.TrackActivity[dao.Sprint, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, *sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 		return err
 	}
 
-	if err := s.db.Delete(&sprint).Error; err != nil {
+	if err := s.db.Delete(sprint).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -577,9 +552,13 @@ func (s *Services) deleteSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/watchers/ [post]
 func (s *Services) sprintWatchersUpdate(c echo.Context) error {
-	workspace := c.(SprintContext).Workspace
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	sprint := apiContext.GetSprint(apicontext.WithSprintWatchers())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	oldMemberIds := utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID })
 
@@ -655,7 +634,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		"watchers": oldMemberIds,
 	}
 
-	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, sprint, user)
+	err = tracker.TrackActivity[dao.Sprint, dao.SprintActivity](s.tracker, activities.EntityUpdatedActivity, reqData, currentInstance, *sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -683,8 +662,14 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/activities/ [get]
 func (s *Services) getSpringActivityList(c echo.Context) error {
-	sprintId := c.(SprintContext).Sprint.Id
-	workspaceId := c.(SprintContext).Workspace.ID
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	sprint := apiContext.GetSprint()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	sprintId := sprint.Id
+	workspaceId := workspace.ID
 
 	offset := -1
 	limit := 100
@@ -695,10 +680,10 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
+	var sprintActivity dao.SprintActivity
+	sprintActivity.UnionCustomFields = "'sprint' AS entity_type"
 
-	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, sprint)
+	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, sprintActivity)
 
 	query := unionTable.
 		Joins("Sprint").
@@ -740,8 +725,12 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/ [post]
 func (s *Services) updateSprintView(c echo.Context) error {
-	user := *c.(SprintContext).User
-	sprint := c.(SprintContext).Sprint
+	apiContext := apicontext.GetContext(c)
+	sprint := apiContext.GetSprint()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var viewProps types.ViewProps
 
@@ -787,7 +776,11 @@ func (s *Services) updateSprintView(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/states/ [get]
 func (s *Services) getSprintStates(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
+	apiContext := apicontext.GetContext(c)
+	sprint := apiContext.GetSprint(apicontext.WithSprintIssues())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	projectMap := make(map[uuid.UUID]struct{})
 
@@ -824,8 +817,12 @@ func (s *Services) getSprintStates(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/ [post]
 func (s *Services) addSprintFolders(c echo.Context) error {
 	var req dto.RequestSprintFolder
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	err := c.Bind(&req)
 	if err != nil {
@@ -845,7 +842,7 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 		CreatedById: user.ID,
 		WorkspaceId: workspace.ID,
 		CreatedBy:   *user,
-		Workspace:   &workspace,
+		Workspace:   workspace,
 		Name:        req.Name,
 	}
 
@@ -875,8 +872,12 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/ [patch]
 func (s *Services) updateSprintFolders(c echo.Context) error {
 	var req dto.RequestSprintFolder
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
 
 	var folder dao.SprintFolder
@@ -925,7 +926,11 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/ [delete]
 func (s *Services) deleteSprintFolders(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 
@@ -963,15 +968,11 @@ func (rs *sprintDto) toDao(ctx echo.Context) (*dao.Sprint, error) {
 	if rs == nil {
 		return nil, fmt.Errorf("empty sprint")
 	}
-	var workspaceMember dao.WorkspaceMember
-	var workspace dao.Workspace
-	switch v := ctx.(type) {
-	case WorkspaceContext:
-		workspaceMember = v.WorkspaceMember
-		workspace = v.Workspace
-	case SprintContext:
-		workspaceMember = v.WorkspaceMember
-		workspace = v.Workspace
+	apiContext := apicontext.GetContext(ctx)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return nil, apiContext.Error()
 	}
 
 	return &dao.Sprint{

@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/gofrs/uuid"
 
@@ -110,16 +111,19 @@ func NewJitsiTokenLogMiddleware(db *gorm.DB) func(echo.HandlerFunc) echo.Handler
 			var workspaceId uuid.NullUUID
 			var room string
 
-			if workspaceCtx, ok := c.(WorkspaceContext); ok {
-				userId = workspaceCtx.User.ID
-				workspaceId = uuid.NullUUID{Valid: true, UUID: workspaceCtx.Workspace.ID}
-				room = workspaceCtx.Workspace.Slug
-			} else if authCtx, ok := c.(AuthContext); ok {
-				userId = authCtx.User.ID
-				room = c.Param("room")
-			} else {
+			authCtx, ok := c.(AuthContext)
+			if !ok {
 				slog.Warn("Jitsi token logger unsupported route", "route", c.Path(), "url", c.Request().URL)
 				return next(c)
+			}
+			userId = authCtx.User.ID
+			room = c.Param("room")
+
+			if apiContext := apicontext.GetContext(c); apiContext != nil {
+				if ws := apiContext.GetWorkspace(); ws != nil {
+					workspaceId = uuid.NullUUID{Valid: true, UUID: ws.ID}
+					room = ws.Slug
+				}
 			}
 
 			logLine := &dao.JitsiTokenLog{

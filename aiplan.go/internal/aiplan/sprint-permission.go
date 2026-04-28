@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
@@ -24,13 +25,16 @@ func (s *Services) SprintPermissionMiddleware(next echo.HandlerFunc) echo.Handle
 }
 
 func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
-	sprintContext, ok := c.(SprintContext)
-	if !ok {
+	apiContext := apicontext.GetContext(c)
+	if apiContext == nil {
 		return false, errors.New("wrong context")
 	}
-	workspaceMember := sprintContext.WorkspaceMember
-	sprint := sprintContext.Sprint
-	user := sprintContext.User
+	workspaceMember := apiContext.GetWorkspaceMember()
+	sprint := apiContext.GetSprint()
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
+	}
+	user := apiContext.GetUser()
 
 	// Allow Author
 	if user.ID == sprint.CreatedById {
@@ -38,11 +42,11 @@ func (s *Services) hasSprintPermissions(c echo.Context) (bool, error) {
 	}
 
 	// Allow Workspace Admin
-	if sprintContext.WorkspaceMember.Role == types.AdminRole {
+	if workspaceMember.Role == types.AdminRole {
 		return true, nil
 	}
 
-	if sprintContext.User.IsSuperuser {
+	if user.IsSuperuser {
 		return true, nil
 	}
 
@@ -77,13 +81,17 @@ func (s *Services) SprintAdminPermissionMiddleware(next echo.HandlerFunc) echo.H
 }
 
 func (s *Services) hasSprintAdminPermissions(c echo.Context) (bool, error) {
-	sprintContext, ok := c.(SprintContext)
-	if !ok {
+	apiContext := apicontext.GetContext(c)
+	if apiContext == nil {
 		return false, errors.New("wrong context")
+	}
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
 	}
 
 	// Allow project admin all
-	if sprintContext.WorkspaceMember.Role == types.AdminRole {
+	if workspaceMember.Role == types.AdminRole {
 		return true, nil
 	}
 

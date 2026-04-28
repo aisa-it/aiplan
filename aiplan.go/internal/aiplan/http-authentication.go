@@ -21,9 +21,11 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
@@ -50,8 +52,8 @@ type Authentication struct {
 type AuthContext struct {
 	echo.Context
 	User         *dao.User
-	AccessToken  *Token
-	RefreshToken *Token
+	AccessToken  *token.Token
+	RefreshToken *token.Token
 	TokenAuth    bool
 }
 
@@ -81,8 +83,8 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			var refreshToken *Token
-			var accessToken *Token
+			var refreshToken *token.Token
+			var accessToken *token.Token
 
 			schema, tokenString, ok := strings.Cut(c.Request().Header.Get("Sec-WebSocket-Protocol"), ",")
 			if !ok {
@@ -91,13 +93,13 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 					// Cookie token
 					schema = "Cookies"
 					if accessCookie, err := c.Cookie("access_token"); err == nil || accessCookie != nil {
-						accessToken = new(Token)
+						accessToken = new(token.Token)
 						accessToken.SignedString = accessCookie.Value
 						accessToken.Type = "access"
 					}
 
 					if refreshCookie, err := c.Cookie("refresh_token"); err == nil || refreshCookie != nil {
-						refreshToken = new(Token)
+						refreshToken = new(token.Token)
 						refreshToken.SignedString = refreshCookie.Value
 						refreshToken.Type = "refresh"
 					}
@@ -110,7 +112,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 			schema = strings.TrimSpace(schema)
 
 			if schema != "Cookies" {
-				accessToken = new(Token)
+				accessToken = new(token.Token)
 				accessToken.SignedString = strings.TrimSpace(tokenString)
 				accessToken.Type = schema
 			}
@@ -130,6 +132,12 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 					EError(c, err)
 				}
 				c.Set("user", &user)
+				apicontext.SetContext(c, config.DB, &apicontext.UserMeta{
+					User:         &user,
+					AccessToken:  accessToken,
+					RefreshToken: nil,
+					TokenAuth:    true,
+				})
 				return next(AuthContext{c, &user, accessToken, nil, true})
 			}
 
@@ -239,6 +247,12 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 			user.Email = strings.ToLower(user.Email)
 
 			c.Set("user", user)
+			apicontext.SetContext(c, config.DB, &apicontext.UserMeta{
+				User:         user,
+				AccessToken:  accessToken,
+				RefreshToken: refreshToken,
+				TokenAuth:    false,
+			})
 
 			return next(AuthContext{c, user, accessToken, refreshToken, false})
 		}
@@ -413,21 +427,21 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	})
 }
 
-func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.User, error) {
-	if token == nil {
+func (a *AuthConfig) tokenProlong(c echo.Context, tkn *token.Token) (*token.Token, *dao.User, error) {
+	if tkn == nil {
 		return nil, nil, EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	}
 
-	if cachedTokens := a.TokensCache.GetTokens(token.SignedString); cachedTokens != nil {
-		accessToken := &Token{SignedString: cachedTokens.AccessToken}
-		refreshToken := &Token{SignedString: cachedTokens.RefreshToken}
+	if cachedTokens := a.TokensCache.GetTokens(tkn.SignedString); cachedTokens != nil {
+		accessToken := &token.Token{SignedString: cachedTokens.AccessToken}
+		refreshToken := &token.Token{SignedString: cachedTokens.RefreshToken}
 		setAuthCookies(c, accessToken, refreshToken)
 		return accessToken, cachedTokens.User, nil
 	}
 
 	// Check if token not blacklisted
 	{
-		blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
+		blacklisted, err := a.MemDB.IsTokenBlacklisted(tkn.JWT.Signature)
 		if err != nil {
 			EError(c, err)
 			return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
@@ -439,12 +453,12 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	}
 
 	// Blacklist old refresh token
-	if err := a.MemDB.BlacklistToken(token.JWT.Signature); err != nil {
+	if err := a.MemDB.BlacklistToken(tkn.JWT.Signature); err != nil {
 		return nil, nil, EError(c, err)
 	}
 
-	claims, ok := token.JWT.Claims.(jwt.MapClaims)
-	if !ok || !token.JWT.Valid {
+	claims, ok := tkn.JWT.Claims.(jwt.MapClaims)
+	if !ok || !tkn.JWT.Valid {
 		return nil, nil, EErrorDefined(c, apierrors.ErrTokenInvalid)
 	}
 
@@ -481,7 +495,7 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 
 	setAuthCookies(c, accessToken, refreshToken)
 
-	a.TokensCache.StoreTokens(token.SignedString, accessToken.SignedString, refreshToken.SignedString, &user)
+	a.TokensCache.StoreTokens(tkn.SignedString, accessToken.SignedString, refreshToken.SignedString, &user)
 
 	return accessToken, &user, nil
 }

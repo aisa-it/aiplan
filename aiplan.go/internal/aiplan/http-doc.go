@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
@@ -30,15 +31,19 @@ import (
 )
 
 type DocContext struct {
-	WorkspaceContext
+	AuthContext
 	Doc dao.Doc
 }
 
 func (s *Services) DocMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		docId := c.Param("docId")
-		workspace := c.(WorkspaceContext).Workspace
-		workspaceMember := c.(WorkspaceContext).WorkspaceMember
+		apiContext := apicontext.GetContext(c)
+		workspace := apiContext.GetWorkspace()
+		workspaceMember := apiContext.GetWorkspaceMember()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
 		var doc dao.Doc
 		if err := s.db.
 			Set("member_id", workspaceMember.MemberId).
@@ -60,7 +65,7 @@ func (s *Services) DocMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 
-		return next(DocContext{c.(WorkspaceContext), doc})
+		return next(DocContext{c.(AuthContext), doc})
 	}
 }
 
@@ -127,8 +132,12 @@ func (s *Services) AddDocServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/ [get]
 func (s *Services) getRootDocList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var docs []dao.Doc
 	if err := s.db.
@@ -191,9 +200,13 @@ func (s *Services) getDoc(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/ [post]
 func (s *Services) createRootDoc(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	if workspaceMember.Role <= types.GuestRole {
 		return EErrorDefined(c, apierrors.ErrDocForbidden)
@@ -265,8 +278,12 @@ func (s *Services) createRootDoc(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/  [post]
 func (s *Services) createDoc(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	parentDoc := c.(DocContext).Doc
-	workspace := c.(DocContext).Workspace
 	user := c.(DocContext).User
 
 	doc, fields, err := BindDoc(c, nil)
@@ -354,10 +371,14 @@ func (s *Services) createDoc(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/  [patch]
 func (s *Services) updateDoc(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	doc := c.(DocContext).Doc
 	user := c.(DocContext).User
-	workspace := c.(DocContext).Workspace
-	workspaceMember := c.(DocContext).WorkspaceMember
 
 	cascadeRoles := false
 
@@ -437,7 +458,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 					WorkspaceId: workspaceUUID,
 					Edit:        false,
 					Watch:       false,
-					Workspace:   &workspace,
+					Workspace:   workspace,
 					Doc:         &doc,
 					Member:      user,
 				}
@@ -778,6 +799,11 @@ type docChanges struct {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/move/  [post]
 func (s *Services) moveDoc(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	doc := c.(DocContext).Doc
 	user := c.(DocContext).User
 
@@ -899,7 +925,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 							errStack.GetError(c, err)
 						}
 					} else {
-						if err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, actField.EntityUpdatedActivity, newDocMap, oldDocMap, c.(DocContext).Workspace, user); err != nil {
+						if err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, actField.EntityUpdatedActivity, newDocMap, oldDocMap, *workspace, user); err != nil {
 							errStack.GetError(c, err)
 						}
 					}
@@ -1031,9 +1057,13 @@ func docInsertAt(docs *[]dao.Doc, index int, doc dao.Doc) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/child/  [get]
 func (s *Services) getChildDocList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	currentDoc := c.(DocContext).Doc
-	workspace := c.(DocContext).Workspace
-	workspaceMember := c.(DocContext).WorkspaceMember
 
 	var docs []dao.Doc
 	if err := s.db.
@@ -1075,8 +1105,12 @@ func (s *Services) getChildDocList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/  [get]
 func (s *Services) getDocCommentList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	currentDoc := c.(DocContext).Doc
-	workspace := c.(DocContext).Workspace
 
 	offset := 0
 	limit := 100
@@ -1138,7 +1172,11 @@ func (s *Services) getDocCommentList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/  [post]
 func (s *Services) createDocComment(c echo.Context) error {
-	workspace := c.(DocContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	user := c.(DocContext).User
 
 	var lastCommentTime time.Time
@@ -1225,7 +1263,11 @@ func (s *Services) createDocComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/ [get]
 func (s *Services) getDocComment(c echo.Context) error {
-	workspace := c.(DocContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	docId := c.(DocContext).Doc.ID
 	commentId := c.Param("commentId")
 
@@ -1275,8 +1317,12 @@ func (s *Services) getDocComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/ [patch]
 func (s *Services) updateDocComment(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	user := *c.(DocContext).User
-	workspace := c.(DocContext).Workspace
 	commentId := c.Param("commentId")
 
 	var commentOld dao.DocComment
@@ -1369,9 +1415,13 @@ func (s *Services) updateDocComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/ [delete]
 func (s *Services) deleteDocComment(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	user := *c.(DocContext).User
-	workspace := c.(DocContext).Workspace
-	workspaceMember := c.(DocContext).WorkspaceMember
 	doc := c.(DocContext).Doc
 	commentId := c.Param("commentId")
 
@@ -1605,7 +1655,11 @@ func (s *Services) removeDocCommentReaction(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/doc-attachments/ [get]
 func (s *Services) getDocAttachmentList(c echo.Context) error {
-	workspace := c.(DocContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	docId := c.(DocContext).Doc.ID
 
 	var attachments []dao.DocAttachment
@@ -1642,9 +1696,13 @@ func (s *Services) getDocAttachmentList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/doc-attachments/ [post]
 func (s *Services) createDocAttachments(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	user := *c.(DocContext).User
 	doc := c.(DocContext).Doc
-	workspace := c.(DocContext).Workspace
 
 	if !limiter.Limiter.CanAddAttachment(workspace.ID) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
@@ -1742,7 +1800,11 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/doc-attachments/{attachmentId} [delete]
 func (s *Services) deleteDocAttachment(c echo.Context) error {
-	workspace := c.(DocContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	docId := c.(DocContext).Doc.ID
 	user := c.(DocContext).User
 	attachmentId := c.Param("attachmentId")
@@ -1796,14 +1858,18 @@ func (s *Services) deleteDocAttachment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/user-favorite-docs/ [post]
 func (s *Services) addDocToFavorites(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var req AddDocToFavoritesRequest
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
-	doc, err := dao.GetDoc(s.db, workspace.ID, req.DocID, workspaceMember)
+	doc, err := dao.GetDoc(s.db, workspace.ID, req.DocID, *workspaceMember)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return EErrorDefined(c, apierrors.ErrDocNotFound)
@@ -1817,7 +1883,7 @@ func (s *Services) addDocToFavorites(c echo.Context) error {
 		DocId:       doc.ID,
 		UserId:      workspaceMember.MemberId,
 		WorkspaceId: workspace.ID,
-		Workspace:   &workspace,
+		Workspace:   workspace,
 		Doc:         &doc,
 	}
 
@@ -1851,9 +1917,13 @@ func (s *Services) addDocToFavorites(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/user-favorite-docs/ [get]
 func (s *Services) getFavoriteDocList(c echo.Context) error {
-	user := *c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var favorites []dao.DocFavorites
 	if err := s.db.
@@ -1892,8 +1962,12 @@ func (s *Services) getFavoriteDocList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/user-favorite-docs/{docId} [delete]
 func (s *Services) removeDocFromFavorites(c echo.Context) error {
-	user := *c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	docId := c.Param("docId")
 
 	if err := s.db.Where("user_id = ?", user.ID).
@@ -1928,8 +2002,13 @@ func (s *Services) removeDocFromFavorites(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/activities/ [get]
 func (s *Services) getDocActivityList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	docId := c.(DocContext).Doc.ID
-	workspaceId := c.(DocContext).Workspace.ID
+	workspaceId := workspace.ID
 
 	offset := 0
 	limit := 100
@@ -2172,15 +2251,12 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 	}
 
 	if doc == nil {
-		var workspace dao.Workspace
-		var user *dao.User
-		if workspaceCtx, ok := c.(WorkspaceContext); ok {
-			workspace = workspaceCtx.Workspace
-			user = workspaceCtx.User
-		} else {
-			workspace = c.(DocContext).Workspace
-			user = c.(DocContext).User
+		apiContext := apicontext.GetContext(c)
+		workspace := apiContext.GetWorkspace()
+		if apiContext.Error() != nil {
+			return nil, nil, apiContext.Error()
 		}
+		user := apiContext.GetUser()
 
 		return &dao.Doc{
 			ID:          dao.GenUUID(),
@@ -2191,7 +2267,7 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 			EditorRole:  req.EditorRole,
 			ReaderRole:  req.ReaderRole,
 			WorkspaceId: workspace.ID,
-			Workspace:   &workspace,
+			Workspace:   workspace,
 			ParentDocID: uuid.NullUUID{},
 			SeqId:       req.SeqId,
 			Draft:       req.Draft,
@@ -2248,12 +2324,17 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 	}
 
 	if comment == nil {
+		apiContext := apicontext.GetContext(c)
+		workspace := apiContext.GetWorkspace()
+		if apiContext.Error() != nil {
+			return nil, nil, apiContext.Error()
+		}
 		userID := uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
 		commentCreate := &dao.DocComment{
 			Id:               dao.GenUUID(),
 			CommentStripped:  "",
 			CreatedById:      userID,
-			WorkspaceId:      c.(DocContext).Workspace.ID,
+			WorkspaceId:      workspace.ID,
 			DocId:            c.(DocContext).Doc.ID,
 			ActorId:          userID,
 			Actor:            c.(DocContext).User,

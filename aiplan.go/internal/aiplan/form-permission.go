@@ -11,6 +11,7 @@ package aiplan
 import (
 	"errors"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/labstack/echo/v4"
@@ -30,11 +31,14 @@ func (s *Services) FormPermissionMiddleware(next echo.HandlerFunc) echo.HandlerF
 }
 
 func (s *Services) hasFormPermissions(c echo.Context) (bool, error) {
-	formContext, ok := c.(FormContext)
-	if !ok {
+	if _, ok := c.(FormContext); !ok {
 		return false, errors.New("wrong context")
 	}
-	workspaceMember := formContext.WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
+	}
 
 	// Allow workspace admin all
 	if workspaceMember.Role == types.AdminRole {

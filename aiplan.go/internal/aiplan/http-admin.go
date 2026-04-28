@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -58,12 +59,6 @@ type UserCreateRequest struct {
 	Password    string `json:"password"`
 	WorkspaceId string `json:"workspace_id"` // optional
 	Role        int    `json:"role"`         // optional
-}
-
-type WorkspaceContext struct {
-	AuthContext
-	Workspace       dao.Workspace
-	WorkspaceMember dao.WorkspaceMember
 }
 
 type ReleaseNoteContext struct {
@@ -650,7 +645,7 @@ func (s *Services) updateUser(c echo.Context) error {
 	if context, ok := c.(AuthContext); ok {
 		admin = context.User
 	} else {
-		admin = c.(WorkspaceContext).User
+		admin = apicontext.GetContext(c).GetUser()
 	}
 
 	var user dao.User

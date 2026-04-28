@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
@@ -45,7 +46,7 @@ import (
 )
 
 type FormContext struct {
-	WorkspaceContext
+	AuthContext
 	Form dao.Form
 }
 
@@ -58,7 +59,11 @@ type AnswerFormContext struct {
 func (s *Services) FormMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		formSlug := c.Param("formSlug")
-		workspace := c.(WorkspaceContext).Workspace
+		apiContext := apicontext.GetContext(c)
+		workspace := apiContext.GetWorkspace()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
 
 		var form dao.Form
 		if err := s.db.
@@ -75,7 +80,7 @@ func (s *Services) FormMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 
-		return next(FormContext{c.(WorkspaceContext), form})
+		return next(FormContext{c.(AuthContext), form})
 	}
 }
 
@@ -180,7 +185,11 @@ func (s *Services) AddFormWithoutAuthServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/ [get]
 func (s *Services) getFormList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var forms []dao.Form
 	query := s.db.Preload("Workspace")
@@ -211,8 +220,12 @@ func (s *Services) getFormList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/ [post]
 func (s *Services) createForm(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var req reqForm
 	if err := c.Bind(&req); err != nil {
@@ -233,7 +246,7 @@ func (s *Services) createForm(c echo.Context) error {
 	}
 
 	form.Author = user
-	form.Workspace = &workspace
+	form.Workspace = workspace
 
 	if err := checkFormFields(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
@@ -269,8 +282,12 @@ func (s *Services) createForm(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/ [patch]
 func (s *Services) updateForm(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	user := c.(FormContext).User
-	workspace := c.(FormContext).Workspace
 	form := c.(FormContext).Form
 	oldForm := StructToJSONMap(form)
 
@@ -317,7 +334,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	}
 
 	newForm.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
-	newForm.Workspace = &workspace
+	newForm.Workspace = workspace
 
 	if err := checkFormFields(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
@@ -424,8 +441,12 @@ func (s *Services) getFormNoAuth(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/answers/ [get]
 func (s *Services) getAnswers(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	form := c.(FormContext).Form
-	workspace := c.(FormContext).Workspace
 
 	offset := 0
 	limit := 100
@@ -481,8 +502,12 @@ func (s *Services) getAnswers(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/answers/{answerSeq}/ [get]
 func (s *Services) getAnswer(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	form := c.(FormContext).Form
-	workspace := c.(FormContext).Workspace
 	rawAnswerSeq := strings.TrimSuffix(c.Param("answerSeq"), "/")
 	answerSeq, err := strconv.ParseInt(rawAnswerSeq, 10, 64)
 	if err != nil {
