@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -40,7 +41,11 @@ func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
 	if !ok {
 		return false, errors.New("wrong context")
 	}
-	workspaceMember := docContext.WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
+	}
 	doc := docContext.Doc
 	user := docContext.User
 

@@ -194,6 +194,22 @@ func (s *Sprint) GetIssuesIDs() []uuid.UUID {
 	return ids
 }
 
+func (s *Sprint) UpdateStats() {
+	s.Stats.AllIssues = len(s.Issues)
+	for _, issue := range s.Issues {
+		switch issue.IssueProgress.Status {
+		case types.InProgress:
+			s.Stats.InProgress++
+		case types.Pending:
+			s.Stats.Pending++
+		case types.Cancelled:
+			s.Stats.Cancelled++
+		case types.Completed:
+			s.Stats.Completed++
+		}
+	}
+}
+
 func (s *Sprint) ToLightDTO() *dto.SprintLight {
 	if s == nil {
 		return nil

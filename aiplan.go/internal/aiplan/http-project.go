@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	statesflow "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/states-flow"
@@ -40,17 +41,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type ProjectContext struct {
-	WorkspaceContext
-	Project       dao.Project
-	ProjectMember dao.ProjectMember
-}
-
 func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		projectId := c.Param("projectId")
-		workspace := c.(WorkspaceContext).Workspace
-		user := c.(WorkspaceContext).User
+
+		apiContext := apicontext.GetContext(c)
+		workspace := apiContext.GetWorkspace()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
+		user := apiContext.GetUser()
 
 		/*
 			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
@@ -71,50 +71,15 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			   		}
 		*/
 
-		// Joins faster than Preload(clause.Associations)
-		var project dao.Project
-		projectQuery := s.db.
-			Joins("ProjectLead").
-			Where("projects.workspace_id = ?", workspace.ID).
-			Preload("DefaultAssigneesDetails", "is_default_assignee = ?", true).
-			Preload("DefaultWatchersDetails", "is_default_watcher = ?", true)
-
-		// Search by id or identifier
-		if id, err := uuid.FromString(projectId); err == nil {
-			projectQuery = projectQuery.Where("projects.id = ?", id)
-		} else {
-			projectQuery = projectQuery.Where("projects.identifier = ?", projectId)
-		}
-
-		if err := projectQuery.First(&project).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrProjectNotFound)
-			}
+		exists, err := dao.IsProjectExists(s.db, user, workspace.ID, projectId)
+		if err != nil {
 			return EError(c, err)
 		}
-
-		var projectMember dao.ProjectMember
-		if err := s.db.Where("project_id = ?", project.ID).Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrProjectNotFound)
-			}
-			return EError(c, err)
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrProjectNotFound)
 		}
 
-		project.Workspace = &workspace
-
-		if err := s.db.Model(&dao.ProjectFavorites{}).
-			Select("EXISTS(?)",
-				s.db.Model(&dao.ProjectFavorites{}).
-					Select("1").
-					Where("user_id = ?", user.ID).
-					Where("project_id = ?", project.ID),
-			).
-			Find(&project.IsFavorite).Error; err != nil {
-			return EError(c, err)
-		}
-
-		return next(ProjectContext{c.(WorkspaceContext), project, projectMember})
+		return next(c.(AuthContext))
 	}
 }
 
@@ -229,9 +194,13 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects [get]
 func (s *Services) getProjectList(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	searchQuery := ""
 	if err := echo.QueryParamsBinder(c).
@@ -292,8 +261,12 @@ var allowedFields []string = []string{"name", "description", "description_text",
 // @Failure 404 {object} apierrors.DefinedError "Администратор проекта не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId} [patch]
 func (s *Services) updateProject(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	// Pre-update activity tracking
 	oldProjectMap := StructToJSONMap(project)
@@ -376,7 +349,7 @@ func (s *Services) updateProject(c echo.Context) error {
 		newProjectMap["project_lead_activity_val"] = newLead.Member.Email
 	}
 
-	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newProjectMap, oldProjectMap, project, user)
+	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newProjectMap, oldProjectMap, *project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -398,7 +371,11 @@ func (s *Services) updateProject(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId} [get]
 func (s *Services) getProject(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	c.Response().Header().Add("ETag", hex.EncodeToString(project.Hash))
 	return c.JSON(http.StatusOK, project.ToDTO())
 }
@@ -418,11 +395,15 @@ func (s *Services) getProject(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId} [delete]
 func (s *Services) deleteProject(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
-	workspaceMember := c.(ProjectContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspaceMember := apiContext.GetWorkspaceMember()
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
-	if err := s.business.DeleteProject(user, &project, &workspaceMember); err != nil {
+	if err := s.business.DeleteProject(user, project, workspaceMember); err != nil {
 		return EError(c, err)
 	}
 
@@ -444,8 +425,12 @@ func (s *Services) deleteProject(c echo.Context) error {
 // @Failure 409 {object} apierrors.DefinedError "Конфликт идентификатора проекта"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects [post]
 func (s *Services) createProject(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	if !limiter.Limiter.CanCreateProject(workspace.ID) {
 		return EErrorDefined(c, apierrors.ErrProjectLimitExceed)
@@ -556,8 +541,14 @@ func (s *Services) createProject(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/activities [get]
 func (s *Services) getProjectActivityList(c echo.Context) error {
-	projectId := c.(ProjectContext).Project.ID
-	workspaceId := c.(ProjectContext).Workspace.ID
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	proj := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	projectId := proj.ID
+	workspaceId := workspace.ID
 
 	offset := -1
 	limit := 100
@@ -621,7 +612,11 @@ func (s *Services) getProjectActivityList(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/project-identifiers [get]
 func (s *Services) checkProjectIdentifierAvailability(c echo.Context) error {
 	name := strings.ToUpper(strings.TrimSpace(c.QueryParam("name")))
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if name == "" {
 		return EErrorDefined(c, apierrors.ErrProjectIdentifierRequired)
@@ -667,10 +662,14 @@ func (s *Services) checkProjectIdentifierAvailability(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members [get]
 func (s *Services) getProjectMemberList(c echo.Context) error {
-	project := c.(ProjectContext).Project
-	projectMember := c.(ProjectContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
-	projectMember.Member = c.(ProjectContext).User
+	projectMember.Member = apiContext.GetUser()
 
 	offset := -1
 	limit := 100
@@ -778,10 +777,14 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/me [get]
 func (s *Services) getProjectCurrentMembership(c echo.Context) error {
-	member := c.(ProjectContext).ProjectMember
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	member := apiContext.GetProjectMember()
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	res := dao.ProjectMemberWithLead{
-		ProjectMember: member,
+		ProjectMember: *member,
 		IsProjectLead: member.MemberId == project.ProjectLeadId,
 	}
 	return c.JSON(http.StatusOK, res.ToDTOWithLead())
@@ -803,7 +806,11 @@ func (s *Services) getProjectCurrentMembership(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/{memberId} [get]
 func (s *Services) getProjectMember(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	memberId := c.Param("memberId")
 
 	var member dao.ProjectMember
@@ -842,11 +849,14 @@ func (s *Services) getProjectMember(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/{memberId} [patch]
 func (s *Services) updateProjectMember(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	memberId := c.Param("memberId")
-
-	projectMember := c.(ProjectContext).ProjectMember
 
 	var requestedProjectMember dao.ProjectMember
 	if err := s.db.Where("project_members.id = ?", memberId).
@@ -936,7 +946,7 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 
 	newMemberMap := StructToJSONMap(requestedProjectMember)
 
-	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMemberMap, oldMemberMap, project, &user)
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMemberMap, oldMemberMap, *project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -959,10 +969,14 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/{memberId} [delete]
 func (s *Services) deleteProjectMember(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
-	projectMember := c.(ProjectContext).ProjectMember
-	workspaceMember := c.(ProjectContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspaceMember := apiContext.GetWorkspaceMember()
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	memberId := c.Param("memberId")
 
 	if projectMember.Member == nil {
@@ -982,7 +996,7 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotUpdateWorkspaceAdmin)
 	}
 
-	if err := s.business.DeleteProjectMember(&projectMember, &requestedMember, user, &project, &workspaceMember); err != nil {
+	if err := s.business.DeleteProjectMember(projectMember, &requestedMember, user, project, workspaceMember); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -1004,9 +1018,13 @@ func (s *Services) deleteProjectMember(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members/add [post]
 func (s *Services) addMemberToProject(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
-	workspace := c.(ProjectContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var projectMember dao.ProjectMember
 	if err := c.Bind(&projectMember); err != nil {
@@ -1065,10 +1083,10 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	if err := s.db.Create(&projectMember).Error; err != nil {
 		return EError(c, err)
 	}
-	projectMember.CreatedBy = &user
-	projectMember.Project = &project
+	projectMember.CreatedBy = user
+	projectMember.Project = project
 	projectMember.Member = &member
-	projectMember.Workspace = &workspace
+	projectMember.Workspace = workspace
 
 	//s.notificationsService.Tg.AddedToProjectNotify(projectMember)
 	go s.emailService.ProjectInvitation(projectMember) // TODO добавить в пул воркеров на отправку
@@ -1079,7 +1097,7 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	newMemberMap["updateScopeId"] = projectMember.MemberId
 	newMemberMap["member_activity_val"] = projectMember.Role
 
-	err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, newMemberMap, nil, projectMember, &user)
+	err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, newMemberMap, nil, projectMember, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1101,7 +1119,11 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/me/notifications/ [post]
 func (s *Services) updateMyNotifications(c echo.Context) error {
-	projectMember := c.(ProjectContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	var req projectNotificationRequest
 	fields, err := BindData(c, "", &req)
 	if err != nil {
@@ -1147,9 +1169,13 @@ func (s *Services) updateMyNotifications(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/join/ [post]
 func (s *Services) joinProjects(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var req JoinProjectsRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
@@ -1219,8 +1245,12 @@ func (s *Services) joinProjects(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/project-views/ [post]
 func (s *Services) updateProjectView(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var viewProps types.ViewProps
 
@@ -1257,7 +1287,11 @@ func (s *Services) updateProjectView(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/project-members/me [get]
 func (s *Services) getProjectMemberMe(c echo.Context) error {
-	projectMember := c.(ProjectContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, projectMember.ToDTO())
 }
 
@@ -1274,8 +1308,12 @@ func (s *Services) getProjectMemberMe(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/user-favorite-projects/ [get]
 func (s *Services) getFavoriteProjects(c echo.Context) error {
-	user := *c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var favorites []dao.ProjectFavorites
 	if err := s.db.Where("user_id = ?", user.ID).
@@ -1311,8 +1349,12 @@ func (s *Services) getFavoriteProjects(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/user-favorite-projects/ [post]
 func (s *Services) addProjectToFavorites(c echo.Context) error {
-	user := *c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var req AddProjectToFavoritesRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
@@ -1359,8 +1401,12 @@ func (s *Services) addProjectToFavorites(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/user-favorite-projects/{projectId} [delete]
 func (s *Services) removeProjectFromFavorites(c echo.Context) error {
-	user := *c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	projectId := c.Param("projectId")
 
 	userId := user.ID
@@ -1395,7 +1441,11 @@ func (s *Services) getProjectEstimatePointsList(c echo.Context) error {
 	// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 	// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 	// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/project-estimates [get]
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	estimatePoints := make([]dao.EstimatePoint, 0)
 	if project.EstimateId != nil {
@@ -1427,7 +1477,11 @@ func (s *Services) getProjectEstimatesList(c echo.Context) error {
 	// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 	// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 	// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/estimates [get]
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var estimates []dao.Estimate
 	if err := s.db.
@@ -1461,8 +1515,12 @@ func (s *Services) createProjectEstimate(c echo.Context) error {
 	// @Failure 400 {object} apierrors.DefinedError "Неверные данные или недостаточно точек оценки"
 	// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 	// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/estimates [post]
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var data EstimatePayload
 	if err := c.Bind(&data); err != nil {
@@ -1523,7 +1581,11 @@ func (s *Services) getProjectEstimate(c echo.Context) error {
 	// @Failure 404 {object} apierrors.DefinedError "Оценка не найдена"
 	// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 	// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/estimates/{estimateId} [get]
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	estimateId := c.Param("estimateId")
 
 	var estimate dao.Estimate
@@ -1558,7 +1620,11 @@ func (s *Services) updateProjectEstimate(c echo.Context) error {
 	// @Failure 404 {object} apierrors.DefinedError "Оценка не найдена"
 	// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 	// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/estimates/{estimateId} [patch]
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	estimateId := c.Param("estimateId")
 
 	var estimate dao.Estimate
@@ -1612,7 +1678,11 @@ func (s *Services) deleteProjectEstimate(c echo.Context) error {
 	// @Failure 404 {object} apierrors.DefinedError "Оценка не найдена"
 	// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 	// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/estimates/{estimateId} [delete]
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	estimateId := c.Param("estimateId")
 
 	if err := s.db.
@@ -1655,10 +1725,14 @@ type IssueCreateRequest struct {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/ [post]
 func (s *Services) createIssue(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	workspace := c.(ProjectContext).Workspace
-	project := c.(ProjectContext).Project
-	projectMember := c.(ProjectContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var issue IssueCreateRequest
 	form, _ := c.MultipartForm()
@@ -1886,8 +1960,8 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	issueNew.Project = &project
-	err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issueNew, &user)
+	issueNew.Project = project
+	err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issueNew, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1899,7 +1973,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		oldData["parent"] = uuid.NullUUID{}
 		data["parent"] = issueNew.ParentId.UUID
 
-		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityUpdatedActivity, data, oldData, issueNew, &user)
+		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityUpdatedActivity, data, oldData, issueNew, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -1924,7 +1998,11 @@ func (s *Services) createIssue(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issue-labels [get]
 func (s *Services) getIssueLabelList(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	searchQuery := ""
 
@@ -1971,8 +2049,12 @@ func (s *Services) getIssueLabelList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issue-labels [post]
 func (s *Services) createIssueLabel(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var label dao.Label
 	if err := json.NewDecoder(c.Request().Body).Decode(&label); err != nil {
@@ -1995,7 +2077,7 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, label, &user)
+	err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, label, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2017,7 +2099,11 @@ func (s *Services) createIssueLabel(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issue-labels/{labelId} [get]
 func (s *Services) getIssueLabel(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	labelId := c.Param("labelId")
 
 	var label dao.Label
@@ -2050,8 +2136,12 @@ func (s *Services) getIssueLabel(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issue-labels/{labelId} [patch]
 func (s *Services) updateIssueLabel(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	labelId := c.Param("labelId")
 
 	var label dao.Label
@@ -2090,7 +2180,7 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 	newLabelMap["updateScope"] = "label"
 	newLabelMap["updateScopeId"] = label.ID
 
-	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, project, &user)
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newLabelMap, oldLabelMap, *project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2112,8 +2202,12 @@ func (s *Services) updateIssueLabel(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issue-labels/{labelId} [delete]
 func (s *Services) deleteIssueLabel(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	labelId := c.Param("labelId")
 
 	var label dao.Label
@@ -2138,7 +2232,7 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, label, &user)
+		err := tracker.TrackActivity[dao.Label, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, label, user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
@@ -2170,7 +2264,11 @@ func (s *Services) deleteIssueLabel(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/bulk-delete-issues [delete]
 func (s *Services) deleteIssuesBulk(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var issuesIds []string
 	if err := json.NewDecoder(c.Request().Body).Decode(&issuesIds); err != nil {
@@ -2216,7 +2314,11 @@ func (s *Services) deleteIssuesBulk(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states [get]
 func (s *Services) getStateList(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
 		etagHash, err := hex.DecodeString(etag)
@@ -2288,8 +2390,12 @@ func (s *Services) getStateList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states [post]
 func (s *Services) createState(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var state dao.State
 	if err := json.NewDecoder(c.Request().Body).Decode(&state); err != nil {
@@ -2308,7 +2414,7 @@ func (s *Services) createState(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, state, &user)
+	err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, state, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2330,7 +2436,11 @@ func (s *Services) createState(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/{stateId} [get]
 func (s *Services) getState(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	stateId, err := uuid.FromString(c.Param("stateId"))
 	if err != nil {
 		return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
@@ -2402,8 +2512,12 @@ func (s *UpdateStateRequest) Update(fields []string, state *dao.State) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/{stateId} [patch]
 func (s *Services) updateState(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	stateId, err := uuid.FromString(c.Param("stateId"))
 	if err != nil {
 		return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
@@ -2493,7 +2607,7 @@ func (s *Services) updateState(c echo.Context) error {
 		newStateMap["default_activity_val"] = state.Name
 	}
 
-	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newStateMap, oldStateMap, project, &user)
+	err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newStateMap, oldStateMap, *project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2516,8 +2630,12 @@ func (s *Services) updateState(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/states/{stateId} [delete]
 func (s *Services) deleteState(c echo.Context) error {
-	user := *c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	stateId, err := uuid.FromString(c.Param("stateId"))
 	if err != nil {
 		return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
@@ -2555,7 +2673,7 @@ func (s *Services) deleteState(c echo.Context) error {
 			return err
 		}
 
-		err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, state, &user)
+		err := tracker.TrackActivity[dao.State, dao.ProjectActivity](s.tracker, activities.EntityDeleteActivity, nil, nil, state, user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
@@ -2586,7 +2704,11 @@ func (s *Services) deleteState(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/start-states [get]
 func (s *Services) getProjectStartStates(c echo.Context) error {
-	projectMember := c.(ProjectContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	query := s.db.Where("project_id = ?", projectMember.ProjectId).Order("sequence")
 
@@ -2719,8 +2841,12 @@ func getDefaultStateSeq(group string) uint64 {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-log [post]
 func (s *Services) getRulesLog(c echo.Context) error {
-	project := c.(ProjectContext).Project
-	projectMember := c.(ProjectContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var param GetRulesLogfilterRequest
 	offset := -1
@@ -2822,7 +2948,11 @@ type projectNotificationRequest struct {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/templates [get]
 func (s *Services) getProjectIssueTemplates(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	offset := 0
 	limit := 100
@@ -2865,8 +2995,12 @@ func (s *Services) getProjectIssueTemplates(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/templates [post]
 func (s *Services) createIssueTemplate(c echo.Context) error {
-	project := c.(ProjectContext).Project
-	user := c.(ProjectContext).User
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
@@ -2914,7 +3048,11 @@ func (s *Services) createIssueTemplate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/templates/{templateId} [get]
 func (s *Services) getIssueTemplate(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	templateId := c.Param("templateId")
 
 	var issueTemplate dto.IssueTemplate
@@ -2947,8 +3085,12 @@ func (s *Services) getIssueTemplate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/templates/{templateId} [patch]
 func (s *Services) updateIssueTemplate(c echo.Context) error {
-	project := c.(ProjectContext).Project
-	user := c.(ProjectContext).User
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	templateId := c.Param("templateId")
 
 	var template dao.IssueTemplate
@@ -2995,7 +3137,7 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 		newTemplateMap["updateScope"] = "template"
 		newTemplateMap["updateScopeId"] = template.Id
 
-		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newTemplateMap, oldTemplateMap, project, user)
+		err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newTemplateMap, oldTemplateMap, *project, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -3020,8 +3162,12 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/templates/{templateId} [delete]
 func (s *Services) deleteIssueTemplate(c echo.Context) error {
-	project := c.(ProjectContext).Project
-	user := c.(ProjectContext).User
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	templateId := c.Param("templateId")
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -3075,8 +3221,12 @@ func (s *Services) deleteIssueTemplate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/logo/ [post]
 func (s *Services) updateProjectLogo(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	if !limiter.Limiter.CanAddAttachment(project.WorkspaceId) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
@@ -3132,7 +3282,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 			"logo": fileAsset.Id.String(),
 		}
 
-		err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+		err = tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, *project, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -3161,8 +3311,12 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/logo/ [delete]
 func (s *Services) deleteProjectLogo(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	oldLogoId := project.LogoId.UUID
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -3190,7 +3344,7 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 		"logo": uuid.Nil.String(),
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, *project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -3219,7 +3373,11 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Нет доступа к проекту"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/stats/ [get]
 func (s *Services) getProjectStats(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	opts := dto.ProjectStatsRequest{}
 	if err := opts.FromHTTPQuery(c); err != nil {
@@ -3247,7 +3405,11 @@ func (s *Services) getProjectStats(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [get]
 func (s *Services) getProjectRulesScript(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	response := dto.RulesScriptResponse{
 		RulesScript: project.RulesScript,
@@ -3273,8 +3435,12 @@ func (s *Services) getProjectRulesScript(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [put]
 func (s *Services) updateProjectRulesScript(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var request dto.UpdateRulesScriptRequest
 	if err := c.Bind(&request); err != nil {
@@ -3316,7 +3482,7 @@ func (s *Services) updateProjectRulesScript(c echo.Context) error {
 		"rules_script": project.RulesScript,
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, *project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -3343,8 +3509,12 @@ func (s *Services) updateProjectRulesScript(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [delete]
 func (s *Services) deleteProjectRulesScript(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	// Сохраняем старый скрипт для отслеживания активности
 	oldRulesScript := project.RulesScript
@@ -3372,7 +3542,7 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 		"rules_script": nil,
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, project, user)
+	err := tracker.TrackActivity[dao.Project, dao.ProjectActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, *project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -3400,7 +3570,11 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Нет доступа к проекту"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/ [get]
 func (s *Services) getPropertyTemplateList(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var templates []dao.ProjectPropertyTemplate
 	if err := s.db.Where("project_id = ?", project.ID).
@@ -3436,8 +3610,12 @@ func (s *Services) getPropertyTemplateList(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Нет прав на создание"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/ [post]
 func (s *Services) createPropertyTemplate(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var request dto.CreatePropertyTemplateRequest
 	if err := c.Bind(&request); err != nil {
@@ -3502,8 +3680,12 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Шаблон не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/{templateId}/ [patch]
 func (s *Services) updatePropertyTemplate(c echo.Context) error {
-	user := c.(ProjectContext).User
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	templateId := c.Param("templateId")
 
 	templateUUID, err := uuid.FromString(templateId)
@@ -3601,7 +3783,11 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Шаблон не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/property-templates/{templateId}/ [delete]
 func (s *Services) deletePropertyTemplate(c echo.Context) error {
-	project := c.(ProjectContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	templateId := c.Param("templateId")
 
 	templateUUID, err := uuid.FromString(templateId)

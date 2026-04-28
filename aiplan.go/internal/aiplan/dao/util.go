@@ -926,3 +926,83 @@ func VacuumFull(db *gorm.DB) error {
 	slog.Info("VACUUM FULL completed successfully")
 	return nil
 }
+
+func Exists(db *gorm.DB, query *gorm.DB) (bool, error) {
+	var exists bool
+	if err := db.
+		Raw("SELECT EXISTS(?)", query).
+		Find(&exists).Error; err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func IsWorkspaceExists(db *gorm.DB, user *User, slugOrId string) (bool, error) {
+	id := uuid.FromStringOrNil(slugOrId)
+	workspaceQuery := db.Session(&gorm.Session{}).Model(&Workspace{})
+
+	if !id.IsNil() {
+		workspaceQuery = workspaceQuery.Where("id = ?", id)
+	} else {
+		workspaceQuery = workspaceQuery.Where("slug = ?", slugOrId)
+	}
+
+	if user == nil {
+		return Exists(db, workspaceQuery.Select("1"))
+	}
+
+	return Exists(db, db.Select("1").
+		Where("member_id = ?", user.ID).
+		Where("workspace_id in (?)", workspaceQuery.Select("id")).
+		Model(&WorkspaceMember{}))
+}
+
+func IsProjectExists(db *gorm.DB, user *User, workspaceId uuid.UUID, idOrIdent string) (bool, error) {
+	id := uuid.FromStringOrNil(idOrIdent)
+	projectQuery := db.Session(&gorm.Session{}).Model(&Project{}).
+		Where("workspace_id = ?", workspaceId)
+
+	// Search by id or identifier
+	if !id.IsNil() {
+		projectQuery = projectQuery.Where("projects.id = ?", id)
+	} else {
+		projectQuery = projectQuery.Where("projects.identifier = ?", idOrIdent)
+	}
+
+	if user == nil {
+		return Exists(db, projectQuery.Select("1"))
+	}
+
+	return Exists(db, db.Select("1").
+		Where("member_id = ?", user.ID).
+		Where("project_id in (?)", projectQuery.Select("id")).
+		Model(&ProjectMember{}))
+}
+
+func IsIssueExists(db *gorm.DB, projectId uuid.UUID, idOrSeq string) (bool, error) {
+	id := uuid.FromStringOrNil(idOrSeq)
+	issueQuery := db.Session(&gorm.Session{}).Model(&Issue{}).
+		Where("project_id = ?", projectId)
+
+	// Search by id or identifier
+	if !id.IsNil() {
+		issueQuery = issueQuery.Where("issues.id = ?", id)
+	} else {
+		issueQuery = issueQuery.Where("issues.sequence_id = ?", idOrSeq)
+	}
+
+	return Exists(db, issueQuery.Select("1"))
+}
+
+func IsSprintExists(db *gorm.DB, workspaceId uuid.UUID, idOrSeq string) (bool, error) {
+	id := uuid.FromStringOrNil(idOrSeq)
+	sprintQuery := db.Session(&gorm.Session{}).Model(&Sprint{}).
+		Where("workspace_id = ?", workspaceId)
+	if !id.IsNil() {
+		sprintQuery = sprintQuery.Where("sprints.id = ?", id)
+	} else {
+		sprintQuery = sprintQuery.Where("sprints.sequence_id = ?", idOrSeq)
+	}
+	return Exists(db, sprintQuery.Select("1"))
+}

@@ -7,8 +7,10 @@
 package aiplan
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
@@ -90,7 +92,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	stats, err := s.storage.GetFileInfo(asset.Id)
 	if err != nil {
 		errResponse := minio.ToErrorResponse(err)
-		if errResponse.Code == "NoSuchKey" {
+		if errResponse.Code == "NoSuchKey" || errors.Is(err, os.ErrNotExist) {
 			return c.NoContent(http.StatusNotFound)
 		}
 		return EError(c, err)
