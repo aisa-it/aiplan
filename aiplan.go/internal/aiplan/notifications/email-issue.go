@@ -150,7 +150,7 @@ type issueActivity struct {
 
 func (ia *issueActivity) getMails(tx *gorm.DB) []mail {
 	mails := make([]mail, 0)
-	subj := fmt.Sprintf("Обновления для %s-%d", ia.issue.Project.Identifier, ia.issue.SequenceId)
+	subj := fmt.Sprintf("Обновления для %s-%d: \"%s\"", ia.issue.Project.Identifier, ia.issue.SequenceId, ia.issue.Name)
 	for _, member := range ia.users {
 		if !member.User.CanReceiveNotifications() {
 			continue
