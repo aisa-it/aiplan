@@ -92,7 +92,7 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
 
-		return next(c.(AuthContext))
+		return next(c)
 	}
 }
 

@@ -46,12 +46,12 @@ import (
 )
 
 type FormContext struct {
-	AuthContext
+	echo.Context
 	Form dao.Form
 }
 
 type AnswerFormContext struct {
-	AuthContext
+	echo.Context
 	Form             dao.Form
 	IsAdminWorkspace bool
 }
@@ -80,14 +80,14 @@ func (s *Services) FormMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 
-		return next(FormContext{c.(AuthContext), form})
+		return next(FormContext{c, form})
 	}
 }
 
 func (s *Services) AnswerFormAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		formSlug := c.Param("formSlug")
-		userId := c.(AuthContext).User.ID
+		userId := apicontext.GetContext(c).GetUser().ID
 		var form dao.Form
 		if err := s.db.
 			Set("userId", userId).
@@ -104,7 +104,7 @@ func (s *Services) AnswerFormAuthMiddleware(next echo.HandlerFunc) echo.HandlerF
 
 		isAdmin := form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types2.AdminRole
 
-		return next(AnswerFormContext{c.(AuthContext), form, isAdmin})
+		return next(AnswerFormContext{c, form, isAdmin})
 	}
 }
 
@@ -129,14 +129,11 @@ func (s *Services) AnswerFormNoAuthMiddleware(next echo.HandlerFunc) echo.Handle
 			return EErrorDefined(c, apierrors.ErrFormAnswerForbidden)
 		}
 
-		return next(AnswerFormContext{AuthContext{
-			Context:      c,
-			User:         nil,
-			AccessToken:  nil,
-			RefreshToken: nil,
-			TokenAuth:    false,
-		}, form,
-			false})
+		if apicontext.GetContext(c) == nil {
+			apicontext.SetContext(c, s.db, &apicontext.UserMeta{})
+		}
+
+		return next(AnswerFormContext{c, form, false})
 	}
 }
 
@@ -287,7 +284,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := c.(FormContext).User
+	user := apicontext.GetContext(c).GetUser()
 	form := c.(FormContext).Form
 	oldForm := StructToJSONMap(form)
 
@@ -376,7 +373,7 @@ func (s *Services) updateForm(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/ [delete]
 func (s *Services) deleteForm(c echo.Context) error {
 	form := c.(FormContext).Form
-	user := c.(FormContext).User
+	user := apicontext.GetContext(c).GetUser()
 	data := map[string]interface{}{"old_title": form.Title}
 	err := tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, data, nil, form, user)
 	if err != nil {
@@ -551,7 +548,7 @@ func (s *Services) getAnswer(c echo.Context) error {
 // @Router /api/auth/forms/{formSlug}/answer/ [post]
 func (s *Services) createAnswerAuth(c echo.Context) error {
 	form := c.(AnswerFormContext).Form
-	user := c.(AnswerFormContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var userAnswer types2.FormFieldsSlice
 
@@ -815,7 +812,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/form-attachments/ [post]
 func (s *Services) createFormAttachments(c echo.Context) error {
-	user := *c.(AnswerFormContext).User
+	user := apicontext.GetContext(c).GetUser()
 	form := c.(AnswerFormContext).Form
 
 	if !limiter.Limiter.CanAddAttachment(form.WorkspaceId) {
@@ -917,7 +914,7 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 	workspaceId := c.(AnswerFormContext).Form.WorkspaceId
 	formId := c.(AnswerFormContext).Form.ID
 	isAdmin := c.(AnswerFormContext).IsAdminWorkspace
-	userId := c.(AnswerFormContext).User.ID
+	userId := apicontext.GetContext(c).GetUser().ID
 
 	attachmentId := c.Param("attachmentId")
 

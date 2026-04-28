@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -67,7 +68,7 @@ LEFT JOIN doc_access_rules dar
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/file/{fileName} [get]
 func (s *Services) assetsHandler(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	name := c.Param("fileName")
 
 	query := selectFileWithPermissionCheck

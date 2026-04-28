@@ -10,6 +10,7 @@ package aiplan
 import (
 	"net/http"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -88,7 +89,7 @@ func (s *Services) getJiraInfo(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/import/jira/start/{projectKey} [post]
 func (s *Services) startJiraImport(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	projectKey := c.Param("projectKey")
 
 	if !s.importService.CanStartImport(user.ID) {
@@ -167,7 +168,7 @@ func (s *Services) startJiraImport(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/import/jira/status [get]
 func (s *Services) getMyImportList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	statuses, err := s.importService.GetUserImports(user.ID)
 	if err != nil {
@@ -194,7 +195,7 @@ func (s *Services) getMyImportList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/import/jira/status/{importId} [get]
 func (s *Services) getJiraImportStatus(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	importId := c.Param("importId")
 
 	if importId == "" {
@@ -228,7 +229,7 @@ func (s *Services) getJiraImportStatus(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/import/jira/cancel/{importId} [post]
 func (s *Services) cancelJiraImport(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	importId := c.Param("importId")
 
 	if importId == "" {

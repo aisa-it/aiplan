@@ -41,6 +41,7 @@ import (
 	"syscall"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
@@ -499,7 +500,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// Websocket notifications endpoint
 	authGroup.GET("ws/notifications/", func(c echo.Context) error {
-		s.notificationsService.Ws.Handle(c.(AuthContext).User.ID, c.Response(), c.Request())
+		s.notificationsService.Ws.Handle(apicontext.GetContext(c).GetUser().ID, c.Response(), c.Request())
 		return nil
 	})
 

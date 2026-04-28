@@ -79,7 +79,7 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EErrorDefined(c, apierrors.ErrProjectNotFound)
 		}
 
-		return next(c.(AuthContext))
+		return next(c)
 	}
 }
 

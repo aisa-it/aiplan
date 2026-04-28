@@ -75,9 +75,36 @@ func (a *APIContext) Error() error {
 	return a.error
 }
 
-// todo
 func (a *APIContext) GetUser() *dao.User {
+	if a.userMeta == nil {
+		return nil
+	}
 	return a.userMeta.User
+}
+
+func (a *APIContext) GetAuthInfo() *UserMeta {
+	return a.userMeta
+}
+
+func (a *APIContext) GetAccessToken() *token.Token {
+	if a.userMeta == nil {
+		return nil
+	}
+	return a.userMeta.AccessToken
+}
+
+func (a *APIContext) GetRefreshToken() *token.Token {
+	if a.userMeta == nil {
+		return nil
+	}
+	return a.userMeta.RefreshToken
+}
+
+func (a *APIContext) IsTokenAuth() bool {
+	if a.userMeta == nil {
+		return false
+	}
+	return a.userMeta.TokenAuth
 }
 
 func (a *APIContext) GetWorkspace() *dao.Workspace {

@@ -38,7 +38,7 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EErrorDefined(c, apierrors.ErrSprintNotFound)
 		}
 
-		return next(c.(AuthContext))
+		return next(c)
 	}
 }
 

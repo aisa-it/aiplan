@@ -38,7 +38,7 @@ func DemoMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 type SearchFilterContext struct {
-	AuthContext
+	echo.Context
 	Filter dao.SearchFilter
 }
 
@@ -54,7 +54,7 @@ func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFu
 			return EError(c, err)
 		}
 
-		return next(SearchFilterContext{c.(AuthContext), filter})
+		return next(SearchFilterContext{c, filter})
 	}
 }
 
@@ -111,19 +111,17 @@ func NewJitsiTokenLogMiddleware(db *gorm.DB) func(echo.HandlerFunc) echo.Handler
 			var workspaceId uuid.NullUUID
 			var room string
 
-			authCtx, ok := c.(AuthContext)
-			if !ok {
+			apiContext := apicontext.GetContext(c)
+			if apiContext == nil || apiContext.GetUser() == nil {
 				slog.Warn("Jitsi token logger unsupported route", "route", c.Path(), "url", c.Request().URL)
 				return next(c)
 			}
-			userId = authCtx.User.ID
+			userId = apiContext.GetUser().ID
 			room = c.Param("room")
 
-			if apiContext := apicontext.GetContext(c); apiContext != nil {
-				if ws := apiContext.GetWorkspace(); ws != nil {
-					workspaceId = uuid.NullUUID{Valid: true, UUID: ws.ID}
-					room = ws.Slug
-				}
+			if ws := apiContext.GetWorkspace(); ws != nil {
+				workspaceId = uuid.NullUUID{Valid: true, UUID: ws.ID}
+				room = ws.Slug
 			}
 
 			logLine := &dao.JitsiTokenLog{

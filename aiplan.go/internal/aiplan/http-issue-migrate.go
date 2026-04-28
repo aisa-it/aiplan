@@ -18,6 +18,7 @@ import (
 	"time"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -85,7 +86,7 @@ func (s *Services) AddIssueMigrationServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/issues/migrate [post]
 func (s *Services) migrateIssues(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	targetProjectId := ""
 	srcIssueId := ""
@@ -401,11 +402,11 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 		for _, issue := range preparedIssues {
 			if deleteSrc {
-				if err := migrateIssueMove(issue, user, tx, idsMap, !linkedIssues); err != nil {
+				if err := migrateIssueMove(issue, *user, tx, idsMap, !linkedIssues); err != nil {
 					return err
 				}
 			} else {
-				if err := migrateIssueCopy(issue, user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
+				if err := migrateIssueCopy(issue, *user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
 					return err
 				}
 			}
@@ -532,12 +533,12 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			requestMap["parent_title"] = targetProject.Identifier
 			currentMap["parent_title"] = srcProject.Identifier
 
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
+			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -546,7 +547,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			delIssue.Project = &srcProject
 			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -557,7 +558,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 		for _, issue := range newIssues {
 			data := map[string]interface{}{"custom_verb": "copied"}
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, data, nil, issue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, data, nil, issue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -588,7 +589,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/issues/migrate/byLabel [post]
 func (s *Services) migrateIssuesByLabel(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	targetProjectId := ""
 	srcLabelId := ""
@@ -835,11 +836,11 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 
 		for _, issue := range preparedIssues {
 			if deleteSrc {
-				if err := migrateIssueMove(issue, user, tx, idsMap, !linkedIssues); err != nil {
+				if err := migrateIssueMove(issue, *user, tx, idsMap, !linkedIssues); err != nil {
 					return err
 				}
 			} else {
-				if err := migrateIssueCopy(issue, user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
+				if err := migrateIssueCopy(issue, *user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
 					return err
 				}
 			}
@@ -966,12 +967,12 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			requestMap["parent_title"] = targetProject.Identifier
 			currentMap["parent_title"] = srcProject.Identifier
 
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
+			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -980,7 +981,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			delIssue.Project = &srcProject
 			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
+			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -990,7 +991,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		s.db.Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issue, &user)
+			err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issue, user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}

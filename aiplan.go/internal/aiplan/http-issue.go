@@ -348,7 +348,7 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 			return EErrorDefined(c, apierrors.ErrIssueNotFound)
 		}
 
-		return next(c.(AuthContext))
+		return next(c)
 	}
 }
 
@@ -468,7 +468,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/issues/search/export/ [post]
 func (s *Services) exportIssueList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	searchParams, err := types.ParseSearchParams(c)
 	if err != nil {

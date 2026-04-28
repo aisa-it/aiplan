@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -115,7 +116,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 	// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 	// @Router /api/workspaces/{workspaceSlug}/export [post]
 	slug := c.Param("workspaceSlug")
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspace dao.Workspace
 	if err := s.db.Preload("Owner").
@@ -125,7 +126,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 	}
 
 	backup := WorkspaceBackup{
-		CreatedBy: user,
+		CreatedBy: *user,
 		CreatedAt: time.Now(),
 		Workspace: workspace,
 	}

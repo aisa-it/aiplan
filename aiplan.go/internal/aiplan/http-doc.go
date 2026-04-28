@@ -31,7 +31,7 @@ import (
 )
 
 type DocContext struct {
-	AuthContext
+	echo.Context
 	Doc dao.Doc
 }
 
@@ -65,7 +65,7 @@ func (s *Services) DocMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 
-		return next(DocContext{c.(AuthContext), doc})
+		return next(DocContext{c, doc})
 	}
 }
 
@@ -284,7 +284,7 @@ func (s *Services) createDoc(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 	parentDoc := c.(DocContext).Doc
-	user := c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	doc, fields, err := BindDoc(c, nil)
 	if err != nil {
@@ -378,7 +378,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 	doc := c.(DocContext).Doc
-	user := c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	cascadeRoles := false
 
@@ -738,7 +738,7 @@ func CascadeUpdateChildDocsRole(tx *gorm.DB, parentID uuid.UUID, roleField strin
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/  [delete]
 func (s *Services) deleteDoc(c echo.Context) error {
 	doc := c.(DocContext).Doc
-	user := c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if len(doc.ChildDocs) > 0 {
@@ -805,7 +805,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 	doc := c.(DocContext).Doc
-	user := c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var groupChanges docChanges
 	changes := make(map[uuid.UUID]docMove)
@@ -1177,7 +1177,7 @@ func (s *Services) createDocComment(c echo.Context) error {
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var lastCommentTime time.Time
 	if err := s.db.Select("created_at").
@@ -1322,7 +1322,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := *c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 	commentId := c.Param("commentId")
 
 	var commentOld dao.DocComment
@@ -1388,7 +1388,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 
 	oldMap["updateScope"] = "comment"
 	oldMap["updateScopeId"] = comment.Id
-	err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, *comment, &user)
+	err = tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, *comment, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1421,7 +1421,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := *c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 	doc := c.(DocContext).Doc
 	commentId := c.Param("commentId")
 
@@ -1439,7 +1439,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, comment, &user)
+		err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, comment, user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
@@ -1557,7 +1557,7 @@ func (s *Services) getDocCommentUpdateList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/reactions/ [post]
 func (s *Services) addDocCommentReaction(c echo.Context) error {
-	user := *c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 	doc := c.(DocContext).Doc
 	commentId := c.Param("commentId")
 
@@ -1624,7 +1624,7 @@ func (s *Services) addDocCommentReaction(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/reactions/{reaction}/ [delete]
 func (s *Services) removeDocCommentReaction(c echo.Context) error {
-	user := *c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 	commentId := c.Param("commentId")
 	reactionStr := c.Param("reaction")
 
@@ -1701,7 +1701,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := *c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 	doc := c.(DocContext).Doc
 
 	if !limiter.Limiter.CanAddAttachment(workspace.ID) {
@@ -1774,7 +1774,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, actField.EntityCreateActivity, nil, nil, docAttachment, &user)
+	err = tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, actField.EntityCreateActivity, nil, nil, docAttachment, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1806,7 +1806,7 @@ func (s *Services) deleteDocAttachment(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 	docId := c.(DocContext).Doc.ID
-	user := c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.DocAttachment
@@ -2173,7 +2173,7 @@ func (s *Services) getDocHistory(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/history/{versionId} [patch]
 func (s *Services) updateDocFromHistory(c echo.Context) error {
 	doc := c.(DocContext).Doc
-	user := c.(DocContext).User
+	user := apicontext.GetContext(c).GetUser()
 	versionId := c.Param("versionId")
 
 	oldDocMap := StructToJSONMap(doc)
@@ -2305,7 +2305,7 @@ func BindDoc(c echo.Context, doc *dao.Doc) (*dao.Doc, []string, error) {
 			}
 		}
 		if len(resFields) > 0 {
-			docCopy.UpdatedById = uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
+			docCopy.UpdatedById = uuid.NullUUID{UUID: apicontext.GetContext(c).GetUser().ID, Valid: true}
 			resFields = append(resFields, "updated_by_id")
 		}
 
@@ -2329,7 +2329,7 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 		if apiContext.Error() != nil {
 			return nil, nil, apiContext.Error()
 		}
-		userID := uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
+		userID := uuid.NullUUID{UUID: apicontext.GetContext(c).GetUser().ID, Valid: true}
 		commentCreate := &dao.DocComment{
 			Id:               dao.GenUUID(),
 			CommentStripped:  "",
@@ -2337,7 +2337,7 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 			WorkspaceId:      workspace.ID,
 			DocId:            c.(DocContext).Doc.ID,
 			ActorId:          userID,
-			Actor:            c.(DocContext).User,
+			Actor:            apicontext.GetContext(c).GetUser(),
 			CommentHtml:      req.CommentHtml,
 			ReplyToCommentId: req.ReplyToComment,
 			CommentType:      1,
@@ -2355,7 +2355,7 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 					comment.CommentHtml = req.CommentHtml
 					comment.CommentStripped = comment.CommentHtml.StripTags()
 					resFields = append(resFields, "comment_html", "comment_stripped", "updated_by_id")
-					comment.UpdatedById = uuid.NullUUID{UUID: c.(DocContext).User.ID, Valid: true}
+					comment.UpdatedById = uuid.NullUUID{UUID: apicontext.GetContext(c).GetUser().ID, Valid: true}
 				}
 			}
 		}
