@@ -44,7 +44,7 @@ func (s *Services) LastVisitedWorkspaceMiddleware(next echo.HandlerFunc) echo.Ha
 
 		if !user.LastWorkspaceId.Valid || user.LastWorkspaceId.UUID != workspace.ID {
 			user.LastWorkspace = &workspace
-			if err := s.db.Model(&user).Update("last_workspace_id", workspace.ID).Error; err != nil {
+			if err := s.DB(c).Model(&user).Update("last_workspace_id", workspace.ID).Error; err != nil {
 				return EError(c, err)
 			}
 		}
@@ -62,9 +62,9 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
 				etag = strings.TrimSuffix(etag, user.ID.String())
 				var exist bool
-				if err := s.db.Model(&dao.Workspace{}).
+				if err := s.DB(c).Model(&dao.Workspace{}).
 					Select("EXISTS(?)",
-						s.db.Model(&dao.Workspace{}).
+						s.DB(c).Model(&dao.Workspace{}).
 							Select("1").
 							Where("encode(hash, 'hex') = ?", etag),
 					).
@@ -79,7 +79,7 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		*/
 
 		var workspace dao.Workspace
-		workspaceQuery := s.db.
+		workspaceQuery := s.DB(c).
 			Joins("Owner").
 			Joins("LogoAsset").
 			Set("userID", user.ID) // TODO: Remove when front remove current_membership
@@ -98,7 +98,7 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		var workspaceMember dao.WorkspaceMember
-		if err := s.db.Where("workspace_id = ?", workspace.ID).Where("member_id = ?", user.ID).First(&workspaceMember).Error; err != nil {
+		if err := s.DB(c).Where("workspace_id = ?", workspace.ID).Where("member_id = ?", user.ID).First(&workspaceMember).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 			}
@@ -247,7 +247,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	// Check new owner id exists and admin
 	if changeOwner {
 		var member dao.WorkspaceMember
-		if err := s.db.
+		if err := s.DB(c).
 			Joins("Member").
 			Where("workspace_id = ?", workspace.ID).
 			Where("member_id = ?", workspace.OwnerId).
@@ -265,7 +265,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrPermissionChangeWorkspaceOwner)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Select([]string{"name", "description", "company_size", "owner_id"}).Updates(&workspace).Error; err != nil {
 			return err
 		}
@@ -331,7 +331,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 
 	oldLogoId := workspace.LogoId
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var oldLogo dao.FileAsset
 		if workspace.LogoAsset != nil {
 			if err := tx.Where("id = ?", workspace.LogoId).First(&oldLogo).Error; err != nil {
@@ -399,7 +399,7 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	oldLogoId := workspace.LogoId.UUID
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		workspace.LogoId = uuid.NullUUID{}
 		if err := tx.Select("logo_id").Updates(&workspace).Error; err != nil {
@@ -596,7 +596,7 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		orderBy = fmt.Sprintf("%s %s", orderBy, "asc")
 	}
 
-	query := s.db.Preload("Workspace").
+	query := s.DB(c).Preload("Workspace").
 		Preload("Workspace.Owner").
 		Joins("Member").
 		Preload("Member").
@@ -678,7 +678,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 	}
 
 	var requestedMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Member").
 		Where("id = ?", requestedMemberId).
 		Where("workspace_id = ?", workspace.ID).
@@ -705,7 +705,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		oldMemberRole = *req.Role
 
 		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 			requestedMember.UpdatedById = userID
 			requestedMember.UpdatedAt = time.Now()
 			requestedMember.Role = *req.Role
@@ -800,7 +800,7 @@ func (s *Services) updateUserEmail(c echo.Context) error {
 	}
 
 	var requestedMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("member_id = ?", requestedMemberId).
 		Where("workspace_id = ?", workspace.ID).
 		Preload("Member").
@@ -823,7 +823,7 @@ func (s *Services) updateUserEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail)
 	}
 
-	if err := s.db.Model(&dao.User{}).
+	if err := s.DB(c).Model(&dao.User{}).
 		Where("id = ?", requestedMember.MemberId).
 		UpdateColumn("email", req.Email).Error; err != nil {
 		return EError(c, err)
@@ -859,7 +859,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 	}
 
 	var requestedMember dao.WorkspaceMember
-	if err := s.db.Preload("Member").
+	if err := s.DB(c).Preload("Member").
 		Where("id = ?", requestedMemberId).
 		Where("workspace_id = ?", workspace.ID).
 		First(&requestedMember).Error; err != nil {
@@ -885,7 +885,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 
 	// Delete workspace if this is last member(last user leaves workspace)
 	var possibleOwners []dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Model(&dao.WorkspaceMember{}).
 		Joins("Member").
 		Where("workspace_id = ?", workspace.ID).
@@ -994,7 +994,7 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 	var members []dao.WorkspaceMember
 	var notificationSentAt []dao.DeferredNotifications
 
-	query := s.db.Preload("Member").Where("workspace_id = ?", workspace.ID)
+	query := s.DB(c).Preload("Member").Where("workspace_id = ?", workspace.ID)
 
 	if len(req.Members) > 0 {
 		query = query.Where("id IN (?)", req.Members)
@@ -1041,7 +1041,7 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 	}
 
 	if len(notificationSentAt) > 0 {
-		if err := s.db.Omit(clause.Associations).Create(&notificationSentAt).Error; err != nil {
+		if err := s.DB(c).Omit(clause.Associations).Create(&notificationSentAt).Error; err != nil {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 	}
@@ -1104,7 +1104,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 		var user dao.User
 		var workspaceMember dao.WorkspaceMember
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 			if err := tx.Where("email = ?", invite.Email).First(&user).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
 					// Create new user
@@ -1255,11 +1255,11 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 	}
 
 	var workspaces []dao.WorkspaceWithCount
-	query := s.db.Model(&dao.Workspace{}).
+	query := s.DB(c).Model(&dao.Workspace{}).
 		Select("*,(?) as total_members,(?) as total_projects,(?) as is_favorite",
-			s.db.Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
-			s.db.Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
-			s.db.Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
+			s.DB(c).Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			s.DB(c).Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			s.DB(c).Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
 		).
 		Preload("Owner").
 		Set("userID", user.ID).
@@ -1272,7 +1272,7 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 	}
 
 	if err := query.
-		Where("workspaces.id in (?)", s.db.Model(&dao.WorkspaceMember{}).
+		Where("workspaces.id in (?)", s.DB(c).Model(&dao.WorkspaceMember{}).
 			Select("workspace_id").
 			Where("member_id = ?", user.ID)).
 		Find(&workspaces).Error; err != nil {
@@ -1293,7 +1293,7 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 // @Router /api/auth/release-notes/ [get]
 func (s *Services) getProductUpdateList(c echo.Context) error {
 	var notes []dao.ReleaseNote
-	if err := s.db.Preload("Author").Order("published_at DESC").Find(&notes).Error; err != nil {
+	if err := s.DB(c).Preload("Author").Order("published_at DESC").Find(&notes).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1344,7 +1344,7 @@ func (s *Services) createWorkspace(c echo.Context) error {
 	workspace.CreatedById = user.ID
 	workspace.IntegrationToken = password.MustGenerate(64, 30, 0, false, true)
 
-	if err := s.db.Create(&workspace).Error; err != nil {
+	if err := s.DB(c).Create(&workspace).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrWorkspaceSlugConflict)
 		}
@@ -1365,7 +1365,7 @@ func (s *Services) createWorkspace(c echo.Context) error {
 		NotificationSettingsApp:         types.DefaultWorkspaceMemberNS,
 		NotificationSettingsTG:          types.DefaultWorkspaceMemberNS,
 	}
-	if err := s.db.Create(&workspaceMember).Error; err != nil {
+	if err := s.DB(c).Create(&workspaceMember).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1400,12 +1400,12 @@ func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 	}
 
 	var workspace dao.Workspace
-	if err := s.db.Where("id = ?", user.LastWorkspaceId.UUID).Find(&workspace).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", user.LastWorkspaceId.UUID).Find(&workspace).Error; err != nil {
 		return EError(c, err)
 	}
 
 	var projectMember []dao.ProjectMember
-	if err := s.db.Preload("Workspace").
+	if err := s.DB(c).Preload("Workspace").
 		Preload("Workspace.Owner").
 		Preload("Project").
 		Preload("Member").
@@ -1467,7 +1467,7 @@ func (s *Services) resetWorkspaceToken(c echo.Context) error {
 		"integration_token": password.MustGenerate(64, 30, 0, false, true),
 	}
 
-	if err := s.db.Model(&workspace).UpdateColumn("integration_token", newToken["integration_token"]).Error; err != nil {
+	if err := s.DB(c).Model(&workspace).UpdateColumn("integration_token", newToken["integration_token"]).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1510,7 +1510,7 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 		}
 
 		var state dao.State
-		if err := s.db.Model(&dao.State{}).Select("digest(string_agg(hash, '' order by sequence), 'sha256') as hash").Where("workspace_id = ?", workspace.ID).Find(&state).Error; err != nil {
+		if err := s.DB(c).Model(&dao.State{}).Select("digest(string_agg(hash, '' order by sequence), 'sha256') as hash").Where("workspace_id = ?", workspace.ID).Find(&state).Error; err != nil {
 			return EError(c, err)
 		}
 
@@ -1520,7 +1520,7 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 	}
 
 	var states []dao.State
-	if err := s.db.
+	if err := s.DB(c).
 		Preload(clause.Associations).
 		Order("sequence").
 		Where("workspace_id = ?", workspace.ID).
@@ -1586,7 +1586,7 @@ func (s *Services) getFavoriteWorkspaceList(c echo.Context) error {
 	user := *c.(AuthContext).User
 
 	var favorites []dao.WorkspaceFavorites
-	if err := s.db.Where("user_id = ?", user.ID).
+	if err := s.DB(c).Where("user_id = ?", user.ID).
 		Preload("Workspace").
 		Preload("Workspace.Owner").
 		Set("userId", user.ID).
@@ -1638,7 +1638,7 @@ func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
 		Workspace:   &workspace,
 		UserId:      user.ID,
 	}
-	if err := s.db.Create(&workspaceFavorite).Error; err != nil {
+	if err := s.DB(c).Create(&workspaceFavorite).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return c.NoContent(http.StatusOK)
 		}
@@ -1671,7 +1671,7 @@ func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Where("workspace_id = ?", workspace.ID).
+	if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
 		Where("user_id = ?", userIdStr).
 		Delete(&dao.WorkspaceFavorites{}).Error; err != nil {
 		return EError(c, err)
@@ -1739,7 +1739,7 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 		CreatedById: userID,
 		Member:      integration,
 	}
-	if err := s.db.Save(&workspaceMember).Error; err != nil {
+	if err := s.DB(c).Save(&workspaceMember).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1791,18 +1791,18 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 	}
 
 	var wm dao.WorkspaceMember
-	if err := s.db.Joins("Member").Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).First(&wm).Error; err != nil {
+	if err := s.DB(c).Joins("Member").Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).First(&wm).Error; err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityRemoveActivity, data, nil, wm, c.(WorkspaceContext).User)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
 		}
 
-		return s.db.Session(&gorm.Session{SkipHooks: true}).Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).Delete(&dao.WorkspaceMember{}).Error
+		return s.DB(c).Session(&gorm.Session{SkipHooks: true}).Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).Delete(&dao.WorkspaceMember{}).Error
 	}); err != nil {
 		return EError(c, err)
 	}
@@ -1847,7 +1847,7 @@ func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Select(fields).Updates(&wm).Error; err != nil {
+	if err := s.DB(c).Select(fields).Updates(&wm).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)

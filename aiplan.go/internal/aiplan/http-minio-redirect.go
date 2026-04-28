@@ -79,7 +79,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 		dao.FileAsset
 		Allowed bool
 	}
-	if err := s.db.Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
+	if err := s.DB(c).Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
 		return EError(c, err)
 	}
 

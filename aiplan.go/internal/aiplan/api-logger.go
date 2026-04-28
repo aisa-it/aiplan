@@ -9,6 +9,8 @@
 package aiplan
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -26,6 +28,11 @@ func EError(c echo.Context, err error) error {
 	if customErr, ok := err.(apierrors.DefinedError); ok {
 		return EErrorDefined(c, customErr)
 	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return EErrorDefined(c, apierrors.ErrRequestTimeout)
+	}
+
 	var user *dao.User
 	if ctx, ok := c.(AuthContext); ok {
 		user = ctx.User
