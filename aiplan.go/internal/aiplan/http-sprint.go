@@ -30,7 +30,7 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EError(c, apiContext.Error())
 		}
 
-		exists, err := dao.IsSprintExists(s.db, workspace.ID, c.Param("sprintId"))
+		exists, err := dao.IsSprintExists(s.DB(c), workspace.ID, c.Param("sprintId"))
 		if err != nil {
 			return EError(c, err)
 		}
@@ -99,7 +99,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 	}
 
 	var sprints []dao.Sprint
-	if err := s.db.
+	if err := s.DB(c).
 		Set("issueProgress", true).
 		Joins("SprintFolder").
 		Preload("Issues.State").
@@ -114,7 +114,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 	}
 
 	var folders []dao.SprintFolder
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ?", workspace.ID).
 		Find(&folders).Error; err != nil {
 		return EError(c, err)
@@ -212,7 +212,7 @@ func (s *Services) createSprint(c echo.Context) error {
 	}
 
 	if sprint.SprintFolderId.Valid {
-		if err := s.db.Where("workspace_id = ?", sprint.WorkspaceId).
+		if err := s.DB(c).Where("workspace_id = ?", sprint.WorkspaceId).
 			Where("id = ?", sprintReq.RequestSprint.Folder).
 			First(&sprint.SprintFolder).Error; err != nil {
 			sprint.SprintFolderId = uuid.NullUUID{}
@@ -220,7 +220,7 @@ func (s *Services) createSprint(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Create(&sprint).Error; err != nil {
+	if err := s.DB(c).Create(&sprint).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -308,7 +308,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 			sprint.EndDate = req.EndDate.ToNullTime()
 		case "sprint_folder_id":
 			var folder *dao.SprintFolder
-			if eerr := s.db.Where("workspace_id = ?", sprint.WorkspaceId).
+			if eerr := s.DB(c).Where("workspace_id = ?", sprint.WorkspaceId).
 				Where("id = ?", req.Folder).
 				First(&folder).Error; eerr != nil {
 				sprint.SprintFolderId = uuid.NullUUID{}
@@ -329,7 +329,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 				return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
 			}
 		}
-		if err := s.db.Omit(clause.Associations).Select(fields).Updates(sprint).Error; err != nil {
+		if err := s.DB(c).Omit(clause.Associations).Select(fields).Updates(sprint).Error; err != nil {
 			return EError(c, err)
 		}
 	}
@@ -382,10 +382,10 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		return EError(c, apierrors.ErrSprintBadRequest)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var issues []dao.Issue
 
-		if err := s.db.
+		if err := s.DB(c).
 			Where("workspace_id = ?", workspace.ID).
 			Where("sprint_id = ?", sprint.Id).
 			Where("issue_id IN (?)", req.IssuesRemove).
@@ -440,9 +440,9 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.
+	if err := s.DB(c).
 		Where("id IN (?)",
-			s.db.Select("issue_id").
+			s.DB(c).Select("issue_id").
 				Where("workspace_id = ?", workspace.ID).
 				Where("sprint_id = ?", sprint.Id).
 				Model(&dao.SprintIssue{})).
@@ -467,7 +467,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 
 		changes := utils.CalculateIDChanges(newIssuesIds, oldIssueIds)
 		var issues []dao.Issue
-		if err := s.db.Where("workspace_id = ?", workspace.ID).Where("id IN (?)", changes.InvolvedIds).Find(&issues).Error; err != nil {
+		if err := s.DB(c).Where("workspace_id = ?", workspace.ID).Where("id IN (?)", changes.InvolvedIds).Find(&issues).Error; err != nil {
 			return EError(c, err)
 		}
 
@@ -527,7 +527,7 @@ func (s *Services) deleteSprint(c echo.Context) error {
 		return err
 	}
 
-	if err := s.db.Delete(sprint).Error; err != nil {
+	if err := s.DB(c).Delete(sprint).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -572,7 +572,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		return EError(c, apierrors.ErrSprintBadRequest)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var workspaceMembers []dao.WorkspaceMember
 
 		if err := tx.
@@ -617,9 +617,9 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.
+	if err := s.DB(c).
 		Where("id IN (?)",
-			s.db.Select("watcher_id").
+			s.DB(c).Select("watcher_id").
 				Where("workspace_id = ?", workspace.ID).
 				Where("sprint_id = ?", sprint.Id).
 				Model(&dao.SprintWatcher{})).
@@ -749,7 +749,7 @@ func (s *Services) updateSprintView(c echo.Context) error {
 		ViewProps: viewProps,
 	}
 
-	if err := s.db.Clauses(clause.OnConflict{
+	if err := s.DB(c).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "sprint_id"}, {Name: "member_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"view_props", "updated_at"}),
 	}).Create(&view).Error; err != nil {
@@ -790,7 +790,7 @@ func (s *Services) getSprintStates(c echo.Context) error {
 	}
 
 	var states []dao.State
-	if err := s.db.
+	if err := s.DB(c).
 		Where("project_id in (?)", slices.Collect(maps.Keys(projectMap))).
 		Order("sequence").
 		Find(&states).Error; err != nil {
@@ -846,7 +846,7 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 		Name:        req.Name,
 	}
 
-	if err := s.db.Create(&folder).Error; err != nil {
+	if err := s.DB(c).Create(&folder).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -881,7 +881,7 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
 
 	var folder dao.SprintFolder
-	if err := s.db.Where("workspace_id = ?", workspace.ID).
+	if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
 		Where("id = ?", sprintFolderId).First(&folder).Error; err != nil {
 		return EError(c, err)
 	}
@@ -902,7 +902,7 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 	folder.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	folder.UpdatedBy = user
 
-	if err := s.db.Updates(&folder).Error; err != nil {
+	if err := s.DB(c).Updates(&folder).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -932,12 +932,12 @@ func (s *Services) deleteSprintFolders(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		var exists bool
-		if err := s.db.Model(&dao.Sprint{}).
+		if err := s.DB(c).Model(&dao.Sprint{}).
 			Select("EXISTS(?)",
-				s.db.Model(&dao.Sprint{}).
+				s.DB(c).Model(&dao.Sprint{}).
 					Select("1").
 					Where("sprint_folder_id = ?", sprintFolderId),
 			).
@@ -948,7 +948,7 @@ func (s *Services) deleteSprintFolders(c echo.Context) error {
 			return apierrors.ErrSprintFolderDelete
 		}
 
-		if err := s.db.Where("workspace_id = ?", workspace.ID).
+		if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
 			Where("id = ?", sprintFolderId).Delete(&dao.SprintFolder{}).Error; err != nil {
 			return err
 		}

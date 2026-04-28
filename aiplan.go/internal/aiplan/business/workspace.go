@@ -1,7 +1,6 @@
 package business
 
 import (
-	"log/slog"
 	"strings"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
@@ -93,12 +92,13 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 		return err
 	}
 
-	// Start hard deleting in foreground
+	/*// Start hard deleting in foreground
 	go func(workspace dao.Workspace) {
 		if err := b.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
 			slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
 		}
 	}(*workspace)
+	*/
 
 	return nil
 }

@@ -92,7 +92,7 @@ func (s *Services) getWorkspaceBackupList(c echo.Context) error {
 	slug := c.Param("workspaceSlug")
 
 	var backups []dao.WorkspaceBackup
-	if err := s.db.Joins("Workspace").Where("slug = ?", slug).Find(&backups).Error; err != nil {
+	if err := s.DB(c).Joins("Workspace").Where("slug = ?", slug).Find(&backups).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusOK, backups)
@@ -119,7 +119,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 	user := apicontext.GetContext(c).GetUser()
 
 	var workspace dao.Workspace
-	if err := s.db.Preload("Owner").
+	if err := s.DB(c).Preload("Owner").
 		Where("slug = ?", slug).
 		First(&workspace).Error; err != nil {
 		return EError(c, err)
@@ -142,7 +142,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 			continue
 		}
 
-		query := s.db.Where("workspace_id = ?", workspace.ID)
+		query := s.DB(c).Where("workspace_id = ?", workspace.ID)
 
 		// Preload users
 		if vType.Field(i).Name == "WorkspaceMembers" {
@@ -180,7 +180,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 		Author:      &backup.CreatedBy,
 		WorkspaceId: workspace.ID,
 	}
-	if err := s.db.Omit(clause.Associations).Create(&backupResp).Error; err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Create(&backupResp).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -277,7 +277,7 @@ func (s *Services) importWorkspaceFile(c echo.Context) error {
 }
 
 func (s *Services) importWorkspaceBackup(backup WorkspaceBackup) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.RawDB().Transaction(func(tx *gorm.DB) error {
 		slog.Debug("Remove old workspace", "id", backup.Workspace.ID)
 		var originalWorkspace dao.Workspace
 		if err := tx.Where("id = ?", backup.Workspace.ID).First(&originalWorkspace).Error; err != nil {

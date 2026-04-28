@@ -47,7 +47,7 @@ func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFu
 		filterId := c.Param("filterId")
 
 		var filter dao.SearchFilter
-		if err := s.db.Where("id = ?", filterId).First(&filter).Error; err != nil {
+		if err := s.DB(c).Where("id = ?", filterId).First(&filter).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return c.NoContent(http.StatusNotFound)
 			}

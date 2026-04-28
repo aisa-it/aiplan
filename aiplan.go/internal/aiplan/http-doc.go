@@ -45,7 +45,7 @@ func (s *Services) DocMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return EError(c, apiContext.Error())
 		}
 		var doc dao.Doc
-		if err := s.db.
+		if err := s.DB(c).
 			Set("member_id", workspaceMember.MemberId).
 			Set("member_role", workspaceMember.Role).
 			Set("breadcrumbs", true).
@@ -140,7 +140,7 @@ func (s *Services) getRootDocList(c echo.Context) error {
 	}
 
 	var docs []dao.Doc
-	if err := s.db.
+	if err := s.DB(c).
 		Set("member_role", workspaceMember.Role).
 		Set("member_id", workspaceMember.MemberId).
 		Preload("Author").
@@ -219,7 +219,7 @@ func (s *Services) createRootDoc(c echo.Context) error {
 
 	form, _ := c.MultipartForm()
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		if err := dao.CreateDoc(tx, doc, user); err != nil {
 			return err
@@ -302,7 +302,7 @@ func (s *Services) createDoc(c echo.Context) error {
 	form, _ := c.MultipartForm()
 	doc.ParentDocID = uuid.NullUUID{UUID: parentDoc.ID, Valid: true}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateDoc(tx, doc, user); err != nil {
 			return err
 		}
@@ -405,14 +405,14 @@ func (s *Services) updateDoc(c echo.Context) error {
 	var editorListOk, readerListOk, watcherListOk bool
 
 	if hasRecentFieldUpdate[dao.DocActivity](
-		s.db.Where("doc_id = ?", doc.ID),
+		s.DB(c).Where("doc_id = ?", doc.ID),
 		user.ID,
 		utils.SliceToSlice(&fields, func(t *string) string { return actField.ReqFieldMapping(*t) })...,
 	) {
 		return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:          dao.GenUUID(),
 			CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -740,7 +740,7 @@ func (s *Services) deleteDoc(c echo.Context) error {
 	doc := c.(DocContext).Doc
 	user := apicontext.GetContext(c).GetUser()
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if len(doc.ChildDocs) > 0 {
 			return EErrorDefined(c, apierrors.ErrDocDeleteHasChild)
 		}
@@ -750,7 +750,7 @@ func (s *Services) deleteDoc(c echo.Context) error {
 			return err
 		}
 
-		return s.db.Delete(&doc).Error
+		return s.DB(c).Delete(&doc).Error
 	}); err != nil {
 		if err.Error() == "forbidden" {
 			return EErrorDefined(c, apierrors.ErrDocUpdateForbidden)
@@ -815,7 +815,7 @@ func (s *Services) moveDoc(c echo.Context) error {
 		return EError(c, err)
 	}
 	var allDocs []dao.Doc
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var currentGroup, newGroup []dao.Doc
 		var newParent dao.Doc
 		if err := buildGroupQuery(tx, doc.WorkspaceId, doc.ParentDocID).
@@ -1066,7 +1066,7 @@ func (s *Services) getChildDocList(c echo.Context) error {
 	currentDoc := c.(DocContext).Doc
 
 	var docs []dao.Doc
-	if err := s.db.
+	if err := s.DB(c).
 		Set("member_id", workspaceMember.MemberId).
 		Set("member_role", workspaceMember.Role).
 		Preload("AccessRules.Member").
@@ -1122,7 +1122,7 @@ func (s *Services) getDocCommentList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
@@ -1180,7 +1180,7 @@ func (s *Services) createDocComment(c echo.Context) error {
 	user := apicontext.GetContext(c).GetUser()
 
 	var lastCommentTime time.Time
-	if err := s.db.Select("created_at").
+	if err := s.DB(c).Select("created_at").
 		Where("workspace_id = ?", workspace.ID).
 		Where("actor_id = ?", user.ID).
 		Order("created_at desc").
@@ -1202,7 +1202,7 @@ func (s *Services) createDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDocCommentEmpty)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if comment.ReplyToCommentId.Valid {
 			if err := tx.Where("id = ?", comment.ReplyToCommentId).First(&comment.OriginalComment).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
@@ -1275,7 +1275,7 @@ func (s *Services) getDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrDocBadRequest)
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
@@ -1326,7 +1326,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	commentId := c.Param("commentId")
 
 	var commentOld dao.DocComment
-	if err := s.db.
+	if err := s.DB(c).
 		Where("id = ?", commentId).Preload(clause.Associations).Find(&commentOld).Error; err != nil {
 		return EError(c, err)
 	}
@@ -1347,7 +1347,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	}
 
 	form, _ := c.MultipartForm()
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		fileAsset := dao.FileAsset{
 			Id:           dao.GenUUID(),
 			CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -1371,7 +1371,7 @@ func (s *Services) updateDocComment(c echo.Context) error {
 			}
 		}
 
-		if err := s.db.Omit(clause.Associations).Select(fields).Updates(&comment).Error; err != nil {
+		if err := s.DB(c).Omit(clause.Associations).Select(fields).Updates(&comment).Error; err != nil {
 			return err
 		}
 
@@ -1426,7 +1426,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 	commentId := c.Param("commentId")
 
 	var comment dao.DocComment
-	if err := s.db.Where("workspace_id = ?", workspace.ID).
+	if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
 		Where("doc_id = ?", doc.ID).
 		Where("id = ?", commentId).
 		Preload("Attachments").
@@ -1438,14 +1438,14 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, comment, user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
 		}
 
-		return s.db.Delete(&comment).Error
+		return s.DB(c).Delete(&comment).Error
 	}); err != nil {
 		return EError(c, err)
 	}
@@ -1485,7 +1485,7 @@ func (s *Services) getDocCommentUpdateList(c echo.Context) error {
 	}
 
 	var comments []dao.DocActivity
-	queryHistory := s.db.
+	queryHistory := s.DB(c).
 		Joins("Actor").
 		Where("doc_activities.workspace_id = ?", doc.WorkspaceId).
 		Where("doc_activities.doc_id = ?", doc.ID).
@@ -1523,7 +1523,7 @@ func (s *Services) getDocCommentUpdateList(c echo.Context) error {
 				Attachments:     nil,
 			}
 
-			query := s.db.Where("workspace_id = ?", i.WorkspaceId).
+			query := s.DB(c).Where("workspace_id = ?", i.WorkspaceId).
 				Where("doc_comment_id = ?", i.NewDocComment.Id)
 
 			currentFiles, _ := dao.GetFileAssetFromDescription(query, &comment.Body)
@@ -1572,7 +1572,7 @@ func (s *Services) addDocCommentReaction(c echo.Context) error {
 	}
 
 	var comment dao.DocComment
-	if err := s.db.Where("id = ?", commentId).Where("doc_id = ?", doc.ID).First(&comment).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", commentId).Where("doc_id = ?", doc.ID).First(&comment).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrDocCommentNotFound)
 		}
@@ -1581,7 +1581,7 @@ func (s *Services) addDocCommentReaction(c echo.Context) error {
 
 	// Проверяем, есть ли уже такая реакция от пользователя
 	var existingReaction dao.DocCommentReaction
-	err := s.db.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, commentId, reactionRequest.Reaction).First(&existingReaction).Error
+	err := s.DB(c).Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, commentId, reactionRequest.Reaction).First(&existingReaction).Error
 	if err == nil {
 		return c.JSON(http.StatusOK, existingReaction.ToDTO())
 	} else if err != gorm.ErrRecordNotFound {
@@ -1597,7 +1597,7 @@ func (s *Services) addDocCommentReaction(c echo.Context) error {
 		Reaction:  reactionRequest.Reaction,
 	}
 
-	if err := s.db.Create(&reaction).Error; err != nil {
+	if err := s.DB(c).Create(&reaction).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1628,7 +1628,7 @@ func (s *Services) removeDocCommentReaction(c echo.Context) error {
 	commentId := c.Param("commentId")
 	reactionStr := c.Param("reaction")
 
-	if err := s.db.Where("user_id = ? AND comment_id = ? AND reaction = ?",
+	if err := s.DB(c).Where("user_id = ? AND comment_id = ? AND reaction = ?",
 		user.ID, commentId, reactionStr).Delete(&dao.DocCommentReaction{}).Error; err != nil {
 		return EError(c, err)
 	}
@@ -1663,7 +1663,7 @@ func (s *Services) getDocAttachmentList(c echo.Context) error {
 	docId := c.(DocContext).Doc.ID
 
 	var attachments []dao.DocAttachment
-	if err := s.db.
+	if err := s.DB(c).
 		Joins("Asset").
 		Where("doc_attachments.workspace_id = ?", workspace.ID).
 		Where("doc_attachments.doc_id = ?", docId).
@@ -1760,12 +1760,12 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		FileSize:    int(asset.Size),
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.db.Create(&fa).Error; err != nil {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		if err := s.DB(c).Create(&fa).Error; err != nil {
 			return err
 		}
 
-		if err := s.db.Create(&docAttachment).Error; err != nil {
+		if err := s.DB(c).Create(&docAttachment).Error; err != nil {
 			return err
 		}
 		docAttachment.Asset = &fa
@@ -1810,7 +1810,7 @@ func (s *Services) deleteDocAttachment(c echo.Context) error {
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.DocAttachment
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Asset").
 		Where("workspace_id = ?", workspace.ID).
 		Where("doc_id = ?", docId).
@@ -1822,14 +1822,14 @@ func (s *Services) deleteDocAttachment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		err := tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, attachment, user)
 		if err != nil {
 			errStack.GetError(c, err)
 			return err
 		}
 
-		return s.db.Omit(clause.Associations).
+		return s.DB(c).Omit(clause.Associations).
 			Delete(&attachment).Error
 	}); err != nil {
 		return EError(c, err)
@@ -1887,7 +1887,7 @@ func (s *Services) addDocToFavorites(c echo.Context) error {
 		Doc:         &doc,
 	}
 
-	if err := s.db.Create(&docFavorite).Error; err != nil {
+	if err := s.DB(c).Create(&docFavorite).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return c.NoContent(http.StatusOK)
 		}
@@ -1926,7 +1926,7 @@ func (s *Services) getFavoriteDocList(c echo.Context) error {
 	user := apiContext.GetUser()
 
 	var favorites []dao.DocFavorites
-	if err := s.db.
+	if err := s.DB(c).
 		Set("member_id", workspaceMember.MemberId).
 		Set("member_role", workspaceMember.Role).
 		Preload("Doc").
@@ -1970,7 +1970,7 @@ func (s *Services) removeDocFromFavorites(c echo.Context) error {
 	user := apiContext.GetUser()
 	docId := c.Param("docId")
 
-	if err := s.db.Where("user_id = ?", user.ID).
+	if err := s.DB(c).Where("user_id = ?", user.ID).
 		Where("workspace_id = ?", workspace.ID).
 		Where("doc_id = ?", docId).
 		Delete(&dao.DocFavorites{}).Error; err != nil {
@@ -2078,7 +2078,7 @@ func (s *Services) getDocHistoryList(c echo.Context) error {
 
 	var activities []dao.DocActivity
 
-	query := s.db.
+	query := s.DB(c).
 		Preload("Actor").
 		Where("workspace_id = ?", doc.WorkspaceId).
 		Where("doc_id = ?", doc.ID).
@@ -2122,7 +2122,7 @@ func (s *Services) getDocHistory(c echo.Context) error {
 	versionId := c.Param("versionId")
 
 	var activity dao.DocActivity
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Actor").
 		Preload("Doc.InlineAttachments").
 		Where("workspace_id = ?", doc.WorkspaceId).
@@ -2133,13 +2133,13 @@ func (s *Services) getDocHistory(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	query := s.db.Where("workspace_id = ?", doc.WorkspaceId).Where("doc_id = ?", doc.ID)
+	query := s.DB(c).Where("workspace_id = ?", doc.WorkspaceId).Where("doc_id = ?", doc.ID)
 	oldFiles, err := dao.GetFileAssetFromDescription(query, activity.OldValue)
 	if err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	query2 := s.db.Where("workspace_id = ?", doc.WorkspaceId).Where("doc_id = ?", doc.ID)
+	query2 := s.DB(c).Where("workspace_id = ?", doc.WorkspaceId).Where("doc_id = ?", doc.ID)
 	currentFiles, err := dao.GetFileAssetFromDescription(query2, &doc.Content.Body)
 	if err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
@@ -2178,7 +2178,7 @@ func (s *Services) updateDocFromHistory(c echo.Context) error {
 
 	oldDocMap := StructToJSONMap(doc)
 	var activity dao.DocActivity
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Actor").
 		Preload("Doc.InlineAttachments").
 		Where("workspace_id = ?", doc.WorkspaceId).
@@ -2195,7 +2195,7 @@ func (s *Services) updateDocFromHistory(c echo.Context) error {
 
 	doc.Content.Body = *activity.OldValue
 
-	if err := s.db.Omit(clause.Associations).Save(&doc).Error; err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Save(&doc).Error; err != nil {
 		return EError(c, err)
 	}
 
