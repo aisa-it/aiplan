@@ -9,8 +9,6 @@
 package aiplan
 
 import (
-	"errors"
-
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -31,10 +29,10 @@ func (s *Services) FormPermissionMiddleware(next echo.HandlerFunc) echo.HandlerF
 }
 
 func (s *Services) hasFormPermissions(c echo.Context) (bool, error) {
-	if _, ok := c.(FormContext); !ok {
-		return false, errors.New("wrong context")
-	}
 	apiContext := apicontext.GetContext(c)
+	if apiContext.GetForm(apicontext.WithFormAll()) == nil {
+		return false, apiContext.Error()
+	}
 	workspaceMember := apiContext.GetWorkspaceMember()
 	if apiContext.Error() != nil {
 		return false, apiContext.Error()

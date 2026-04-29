@@ -45,95 +45,46 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 )
 
-type FormContext struct {
-	echo.Context
-	Form dao.Form
-}
-
-type AnswerFormContext struct {
-	echo.Context
-	Form             dao.Form
-	IsAdminWorkspace bool
-}
-
 func (s *Services) FormMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		formSlug := c.Param("formSlug")
-		apiContext := apicontext.GetContext(c)
-		workspace := apiContext.GetWorkspace()
-		if apiContext.Error() != nil {
-			return EError(c, apiContext.Error())
+		exists, err := dao.IsFormExists(s.DB(c), c.Param("formSlug"))
+		if err != nil {
+			return EError(c, err)
 		}
-
-		var form dao.Form
-		if err := s.DB(c).
-			Joins("Author").
-			Joins("Workspace").
-			Joins("TargetProject").
-			Where("forms.workspace_id = ?", workspace.ID).
-			Where("forms.slug = ?", formSlug).
-			First(&form).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrFormNotFound)
-
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrFormNotFound)
 		}
-
-		return next(FormContext{c, form})
+		return next(c)
 	}
 }
 
 func (s *Services) AnswerFormAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		formSlug := c.Param("formSlug")
-		userId := apicontext.GetContext(c).GetUser().ID
-		var form dao.Form
-		if err := s.DB(c).
-			Set("userId", userId).
-			Joins("Author").
-			Joins("Workspace").
-			Joins("TargetProject").
-			Where("forms.slug = ?", formSlug).
-			First(&form).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrFormNotFound)
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
+		exists, err := dao.IsFormExists(s.DB(c), c.Param("formSlug"))
+		if err != nil {
+			return EError(c, err)
 		}
-
-		isAdmin := form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types2.AdminRole
-
-		return next(AnswerFormContext{c, form, isAdmin})
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrFormNotFound)
+		}
+		return next(c)
 	}
 }
 
 func (s *Services) AnswerFormNoAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		formSlug := c.Param("formSlug")
-
-		var form dao.Form
-		if err := s.DB(c).
-			Joins("Author").
-			Joins("Workspace").
-			Joins("TargetProject").
-			Where("forms.slug = ?", formSlug).
-			First(&form).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrFormNotFound)
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		}
-
-		if form.AuthRequire {
-			return EErrorDefined(c, apierrors.ErrFormAnswerForbidden)
-		}
-
 		if apicontext.GetContext(c) == nil {
 			apicontext.SetContext(c, s.db, &apicontext.UserMeta{})
 		}
-
-		return next(AnswerFormContext{c, form, false})
+		apiContext := apicontext.GetContext(c)
+		form := apiContext.GetForm(apicontext.WithFormAll())
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
+		if form.AuthRequire {
+			return EErrorDefined(c, apierrors.ErrFormAnswerForbidden)
+		}
+		return next(c)
 	}
 }
 
@@ -284,8 +235,12 @@ func (s *Services) updateForm(c echo.Context) error {
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := apicontext.GetContext(c).GetUser()
-	form := c.(FormContext).Form
+	user := apiContext.GetUser()
+	formPtr := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	form := *formPtr
 	oldForm := StructToJSONMap(form)
 
 	var req reqForm
@@ -372,8 +327,13 @@ func (s *Services) updateForm(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/ [delete]
 func (s *Services) deleteForm(c echo.Context) error {
-	form := c.(FormContext).Form
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	formPtr := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	form := *formPtr
+	user := apiContext.GetUser()
 	data := map[string]interface{}{"old_title": form.Title}
 	err := tracker.TrackActivity[dao.Form, dao.WorkspaceActivity](s.tracker, activities.EntityDeleteActivity, data, nil, form, user)
 	if err != nil {
@@ -401,7 +361,11 @@ func (s *Services) deleteForm(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/ [get]
 func (s *Services) getFormAuth(c echo.Context) error {
-	form := c.(AnswerFormContext).Form
+	apiContext := apicontext.GetContext(c)
+	form := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, form.ToDTO())
 }
 
@@ -440,10 +404,10 @@ func (s *Services) getFormNoAuth(c echo.Context) error {
 func (s *Services) getAnswers(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	form := apiContext.GetForm(apicontext.WithFormAll())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	form := c.(FormContext).Form
 
 	offset := 0
 	limit := 100
@@ -501,10 +465,10 @@ func (s *Services) getAnswers(c echo.Context) error {
 func (s *Services) getAnswer(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	form := apiContext.GetForm(apicontext.WithFormAll())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	form := c.(FormContext).Form
 	rawAnswerSeq := strings.TrimSuffix(c.Param("answerSeq"), "/")
 	answerSeq, err := strconv.ParseInt(rawAnswerSeq, 10, 64)
 	if err != nil {
@@ -547,8 +511,13 @@ func (s *Services) getAnswer(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/answer/ [post]
 func (s *Services) createAnswerAuth(c echo.Context) error {
-	form := c.(AnswerFormContext).Form
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	formPtr := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	form := *formPtr
+	user := apiContext.GetUser()
 
 	var userAnswer types2.FormFieldsSlice
 
@@ -812,8 +781,12 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/form-attachments/ [post]
 func (s *Services) createFormAttachments(c echo.Context) error {
-	user := apicontext.GetContext(c).GetUser()
-	form := c.(AnswerFormContext).Form
+	apiContext := apicontext.GetContext(c)
+	form := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	if !limiter.Limiter.CanAddAttachment(form.WorkspaceId) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
@@ -911,10 +884,15 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/form-attachments/{attachmentId} [delete]
 func (s *Services) deleteFormAttachment(c echo.Context) error {
-	workspaceId := c.(AnswerFormContext).Form.WorkspaceId
-	formId := c.(AnswerFormContext).Form.ID
-	isAdmin := c.(AnswerFormContext).IsAdminWorkspace
-	userId := apicontext.GetContext(c).GetUser().ID
+	apiContext := apicontext.GetContext(c)
+	form := apiContext.GetForm(apicontext.WithFormAll(), apicontext.WithFormCurrentMember())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	workspaceId := form.WorkspaceId
+	formId := form.ID
+	isAdmin := form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types2.AdminRole
+	userId := apiContext.GetUser().ID
 
 	attachmentId := c.Param("attachmentId")
 
