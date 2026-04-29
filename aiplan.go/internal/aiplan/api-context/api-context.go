@@ -39,6 +39,8 @@ type APIContext struct {
 
 	sprint Sprint
 
+	form Form
+
 	searchFilter *dao.SearchFilter
 	releaseNote  *dao.ReleaseNote
 
@@ -60,6 +62,11 @@ type Issue struct {
 type Sprint struct {
 	Sprint      *dao.Sprint
 	LastOptions SprintFetchOptions
+}
+
+type Form struct {
+	Form        *dao.Form
+	LastOptions FormFetchOptions
 }
 
 func SetContext(c echo.Context, db *gorm.DB, userMeta *UserMeta) {
@@ -259,6 +266,7 @@ func (a *APIContext) GetIssue(options ...FetchOption) *dao.Issue {
 		}
 	}
 
+	a.issue.LastOptions = *fetchOptions
 	return a.issue.Issue
 }
 
@@ -325,7 +333,29 @@ func (a *APIContext) GetSprint(options ...SprintFetchOption) *dao.Sprint {
 		a.sprint.Sprint.UpdateStats()
 	}
 
+	a.sprint.LastOptions = *fetchOptions
 	return a.sprint.Sprint
+}
+
+func (a *APIContext) GetForm(options ...FormFetchOption) *dao.Form {
+	fetchOptions := &FormFetchOptions{query: a.db.Session(&gorm.Session{}), loaded: make(map[string]struct{}, 5)}
+
+	for _, option := range options {
+		option(fetchOptions)
+	}
+
+	if a.form.Form != nil && (a.form.LastOptions.GetID() == fetchOptions.GetID() || len(options) == 0) {
+		return a.form.Form
+	}
+
+	a.fetchForm(fetchOptions)
+
+	if a.error != nil {
+		return nil
+	}
+
+	a.form.LastOptions = *fetchOptions
+	return a.form.Form
 }
 
 func (a *APIContext) GetSearchFilter() *dao.SearchFilter {
@@ -378,6 +408,34 @@ func (a *APIContext) GetReleaseNote() *dao.ReleaseNote {
 
 	a.releaseNote = &note
 	return a.releaseNote
+}
+
+func (a *APIContext) fetchForm(fetchOptions *FormFetchOptions) {
+	formSlug := a.Param("formSlug")
+	if formSlug == "" {
+		a.error = apierrors.ErrFormNotFound
+		return
+	}
+
+	query := fetchOptions.query
+
+	if _, ok := fetchOptions.loaded["CurrentMember"]; ok {
+		if user := a.GetUser(); user != nil {
+			query = query.Set("userId", user.ID)
+		}
+	}
+
+	var form dao.Form
+	if err := query.Where("forms.slug = ?", formSlug).First(&form).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			a.error = apierrors.ErrFormNotFound
+			return
+		}
+		a.error = err
+		return
+	}
+
+	a.form.Form = &form
 }
 
 func (a *APIContext) fetchSprint(fetchOptions *SprintFetchOptions) {

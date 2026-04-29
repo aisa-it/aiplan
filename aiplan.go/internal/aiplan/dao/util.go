@@ -1024,3 +1024,7 @@ func IsReleaseNoteExists(db *gorm.DB, idOrTag string) (bool, error) {
 	}
 	return Exists(db, query.Select("1"))
 }
+
+func IsFormExists(db *gorm.DB, slug string) (bool, error) {
+	return Exists(db, db.Session(&gorm.Session{}).Model(&Form{}).Where("slug = ?", slug).Select("1"))
+}
