@@ -153,7 +153,7 @@ func (wns *WebsocketNotificationService) Send(userId uuid.UUID, notifyId uuid.UU
 			project = v.Issue.Project.ToLightDTO()
 		}
 
-		if v.ActivityEvent.Form != nil {
+		if v.ActivityEvent != nil && v.ActivityEvent.Form != nil {
 			form = v.ActivityEvent.Form.ToLightDTO()
 		}
 		msg.Detail = NotificationDetailResponse{

@@ -31,4 +31,52 @@ type ActivityFieldSpec struct {
 	Table       string
 	PreserveID  bool   // по умолчанию true - сохранять ID для этого поля
 	LinkedField string // для linked-коллекций: обратное поле (blocking -> blocked)
+	Secret      bool
+}
+
+type TrackOption func(*trackParams)
+
+type trackParams struct {
+	field    actField.ActivityField
+	oldVal   string
+	newVal   string
+	oldID    uuid.NullUUID
+	newID    uuid.NullUUID
+	tgSender int64
+}
+
+func WithField(f actField.ActivityField) TrackOption {
+	return func(tp *trackParams) {
+		tp.field = f
+	}
+}
+
+func WithOldVal(v string) TrackOption {
+	return func(tp *trackParams) {
+		tp.oldVal = v
+	}
+}
+
+func WithNewVal(v string) TrackOption {
+	return func(tp *trackParams) {
+		tp.newVal = v
+	}
+}
+
+func WithOldID(id uuid.UUID) TrackOption {
+	return func(tp *trackParams) {
+		tp.oldID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+}
+
+func WithNewID(id uuid.UUID) TrackOption {
+	return func(tp *trackParams) {
+		tp.newID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+}
+
+func WithTgSender(id int64) TrackOption {
+	return func(tp *trackParams) {
+		tp.tgSender = id
+	}
 }

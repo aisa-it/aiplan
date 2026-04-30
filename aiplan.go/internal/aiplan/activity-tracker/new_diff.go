@@ -150,6 +150,10 @@ func diffCollection(spec ActivityFieldSpec, oldValue, newValue any, linkedEntity
 // diffScalar helpers
 
 func makeUpdateChange(spec ActivityFieldSpec, oldVal, newVal string, oldID, newID uuid.NullUUID) FieldChange {
+	if spec.Secret {
+		oldVal = utils.MaskString(oldVal)
+		newVal = utils.MaskString(newVal)
+	}
 	return FieldChange{
 		Verb:       "updated",
 		Field:      actField.ActivityField(spec.Field),

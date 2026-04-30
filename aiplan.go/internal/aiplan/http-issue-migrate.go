@@ -519,32 +519,31 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	if deleteSrc {
 		newId = srcIssue.ID
 		for _, issue := range srcIssues {
-			ctx := tracker.NewTrackerCtx(nil, nil)
-			ctx.New.SetParentWithUUID("project_id", &targetProject.ID)
-			ctx.Old.SetParentWithUUID("project_id", &srcProject.ID)
-
-			ctx.New.SetKey(activities.ParentTitleKey, targetProject.Identifier)
-			ctx.Old.SetKey(activities.ParentTitleKey, srcProject.Identifier)
-
-			ctx.New.SetKey(activities.OldEntityKey, activities.Project.Field)
-			ctx.New.SetKey(activities.NewEntityKey, activities.Project.Field)
-
-			ctx.New.SetKey(activities.OldTitleKey, issue.Name)
-
-			err = tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbMove, ctx, issue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerIssue, activities.VerbMove, &issue, &user,
+				tracker.WithField(activities.Project.Field),
+				tracker.WithOldVal(srcProject.Identifier),
+				tracker.WithNewVal(targetProject.Identifier),
+				tracker.WithOldID(srcProject.ID),
+				tracker.WithNewID(targetProject.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbAdded, nil, issue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbAdded, &targetProject, &user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
-			delIssue := issue
-			delIssue.Project = &srcProject
-			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbRemoved, ctx, delIssue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbRemoved, &srcProject, &user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithOldVal(issue.Name),
+				tracker.WithOldID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -554,9 +553,14 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		s.db.Joins("Project").Where("issues.id in (?)", newFamilyIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			ctx := tracker.NewTrackerCtx(nil, nil)
-			ctx.New.SetKey(activities.CustomVerbKey, activities.VerbCopied)
-			tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, ctx, issue, &user)
+			err := s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbCopied, &targetProject, &user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
 		}
 		newId = idsMap[srcIssueUUId]
 	}
@@ -949,32 +953,31 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 
 	if deleteSrc {
 		for _, issue := range srcIssues {
-			ctx := tracker.NewTrackerCtx(nil, nil)
-			ctx.New.SetParentWithUUID("project_id", &targetProject.ID)
-			ctx.Old.SetParentWithUUID("project_id", &srcProject.ID)
-
-			ctx.New.SetKey(activities.ParentTitleKey, targetProject.Identifier)
-			ctx.Old.SetKey(activities.ParentTitleKey, srcProject.Identifier)
-
-			ctx.New.SetKey(activities.OldEntityKey, activities.Project.Field)
-			ctx.New.SetKey(activities.NewEntityKey, activities.Project.Field)
-
-			ctx.New.SetKey(activities.OldTitleKey, issue.Name)
-
-			err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbMove, ctx, issue, &user)
+			err := s.snapshotTracker.TrackVerb(types.LayerIssue, activities.VerbMove, &issue, &user,
+				tracker.WithField(activities.Project.Field),
+				tracker.WithOldVal(srcProject.Identifier),
+				tracker.WithOldID(srcProject.ID),
+				tracker.WithNewVal(targetProject.Identifier),
+				tracker.WithNewID(targetProject.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbAdded, nil, issue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbAdded, &targetProject, &user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
-			delIssue := issue
-			delIssue.Project = &srcProject
-			delIssue.ProjectId = srcProject.ID
 
-			err = tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbRemoved, ctx, delIssue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbRemoved, &srcProject, &user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithOldVal(issue.Name),
+				tracker.WithOldID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -984,7 +987,11 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		s.db.Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, issue, &user)
+			err := s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbCopied, &targetProject, &user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}

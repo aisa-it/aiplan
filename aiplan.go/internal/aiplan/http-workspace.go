@@ -225,8 +225,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
 
-	// Pre-update activity tracking
-	oldWorkspaceMap := StructToJSONMap(workspace)
+	oldSnapshot := tracker.WorkspaceToSnapshot(&workspace)
 
 	oldOwnerId := workspace.OwnerId
 	id := workspace.ID
@@ -236,8 +235,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	workspace.ID = id
 	workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspace.Name = strings.TrimSpace(workspace.Name)
-	var newMemberOwnerId uuid.UUID
-	var newMemberOwnerEmail string
+	//var newMemberOwnerEmail string
 	err := c.Validate(workspace)
 	if err != nil {
 		return EError(c, err)
@@ -257,8 +255,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			}
 			return EError(c, err)
 		}
-		newMemberOwnerId = member.MemberId
-		newMemberOwnerEmail = member.Member.Email
+		//newMemberOwnerEmail = member.Member.Email
 	}
 
 	if !user.IsSuperuser && user.ID != oldOwnerId && oldOwnerId != workspace.OwnerId {
@@ -269,26 +266,32 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 		if err := tx.Select([]string{"name", "description", "company_size", "owner_id"}).Updates(&workspace).Error; err != nil {
 			return err
 		}
-
-		// Post-update activity tracking
-		newWorkspaceMap := StructToJSONMap(workspace)
-		if changeOwner {
-			newWorkspaceMap["owner_activity_val"] = newMemberOwnerEmail
-			newWorkspaceMap["owner_updateScopeId"] = newMemberOwnerId
-			newWorkspaceMap["owner_field_log"] = activities.Owner.Field
-			oldWorkspaceMap["owner_activity_val"] = user.Email
-			oldWorkspaceMap["owner_updateScopeId"] = user.ID
-			oldWorkspaceMap["owner_field_log"] = activities.Owner.Field
-		}
-
-		err = tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newWorkspaceMap, &oldWorkspaceMap), workspace, user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
 		return nil
 	}); err != nil {
 		return EError(c, err)
 	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+	err = s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, &workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	// Handle owner change separately
+	//if changeOwner {
+	//	err = tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated,
+	//		tracker.NewTrackerCtx(
+	//			&map[string]interface{}{
+	//				"owner": newMemberOwnerEmail,
+	//			},
+	//			&map[string]interface{}{
+	//				"owner": user.Email,
+	//			},
+	//		), workspace, user)
+	//	if err != nil {
+	//		errStack.GetError(c, err)
+	//	}
+	//}
 
 	return c.JSON(http.StatusOK, workspace.ToDTO())
 }
@@ -329,7 +332,7 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 		WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 	}
 
-	oldLogoId := workspace.LogoId
+	oldSnapshot := tracker.WorkspaceToSnapshot(&workspace)
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		var oldLogo dao.FileAsset
@@ -359,20 +362,12 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 			}
 		}
 
-		//Трекинг активности
-		oldMap := map[string]interface{}{
-			"logo": oldLogoId.UUID.String(),
-		}
-		newMap := map[string]interface{}{
-			"logo": fileAsset.Id.String(),
-		}
-
-		err = tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), workspace, user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
 		return nil
 	}); err != nil {
+		return EError(c, err)
+	}
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
 		return EError(c, err)
 	}
 
@@ -396,7 +391,8 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
-	oldLogoId := workspace.LogoId.UUID
+
+	oldSnapshot := tracker.WorkspaceToSnapshot(&workspace)
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -415,15 +411,8 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//Трекинг активности
-	oldMap := map[string]interface{}{
-		"logo": oldLogoId.String(),
-	}
-	newMap := map[string]interface{}{
-		"logo": uuid.Nil.String(),
-	}
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), workspace, user)
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, &workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -669,6 +658,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		First(&requestedMember).Error; err != nil {
 		return EError(c, err)
 	}
+	oldSnapshot := tracker.MemberToSnapshot(&requestedMember)
 
 	if requestedMember.MemberId == workspace.OwnerId {
 		return EErrorDefined(c, apierrors.ErrUpdateOwnerForbidden)
@@ -681,10 +671,7 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 	if workspaceMember.Role < requestedMember.Role {
 		return EErrorDefined(c, apierrors.ErrUpdateHigherRoleUserForbidden)
 	}
-	oldMemberMap := StructToJSONMap(requestedMember)
-	var newMemberMap map[string]interface{}
 
-	ctx := tracker.NewTrackerCtx(&newMemberMap, &oldMemberMap)
 	var oldMemberRole int
 	if req.Role != nil {
 		oldMemberRole = *req.Role
@@ -739,22 +726,14 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 					return err
 				}
 			}
-
-			ctx.Old.SetKey(activities.Role.Field.AsLogValue(), fmt.Sprint(oldMemberMap["role"]))
-
-			newMemberMap = StructToJSONMap(requestedMember)
-			newMemberMap["updateScopeId"] = requestedMember.MemberId
-
 			return nil
 		}); err != nil {
 			return EError(c, err)
 		}
 	}
 
-	ctx.New.SetKey(activities.Role.Field.AsLogValue(), fmt.Sprintf("%d", requestedMember.Role))
-	ctx.New.SetKey(activities.Role.Field.WithScopeID(), requestedMember.ID)
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, ctx, requestedMember, &user)
+	newSnapshot := tracker.MemberToSnapshot(&requestedMember)
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, &workspace, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1062,14 +1041,6 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
-
-	type memberTracker struct {
-		pm   dao.ProjectMember
-		data map[string]any
-	}
-
-	var createMemberLog []memberTracker
-
 	remainInvites := limiter.Limiter.GetRemainingInvites(workspace.ID)
 
 	if remainInvites == 0 {
@@ -1092,6 +1063,14 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 		var user dao.User
 		var workspaceMember dao.WorkspaceMember
+
+		type projectMemberTrack struct {
+			project dao.Project
+			member  dao.ProjectMember
+		}
+
+		var projectMemberTrackLog []projectMemberTrack
+
 		if err := s.db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Where("email = ?", invite.Email).First(&user).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
@@ -1178,37 +1157,35 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 					}).Create(&projectMember).Error; err != nil {
 						return err
 					}
-
-					newMemberMap := StructToJSONMap(projectMember)
-
-					newMemberMap["updateScopeId"] = projectMember.MemberId
-					newMemberMap["member_activity_val"] = projectMember.Role
-
-					createMemberLog = append(createMemberLog, memberTracker{projectMember, newMemberMap})
+					projectMemberTrackLog = append(projectMemberTrackLog, projectMemberTrack{project: project, member: projectMember})
 				}
 			}
 
 			s.notificationsService.Tg.WorkspaceInvitation(workspaceMember)
-			go s.emailService.WorkspaceInvitation(workspaceMember) // TODO в пул воркеров на отправку
+			go s.emailService.WorkspaceInvitation(workspaceMember)
 
 			return nil
 		}); err != nil {
 			return EError(c, err)
 		}
 
-		for _, m := range createMemberLog {
-			err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbAdded, tracker.NewTrackerCtx(&m.data, nil), m.pm, &issuer)
+		for _, t := range projectMemberTrackLog {
+			oldSnapshot := tracker.ProjectToSnapshot(&t.project)
+			newSnapshot := tracker.ProjectToSnapshot(&t.project, tracker.WithProjectMembers([]dao.ProjectMember{t.member}, func(m dao.ProjectMember) string {
+				return fmt.Sprint(m.Role)
+			}))
+			err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &t.project, &issuer)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 		}
 
-		data := map[string]interface{}{
-			"updateScopeId":       workspaceMember.MemberId,
-			"member_activity_val": workspaceMember.Role,
-		}
+		oldSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+		newSnapshot := tracker.WorkspaceToSnapshot(&workspace, tracker.WithWorkspaceMembers([]dao.WorkspaceMember{workspaceMember}, func(m dao.WorkspaceMember) string {
+			return fmt.Sprint(m.Role)
+		}))
 
-		err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbAdded, tracker.NewTrackerCtx(&data, nil), workspaceMember, &issuer)
+		err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, &workspace, &issuer)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -1357,7 +1334,8 @@ func (s *Services) createWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackEvent(s.activityTracker, types.LayerRoot, activities.VerbCreated, nil, workspace, &user)
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+	err = s.snapshotTracker.TrackChanges(types.LayerRoot, nil, newSnapshot, &workspace, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -1449,6 +1427,7 @@ func (s *Services) getWorkspaceToken(c echo.Context) error {
 func (s *Services) resetWorkspaceToken(c echo.Context) error {
 	user := c.(WorkspaceContext).User
 	workspace := c.(WorkspaceContext).Workspace
+	oldSnapshot := tracker.WorkspaceToSnapshot(&workspace)
 
 	newToken := map[string]interface{}{
 		"integration_token": password.MustGenerate(64, 30, 0, false, true),
@@ -1458,18 +1437,11 @@ func (s *Services) resetWorkspaceToken(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//Трекинг активности
-	oldMap := map[string]interface{}{
-		"integration_token": "",
-	}
-	newMap := map[string]interface{}{
-		"integration_token": "******",
-	}
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), workspace, user)
-	if err != nil {
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
 		errStack.GetError(c, err)
 	}
+
 	return c.NoContent(http.StatusCreated)
 }
 
@@ -1706,7 +1678,7 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
 	user := c.(WorkspaceContext).User
 	name := c.Param("name")
-
+	oldSnapshot := tracker.WorkspaceToSnapshot(&workspace)
 	if c.(WorkspaceContext).WorkspaceMember.Role != types.AdminRole {
 		return EErrorDefined(c, apierrors.ErrNotEnoughRights)
 	}
@@ -1729,15 +1701,12 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	data := map[string]interface{}{
-		"member_key":               "integration",
-		"integration_activity_val": name,
-	}
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace, tracker.WithIntegration(integration.ID, name))
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbAdded, tracker.NewTrackerCtx(&data, nil), workspaceMember, user)
-	if err != nil {
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, &workspace, user); err != nil {
 		errStack.GetError(c, err)
 	}
+
 	return c.NoContent(http.StatusCreated)
 }
 
@@ -1759,6 +1728,7 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/integrations/{name}/ [post]
 func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 	workspace := c.(WorkspaceContext).Workspace
+	user := c.(WorkspaceContext).User
 	name := c.Param("name")
 
 	if c.(WorkspaceContext).WorkspaceMember.Role != types.AdminRole {
@@ -1769,27 +1739,23 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 	if integration == nil {
 		return EErrorDefined(c, apierrors.ErrIntegrationNotFound)
 	}
-
-	data := map[string]interface{}{
-		"member_key":               "integration",
-		"integration_activity_val": name,
-	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(&workspace, tracker.WithIntegration(integration.ID, name))
 
 	var wm dao.WorkspaceMember
 	if err := s.db.Joins("Member").Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).First(&wm).Error; err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbRemoved, tracker.NewTrackerCtx(&data, nil), wm, c.(WorkspaceContext).User)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-
-		return s.db.Session(&gorm.Session{SkipHooks: true}).Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).Delete(&dao.WorkspaceMember{}).Error
-	}); err != nil {
+	if err := s.db.Session(&gorm.Session{SkipHooks: true}).
+		Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).
+		Delete(&dao.WorkspaceMember{}).Error; err != nil {
 		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, &workspace, user); err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)

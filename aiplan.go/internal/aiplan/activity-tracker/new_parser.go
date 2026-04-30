@@ -28,6 +28,8 @@ func ParseActivityTag(tag string) (ActivityFieldSpec, error) {
 			spec.PreserveID = parts[1] == "true"
 		case "linked_field":
 			spec.LinkedField = parts[1]
+		case "secret":
+			spec.Secret = parts[1] == "true"
 		}
 	}
 

@@ -16,6 +16,7 @@ import (
 	"iter"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -303,4 +304,22 @@ func GetFirstOrNil[E any](entities ...*E) *E {
 		}
 	}
 	return nil
+}
+
+func MaskString(s string) string {
+	runes := []rune(s)
+	length := len(runes)
+
+	if length == 0 {
+		return ""
+	}
+
+	if length < 6 {
+		return string(runes[0]) + strings.Repeat("*", length-1)
+	}
+
+	firstTwo := string(runes[:2])
+	lastTwo := string(runes[length-2:])
+
+	return firstTwo + "***" + lastTwo
 }

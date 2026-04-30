@@ -8,7 +8,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -18,11 +17,7 @@ func (b *Business) DeleteProject(user *dao.User, project *dao.Project, workspace
 		return apierrors.ErrDeleteProjectForbidden
 	}
 
-	err := tracker.TrackEvent(b.ta, types.LayerWorkspace, activities.VerbDeleted, nil, *project, user)
-	if err != nil {
-		errStack.GetError(nil, err)
-		return err
-	}
+	oldSnapshot := tracker.ProjectToSnapshot(project)
 
 	// Soft-delete project
 	{
@@ -58,6 +53,11 @@ func (b *Business) DeleteProject(user *dao.User, project *dao.Project, workspace
 			slog.Error("Hard delete project", "projectId", project.ID, "err", err)
 		}
 	}(*project)
+
+	err := b.st.TrackChanges(types.LayerWorkspace, oldSnapshot, nil, project.Workspace, user)
+	if err != nil {
+		errStack.GetError(nil, err)
+	}
 
 	return nil
 }
@@ -154,21 +154,15 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 		return err
 	}
 
-	data := map[string]interface{}{
-		"updateScopeId": requestedMember.MemberId,
-	}
+	oldSnapshot := tracker.ProjectToSnapshot(project, tracker.WithProjectMembers([]dao.ProjectMember{*requestedMember}, func(m dao.ProjectMember) string { return m.Member.Email }))
+	newSnapshot := tracker.ProjectToSnapshot(project)
 
-	if err := b.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackEvent(b.ta, types.LayerProject, activities.VerbRemoved, tracker.NewTrackerCtx(&data, nil), *requestedMember, actor.Member)
-		if err != nil {
-			errStack.GetError(nil, err)
-			return err
-		}
-
-		return b.db.Delete(&requestedMember).Error
-	}); err != nil {
+	if err := b.db.Delete(&requestedMember).Error; err != nil {
 		return err
 	}
 
+	if err := b.st.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, project, actor.Member); err != nil {
+		errStack.GetError(nil, err)
+	}
 	return nil
 }

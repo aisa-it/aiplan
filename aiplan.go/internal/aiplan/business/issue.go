@@ -55,14 +55,25 @@ func (b *Business) CreateIssueComment(issue dao.Issue, user dao.User, text strin
 		return err
 	}
 
-	data := make(map[string]interface{})
+	trackOpts := []tracker.TrackOption{
+		tracker.WithNewVal(comment.CommentHtml.String()),
+		tracker.WithNewID(comment.Id),
+	}
 	if fromTg && user.TelegramId != nil {
-		data["tg_sender"] = *user.TelegramId
+		trackOpts = append(trackOpts, tracker.WithTgSender(*user.TelegramId))
 	}
 
-	err := tracker.TrackEvent(b.ta, types.LayerIssue, activities.VerbCreated, tracker.NewTrackerCtx(&data, nil), comment, &user)
+	err := b.st.TrackVerb(types.LayerIssue, activities.VerbCreated, &issue, &user, trackOpts...)
 	if err != nil {
 		errStack.GetError(nil, err)
 	}
+
+	//newSnapshot := tracker.CommentToSnapshot(&comment, trackOpts...)
+
+	//err := s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issue, user)
+	//if err != nil {
+	//	errStack.GetError(nil, err)
+	//}
+
 	return err
 }

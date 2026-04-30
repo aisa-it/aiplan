@@ -648,11 +648,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 	project := c.(IssueContext).Project
 	oldSnapshot := tracker.IssueToSnapshot(issue)
 	oldIssue := issue
-	ctx := tracker.NewTrackerCtx(nil, nil)
 	issueMapOld := StructToJSONMap(issue)
-	ctx.OldGormMap = &issueMapOld
 
-	var data tracker.DataEntity
+	var data map[string]interface{}
 	form, _ := c.MultipartForm()
 
 	// If comment without attachments
@@ -787,7 +785,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		field := actField.Status.Field
 		data["state_id"] = stateUUID
 
 		if err := s.db.Where("id = ?", stateUUID).
@@ -797,12 +794,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		issue.State = &newState
-
-		tracker.SetField(data, field.WithScopeID(), stateUUID)
-		tracker.SetField(data, field.AsLogValue(), newState.Name)
-
-		tracker.SetField(issueMapOld, field.WithScopeID(), issue.State.ID)
-		tracker.SetField(issueMapOld, field.AsLogValue(), issue.State.Name)
 
 		if newState.Group == "started" && issue.State.Group != "started" {
 			data["start_date"] = &types.TargetDateTimeZ{Time: time.Now()}
@@ -902,7 +893,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if err := s.db.Where("project_id = ?", project.ID).Find(&allProjectLabels).Error; err != nil {
 			return EError(c, err)
 		}
-		data[actField.Label.Field.LookupFrom().String()] = "labels"
 	}
 
 	// Reset sort order
@@ -1205,11 +1195,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 		return EError(c, err)
 	}
-	//err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&data, &issueMapOld), issue, &user)
-	//if err != nil {
-	//	errStack.GetError(c, err)
-	//}
-	// Reload issue with updated assignees/watchers/blockers/linked issues after transaction
+
 	var updatedIssue dao.Issue
 	query := s.db.
 		Joins("Parent").
@@ -1507,10 +1493,6 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 		if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSubIssuesData[i], newSnapshot, subIssue, user); err != nil {
 			errStack.GetError(c, err)
 		}
-		//err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, actField.VerbUpdated, tracker.NewTrackerCtx(&newSubIssuesData[i], &oldSubIssuesData[i]), subIssues[i], user)
-		//if err != nil {
-		//	errStack.GetError(c, err)
-		//}
 	}
 
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))

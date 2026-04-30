@@ -8,7 +8,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -19,12 +18,7 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 	if !user.IsSuperuser && user.ID != workspace.OwnerId {
 		return apierrors.ErrDeleteWorkspaceForbidden
 	}
-
-	err := tracker.TrackEvent(b.ta, types.LayerRoot, activities.VerbDeleted, nil, *workspace, user)
-	if err != nil {
-		errStack.GetError(nil, err)
-		return err
-	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
 
 	{
 		// delete DeferredNotifications & activities
@@ -75,6 +69,11 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 		}
 	}(*workspace)
 
+	err := b.st.TrackChanges(types.LayerRoot, oldSnapshot, nil, workspace, user)
+	if err != nil {
+		errStack.GetError(nil, err)
+	}
+
 	return nil
 }
 
@@ -117,21 +116,14 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 		}
 	}
 
-	data := map[string]interface{}{
-		"updateScopeId": requestedMember.MemberId,
-	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(requestedMember.Workspace, tracker.WithWorkspaceMembers([]dao.WorkspaceMember{*requestedMember}, func(m dao.WorkspaceMember) string { return m.Member.Email }))
+	newSnapshot := tracker.WorkspaceToSnapshot(requestedMember.Workspace)
 
-	if err := b.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackEvent(b.ta, types.LayerWorkspace, activities.VerbRemoved, tracker.NewTrackerCtx(&data, nil), *requestedMember, actor.Member)
-		if err != nil {
-			errStack.GetError(nil, err)
-			return err
-		}
-
-		return tx.Delete(requestedMember).Error
-	}); err != nil {
+	if err := b.db.Delete(requestedMember).Error; err != nil {
 		return err
 	}
-
+	if err := b.st.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, requestedMember.Workspace, actor.Member); err != nil {
+		errStack.GetError(nil, err)
+	}
 	return nil
 }

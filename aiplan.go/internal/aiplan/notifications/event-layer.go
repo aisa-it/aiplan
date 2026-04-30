@@ -252,3 +252,40 @@ func preloadIssue(tx *gorm.DB, issueID uuid.UUID) (*dao.Issue, error) {
 		First(&issue).Error
 	return &issue, err
 }
+
+// Реализация для слоя form
+type formEvent struct {
+	baseEventHandler
+}
+
+func (f formEvent) CanHandle(event *dao.ActivityEvent) bool {
+	return false
+}
+
+func (f formEvent) Preload(tx *gorm.DB, event *dao.ActivityEvent) error {
+	if err := tx.Unscoped().
+		Joins("Workspace").
+		Joins("TargetProject").
+		Where("forms.id = ?", event.ProjectID.UUID).
+		First(&event.Form).Error; err != nil {
+		return fmt.Errorf("preloadFormActivity: %v", err)
+	}
+
+	event.Workspace = event.Form.Workspace
+
+	return nil
+}
+
+func (f formEvent) GetRecipientsSteps(event *dao.ActivityEvent) []member_role.UsersStep {
+	return []member_role.UsersStep{
+		member_role.AddWorkspaceAdmins(event.WorkspaceID.UUID),
+	}
+}
+
+func (f formEvent) GetSettingsFunc() member_role.IsNotifyFunc {
+	return member_role.FromWorkspace()
+}
+
+func (f formEvent) AuthorRole() member_role.Role {
+	return member_role.ActionAuthor
+}
