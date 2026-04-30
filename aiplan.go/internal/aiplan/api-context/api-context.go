@@ -41,6 +41,8 @@ type APIContext struct {
 
 	form Form
 
+	doc Doc
+
 	searchFilter *dao.SearchFilter
 	releaseNote  *dao.ReleaseNote
 
@@ -67,6 +69,11 @@ type Sprint struct {
 type Form struct {
 	Form        *dao.Form
 	LastOptions FormFetchOptions
+}
+
+type Doc struct {
+	Doc         *dao.Doc
+	LastOptions DocFetchOptions
 }
 
 func SetContext(c echo.Context, db *gorm.DB, userMeta *UserMeta) {
@@ -358,6 +365,27 @@ func (a *APIContext) GetForm(options ...FormFetchOption) *dao.Form {
 	return a.form.Form
 }
 
+func (a *APIContext) GetDoc(options ...DocFetchOption) *dao.Doc {
+	fetchOptions := &DocFetchOptions{query: a.db.Session(&gorm.Session{}), loaded: make(map[string]struct{}, 7)}
+
+	for _, option := range options {
+		option(fetchOptions)
+	}
+
+	if a.doc.Doc != nil && (a.doc.LastOptions.GetID() == fetchOptions.GetID() || len(options) == 0) {
+		return a.doc.Doc
+	}
+
+	a.fetchDoc(fetchOptions)
+
+	if a.error != nil {
+		return nil
+	}
+
+	a.doc.LastOptions = *fetchOptions
+	return a.doc.Doc
+}
+
 func (a *APIContext) GetSearchFilter() *dao.SearchFilter {
 	if a.searchFilter != nil {
 		return a.searchFilter
@@ -436,6 +464,45 @@ func (a *APIContext) fetchForm(fetchOptions *FormFetchOptions) {
 	}
 
 	a.form.Form = &form
+}
+
+func (a *APIContext) fetchDoc(fetchOptions *DocFetchOptions) {
+	workspace := a.GetWorkspace()
+	workspaceMember := a.GetWorkspaceMember()
+	if a.error != nil {
+		return
+	}
+
+	docId := a.Param("docId")
+	if docId == "" {
+		a.error = apierrors.ErrDocNotFound
+		return
+	}
+
+	query := fetchOptions.query.
+		Set("member_id", workspaceMember.MemberId).
+		Set("member_role", workspaceMember.Role)
+
+	if _, ok := fetchOptions.loaded["Breadcrumbs"]; ok {
+		query = query.Set("breadcrumbs", true)
+	}
+
+	var doc dao.Doc
+	if err := query.
+		Where("docs.workspace_id = ?", workspace.ID).
+		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
+		Where("docs.id = ?", docId).
+		First(&doc).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			a.error = apierrors.ErrDocNotFound
+			return
+		}
+		a.error = err
+		return
+	}
+
+	a.doc.Doc = &doc
 }
 
 func (a *APIContext) fetchSprint(fetchOptions *SprintFetchOptions) {

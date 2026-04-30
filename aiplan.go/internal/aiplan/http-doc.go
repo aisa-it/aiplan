@@ -30,55 +30,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type DocContext struct {
-	echo.Context
-	Doc dao.Doc
-}
-
-func (s *Services) DocMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		docId := c.Param("docId")
-		apiContext := apicontext.GetContext(c)
-		workspace := apiContext.GetWorkspace()
-		workspaceMember := apiContext.GetWorkspaceMember()
-		if apiContext.Error() != nil {
-			return EError(c, apiContext.Error())
-		}
-		var doc dao.Doc
-		if err := s.DB(c).
-			Set("member_id", workspaceMember.MemberId).
-			Set("member_role", workspaceMember.Role).
-			Set("breadcrumbs", true).
-			Preload("AccessRules.Member").
-			Preload("ParentDoc").
-			Preload("Author").
-			Preload("Workspace").
-			Preload("InlineAttachments").
-			Where("docs.workspace_id = ?", workspace.ID).
-			Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
-				workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
-			Where("docs.id = ?", docId).
-			First(&doc).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrDocNotFound)
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		}
-
-		return next(DocContext{c, doc})
-	}
-}
-
 func (s *Services) AddDocServices(g *echo.Group) {
 	workspaceGroup := g.Group("workspaces/:workspaceSlug",
 		s.WorkspaceMiddleware,
 		s.WorkspacePermissionMiddleware,
 		s.LastVisitedWorkspaceMiddleware,
 	)
-	docGroup := workspaceGroup.Group("/doc/:docId",
-		s.DocMiddleware,
-		s.DocPermissionMiddleware,
-	)
+	docGroup := workspaceGroup.Group("/doc/:docId", s.DocPermissionMiddleware)
 
 	workspaceGroup.GET("/doc/", s.getRootDocList)
 	workspaceGroup.POST("/doc/", s.createRootDoc)
@@ -176,7 +134,11 @@ func (s *Services) getRootDocList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/ [get]
 func (s *Services) getDoc(c echo.Context) error {
-	doc := c.(DocContext).Doc
+	apiContext := apicontext.GetContext(c)
+	doc := apiContext.GetDoc(apicontext.WithDocAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, doc.ToDTO())
 }
 
@@ -280,11 +242,12 @@ func (s *Services) createRootDoc(c echo.Context) error {
 func (s *Services) createDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	parentDocPtr := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	parentDoc := c.(DocContext).Doc
-	user := apicontext.GetContext(c).GetUser()
+	parentDoc := *parentDocPtr
+	user := apiContext.GetUser()
 
 	doc, fields, err := BindDoc(c, nil)
 	if err != nil {
@@ -374,11 +337,12 @@ func (s *Services) updateDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
 	workspaceMember := apiContext.GetWorkspaceMember()
+	docPtr := apiContext.GetDoc(apicontext.WithDocAccessRules())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	doc := c.(DocContext).Doc
-	user := apicontext.GetContext(c).GetUser()
+	doc := *docPtr
+	user := apiContext.GetUser()
 
 	cascadeRoles := false
 
@@ -737,8 +701,13 @@ func CascadeUpdateChildDocsRole(tx *gorm.DB, parentID uuid.UUID, roleField strin
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/  [delete]
 func (s *Services) deleteDoc(c echo.Context) error {
-	doc := c.(DocContext).Doc
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	docPtr := apiContext.GetDoc()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	doc := *docPtr
+	user := apiContext.GetUser()
 
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if len(doc.ChildDocs) > 0 {
@@ -801,11 +770,12 @@ type docChanges struct {
 func (s *Services) moveDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	docPtr := apiContext.GetDoc(apicontext.WithDocParent(), apicontext.WithDocWorkspace())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	doc := c.(DocContext).Doc
-	user := apicontext.GetContext(c).GetUser()
+	doc := *docPtr
+	user := apiContext.GetUser()
 
 	var groupChanges docChanges
 	changes := make(map[uuid.UUID]docMove)
@@ -1060,10 +1030,11 @@ func (s *Services) getChildDocList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
 	workspaceMember := apiContext.GetWorkspaceMember()
+	currentDocPtr := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	currentDoc := c.(DocContext).Doc
+	currentDoc := *currentDocPtr
 
 	var docs []dao.Doc
 	if err := s.DB(c).
@@ -1107,10 +1078,11 @@ func (s *Services) getChildDocList(c echo.Context) error {
 func (s *Services) getDocCommentList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	currentDocPtr := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	currentDoc := c.(DocContext).Doc
+	currentDoc := *currentDocPtr
 
 	offset := 0
 	limit := 100
@@ -1265,10 +1237,11 @@ func (s *Services) createDocComment(c echo.Context) error {
 func (s *Services) getDocComment(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	doc := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	docId := c.(DocContext).Doc.ID
+	docId := doc.ID
 	commentId := c.Param("commentId")
 
 	if _, err := uuid.FromString(commentId); err != nil {
@@ -1418,11 +1391,12 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
 	workspaceMember := apiContext.GetWorkspaceMember()
+	docPtr := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := apicontext.GetContext(c).GetUser()
-	doc := c.(DocContext).Doc
+	user := apiContext.GetUser()
+	doc := *docPtr
 	commentId := c.Param("commentId")
 
 	var comment dao.DocComment
@@ -1472,7 +1446,11 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/history [get]
 func (s *Services) getDocCommentUpdateList(c echo.Context) error {
-	doc := c.(DocContext).Doc
+	apiContext := apicontext.GetContext(c)
+	doc := apiContext.GetDoc()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	commentId := c.Param("commentId")
 
 	offset := -1
@@ -1557,8 +1535,13 @@ func (s *Services) getDocCommentUpdateList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/comments/{commentId}/reactions/ [post]
 func (s *Services) addDocCommentReaction(c echo.Context) error {
-	user := apicontext.GetContext(c).GetUser()
-	doc := c.(DocContext).Doc
+	apiContext := apicontext.GetContext(c)
+	docPtr := apiContext.GetDoc()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
+	doc := *docPtr
 	commentId := c.Param("commentId")
 
 	var reactionRequest ReactionRequest
@@ -1657,10 +1640,11 @@ func (s *Services) removeDocCommentReaction(c echo.Context) error {
 func (s *Services) getDocAttachmentList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	doc := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	docId := c.(DocContext).Doc.ID
+	docId := doc.ID
 
 	var attachments []dao.DocAttachment
 	if err := s.DB(c).
@@ -1698,11 +1682,12 @@ func (s *Services) getDocAttachmentList(c echo.Context) error {
 func (s *Services) createDocAttachments(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	docPtr := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	user := apicontext.GetContext(c).GetUser()
-	doc := c.(DocContext).Doc
+	user := apiContext.GetUser()
+	doc := *docPtr
 
 	if !limiter.Limiter.CanAddAttachment(workspace.ID) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
@@ -1802,11 +1787,12 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 func (s *Services) deleteDocAttachment(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	doc := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	docId := c.(DocContext).Doc.ID
-	user := apicontext.GetContext(c).GetUser()
+	docId := doc.ID
+	user := apiContext.GetUser()
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.DocAttachment
@@ -2004,10 +1990,11 @@ func (s *Services) removeDocFromFavorites(c echo.Context) error {
 func (s *Services) getDocActivityList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
+	currentDoc := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	docId := c.(DocContext).Doc.ID
+	docId := currentDoc.ID
 	workspaceId := workspace.ID
 
 	offset := 0
@@ -2065,7 +2052,12 @@ func (s *Services) getDocActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/history/ [get]
 func (s *Services) getDocHistoryList(c echo.Context) error {
-	doc := c.(DocContext).Doc
+	apiContext := apicontext.GetContext(c)
+	docPtr := apiContext.GetDoc()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	doc := *docPtr
 
 	offset := -1
 	limit := 100
@@ -2118,7 +2110,12 @@ func (s *Services) getDocHistoryList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/history/{versionId} [get]
 func (s *Services) getDocHistory(c echo.Context) error {
-	doc := c.(DocContext).Doc
+	apiContext := apicontext.GetContext(c)
+	docPtr := apiContext.GetDoc(apicontext.WithDocInlineAttachments())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	doc := *docPtr
 	versionId := c.Param("versionId")
 
 	var activity dao.DocActivity
@@ -2172,8 +2169,13 @@ func (s *Services) getDocHistory(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/history/{versionId} [patch]
 func (s *Services) updateDocFromHistory(c echo.Context) error {
-	doc := c.(DocContext).Doc
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
+	docPtr := apiContext.GetDoc(apicontext.WithDocInlineAttachments())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	doc := *docPtr
+	user := apiContext.GetUser()
 	versionId := c.Param("versionId")
 
 	oldDocMap := StructToJSONMap(doc)
@@ -2326,18 +2328,19 @@ func BindDocComment(c echo.Context, comment *dao.DocComment) (*dao.DocComment, [
 	if comment == nil {
 		apiContext := apicontext.GetContext(c)
 		workspace := apiContext.GetWorkspace()
+		doc := apiContext.GetDoc()
 		if apiContext.Error() != nil {
 			return nil, nil, apiContext.Error()
 		}
-		userID := uuid.NullUUID{UUID: apicontext.GetContext(c).GetUser().ID, Valid: true}
+		userID := uuid.NullUUID{UUID: apiContext.GetUser().ID, Valid: true}
 		commentCreate := &dao.DocComment{
 			Id:               dao.GenUUID(),
 			CommentStripped:  "",
 			CreatedById:      userID,
 			WorkspaceId:      workspace.ID,
-			DocId:            c.(DocContext).Doc.ID,
+			DocId:            doc.ID,
 			ActorId:          userID,
-			Actor:            apicontext.GetContext(c).GetUser(),
+			Actor:            apiContext.GetUser(),
 			CommentHtml:      req.CommentHtml,
 			ReplyToCommentId: req.ReplyToComment,
 			CommentType:      1,
