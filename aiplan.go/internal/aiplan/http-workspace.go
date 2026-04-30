@@ -577,6 +577,7 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/members [get]
 func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
 	workspaceMember := apiContext.GetWorkspaceMember()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
@@ -600,11 +601,11 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 
 	switch orderBy {
 	case "email":
-		orderBy = "lower(email)"
+		orderBy = "lower(\"Member\".email)"
 	case "role":
 		break
 	default:
-		orderBy = "lower(last_name)"
+		orderBy = "lower(\"Member\".last_name)"
 	}
 
 	if desc {
@@ -613,10 +614,8 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		orderBy = fmt.Sprintf("%s %s", orderBy, "asc")
 	}
 
-	query := s.DB(c).Preload("Workspace").
-		Preload("Workspace.Owner").
+	query := s.DB(c).
 		Joins("Member").
-		Preload("Member").
 		Where("workspace_id in (?)", workspaceMember.WorkspaceId).
 		Order(orderBy)
 
@@ -634,6 +633,10 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	)
 	if err != nil {
 		return EError(c, err)
+	}
+
+	for i := range members {
+		members[i].Workspace = workspace
 	}
 
 	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
