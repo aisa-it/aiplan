@@ -25,8 +25,27 @@ func (t *SnapshotTracker) RegisterHandler(handler ActHandler) {
 	t.handlers = append(t.handlers, handler)
 }
 
-func (t *SnapshotTracker) GetDB() *gorm.DB {
-	return t.db
+func NewActivityEvent(verb string, field actField.ActivityField, oldVal string, newVal string, newId, oldId uuid.NullUUID, actor *dao.User) dao.ActivityEvent {
+
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		WorkspaceID:   uuid.NullUUID{},
+		ProjectID:     uuid.NullUUID{},
+		IssueID:       uuid.NullUUID{},
+		DocID:         uuid.NullUUID{},
+		FormID:        uuid.NullUUID{},
+		SprintID:      uuid.NullUUID{},
+		EntityType:    0,
+		ActorID:       actor.ID,
+		Actor:         actor,
+		Notified:      false,
+		Verb:          verb,
+		Field:         field,
+		OldValue:      oldVal,
+		NewValue:      newVal,
+		NewIdentifier: newId,
+		OldIdentifier: oldId,
+	}
 }
 
 func (t *SnapshotTracker) saveAndNotifyActivity(event *dao.ActivityEvent) error {
@@ -45,6 +64,61 @@ func (t *SnapshotTracker) saveAndNotifyActivity(event *dao.ActivityEvent) error 
 	}
 
 	return nil
+}
+
+func setEntityRefs(layer types.EntityLayer, event *dao.ActivityEvent, entity dao.IDaoAct, entityID uuid.UUID) {
+	if de, ok := any(entity).(dao.WorkspaceEntityI); ok && layer != types.LayerRoot {
+		event.WorkspaceID = uuid.NullUUID{UUID: de.GetWorkspaceId(), Valid: true}
+	}
+	if de, ok := any(entity).(dao.DocEntityI); ok {
+		event.DocID = uuid.NullUUID{UUID: de.GetDocId(), Valid: true}
+	}
+	if fe, ok := any(entity).(dao.FormEntityI); ok {
+		event.FormID = uuid.NullUUID{UUID: fe.GetFormId(), Valid: true}
+	}
+	if se, ok := any(entity).(dao.SprintEntityI); ok {
+		event.SprintID = uuid.NullUUID{UUID: se.GetSprintId(), Valid: true}
+	}
+	if pe, ok := any(entity).(dao.ProjectEntityI); ok && layer != types.LayerWorkspace {
+		event.ProjectID = uuid.NullUUID{UUID: pe.GetProjectId(), Valid: true}
+	}
+	if ie, ok := any(entity).(dao.IssueEntityI); ok {
+		event.IssueID = uuid.NullUUID{UUID: ie.GetIssueId(), Valid: true}
+	}
+	event.EntityType = layer
+
+	//
+	//event.EntityType = layer
+	//switch layer {
+	//case types.LayerIssue:
+	//	if ie, ok := any(entity).(dao.IssueEntityI); ok {
+	//		event.WorkspaceID = uuid.NullUUID{UUID: ie.GetWorkspaceId(), Valid: true}
+	//		event.ProjectID = uuid.NullUUID{UUID: ie.GetProjectId(), Valid: true}
+	//    event.IssueID = uuid.NullUUID{UUID: ie.GetIssueId(), Valid: true}
+	//  }
+	//case types.LayerProject:
+	//	if pe, ok := any(entity).(dao.ProjectEntityI); ok {
+	//		event.WorkspaceID = uuid.NullUUID{UUID: pe.GetWorkspaceId(), Valid: true}
+	//	}
+	//	event.ProjectID = uuid.NullUUID{UUID: entityID, Valid: true}
+	//case types.LayerWorkspace:
+	//	event.WorkspaceID = uuid.NullUUID{UUID: entityID, Valid: true}
+	//case types.LayerDoc:
+	//	if de, ok := any(entity).(dao.DocEntityI); ok {
+	//		event.WorkspaceID = uuid.NullUUID{UUID: de.GetWorkspaceId(), Valid: true}
+	//	}
+	//	event.DocID = uuid.NullUUID{UUID: entityID, Valid: true}
+	//case types.LayerForm:
+	//	if fe, ok := any(entity).(dao.FormEntityI); ok {
+	//		event.WorkspaceID = uuid.NullUUID{UUID: fe.GetWorkspaceId(), Valid: true}
+	//	}
+	//	event.FormID = uuid.NullUUID{UUID: entityID, Valid: true}
+	//case types.LayerSprint:
+	//	if se, ok := any(entity).(dao.SprintEntityI); ok {
+	//		event.WorkspaceID = uuid.NullUUID{UUID: se.GetWorkspaceId(), Valid: true}
+	//	}
+	//	event.SprintID = uuid.NullUUID{UUID: entityID, Valid: true}
+	//}
 }
 
 func (t *SnapshotTracker) TrackDocMove(doc *dao.Doc, oldParent, newParent *dao.Doc, actor *dao.User) error {
@@ -154,23 +228,46 @@ func (t *SnapshotTracker) configureMoveActivity(event *dao.ActivityEvent, doc *d
 	}
 }
 
-func (t *SnapshotTracker) TrackChanges(layer types.EntityLayer, oldSnapshot, newSnapshot SnapshotI, entity dao.IDaoAct, actor *dao.User) error {
-	if oldSnapshot == nil && newSnapshot != nil {
-		return t.trackCreate(layer, newSnapshot, entity, actor)
-	}
-
-	if newSnapshot == nil && oldSnapshot != nil {
-		return t.trackDelete(layer, oldSnapshot, entity, actor)
-	}
-
-	oldAny, newAny := any(oldSnapshot), any(newSnapshot)
-	if oldAny == nil || newAny == nil {
-		return nil
-	}
-	return t.continueUpdate(layer, oldAny, newAny, entity, actor)
+func (t *SnapshotTracker) TrackChanges(layer types.EntityLayer, oldSnapshot, newSnapshot SnapshotI, entity dao.IDaoAct, actor *dao.User, targetEntityID ...uuid.UUID) error {
+	return t.TrackChangesWithVerb(layer, oldSnapshot, newSnapshot, entity, actor, "", targetEntityID...)
 }
 
-func (t *SnapshotTracker) trackCreate(layer types.EntityLayer, snapshot SnapshotI, entity dao.IDaoAct, actor *dao.User) error {
+func (t *SnapshotTracker) TrackChangesWithVerb(layer types.EntityLayer, oldSnapshot, newSnapshot SnapshotI, entity dao.IDaoAct, actor *dao.User, verb string, targetEntityID ...uuid.UUID) error {
+	targetID := uuid.Nil
+	if len(targetEntityID) > 0 {
+		targetID = targetEntityID[0]
+	}
+	if oldSnapshot == nil && newSnapshot != nil {
+		return t.trackCreateWithVerb(layer, newSnapshot, entity, actor, verb, targetID)
+	}
+	if newSnapshot == nil && oldSnapshot != nil {
+		return t.trackDelete(layer, oldSnapshot, entity, actor, targetID)
+	}
+	return t.continueUpdate(layer, oldSnapshot, newSnapshot, entity, actor, targetID)
+}
+
+func (t *SnapshotTracker) TrackVerb(layer types.EntityLayer, verb string, entity dao.IDaoAct, actor *dao.User, opts ...TrackOption) error {
+	// Create TrackParams from opts
+	params := &trackParams{}
+	for _, opt := range opts {
+		opt(params)
+	}
+
+	// Create activity event
+	event := NewActivityEvent(verb, params.field, params.oldVal, params.newVal, params.newID, params.oldID, actor)
+
+	// Set entity references based on layer
+	entityID := entity.GetId()
+	setEntityRefs(layer, &event, entity, entityID)
+
+	return t.saveAndNotifyActivity(&event)
+}
+
+func (t *SnapshotTracker) trackCreateWithVerb(layer types.EntityLayer, snapshot SnapshotI, entity dao.IDaoAct, actor *dao.User, verb string, targetEntityID uuid.UUID) error {
+	if verb == "" {
+		verb = actField.VerbCreated
+	}
+
 	var name string
 	var entityID uuid.UUID
 	var field actField.ActivityField
@@ -183,7 +280,9 @@ func (t *SnapshotTracker) trackCreate(layer types.EntityLayer, snapshot Snapshot
 	if field == "" {
 		field = entity.GetEntityType()
 	}
-	if entityID == uuid.Nil {
+	if targetEntityID != uuid.Nil {
+		entityID = targetEntityID
+	} else if entityID == uuid.Nil {
 		entityID = entity.GetId()
 	}
 	if name == "" {
@@ -191,7 +290,7 @@ func (t *SnapshotTracker) trackCreate(layer types.EntityLayer, snapshot Snapshot
 	}
 
 	ev := NewActivityEvent(
-		actField.VerbCreated,
+		verb,
 		field,
 		"",
 		name,
@@ -199,14 +298,14 @@ func (t *SnapshotTracker) trackCreate(layer types.EntityLayer, snapshot Snapshot
 		uuid.NullUUID{},
 		actor,
 	)
-	if err := SetEntityRefs(layer, &ev, entity); err != nil {
-		return fmt.Errorf("set entity refs create: %w", err)
-	}
+
+	// Set entity references based on layer
+	setEntityRefs(layer, &ev, entity, entityID)
 
 	return t.saveAndNotifyActivity(&ev)
 }
 
-func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot SnapshotI, entity dao.IDaoAct, actor *dao.User) error {
+func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot SnapshotI, entity dao.IDaoAct, actor *dao.User, targetEntityID uuid.UUID) error {
 	var name string
 	var field actField.ActivityField
 
@@ -221,6 +320,11 @@ func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot Snapshot
 		name = entity.GetString()
 	}
 
+	entityID := entity.GetId()
+	if targetEntityID != uuid.Nil {
+		entityID = targetEntityID
+	}
+
 	ev := NewActivityEvent(
 		actField.VerbDeleted,
 		field,
@@ -230,20 +334,24 @@ func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot Snapshot
 		uuid.NullUUID{},
 		actor,
 	)
-	if err := SetEntityRefs(layer, &ev, entity); err != nil {
-		return fmt.Errorf("set entity refs delete: %w", err)
-	}
+
+	// Set entity references based on layer
+	setEntityRefs(layer, &ev, entity, entityID)
 
 	return t.saveAndNotifyActivity(&ev)
 }
 
-func (t *SnapshotTracker) continueUpdate(layer types.EntityLayer, oldSnapshot, newSnapshot any, entity dao.IDaoAct, actor *dao.User) error {
-	changes := Diff(oldSnapshot, newSnapshot, entity.GetId(), entity.GetString())
+func (t *SnapshotTracker) continueUpdate(layer types.EntityLayer, oldSnapshot, newSnapshot any, entity dao.IDaoAct, actor *dao.User, targetEntityID uuid.UUID) error {
+	entityID := entity.GetId()
+	if targetEntityID != uuid.Nil {
+		entityID = targetEntityID
+	}
+	changes := Diff(oldSnapshot, newSnapshot, entityID, entity.GetString())
 	if len(changes) == 0 {
 		return nil
 	}
 
-	activityEvents := BuildActivityEvents(layer, changes, entity, actor, t.db)
+	activityEvents := BuildActivityEvents(t.db, changes, entity, actor)
 
 	for _, event := range activityEvents {
 		if err := t.saveAndNotifyActivity(&event); err != nil {

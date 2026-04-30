@@ -21,7 +21,6 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"github.com/gofrs/uuid"
 
@@ -243,10 +242,9 @@ func (s *Services) createForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	ctx := tracker.NewTrackerCtx(nil, nil)
-	ctx.New.SetKey(activities.Form.Field.AsLogValue(), form.Title)
+	newSnap := tracker.FormToSnapshot(form)
 
-	err = tracker.TrackEvent(s.activityTracker, types2.LayerWorkspace, activities.VerbCreated, ctx, *form, user)
+	err = s.snapshotTracker.TrackChanges(types2.LayerWorkspace, nil, &newSnap, workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -275,7 +273,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	user := c.(FormContext).User
 	workspace := c.(FormContext).Workspace
 	form := c.(FormContext).Form
-	oldForm := StructToJSONMap(form)
+	oldSnap := tracker.FormToSnapshot(&form)
 
 	var req reqForm
 	if err := c.Bind(&req); err != nil {
@@ -287,23 +285,10 @@ func (s *Services) updateForm(c echo.Context) error {
 	}
 
 	requestMap := StructToJSONMap(req)
-	var reqEndDate, currentEndDate string
 	if req.EndDate != nil {
-		if v, err := notifications.FormatDate(req.EndDate.String(), "2006-01-02", nil); err != nil {
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		} else {
-			reqEndDate = v
-		}
+		requestMap["end_date"] = req.EndDate.Time
 	} else {
 		requestMap["end_date"] = nil
-	}
-
-	if form.EndDate != nil {
-		if v, err := notifications.FormatDate(form.EndDate.String(), "2006-01-02", nil); err != nil {
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		} else {
-			currentEndDate = v
-		}
 	}
 
 	if _, ok := requestMap["fields"]; ok {
@@ -333,13 +318,10 @@ func (s *Services) updateForm(c echo.Context) error {
 	if err := s.db.Select(updateFields).Updates(&newForm).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
-	data := StructToJSONMap(form)
-	data["end_date"] = reqEndDate
-	data["end_date_activity_val"] = reqEndDate
-	oldForm["end_date"] = currentEndDate
-	oldForm["end_date_activity_val"] = currentEndDate
 
-	err = tracker.TrackEvent(s.activityTracker, types2.LayerForm, activities.VerbUpdated, tracker.NewTrackerCtx(&data, &oldForm), form, user)
+	newSnap := tracker.FormToSnapshot(newForm)
+
+	err = s.snapshotTracker.TrackChanges(types2.LayerForm, &oldSnap, &newSnap, &form, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -363,17 +345,16 @@ func (s *Services) updateForm(c echo.Context) error {
 func (s *Services) deleteForm(c echo.Context) error {
 	form := c.(FormContext).Form
 	user := c.(FormContext).User
-	data := map[string]interface{}{"old_title": form.Title}
-
-	err := tracker.TrackEvent(s.activityTracker, types2.LayerWorkspace, activities.VerbDeleted, tracker.NewTrackerCtx(&data, nil), form, user)
-	if err != nil {
-		errStack.GetError(c, err)
-	}
+	workspace := c.(FormContext).Workspace
+	oldSnap := tracker.FormToSnapshot(&form)
 
 	if err := s.db.Omit(clause.Associations).Delete(&form).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
-
+	err := s.snapshotTracker.TrackChanges(types2.LayerWorkspace, &oldSnap, nil, &workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
 	return c.NoContent(http.StatusOK)
 }
 
@@ -623,7 +604,9 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		}
 	}
 
-	err = tracker.TrackEvent(s.activityTracker, types2.LayerForm, activities.VerbCreated, nil, answer, user)
+	newSnap := tracker.FormAnswerToSnapshot(&answer)
+
+	err = s.snapshotTracker.TrackChanges(types2.LayerForm, nil, &newSnap, &answer, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -769,8 +752,9 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 		return err
 	}
 
-	if err := tracker.TrackEvent(s.activityTracker, types2.LayerProject, activities.VerbCreated, nil, *issue, systemUser); err != nil {
-		errStack.GetError(c, err)
+	err = s.snapshotTracker.TrackChanges(types2.LayerProject, nil, tracker.IssueToSnapshot(*issue), issue.Project, user)
+	if err != nil {
+		errStack.GetError(nil, err)
 	}
 
 	return nil

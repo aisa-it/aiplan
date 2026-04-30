@@ -23,7 +23,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	statesflow "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/states-flow"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -342,10 +341,12 @@ func (s *Services) updateProject(c echo.Context) error {
 			return err
 		}
 
-		if err := tx.Preload("DefaultAssigneesDetails", "is_default_assignee = ?", true).
+		if err := tx.
+			Preload("DefaultAssigneesDetails", "is_default_assignee = ?", true).
 			Preload("DefaultWatchersDetails", "is_default_watcher = ?", true).
 			Preload("DefaultAssigneesDetails.Member").
 			Preload("DefaultWatchersDetails.Member").
+			Preload("ProjectLead").
 			Where("id = ?", project.ID).
 			First(&project).Error; err != nil {
 			return err
@@ -515,7 +516,8 @@ func (s *Services) createProject(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbCreated, nil, project, user)
+	newSnapshot := tracker.ProjectToSnapshot(&project)
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, nil, newSnapshot, &project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -868,42 +870,11 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	oldMemberMap := StructToJSONMap(requestedProjectMember)
+	oldSnapshot := tracker.ProjectMemberToSnapshot(&requestedProjectMember)
 	requestedProjectMember.Role = data["role"]
 	requestedProjectMember.UpdatedById = userID
 
-	ctx := tracker.NewTrackerCtx(nil, &oldMemberMap)
-
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if requestedProjectMember.Role == types.GuestRole {
-			if requestedProjectMember.IsDefaultAssignee {
-				requestedProjectMember.IsDefaultAssignee = false
-				var defaultAssignees []uuid.UUID
-				for _, assignee := range project.DefaultAssignees {
-					if assignee != requestedProjectMember.ID {
-						defaultAssignees = append(defaultAssignees, assignee)
-					}
-				}
-				project.DefaultAssignees = defaultAssignees
-
-				if err := tx.Model(&dao.Project{}).
-					Where("id = ?", project.ID).
-					Select("default_assignees").
-					Updates(&project).Error; err != nil {
-					return err
-				}
-			}
-			var issues []dao.Issue
-
-			if err := tx.Model(&dao.Issue{}).
-				Where("project_id = ?", project.ID).
-				Find(&issues).Error; err != nil {
-				return err
-			}
-
-		}
-
-		ctx.Old.SetKey(activities.Role.Field.AsLogValue(), fmt.Sprint(oldMemberMap["role"]))
 		if err := tx.Model(&dao.ProjectMember{}).
 			Where("id = ?", requestedProjectMember.ID).
 			Select("role", "updated_by_id", "is_default_assignee", "project_id", "member_id").
@@ -916,12 +887,9 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newMemberMap := StructToJSONMap(requestedProjectMember)
-	ctx.GormMap = &newMemberMap
-	ctx.New.SetKey(activities.Role.Field.AsLogValue(), fmt.Sprintf("%d", requestedProjectMember.Role))
-	ctx.New.SetKey(activities.Role.Field.WithScopeID(), requestedProjectMember.ID)
+	newSnapshot := tracker.ProjectMemberToSnapshot(&requestedProjectMember)
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, ctx, project, &user)
+	err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, &user, requestedProjectMember.ID)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -992,6 +960,7 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	user := *c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 	workspace := c.(ProjectContext).Workspace
+	oldSnapshot := tracker.ProjectToSnapshot(&project)
 
 	var projectMember dao.ProjectMember
 	if err := c.Bind(&projectMember); err != nil {
@@ -1056,17 +1025,14 @@ func (s *Services) addMemberToProject(c echo.Context) error {
 	projectMember.Workspace = &workspace
 
 	//s.notificationsService.Tg.AddedToProjectNotify(projectMember)
-	go s.emailService.ProjectInvitation(projectMember) // TODO добавить в пул воркеров на отправку
+	s.emailService.ProjectInvitation(projectMember)
 
-	// Трекинг активности при добавлении пользователя в проект
-	newMemberMap := StructToJSONMap(projectMember)
+	newSnapshot := tracker.ProjectToSnapshot(&project, tracker.WithProjectMembers([]dao.ProjectMember{projectMember}, func(m dao.ProjectMember) string {
+		return fmt.Sprint(m.Role)
+	}))
 
-	newMemberMap["updateScopeId"] = projectMember.MemberId
-	newMemberMap["member_activity_val"] = projectMember.Role
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbAdded, tracker.NewTrackerCtx(&newMemberMap, nil), projectMember, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, project, &user); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusCreated, projectMember.ToLightDTO())
@@ -1873,7 +1839,6 @@ func (s *Services) createIssue(c echo.Context) error {
 
 	issueNew.Project = &project
 
-	// Reload issue with assignees and watchers after transaction
 	if err := s.db.
 		Preload("Assignees").
 		Preload("Watchers").
@@ -1883,12 +1848,6 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, issueNew, &user)
-	//if err != nil {
-	//	errStack.GetError(c, err)
-	//}
-
-	// New snapshot tracker: log issue creation
 	newSnapshot := tracker.IssueToSnapshot(issueNew)
 	err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, &issueNew, &user)
 	if err != nil {
@@ -1896,16 +1855,17 @@ func (s *Services) createIssue(c echo.Context) error {
 	}
 
 	if issueNew.ParentId.Valid {
+		var parentIssue dao.Issue
+		if err := s.db.Where("id = ?", issueNew.ParentId.UUID).First(&parentIssue).Error; err == nil {
+			oldParentSnapshot := tracker.IssueToSnapshot(parentIssue)
+			issueNew.Parent = &parentIssue
+			parentIssue.Project = issueNew.Project
+			newParentSnapshot := tracker.IssueToSnapshot(parentIssue, issueNew)
 
-		data := make(map[string]interface{})
-		oldData := make(map[string]interface{})
-
-		oldData["parent"] = uuid.NullUUID{}
-		data["parent"] = issueNew.ParentId.UUID
-
-		err := tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbUpdated, tracker.NewTrackerCtx(&data, &oldData), issueNew, &user)
-		if err != nil {
-			errStack.GetError(c, err)
+			err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldParentSnapshot, newParentSnapshot, &parentIssue, &user)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
 		}
 	}
 
@@ -2301,9 +2261,9 @@ func (s *Services) createState(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, state, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	newSnapshot := tracker.StateToSnapshot(&state)
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, &project, &user, state.ID); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusCreated, state.ToLightDTO())
@@ -2418,24 +2378,8 @@ func (s *Services) updateState(c echo.Context) error {
 	}
 
 	// Pre-update activity tracking
+	oldSnapshot := tracker.StateToSnapshot(&state)
 	oldStateMap := StructToJSONMap(state)
-	oldStateMap["updateScope"] = "status"
-	oldStateMap["updateScopeId"] = stateId
-	//TODO rate limit
-
-	var currentDefaultState dao.State
-	if err := s.db.
-		Preload(clause.Associations).
-		Where("project_id = ?", project.ID).
-		Where(gorm.Expr(`"default" = ?`, true)).
-		First(&currentDefaultState).Error; err == nil {
-		if currentDefaultState.Name != "" {
-			if req.Default != nil && *req.Default {
-				oldStateMap["default_activity_val"] = currentDefaultState.Name
-				oldStateMap["updateScopeId"] = currentDefaultState.ID
-			}
-		}
-	}
 
 	req.UpdatedById = user.ID
 	fields = append(fields, "updated_by")
@@ -2478,17 +2422,10 @@ func (s *Services) updateState(c echo.Context) error {
 		return EError(c, err)
 	}
 	// Post-update activity tracking
-	newStateMap := StructToJSONMap(state)
+	newSnapshot := tracker.StateToSnapshot(&state)
 
-	newStateMap["updateScope"] = "status"
-	newStateMap["updateScopeId"] = stateId
-	if req.Default != nil && *req.Default {
-		newStateMap["default_activity_val"] = state.Name
-	}
-
-	err = tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, tracker.NewTrackerCtx(&newStateMap, &oldStateMap), project, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, &user, state.ID); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, state.ToLightDTO())
@@ -2543,20 +2480,21 @@ func (s *Services) deleteState(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrStateNotEmptyCannotDelete)
 	}
 
+	oldSnapshot := tracker.StateToSnapshot(&state)
+
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := updateStatesGroup(tx, &state, "delete"); err != nil {
-			return err
-		}
-
-		err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbDeleted, nil, state, &user)
-		if err != nil {
-			errStack.GetError(c, err)
 			return err
 		}
 
 		return tx.Omit(clause.Associations).Delete(&state).Error
 	}); err != nil {
 		return EError(c, err)
+	}
+
+	err = s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, nil, &state, &user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -2885,7 +2823,8 @@ func (s *Services) createIssueTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbCreated, nil, it, user)
+	newSnapshot := tracker.IssueTemplateToSnapshot(&it)
+	err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, &it, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2954,41 +2893,38 @@ func (s *Services) updateIssueTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	oldTemplateMap := StructToJSONMap(template)
-	oldTemplateMap["updateScope"] = "template"
-	oldTemplateMap["updateScopeId"] = template.Id
-	// TODO rate limit
+	oldSnapshot := tracker.IssueTemplateToSnapshot(&template)
+
 	var req dto.IssueTemplate
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
 
-	var fields []string
+	var updateFields []string
 	if req.Name != template.Name {
-		fields = append(fields, "name")
+		updateFields = append(updateFields, "name")
 		template.Name = req.Name
 	}
 	if req.Template != template.Template {
-		fields = append(fields, "template")
+		updateFields = append(updateFields, "template")
 		template.Template = req.Template
 	}
 
-	if len(fields) > 0 {
-		fields = append(fields, "updated_by_id")
+	if len(updateFields) > 0 {
+		updateFields = append(updateFields, "updated_by_id")
 		template.UpdatedById = user.ID
 		if err := s.db.
-			Select(fields).
+			Select(updateFields).
 			Updates(&template).Error; err != nil {
+
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				return EErrorDefined(c, apierrors.ErrIssueTemplateDuplicatedName)
 			}
 			return EError(c, err)
 		}
-		newTemplateMap := StructToJSONMap(template)
-		newTemplateMap["updateScope"] = "template"
-		newTemplateMap["updateScopeId"] = template.Id
 
-		err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, tracker.NewTrackerCtx(&newTemplateMap, &oldTemplateMap), project, user)
+		newSnapshot := tracker.IssueTemplateToSnapshot(&template)
+		err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -3030,18 +2966,18 @@ func (s *Services) deleteIssueTemplate(c echo.Context) error {
 			return EError(c, err)
 		}
 
+		oldSnapshot := tracker.IssueTemplateToSnapshot(&template)
+
 		if err := s.db.Transaction(func(tx *gorm.DB) error {
-
-			err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbDeleted, nil, template, user)
-			if err != nil {
-				errStack.GetError(c, err)
-				return err
-			}
-
 			return s.db.
 				Delete(&template).Error
 		}); err != nil {
 			return EError(c, err)
+		}
+
+		err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, nil, &template, user)
+		if err != nil {
+			errStack.GetError(c, err)
 		}
 
 		return nil
@@ -3088,7 +3024,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 		WorkspaceId: uuid.NullUUID{UUID: project.WorkspaceId, Valid: true},
 	}
 
-	oldLogoId := project.LogoId
+	oldSnapshot := tracker.ProjectToSnapshot(&project)
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		var oldLogo dao.FileAsset
@@ -3118,22 +3054,15 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 			}
 		}
 
-		//Трекинг активности
-		oldMap := map[string]interface{}{
-			"logo": oldLogoId.UUID.String(),
-		}
-		newMap := map[string]interface{}{
-			"logo": fileAsset.Id.String(),
-		}
-
-		err = tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), project, user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
-
 		return nil
 	}); err != nil {
 		return EError(c, err)
+	}
+
+	newSnapshot := tracker.ProjectToSnapshot(&project)
+	err = s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, project.ToDTO())
@@ -3157,7 +3086,7 @@ func (s *Services) updateProjectLogo(c echo.Context) error {
 func (s *Services) deleteProjectLogo(c echo.Context) error {
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
-	oldLogoId := project.LogoId.UUID
+	oldSnapshot := tracker.ProjectToSnapshot(&project)
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -3176,15 +3105,8 @@ func (s *Services) deleteProjectLogo(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//Трекинг активности
-	oldMap := map[string]interface{}{
-		"logo": oldLogoId.String(),
-	}
-	newMap := map[string]interface{}{
-		"logo": uuid.Nil.String(),
-	}
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbDeleted, tracker.NewTrackerCtx(&newMap, &oldMap), project, user)
+	newSnapshot := tracker.ProjectToSnapshot(&project)
+	err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -3267,6 +3189,7 @@ func (s *Services) getProjectRulesScript(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [put]
 func (s *Services) updateProjectRulesScript(c echo.Context) error {
+	//TODO возможно легаси проверить
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 
@@ -3279,8 +3202,7 @@ func (s *Services) updateProjectRulesScript(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Сохраняем старый скрипт для отслеживания активности
-	oldRulesScript := project.RulesScript
+	oldSnapshot := tracker.ProjectToSnapshot(&project)
 
 	// Обновляем скрипт
 	project.RulesScript = request.RulesScript
@@ -3302,15 +3224,8 @@ func (s *Services) updateProjectRulesScript(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Отслеживаем активность
-	oldMap := map[string]interface{}{
-		"rules_script": oldRulesScript,
-	}
-	newMap := map[string]interface{}{
-		"rules_script": project.RulesScript,
-	}
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), project, user)
+	newSnapshot := tracker.ProjectToSnapshot(&project)
+	err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -3337,11 +3252,11 @@ func (s *Services) updateProjectRulesScript(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Проект не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/rules-script/ [delete]
 func (s *Services) deleteProjectRulesScript(c echo.Context) error {
+	//TODO возможно легаси проверить
 	user := c.(ProjectContext).User
 	project := c.(ProjectContext).Project
 
-	// Сохраняем старый скрипт для отслеживания активности
-	oldRulesScript := project.RulesScript
+	oldSnapshot := tracker.ProjectToSnapshot(&project)
 
 	// Удаляем скрипт
 	project.RulesScript = nil
@@ -3358,15 +3273,8 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Отслеживаем активность
-	oldMap := map[string]interface{}{
-		"rules_script": oldRulesScript,
-	}
-	newMap := map[string]interface{}{
-		"rules_script": nil,
-	}
-
-	err := tracker.TrackEvent(s.activityTracker, types.LayerProject, activities.VerbUpdated, tracker.NewTrackerCtx(&newMap, &oldMap), project, user)
+	newSnapshot := tracker.ProjectToSnapshot(&project)
+	err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

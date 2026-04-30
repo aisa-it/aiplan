@@ -72,35 +72,35 @@ func projectIssue(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 		msg.Body = Stelegramf("*Задача:* %s", fmt.Sprint(act.OldValue))
 		return msg
 	}
-
+	newIssue := act.ProjectActivityExtendFields.NewIssue
 	format := "[%s](%s)"
-	values := []any{act.NewIssue.FullIssueName(), act.NewIssue.URL.String()}
+	values := []any{newIssue.FullIssueName(), newIssue.URL.String()}
 
-	if act.NewIssue.Parent != nil {
-		issue := act.NewIssue.Parent
-		act.NewIssue.Parent.SetUrl()
+	if newIssue.Parent != nil {
+		issue := newIssue.Parent
+		newIssue.Parent.SetUrl()
 		format += "\n*%s*: [%s](%s)"
 		values = append(values, types.FieldsTranslation[actField.Parent.Field], issue.FullIssueName(), issue.URL.String())
 	}
 
-	if act.NewIssue.Priority != nil {
+	if newIssue.Priority != nil {
 		format += "\n*%s*: %s"
-		values = append(values, types.FieldsTranslation[actField.Priority.Field], types.PriorityTranslation[*act.NewIssue.Priority])
+		values = append(values, types.FieldsTranslation[actField.Priority.Field], types.PriorityTranslation[*newIssue.Priority])
 	}
 
-	if act.NewIssue.Assignees != nil && len(*act.NewIssue.Assignees) > 0 {
+	if newIssue.Assignees != nil && len(*newIssue.Assignees) > 0 {
 		var assignees []string
-		for _, assignee := range *act.NewIssue.Assignees {
+		for _, assignee := range *newIssue.Assignees {
 			assignees = append(assignees, getUserName(&assignee))
 		}
 		format += "\n*Исполнители*: %s"
 		values = append(values, strings.Join(assignees, ", "))
 	}
 
-	if act.NewIssue.Links != nil && len(*act.NewIssue.Links) > 0 {
+	if newIssue.Links != nil && len(*newIssue.Links) > 0 {
 		format += "\n*Ссылки*: "
 		first := true
-		for _, link := range *act.NewIssue.Links {
+		for _, link := range *newIssue.Links {
 			if !first {
 				format += ", "
 			}

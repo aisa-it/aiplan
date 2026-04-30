@@ -62,7 +62,7 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 	targetField := string(a.Field)
 
 	switch targetField {
-	case "target_date":
+	case "target_date", "end_date":
 		if a.NewValue != "" {
 			if formatted, err := utils.FormatDateStr(a.NewValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
 				a.NewValue = formatted

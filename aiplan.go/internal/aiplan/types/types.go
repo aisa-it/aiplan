@@ -74,7 +74,7 @@ func (d *TargetDate) Scan(value interface{}) error {
 }
 
 func (d TargetDate) String() string {
-	return d.Time.String()
+	return d.Time.Format("2006-01-02T15:04:05Z")
 }
 
 func (td *TargetDate) ToNullTime() sql.NullTime {
@@ -1222,6 +1222,7 @@ func formatDate(dateStr string) (time.Time, error) {
 		"2006-01-02T15:04:05Z07:00",
 		"2006-01-02 15:04:05",
 		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05 +0000 UTC",
 		"2006-01-02",
 		"02.01.2006 15:04 MST",
 		"02.01.2006 15:04 -0700",

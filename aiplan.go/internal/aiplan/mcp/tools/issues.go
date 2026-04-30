@@ -15,8 +15,8 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -592,9 +592,6 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	// Activity tracking
 	issueNew.Project = &project
 	issueNew.Workspace = project.Workspace
-	if err := tracker.TrackEvent(bl.GetTrackerEvent(), types.LayerProject, activities.VerbCreated, nil, issueNew, user); err != nil {
-		return logger.Error(err), nil
-	}
 
 	// Загружаем созданную задачу с связями для ответа
 	var createdIssue dao.Issue
@@ -609,6 +606,11 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		Where("issues.id = ?", issueNew.ID).
 		First(&createdIssue).Error; err != nil {
 		return logger.Error(err), nil
+	}
+
+	err = bl.GetSnapshotTracker().TrackChanges(types.LayerProject, nil, tracker.IssueToSnapshot(issueNew), &project, user)
+	if err != nil {
+		errStack.GetError(nil, err)
 	}
 
 	return mcp.NewToolResultJSON(createdIssue.ToDTO())
@@ -870,14 +872,6 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		return logger.Error(err), nil
 	}
 
-	// Activity tracking
-	if len(data) > 0 {
-		oldData := structToMap(oldIssue)
-		if err := tracker.TrackEvent(bl.GetTrackerEvent(), types.LayerIssue, activities.VerbUpdated, tracker.NewTrackerCtx(&data, &oldData), issue, user); err != nil {
-			return logger.Error(err), nil
-		}
-	}
-
 	// Загружаем обновлённую задачу с связями для ответа
 	var updatedIssue dao.Issue
 	if err := db.
@@ -891,6 +885,13 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		Where("issues.id = ?", issue.ID).
 		First(&updatedIssue).Error; err != nil {
 		return logger.Error(err), nil
+	}
+
+	err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue,
+		tracker.IssueToSnapshot(oldIssue),
+		tracker.IssueToSnapshot(updatedIssue), &updatedIssue, user)
+	if err != nil {
+		errStack.GetError(nil, err)
 	}
 
 	return mcp.NewToolResultJSON(updatedIssue.ToDTO())
@@ -1569,8 +1570,11 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 
 	// Activity tracking
 	comment.Actor = user
-	if err := tracker.TrackEvent(bl.GetTrackerEvent(), types.LayerIssue, activities.VerbCreated, nil, comment, user); err != nil {
-		return logger.Error(err), nil
+
+	newSnapshot := tracker.CommentToSnapshot(&comment)
+	err = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
+	if err != nil {
+		errStack.GetError(nil, err)
 	}
 
 	return mcp.NewToolResultJSON(comment.ToDTO())

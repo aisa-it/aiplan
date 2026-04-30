@@ -11,13 +11,13 @@ import (
 type Business struct {
 	db *gorm.DB
 
-	ta *tracker.ActTracker
+	st *tracker.SnapshotTracker
 }
 
-func NewBL(db *gorm.DB, ta *tracker.ActTracker) (*Business, error) {
+func NewBL(db *gorm.DB, st *tracker.SnapshotTracker) (*Business, error) {
 	b := &Business{
 		db: db,
-		ta: ta,
+		st: st,
 	}
 
 	slog.Info("Populate users table FKs")
@@ -70,6 +70,6 @@ func NewBL(db *gorm.DB, ta *tracker.ActTracker) (*Business, error) {
 	return b, nil
 }
 
-func (b *Business) GetTrackerEvent() *tracker.ActTracker {
-	return b.ta
+func (b *Business) GetSnapshotTracker() *tracker.SnapshotTracker {
+	return b.st
 }

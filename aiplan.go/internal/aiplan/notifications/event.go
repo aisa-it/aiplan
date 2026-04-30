@@ -22,6 +22,7 @@ var (
 		types.LayerSprint:    sprintEvent{},
 		types.LayerWorkspace: workspaceEvent{},
 		types.LayerDoc:       docEvent{},
+		types.LayerForm:      formEvent{},
 	}
 )
 
@@ -82,6 +83,10 @@ func (np *EventNotificationService) Handle(activity dao.ActivityEvent) error {
 	eh := getHandler(event.EntityType)
 	if eh == nil {
 		return fmt.Errorf("unknown event type: %s", event.EntityType)
+	}
+
+	if !eh.CanHandle(event) {
+		return nil
 	}
 
 	if err := eh.Preload(np.db, event); err != nil {

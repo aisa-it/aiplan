@@ -14,7 +14,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -269,7 +268,8 @@ func (s *Services) createSprint(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbCreated, nil, sprint, user)
+	newSnapshot := tracker.SprintToSnapshot(sprint)
+	err = s.snapshotTracker.TrackChanges(types.LayerSprint, nil, newSnapshot, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -322,7 +322,7 @@ func (s *Services) GetSprint(c echo.Context) error {
 func (s *Services) updateSprint(c echo.Context) error {
 	sprint := c.(SprintContext).Sprint
 	user := c.(SprintContext).User
-	oldSprintMap := StructToJSONMap(sprint)
+	oldSnapshot := tracker.SprintToSnapshot(&sprint)
 
 	var req dto.RequestSprint
 	fields, err := BindData(c, "", &req)
@@ -367,11 +367,14 @@ func (s *Services) updateSprint(c echo.Context) error {
 			return EError(c, err)
 		}
 	}
-	newSprintMap := StructToJSONMap(sprint)
 
-	err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbUpdated, tracker.NewTrackerCtx(&newSprintMap, &oldSprintMap), sprint, user)
-	if err != nil {
-		errStack.GetError(c, err)
+	if len(fields) > 0 {
+		newSnapshot := tracker.SprintToSnapshot(&sprint)
+
+		err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, &sprint, user)
+		if err != nil {
+			errStack.GetError(c, err)
+		}
 	}
 
 	return c.JSON(http.StatusOK, sprint.ToDTO())
@@ -400,7 +403,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	sprint := c.(SprintContext).Sprint
 	user := c.(SprintContext).User
 
-	oldIssueIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID })
+	oldSnapshot := tracker.SprintToSnapshot(&sprint)
 
 	workspaceUUID := workspace.ID
 	userUUID := user.ID
@@ -471,6 +474,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 	}
 
 	if err := s.db.
+		Preload("Project").
 		Where("id IN (?)",
 			s.db.Select("issue_id").
 				Where("workspace_id = ?", workspace.ID).
@@ -480,50 +484,11 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newIssuesIds := utils.SliceToSlice(&sprint.Issues, func(t *dao.Issue) interface{} { return t.ID })
-	reqData := map[string]interface{}{
-		"issue_list": newIssuesIds,
-		"field_log":  activities.Issue.Field,
-	}
-	currentInstance := map[string]interface{}{
-		"issue": oldIssueIds,
-	}
+	newSnapshot := tracker.SprintToSnapshot(&sprint)
 
-	ctx := tracker.NewTrackerCtx(&reqData, &currentInstance)
-	ctx.New.SetKey(activities.Issues.Field.LookupFrom(), activities.Issue.Field)
-
-	{ // reg activity
-		err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbUpdated, ctx, sprint, user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
-
-		changes := utils.CalculateIDChanges(newIssuesIds, oldIssueIds)
-		var issues []dao.Issue
-		if err := s.db.Where("workspace_id = ?", workspace.ID).Where("id IN (?)", changes.InvolvedIds).Find(&issues).Error; err != nil {
-			return EError(c, err)
-		}
-
-		issueMap := utils.SliceToMap(&issues, func(t *dao.Issue) uuid.UUID { return t.ID })
-
-		issueCtx := tracker.NewTrackerCtx(nil, nil)
-		issueCtx.New.SetKey(activities.Issue.Field.WithKey(), activities.Sprint.Field)
-		issueCtx.New.SetKey(activities.Sprint.Field.AsLogValue(), sprint.Name)
-		issueCtx.New.SetKey(activities.NewKey(activities.KindScopeID), sprint.Id)
-
-		for _, id := range changes.AddIds {
-			err = tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbAdded, issueCtx, issueMap[id], user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
-
-		}
-		for _, id := range changes.DelIds {
-			err = tracker.TrackEvent(s.activityTracker, types.LayerIssue, activities.VerbRemoved, issueCtx, issueMap[id], user)
-			if err != nil {
-				errStack.GetError(c, err)
-			}
-		}
+	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, &sprint, user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -550,7 +515,9 @@ func (s *Services) deleteSprint(c echo.Context) error {
 	sprint := c.(SprintContext).Sprint
 	user := c.(SprintContext).User
 
-	if err := tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbDeleted, nil, sprint, user); err != nil {
+	oldSnapshot := tracker.SprintToSnapshot(&sprint)
+	err := s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, nil, &sprint, user)
+	if err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -583,7 +550,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 	sprint := c.(SprintContext).Sprint
 	user := c.(SprintContext).User
 
-	oldMemberIds := utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID })
+	oldSnapshot := tracker.SprintToSnapshot(&sprint)
 
 	workspaceUUID := workspace.ID
 	userUUID := user.ID
@@ -650,17 +617,9 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	ctx := tracker.NewTrackerCtx(nil, nil)
-	reqData := map[string]interface{}{
-		"watchers_list": utils.SliceToSlice(&sprint.Watchers, func(t *dao.User) interface{} { return t.ID }),
-	}
-	currentInstance := map[string]interface{}{
-		"watchers": oldMemberIds,
-	}
-	ctx.GormMap = &reqData
-	ctx.OldGormMap = &currentInstance
+	newSnapshot := tracker.SprintToSnapshot(&sprint)
 
-	err = tracker.TrackEvent(s.activityTracker, types.LayerSprint, activities.VerbUpdated, ctx, sprint, user)
+	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, &sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
