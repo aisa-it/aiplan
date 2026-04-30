@@ -662,6 +662,7 @@ func (s *Services) checkProjectIdentifierAvailability(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/members [get]
 func (s *Services) getProjectMemberList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
 	project := apiContext.GetProject()
 	projectMember := apiContext.GetProjectMember()
 	if apiContext.Error() != nil {
@@ -691,11 +692,11 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 
 	switch orderBy {
 	case "email":
-		orderBy = "lower(email)"
+		orderBy = "lower\"Member\".email)"
 	case "role":
 		break
 	default:
-		orderBy = "lower(last_name)"
+		orderBy = "lower(\"Member\".last_name)"
 	}
 
 	if searchQuery != "" {
@@ -719,10 +720,10 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 		if _, ok := findMap[field]; ok || !customFind {
 			searchQueryList = append(searchQueryList, searchQuery)
 			if len(findString) == 0 {
-				findString = "lower(" + field + ") LIKE ?"
+				findString = "lower(\"Member\"." + field + ") LIKE ?"
 				continue
 			}
-			findString = findString + " OR lower(" + field + ") LIKE ?"
+			findString = findString + " OR lower(\"Member\"." + field + ") LIKE ?"
 		}
 	}
 
@@ -735,8 +736,6 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 	query := s.DB(c).
 		Where("project_id = ?", project.ID).
 		Joins("Member").
-		Preload(clause.Associations).
-		Preload("Workspace.Owner").
 		Order(orderBy)
 
 	if searchQuery != "" {
@@ -752,6 +751,11 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 	)
 	if err != nil {
 		return EError(c, err)
+	}
+
+	for i := range members {
+		members[i].Workspace = workspace
+		members[i].Project = project
 	}
 
 	count.Result = utils.SliceToSlice(count.Result.(*[]dao.ProjectMember), func(pm *dao.ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() })
