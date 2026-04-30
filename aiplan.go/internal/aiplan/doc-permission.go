@@ -11,7 +11,6 @@
 package aiplan
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
@@ -37,16 +36,13 @@ func (s *Services) DocPermissionMiddleware(next echo.HandlerFunc) echo.HandlerFu
 }
 
 func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
-	docContext, ok := c.(DocContext)
-	if !ok {
-		return false, errors.New("wrong context")
-	}
 	apiContext := apicontext.GetContext(c)
 	workspaceMember := apiContext.GetWorkspaceMember()
+	docPtr := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return false, apiContext.Error()
 	}
-	doc := docContext.Doc
+	doc := *docPtr
 	user := apiContext.GetUser()
 
 	// Allow Author
