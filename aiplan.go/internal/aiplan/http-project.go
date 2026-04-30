@@ -46,30 +46,29 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		projectId := c.Param("projectId")
 
 		apiContext := apicontext.GetContext(c)
+		user := apiContext.GetUser()
+
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			var exist bool
+			if err := s.DB(c).Model(&dao.Project{}).
+				Select("EXISTS(?)",
+					s.DB(c).Model(&dao.Project{}).
+						Select("1").
+						Where("encode(hash, 'hex') = ?", etag),
+				).
+				Find(&exist).Error; err != nil {
+				return EError(c, err)
+			}
+
+			if exist {
+				return c.NoContent(http.StatusNotModified)
+			}
+		}
+
 		workspace := apiContext.GetWorkspace()
 		if apiContext.Error() != nil {
 			return EError(c, apiContext.Error())
 		}
-		user := apiContext.GetUser()
-
-		/*
-			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
-			   			var exist bool
-			   			if err := s.DB(c).Model(&dao.Project{}).
-			   				Select("EXISTS(?)",
-			   					s.DB(c).Model(&dao.Project{}).
-			   						Select("1").
-			   						Where("encode(hash, 'hex') = ?", etag),
-			   				).
-			   				Find(&exist).Error; err != nil {
-			   				return EError(c, err)
-			   			}
-
-			   			if exist {
-			   				return c.NoContent(http.StatusNotModified)
-			   			}
-			   		}
-		*/
 
 		exists, err := dao.IsProjectExists(s.DB(c), user, workspace.ID, projectId)
 		if err != nil {

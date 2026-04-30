@@ -61,27 +61,25 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		slugOrId := c.Param("workspaceSlug")
 
-		/*
-			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
-				etag = strings.TrimSuffix(etag, user.ID.String())
-				var exist bool
-				if err := s.DB(c).Model(&dao.Workspace{}).
-					Select("EXISTS(?)",
-						s.DB(c).Model(&dao.Workspace{}).
-							Select("1").
-							Where("encode(hash, 'hex') = ?", etag),
-					).
-					Find(&exist).Error; err != nil {
-					return EError(c, err)
-				}
-
-				if exist {
-					return c.NoContent(http.StatusNotModified)
-				}
-			}
-		*/
-
 		user := apicontext.GetContext(c).GetUser()
+
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			etag = strings.TrimSuffix(etag, user.ID.String())
+			var exist bool
+			if err := s.DB(c).Model(&dao.Workspace{}).
+				Select("EXISTS(?)",
+					s.DB(c).Model(&dao.Workspace{}).
+						Select("1").
+						Where("encode(hash, 'hex') = ?", etag),
+				).
+				Find(&exist).Error; err != nil {
+				return EError(c, err)
+			}
+
+			if exist {
+				return c.NoContent(http.StatusNotModified)
+			}
+		}
 
 		// Check if workspace exists
 		exists, err := dao.IsWorkspaceExists(s.DB(c), user, slugOrId)
