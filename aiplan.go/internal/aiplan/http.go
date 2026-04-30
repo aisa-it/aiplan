@@ -483,7 +483,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s.AddBackupServices(authGroup)
 	s.AddAdminServices(authGroup)
 	s.AddGitServices(authGroup)
-	AddProfileServices(e.Group("/"))
+	//AddProfileServices(e.Group("/"))
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
 	s.AddDocServices(authGroup)
