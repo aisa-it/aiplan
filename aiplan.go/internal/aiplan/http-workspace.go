@@ -14,6 +14,7 @@ import (
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
@@ -583,8 +584,20 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 
+	if len(c.Request().URL.Query()) == 0 {
+		members, ok := cache.WorkspaceMembersCache.Load(workspace.ID)
+		if ok {
+			return c.JSON(http.StatusOK, dao.PaginationResponse{
+				Offset: -1,
+				Limit:  1000,
+				Count:  int64(len(members.Members)),
+				Result: members.Members,
+			})
+		}
+	}
+
 	offset := -1
-	limit := 100
+	limit := 1000
 	searchQuery := ""
 	orderBy := ""
 	desc := true
@@ -640,6 +653,10 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	}
 
 	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
+
+	if len(c.Request().URL.Query()) == 0 {
+		cache.WorkspaceMembersCache.Store(workspace.ID, res.Result.([]dto.WorkspaceMemberLight))
+	}
 
 	return c.JSON(http.StatusOK, res)
 }
@@ -800,6 +817,8 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
+	cache.WorkspaceMembersCache.Update(workspace.ID, requestedMember)
+
 	return c.JSON(http.StatusOK, requestedMember.ToLightDTO())
 }
 
@@ -954,6 +973,8 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 			return EError(c, err)
 		}
 	}
+
+	cache.WorkspaceMembersCache.Delete(workspace.ID, requestedMember)
 
 	return c.NoContent(http.StatusNoContent)
 
@@ -1277,6 +1298,8 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 			errStack.GetError(c, err)
 		}
 	}
+
+	cache.WorkspaceMembersCache.Expire(workspace.ID)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "Emails sent successfully",

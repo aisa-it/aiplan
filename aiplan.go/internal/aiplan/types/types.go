@@ -151,8 +151,12 @@ func (tz *TimeZone) Scan(value interface{}) error {
 }
 
 func (tz TimeZone) Value() (driver.Value, error) {
+	return tz.String(), nil
+}
+
+func (tz TimeZone) String() string {
 	loc := time.Location(tz)
-	return (&loc).String(), nil
+	return (&loc).String()
 }
 
 func (TimeZone) GormDataType() string {
