@@ -57,7 +57,10 @@ func BuildActivityEvents(db *gorm.DB, changes []FieldChange, entity dao.IDaoAct,
 
 			// Set entity references based on layer
 			/*if err := */
-			setEntityRefs(changeLayer, &event, entity, targetEntityID) //; err != nil {
+			setEntityRefs(changeLayer, &event, entity) //; err != nil {
+			if change.IsLinked {
+				setTargetId(&event, changeLayer, targetEntityID)
+			}
 			// Skip this event if refs can't be set
 			//	continue
 			//}
@@ -102,12 +105,15 @@ func determineLayerForField(field actField.ActivityField) types.EntityLayer {
 	case actField.Workspace.Field:
 		return types.LayerWorkspace
 	default:
-		slog.Info("-------!!!! Unknown field", field)
-		// For linked fields, determine layer from the field name
+		slog.Info("-------!!!! Unknown field", "field", field)
 		switch field {
-		case actField.Assignees.Field, actField.Watchers.Field, actField.Label.Field, actField.Parent.Field, actField.SubIssue.Field, actField.Blocking.Field, actField.Blocks.Field, actField.Linked.Field, actField.Sprint.Field:
+		case actField.Assignees.Field, actField.Watchers.Field,
+			actField.Label.Field,
+			actField.Parent.Field, actField.SubIssue.Field,
+			actField.Blocking.Field, actField.Blocks.Field,
+			actField.Linked.Field, actField.Sprint.Field:
 			return types.LayerIssue
-		case actField.Readers.Field, actField.Editors.Field:
+		case actField.Readers.Field, actField.Editors.Field: //todo check it
 			return types.LayerDoc
 		case actField.Issues.Field:
 			return types.LayerSprint

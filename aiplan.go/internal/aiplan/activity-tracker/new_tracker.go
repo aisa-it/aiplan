@@ -66,7 +66,7 @@ func (t *SnapshotTracker) saveAndNotifyActivity(event *dao.ActivityEvent) error 
 	return nil
 }
 
-func setEntityRefs(layer types.EntityLayer, event *dao.ActivityEvent, entity dao.IDaoAct, entityID uuid.UUID) {
+func setEntityRefs(layer types.EntityLayer, event *dao.ActivityEvent, entity dao.IDaoAct) {
 	if de, ok := any(entity).(dao.WorkspaceEntityI); ok && layer != types.LayerRoot {
 		event.WorkspaceID = uuid.NullUUID{UUID: de.GetWorkspaceId(), Valid: true}
 	}
@@ -86,39 +86,24 @@ func setEntityRefs(layer types.EntityLayer, event *dao.ActivityEvent, entity dao
 		event.IssueID = uuid.NullUUID{UUID: ie.GetIssueId(), Valid: true}
 	}
 	event.EntityType = layer
+}
 
-	//
-	//event.EntityType = layer
-	//switch layer {
-	//case types.LayerIssue:
-	//	if ie, ok := any(entity).(dao.IssueEntityI); ok {
-	//		event.WorkspaceID = uuid.NullUUID{UUID: ie.GetWorkspaceId(), Valid: true}
-	//		event.ProjectID = uuid.NullUUID{UUID: ie.GetProjectId(), Valid: true}
-	//    event.IssueID = uuid.NullUUID{UUID: ie.GetIssueId(), Valid: true}
-	//  }
-	//case types.LayerProject:
-	//	if pe, ok := any(entity).(dao.ProjectEntityI); ok {
-	//		event.WorkspaceID = uuid.NullUUID{UUID: pe.GetWorkspaceId(), Valid: true}
-	//	}
-	//	event.ProjectID = uuid.NullUUID{UUID: entityID, Valid: true}
-	//case types.LayerWorkspace:
-	//	event.WorkspaceID = uuid.NullUUID{UUID: entityID, Valid: true}
-	//case types.LayerDoc:
-	//	if de, ok := any(entity).(dao.DocEntityI); ok {
-	//		event.WorkspaceID = uuid.NullUUID{UUID: de.GetWorkspaceId(), Valid: true}
-	//	}
-	//	event.DocID = uuid.NullUUID{UUID: entityID, Valid: true}
-	//case types.LayerForm:
-	//	if fe, ok := any(entity).(dao.FormEntityI); ok {
-	//		event.WorkspaceID = uuid.NullUUID{UUID: fe.GetWorkspaceId(), Valid: true}
-	//	}
-	//	event.FormID = uuid.NullUUID{UUID: entityID, Valid: true}
-	//case types.LayerSprint:
-	//	if se, ok := any(entity).(dao.SprintEntityI); ok {
-	//		event.WorkspaceID = uuid.NullUUID{UUID: se.GetWorkspaceId(), Valid: true}
-	//	}
-	//	event.SprintID = uuid.NullUUID{UUID: entityID, Valid: true}
-	//}
+func setTargetId(event *dao.ActivityEvent, layer types.EntityLayer, id uuid.UUID) {
+	switch layer {
+	case types.LayerWorkspace:
+		event.WorkspaceID = uuid.NullUUID{UUID: id, Valid: true}
+	case types.LayerProject:
+		event.ProjectID = uuid.NullUUID{UUID: id, Valid: true}
+	case types.LayerIssue:
+		event.IssueID = uuid.NullUUID{UUID: id, Valid: true}
+	case types.LayerSprint:
+		event.SprintID = uuid.NullUUID{UUID: id, Valid: true}
+	case types.LayerDoc:
+		event.DocID = uuid.NullUUID{UUID: id, Valid: true}
+	case types.LayerForm:
+		event.FormID = uuid.NullUUID{UUID: id, Valid: true}
+	default:
+	}
 }
 
 func (t *SnapshotTracker) TrackDocMove(doc *dao.Doc, oldParent, newParent *dao.Doc, actor *dao.User) error {
@@ -257,9 +242,9 @@ func (t *SnapshotTracker) TrackVerb(layer types.EntityLayer, verb string, entity
 	event := NewActivityEvent(verb, params.field, params.oldVal, params.newVal, params.newID, params.oldID, actor)
 
 	// Set entity references based on layer
-	entityID := entity.GetId()
-	setEntityRefs(layer, &event, entity, entityID)
+	//entityID := entity.GetId() //todo check
 
+	setEntityRefs(layer, &event, entity)
 	return t.saveAndNotifyActivity(&event)
 }
 
@@ -299,9 +284,7 @@ func (t *SnapshotTracker) trackCreateWithVerb(layer types.EntityLayer, snapshot 
 		actor,
 	)
 
-	// Set entity references based on layer
-	setEntityRefs(layer, &ev, entity, entityID)
-
+	setEntityRefs(layer, &ev, entity)
 	return t.saveAndNotifyActivity(&ev)
 }
 
@@ -320,10 +303,10 @@ func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot Snapshot
 		name = entity.GetString()
 	}
 
-	entityID := entity.GetId()
-	if targetEntityID != uuid.Nil {
-		entityID = targetEntityID
-	}
+	//entityID := entity.GetId()
+	//if targetEntityID != uuid.Nil {
+	//	entityID = targetEntityID
+	//}
 
 	ev := NewActivityEvent(
 		actField.VerbDeleted,
@@ -335,9 +318,7 @@ func (t *SnapshotTracker) trackDelete(layer types.EntityLayer, snapshot Snapshot
 		actor,
 	)
 
-	// Set entity references based on layer
-	setEntityRefs(layer, &ev, entity, entityID)
-
+	setEntityRefs(layer, &ev, entity)
 	return t.saveAndNotifyActivity(&ev)
 }
 
