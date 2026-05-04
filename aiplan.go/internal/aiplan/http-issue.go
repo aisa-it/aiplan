@@ -10,7 +10,6 @@ package aiplan
 
 import (
 	"archive/zip"
-	"bytes"
 	"compress/flate"
 	"encoding/csv"
 	"encoding/json"
@@ -23,7 +22,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -34,7 +32,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
@@ -48,7 +45,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -1398,6 +1394,7 @@ func (s *Services) getSubIssueList(c echo.Context) error {
 func (s *Services) addSubIssueList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
 	parentIssue := apiContext.GetIssue()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
@@ -1430,7 +1427,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 		Where("parent_id is null").
 		Where("id in ?", subIssueIDs)
 
-	if project.CurrentUserMembership.Role < types.AdminRole {
+	if projectMember.Role < types.AdminRole {
 		query = query.Where("created_by_id = ?", user.ID)
 	}
 
@@ -1458,7 +1455,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	parentId := uuid.NullUUID{UUID: id, Valid: true}
 
 	for i := range subIssues {
-		if project.CurrentUserMembership.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
+		if projectMember.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
 			return EErrorDefined(c, apierrors.ErrPermissionParentIssue)
 		}
 		subIssues[i].ParentId = parentId
@@ -3409,7 +3406,7 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/linked-issues [get]
 func (s *Services) getIssueLinkedIssueList(c echo.Context) error {
 	apiCtx := apicontext.GetContext(c)
-	issue := apiCtx.GetIssue()
+	issue := apiCtx.GetIssue(apicontext.WithLinkedIssues())
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}
@@ -3447,7 +3444,7 @@ func (s *Services) getIssueLinkedIssueList(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/linked-issues [post]
 func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 	apiCtx := apicontext.GetContext(c)
-	issue := apiCtx.GetIssue()
+	issue := apiCtx.GetIssue(apicontext.WithLinkedIssues())
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}

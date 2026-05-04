@@ -265,16 +265,46 @@ func (a *APIContext) GetIssue(options ...FetchOption) *dao.Issue {
 		return nil
 	}
 
-	if _, ok := fetchOptions.loaded["Author"]; ok {
-		// Fetch Author details
-		if err := a.issue.Issue.Author.AfterFind(a.db); err != nil {
-			a.error = err
-			return nil
-		}
+	if err := a.applyIssueFetchPostLoad(fetchOptions); err != nil {
+		a.error = err
+		return nil
 	}
 
 	a.issue.LastOptions = *fetchOptions
 	return a.issue.Issue
+}
+
+func (a *APIContext) applyIssueFetchPostLoad(fetchOptions *IssueFetchOptions) error {
+	if _, ok := fetchOptions.loaded["Author"]; ok {
+		if err := a.issue.Issue.Author.AfterFind(a.db); err != nil {
+			return err
+		}
+	}
+	if _, ok := fetchOptions.loaded["Blockers"]; ok {
+		if err := a.fetchIssueBlockers(); err != nil {
+			return err
+		}
+	}
+	if _, ok := fetchOptions.loaded["LinkedIssues"]; ok {
+		if err := a.issue.Issue.FetchLinkedIssues(a.db); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *APIContext) fetchIssueBlockers() error {
+	if err := a.db.
+		Where("block_id = ?", a.issue.Issue.ID).
+		Preload("BlockedBy.Project").
+		Joins("BlockedBy").
+		Find(&a.issue.Issue.BlockerIssuesIDs).Error; err != nil {
+		return err
+	}
+	return a.db.
+		Where("blocked_by_id = ?", a.issue.Issue.ID).
+		Joins("Block").
+		Find(&a.issue.Issue.BlockedIssuesIDs).Error
 }
 
 func (a *APIContext) fetchIssue(query *gorm.DB) {
