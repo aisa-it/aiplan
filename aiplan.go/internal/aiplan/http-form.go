@@ -665,7 +665,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	}
 
 	var defaultAssignees []uuid.UUID
-	if err := s.DB(c).Select("member_id").
+	if err := s.RawDB().Select("member_id").
 		Model(&dao.ProjectMember{}).
 		Where("project_id = ? and is_default_assignee = true", form.TargetProjectId.UUID).
 		Find(&defaultAssignees).Error; err != nil {
@@ -693,19 +693,19 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 
 	var createWatcher bool
 	if user != nil {
-		if err := s.DB(c).Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
+		if err := s.RawDB().Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
 			return err
 		}
 	}
 
 	var formAttachments []dao.FormAttachment
-	if err := s.DB(c).Where("form_id = ?", form.ID).
+	if err := s.RawDB().Where("form_id = ?", form.ID).
 		Where("answer_id = ?", answer.ID).
 		Find(&formAttachments).Error; err != nil {
 		return err
 	}
 
-	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+	if err := s.RawDB().Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
