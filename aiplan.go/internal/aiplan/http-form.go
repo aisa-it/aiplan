@@ -116,6 +116,7 @@ func (s *Services) AddFormWithoutAuthServices(g *echo.Group) {
 	formNoAuthGroup := g.Group("forms/:formSlug", s.AnswerFormNoAuthMiddleware)
 	formNoAuthGroup.GET("/", s.getFormNoAuth)
 	formNoAuthGroup.POST("/answer/", s.createAnswerNoAuth)
+	formNoAuthGroup.POST("/form-attachments/", s.createFormAttachmentsNoAuth)
 }
 
 // getFormList godoc
@@ -648,6 +649,25 @@ func (s *Services) createAnswerNoAuth(c echo.Context) error {
 	return s.createAnswerAuth(c)
 }
 
+// createFormAttachmentsNoAuth godoc
+// @id createFormAttachmentsNoAuth
+// @Summary вложения: загрузка вложения в ответ формы (без аутентификации)
+// @Description Загружает новое вложение в ответ формы, доступной без аутентификации
+// @Tags Forms
+// @Accept multipart/form-data
+// @Produce json
+// @Param formSlug path string true "Slug формы"
+// @Param asset formData file true "Файл для загрузки"
+// @Success 201 {object} dto.FormAttachmentLight "Созданное вложение"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 403 {object} apierrors.DefinedError "Форма доступна только с аутентификацией"
+// @Failure 404 {object} apierrors.DefinedError "Форма не найдена"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/forms/{formSlug}/form-attachments/ [post]
+func (s *Services) createFormAttachmentsNoAuth(c echo.Context) error {
+	return s.createFormAttachments(c)
+}
+
 func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao.FormAnswer, user *dao.User) error {
 	res, err := business.GenBodyAnswer(answer, user)
 	if err != nil {
@@ -655,7 +675,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	}
 
 	var defaultAssignees []uuid.UUID
-	if err := s.DB(c).Select("member_id").
+	if err := s.RawDB().Select("member_id").
 		Model(&dao.ProjectMember{}).
 		Where("project_id = ? and is_default_assignee = true", form.TargetProjectId.UUID).
 		Find(&defaultAssignees).Error; err != nil {
@@ -683,19 +703,19 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 
 	var createWatcher bool
 	if user != nil {
-		if err := s.DB(c).Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
+		if err := s.RawDB().Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
 			return err
 		}
 	}
 
 	var formAttachments []dao.FormAttachment
-	if err := s.DB(c).Where("form_id = ?", form.ID).
+	if err := s.RawDB().Where("form_id = ?", form.ID).
 		Where("answer_id = ?", answer.ID).
 		Find(&formAttachments).Error; err != nil {
 		return err
 	}
 
-	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+	if err := s.RawDB().Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
@@ -819,7 +839,10 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	var userID uuid.NullUUID
+	if user != nil {
+		userID = uuid.NullUUID{UUID: user.ID, Valid: true}
+	}
 	formAttachment := dao.FormAttachment{
 		Id:          dao.GenUUID(),
 		CreatedAt:   time.Now(),

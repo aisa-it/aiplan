@@ -98,6 +98,18 @@ func WithLabelsProject() FetchOption {
 	}
 }
 
+func WithBlockers() FetchOption {
+	return func(ifo *IssueFetchOptions) {
+		ifo.loaded["Blockers"] = struct{}{}
+	}
+}
+
+func WithLinkedIssues() FetchOption {
+	return func(ifo *IssueFetchOptions) {
+		ifo.loaded["LinkedIssues"] = struct{}{}
+	}
+}
+
 func WithAll() FetchOption {
 	return func(ifo *IssueFetchOptions) {
 		WithParent()(ifo)
@@ -111,5 +123,6 @@ func WithAll() FetchOption {
 		WithLinksCreatedBy()(ifo)
 		WithLabelsWorkspace()(ifo)
 		WithLabelsProject()(ifo)
+		WithBlockers()(ifo)
 	}
 }
