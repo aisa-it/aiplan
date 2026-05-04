@@ -7,9 +7,12 @@
 package aiplan
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -65,7 +68,7 @@ LEFT JOIN doc_access_rules dar
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/file/{fileName} [get]
 func (s *Services) assetsHandler(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	name := c.Param("fileName")
 
 	query := selectFileWithPermissionCheck
@@ -79,7 +82,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 		dao.FileAsset
 		Allowed bool
 	}
-	if err := s.db.Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
+	if err := s.DB(c).Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -90,7 +93,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	stats, err := s.storage.GetFileInfo(asset.Id)
 	if err != nil {
 		errResponse := minio.ToErrorResponse(err)
-		if errResponse.Code == "NoSuchKey" {
+		if errResponse.Code == "NoSuchKey" || errors.Is(err, os.ErrNotExist) {
 			return c.NoContent(http.StatusNotFound)
 		}
 		return EError(c, err)

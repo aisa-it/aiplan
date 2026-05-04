@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -115,7 +116,7 @@ type RepoInfoDTO struct {
 // @Router /api/auth/git/config/ [get]
 func (s *Services) getGitConfig(c echo.Context) error {
 	// Проверяем, что пользователь авторизован (middleware уже проверил это)
-	_ = c.(AuthContext).User
+	_ = apicontext.GetContext(c).GetUser()
 
 	gitConfig := dto.GitConfigInfo{
 		GitEnabled:          cfg.GitEnabled,
@@ -141,7 +142,7 @@ func (s *Services) getGitConfig(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [post]
 func (s *Services) createGitRepository(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что Git функциональность включена
 	if !cfg.GitEnabled {
@@ -179,7 +180,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Получаем workspace по slug
 	var workspace dao.Workspace
-	if err := s.db.
+	if err := s.DB(c).
 		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
@@ -187,7 +188,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Проверяем права пользователя на workspace (должен быть как минимум членом)
 	var workspaceMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).
 		First(&workspaceMember).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
@@ -275,7 +276,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Загружаем пользователя для ответа
 	var creator dao.User
-	if err := s.db.Where("id = ?", user.ID).First(&creator).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", user.ID).First(&creator).Error; err != nil {
 		slog.Warn("Failed to load creator user", "err", err)
 	}
 
@@ -341,11 +342,11 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 	}
 
 	// 2. Получение пользователя
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// 3. Проверка существования workspace в БД
 	var workspace dao.Workspace
-	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+	if err := s.DB(c).Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
@@ -355,7 +356,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 
 	// 4. Проверка прав доступа к workspace (любая роль - достаточно быть участником)
 	var member dao.WorkspaceMember
-	err := s.db.Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
+	err := s.DB(c).Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
@@ -429,7 +430,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [delete]
 func (s *Services) deleteGitRepository(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем наличие пути к репозиториям
 	if cfg.GitRepositoriesPath == "" {
@@ -462,7 +463,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 
 	// Получаем workspace по slug
 	var workspace dao.Workspace
-	if err := s.db.
+	if err := s.DB(c).
 		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -475,7 +476,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 	// Проверяем права пользователя на workspace
 	// Для удаления репозитория требуется роль администратора workspace
 	var workspaceMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).
 		First(&workspaceMember).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -533,7 +534,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 // @Router /api/auth/git/ssh-config/ [get]
 func (s *Services) getGitSSHConfig(c echo.Context) error {
 	// Проверяем авторизацию (middleware уже проверил это)
-	_ = c.(AuthContext).User
+	_ = apicontext.GetContext(c).GetUser()
 
 	// Получаем hostname из WebURL
 	sshHost := cfg.WebURL.URL.Host
@@ -564,7 +565,7 @@ func (s *Services) getGitSSHConfig(c echo.Context) error {
 // @Failure 409 {object} apierrors.DefinedError "SSH ключ с таким fingerprint уже существует"
 // @Router /api/auth/git/ssh-keys/ [post]
 func (s *Services) addGitSSHKey(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -637,7 +638,7 @@ func (s *Services) addGitSSHKey(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Git или SSH отключены"
 // @Router /api/auth/git/ssh-keys/ [get]
 func (s *Services) listGitSSHKeys(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -695,7 +696,7 @@ func (s *Services) listGitSSHKeys(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "SSH ключ не найден"
 // @Router /api/auth/git/ssh-keys/{keyId} [delete]
 func (s *Services) deleteGitSSHKey(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -919,12 +920,12 @@ func (s *Services) checkRepositoryAccess(user *dao.User, workspaceSlug, repoName
 
 	// Приватный репозиторий - проверяем membership в workspace
 	var workspace dao.Workspace
-	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+	if err := s.RawDB().Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		return false, fmt.Errorf("workspace not found: %w", err)
 	}
 
 	var membership dao.WorkspaceMember
-	err = s.db.Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).First(&membership).Error
+	err = s.RawDB().Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).First(&membership).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, nil // Не является членом workspace
@@ -957,7 +958,7 @@ func (s *Services) checkRepositoryAccess(user *dao.User, workspaceSlug, repoName
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/tree [get]
 func (s *Services) getRepositoryTree(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1080,7 +1081,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/blob [get]
 func (s *Services) getRepositoryBlob(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1206,7 +1207,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/commits [get]
 func (s *Services) getRepositoryCommits(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1331,7 +1332,7 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/branches [get]
 func (s *Services) getRepositoryBranches(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 
@@ -1435,7 +1436,7 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/info [get]
 func (s *Services) getRepositoryInfo(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 

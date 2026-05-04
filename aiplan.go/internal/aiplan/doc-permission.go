@@ -11,10 +11,10 @@
 package aiplan
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -36,20 +36,21 @@ func (s *Services) DocPermissionMiddleware(next echo.HandlerFunc) echo.HandlerFu
 }
 
 func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
-	docContext, ok := c.(DocContext)
-	if !ok {
-		return false, errors.New("wrong context")
+	apiContext := apicontext.GetContext(c)
+	workspaceMember := apiContext.GetWorkspaceMember()
+	docPtr := apiContext.GetDoc()
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
 	}
-	workspaceMember := docContext.WorkspaceMember
-	doc := docContext.Doc
-	user := docContext.User
+	doc := *docPtr
+	user := apiContext.GetUser()
 
 	// Allow Author
 	if user.ID == doc.CreatedById {
 		return true, nil
 	}
 
-	if docContext.User.IsSuperuser {
+	if user.IsSuperuser {
 		return true, nil
 	}
 

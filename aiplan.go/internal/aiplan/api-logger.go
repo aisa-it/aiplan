@@ -9,12 +9,15 @@
 package aiplan
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
 	"runtime"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -26,9 +29,14 @@ func EError(c echo.Context, err error) error {
 	if customErr, ok := err.(apierrors.DefinedError); ok {
 		return EErrorDefined(c, customErr)
 	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return EErrorDefined(c, apierrors.ErrRequestTimeout)
+	}
+
 	var user *dao.User
-	if ctx, ok := c.(AuthContext); ok {
-		user = ctx.User
+	if apiCtx := apicontext.GetContext(c); apiCtx != nil {
+		user = apiCtx.GetUser()
 	}
 	if err == nil {
 		slog.Error("Unknown API error",
@@ -52,8 +60,8 @@ func EError(c echo.Context, err error) error {
 // Возврат ошибки <status> с сообщением ошибки(403 код с пустой ошибкой не логируется)
 func EErrorMsgStatus(c echo.Context, err error, status int) error {
 	var user *dao.User
-	if ctx, ok := c.(AuthContext); ok {
-		user = ctx.User
+	if apiCtx := apicontext.GetContext(c); apiCtx != nil {
+		user = apiCtx.GetUser()
 	}
 	if status == http.StatusRequestEntityTooLarge {
 		return EErrorDefined(c, apierrors.ErrEntityToLarge)
@@ -94,8 +102,8 @@ func EErrorMsgStatus(c echo.Context, err error, status int) error {
 // Возврат ошибки 400 с сообщением ошибки
 func EErrorMsg(c echo.Context, err error) error {
 	var user *dao.User
-	if ctx, ok := c.(AuthContext); ok {
-		user = ctx.User
+	if apiCtx := apicontext.GetContext(c); apiCtx != nil {
+		user = apiCtx.GetUser()
 	}
 	if err == nil {
 		slog.Error("Unknown API error",

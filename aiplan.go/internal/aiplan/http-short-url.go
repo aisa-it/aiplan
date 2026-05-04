@@ -32,7 +32,7 @@ func (s *Services) shortIssueURLRedirect(c echo.Context) error {
 	}
 
 	var issue dao.Issue
-	if err := s.db.
+	if err := s.DB(c).
 		Joins("Workspace").
 		Joins("Project").
 		Where("slug = ?", slug).
@@ -56,7 +56,7 @@ func (s *Services) shortDocURLRedirect(c echo.Context) error {
 	docNum := c.Param("docNum")
 
 	var doc dao.Doc
-	if err := s.db.
+	if err := s.DB(c).
 		Joins("Workspace").
 		Where("slug = ?", slug).
 		Where("docs.id = ?", docNum).
@@ -76,7 +76,7 @@ func (s *Services) shortSearchFilterURLRedirect(c echo.Context) error {
 	id := c.Param("id")
 
 	var sf dao.SearchFilter
-	if err := s.db.
+	if err := s.DB(c).
 		Where("id = ?", id).Where("public = ?", true).
 		First(&sf).Error; err != nil {
 		return c.Redirect(http.StatusTemporaryRedirect, "/not-found/")

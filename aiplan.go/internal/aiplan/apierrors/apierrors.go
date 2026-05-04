@@ -111,6 +111,7 @@ var (
 	ErrUserAlreadyExist         = DefinedError{Code: 1008, Err: "user already exist", RuErr: "Пользователь с указанным email уже зарегистрирован в системе"}
 	ErrBlockedUntil             = DefinedError{Code: 1009, StatusCode: http.StatusUnauthorized, Err: "blocked until %s", RuErr: "Учетная запись заблокирована до %s"}
 	ErrNewUserMailFailed        = DefinedError{Code: 1010, Err: "failed to deliver email with password to new user", RuErr: "Не удалось отправить пароль на указанную почту. Проверьте корректность указанного адреса"}
+	ErrRequestTimeout           = DefinedError{Code: 1000, StatusCode: http.StatusRequestTimeout, Err: "request timeout", RuErr: "Время ожидания запроса истекло, повторите позже"}
 
 	// 11** - session errors
 	ErrRefreshTokenRequired = DefinedError{Code: 1101, StatusCode: http.StatusUnauthorized, Err: "refresh token is required", RuErr: "Требуется токен обновления"}
@@ -297,6 +298,7 @@ var (
 	ErrEmailIsExist             = DefinedError{Code: 6014, StatusCode: http.StatusBadRequest, Err: "email is exist", RuErr: "Пользователь с таким Email уже существует"}
 	ErrEmailChangeLimit         = DefinedError{Code: 6015, StatusCode: http.StatusTooManyRequests, Err: "the code was sent less than a minute ago", RuErr: "Запрос нового кода верификации можно делать раз в минуту"}
 	ErrEmailVerify              = DefinedError{Code: 6016, StatusCode: http.StatusBadRequest, Err: "invalid or expired code", RuErr: "Неверный или просроченный код"}
+	ErrSearchFilterNotFound     = DefinedError{Code: 6017, StatusCode: http.StatusNotFound, Err: "search filter not found", RuErr: "Фильтр не найден"}
 
 	// 7*** - integration errors
 	ErrInvalidEventType      = DefinedError{Code: 7001, StatusCode: http.StatusBadRequest, Err: "invalid event type", RuErr: "Указан неверный тип события"}

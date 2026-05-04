@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
@@ -43,94 +44,46 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 )
 
-type FormContext struct {
-	WorkspaceContext
-	Form dao.Form
-}
-
-type AnswerFormContext struct {
-	AuthContext
-	Form             dao.Form
-	IsAdminWorkspace bool
-}
-
 func (s *Services) FormMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		formSlug := c.Param("formSlug")
-		workspace := c.(WorkspaceContext).Workspace
-
-		var form dao.Form
-		if err := s.db.
-			Joins("Author").
-			Joins("Workspace").
-			Joins("TargetProject").
-			Where("forms.workspace_id = ?", workspace.ID).
-			Where("forms.slug = ?", formSlug).
-			First(&form).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrFormNotFound)
-
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
+		exists, err := dao.IsFormExists(s.DB(c), c.Param("formSlug"))
+		if err != nil {
+			return EError(c, err)
 		}
-
-		return next(FormContext{c.(WorkspaceContext), form})
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrFormNotFound)
+		}
+		return next(c)
 	}
 }
 
 func (s *Services) AnswerFormAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		formSlug := c.Param("formSlug")
-		userId := c.(AuthContext).User.ID
-		var form dao.Form
-		if err := s.db.
-			Set("userId", userId).
-			Joins("Author").
-			Joins("Workspace").
-			Joins("TargetProject").
-			Where("forms.slug = ?", formSlug).
-			First(&form).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrFormNotFound)
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
+		exists, err := dao.IsFormExists(s.DB(c), c.Param("formSlug"))
+		if err != nil {
+			return EError(c, err)
 		}
-
-		isAdmin := form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types2.AdminRole
-
-		return next(AnswerFormContext{c.(AuthContext), form, isAdmin})
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrFormNotFound)
+		}
+		return next(c)
 	}
 }
 
 func (s *Services) AnswerFormNoAuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		formSlug := c.Param("formSlug")
-
-		var form dao.Form
-		if err := s.db.
-			Joins("Author").
-			Joins("Workspace").
-			Joins("TargetProject").
-			Where("forms.slug = ?", formSlug).
-			First(&form).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrFormNotFound)
-			}
-			return EErrorDefined(c, apierrors.ErrGeneric)
+		if apicontext.GetContext(c) == nil {
+			apicontext.SetContext(c, s.db, &apicontext.UserMeta{})
 		}
-
+		apiContext := apicontext.GetContext(c)
+		form := apiContext.GetForm(apicontext.WithFormAll())
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
 		if form.AuthRequire {
 			return EErrorDefined(c, apierrors.ErrFormAnswerForbidden)
 		}
-
-		return next(AnswerFormContext{AuthContext{
-			Context:      c,
-			User:         nil,
-			AccessToken:  nil,
-			RefreshToken: nil,
-			TokenAuth:    false,
-		}, form,
-			false})
+		return next(c)
 	}
 }
 
@@ -179,10 +132,14 @@ func (s *Services) AddFormWithoutAuthServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/ [get]
 func (s *Services) getFormList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var forms []dao.Form
-	query := s.db.Preload("Workspace")
+	query := s.DB(c).Preload("Workspace")
 
 	if err := query.Where("workspace_id", workspace.ID).Order("lower(title)").Find(&forms).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
@@ -210,8 +167,12 @@ func (s *Services) getFormList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/ [post]
 func (s *Services) createForm(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var req reqForm
 	if err := c.Bind(&req); err != nil {
@@ -232,13 +193,13 @@ func (s *Services) createForm(c echo.Context) error {
 	}
 
 	form.Author = user
-	form.Workspace = &workspace
+	form.Workspace = workspace
 
 	if err := checkFormFields(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
 	}
 
-	if err := s.db.Create(&form).Error; err != nil {
+	if err := s.DB(c).Create(&form).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -270,9 +231,18 @@ func (s *Services) createForm(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/ [patch]
 func (s *Services) updateForm(c echo.Context) error {
-	user := c.(FormContext).User
-	workspace := c.(FormContext).Workspace
-	form := c.(FormContext).Form
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
+	formPtr := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	form := *formPtr
+
 	oldSnap := tracker.FormToSnapshot(&form)
 
 	var req reqForm
@@ -305,7 +275,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	}
 
 	newForm.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
-	newForm.Workspace = &workspace
+	newForm.Workspace = workspace
 
 	if err := checkFormFields(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
@@ -315,7 +285,7 @@ func (s *Services) updateForm(c echo.Context) error {
 	for k := range requestMap {
 		updateFields = append(updateFields, k)
 	}
-	if err := s.db.Select(updateFields).Updates(&newForm).Error; err != nil {
+	if err := s.DB(c).Select(updateFields).Updates(&newForm).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -343,15 +313,22 @@ func (s *Services) updateForm(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/ [delete]
 func (s *Services) deleteForm(c echo.Context) error {
-	form := c.(FormContext).Form
-	user := c.(FormContext).User
-	workspace := c.(FormContext).Workspace
+	apiCtx := apicontext.GetContext(c)
+	formPtr := apiCtx.GetForm(apicontext.WithFormAll())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+
+	form := *formPtr
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+
 	oldSnap := tracker.FormToSnapshot(&form)
 
-	if err := s.db.Omit(clause.Associations).Delete(&form).Error; err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Delete(&form).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
-	err := s.snapshotTracker.TrackChanges(types2.LayerWorkspace, &oldSnap, nil, &workspace, user)
+	err := s.snapshotTracker.TrackChanges(types2.LayerWorkspace, &oldSnap, nil, workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -372,7 +349,11 @@ func (s *Services) deleteForm(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/ [get]
 func (s *Services) getFormAuth(c echo.Context) error {
-	form := c.(AnswerFormContext).Form
+	apiContext := apicontext.GetContext(c)
+	form := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, form.ToDTO())
 }
 
@@ -409,8 +390,12 @@ func (s *Services) getFormNoAuth(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/answers/ [get]
 func (s *Services) getAnswers(c echo.Context) error {
-	form := c.(FormContext).Form
-	workspace := c.(FormContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	form := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	offset := 0
 	limit := 100
@@ -428,7 +413,7 @@ func (s *Services) getAnswers(c echo.Context) error {
 
 	var answers []dao.FormAnswer
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Form").
 		Joins("Responder").
 		Preload("Attachments.Asset").
@@ -466,8 +451,12 @@ func (s *Services) getAnswers(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/forms/{formSlug}/answers/{answerSeq}/ [get]
 func (s *Services) getAnswer(c echo.Context) error {
-	form := c.(FormContext).Form
-	workspace := c.(FormContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	form := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	rawAnswerSeq := strings.TrimSuffix(c.Param("answerSeq"), "/")
 	answerSeq, err := strconv.ParseInt(rawAnswerSeq, 10, 64)
 	if err != nil {
@@ -475,7 +464,7 @@ func (s *Services) getAnswer(c echo.Context) error {
 	}
 	var answer dao.FormAnswer
 
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Responder").
 		Preload("Attachment.Asset").
 		Preload("Form").
@@ -510,8 +499,13 @@ func (s *Services) getAnswer(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/answer/ [post]
 func (s *Services) createAnswerAuth(c echo.Context) error {
-	form := c.(AnswerFormContext).Form
-	user := c.(AnswerFormContext).User
+	apiContext := apicontext.GetContext(c)
+	formPtr := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	form := *formPtr
+	user := apiContext.GetUser()
 
 	var userAnswer types2.FormFieldsSlice
 
@@ -546,7 +540,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	}
 
 	var answer dao.FormAnswer
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var seqId int
 		// Calculate sequence id
 		var lastId sql.NullInt64
@@ -593,13 +587,13 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		return EError(c, err)
 	}
 	if user == nil {
-		if err := s.db.Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
+		if err := s.DB(c).Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
 			return EError(c, err)
 		}
 	}
 
 	if len(attachmentUUIDs) > 0 {
-		if err := s.db.Preload("Asset").Where("answer_id = ?", answer.ID).Find(&answer.Attachments).Error; err != nil {
+		if err := s.DB(c).Preload("Asset").Where("answer_id = ?", answer.ID).Find(&answer.Attachments).Error; err != nil {
 			return EError(c, err)
 		}
 	}
@@ -661,7 +655,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	}
 
 	var defaultAssignees []uuid.UUID
-	if err := s.db.Select("member_id").
+	if err := s.DB(c).Select("member_id").
 		Model(&dao.ProjectMember{}).
 		Where("project_id = ? and is_default_assignee = true", form.TargetProjectId.UUID).
 		Find(&defaultAssignees).Error; err != nil {
@@ -689,19 +683,19 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 
 	var createWatcher bool
 	if user != nil {
-		if err := s.db.Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
+		if err := s.DB(c).Raw("select exists(select 1 from project_members where member_id = ? and project_id = ?)", user.ID, form.TargetProjectId).Find(&createWatcher).Error; err != nil {
 			return err
 		}
 	}
 
 	var formAttachments []dao.FormAttachment
-	if err := s.db.Where("form_id = ?", form.ID).
+	if err := s.DB(c).Where("form_id = ?", form.ID).
 		Where("answer_id = ?", answer.ID).
 		Find(&formAttachments).Error; err != nil {
 		return err
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
 		}
@@ -778,8 +772,12 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/form-attachments/ [post]
 func (s *Services) createFormAttachments(c echo.Context) error {
-	user := *c.(AnswerFormContext).User
-	form := c.(AnswerFormContext).Form
+	apiContext := apicontext.GetContext(c)
+	form := apiContext.GetForm(apicontext.WithFormAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	if !limiter.Limiter.CanAddAttachment(form.WorkspaceId) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
@@ -842,12 +840,12 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 		FileSize:    int(asset.Size),
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.db.Create(&fa).Error; err != nil {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&fa).Error; err != nil {
 			return err
 		}
 
-		if err := s.db.Create(&formAttachment).Error; err != nil {
+		if err := tx.Create(&formAttachment).Error; err != nil {
 			return err
 		}
 		formAttachment.Asset = &fa
@@ -877,15 +875,20 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/forms/{formSlug}/form-attachments/{attachmentId} [delete]
 func (s *Services) deleteFormAttachment(c echo.Context) error {
-	workspaceId := c.(AnswerFormContext).Form.WorkspaceId
-	formId := c.(AnswerFormContext).Form.ID
-	isAdmin := c.(AnswerFormContext).IsAdminWorkspace
-	userId := c.(AnswerFormContext).User.ID
+	apiCtx := apicontext.GetContext(c)
+	form := apiCtx.GetForm(apicontext.WithFormAll(), apicontext.WithFormCurrentMember())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	workspaceId := form.WorkspaceId
+	formId := form.ID
+	isAdmin := form.CurrentWorkspaceMember != nil && form.CurrentWorkspaceMember.Role == types2.AdminRole
+	userId := apiCtx.GetUser().ID
 
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.FormAttachment
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Asset").
 		Where("workspace_id = ?", workspaceId).
 		Where("form_id = ?", formId).
@@ -901,7 +904,7 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormForbidden)
 	}
 
-	if err := s.db.Omit(clause.Associations).
+	if err := s.DB(c).Omit(clause.Associations).
 		Delete(&attachment).Error; err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			return EErrorDefined(c, apierrors.ErrAttachmentInUse)

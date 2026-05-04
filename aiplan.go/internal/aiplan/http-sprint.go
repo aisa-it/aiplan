@@ -1,7 +1,6 @@
 package aiplan
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -21,72 +21,23 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type SprintContext struct {
-	WorkspaceContext
-	Sprint dao.Sprint
-}
-
 func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		sprintId := c.Param("sprintId")
-		workspace := c.(WorkspaceContext).Workspace
-		user := c.(WorkspaceContext).User
-
-		var sprint dao.Sprint
-		query := s.db.
-			Joins("Workspace").
-			Joins("CreatedBy").
-			Joins("UpdatedBy").
-			Joins("SprintFolder").
-			Preload("Watchers").
-			Preload("Issues.State").
-			Where("sprints.workspace_id = ?", workspace.ID).
-			Set("issueProgress", true).
-			Set("userId", user.ID)
-
-		if val, err := uuid.FromString(sprintId); err != nil {
-			query = query.Where("sprints.sequence_id = ?", sprintId)
-		} else {
-			query = query.Where("sprints.id = ?", val)
+		apiContext := apicontext.GetContext(c)
+		workspace := apiContext.GetWorkspace()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
 		}
 
-		if err := query.First(&sprint).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return EErrorDefined(c, apierrors.ErrSprintNotFound)
-			}
+		exists, err := dao.IsSprintExists(s.DB(c), workspace.ID, c.Param("sprintId"))
+		if err != nil {
 			return EError(c, err)
 		}
-
-		sprintStatsUpdate(&sprint)
-
-		// Для получения списка задач спринта отсортированных по sequence_id
-		//err := s.db.
-		//  Preload("State").
-		//  Joins("JOIN sprint_issues ON issues.id = sprint_issues.issue_id").
-		//  Where("sprint_issues.sprint_id = ?", sprint.Id).
-		//  Order("sprint_issues.position ASC").
-		//  Find(&sprint.Issues).Error
-
-		//if err != nil {
-		//  return EError(c, err)
-		//}
-		return next(SprintContext{c.(WorkspaceContext), sprint})
-	}
-}
-
-func sprintStatsUpdate(sprint *dao.Sprint) {
-	sprint.Stats.AllIssues = len(sprint.Issues)
-	for _, issue := range sprint.Issues {
-		switch issue.IssueProgress.Status {
-		case types.InProgress:
-			sprint.Stats.InProgress++
-		case types.Pending:
-			sprint.Stats.Pending++
-		case types.Cancelled:
-			sprint.Stats.Cancelled++
-		case types.Completed:
-			sprint.Stats.Completed++
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrSprintNotFound)
 		}
+
+		return next(c)
 	}
 }
 
@@ -140,10 +91,14 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/ [get]
 func (s *Services) getSprintList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var sprints []dao.Sprint
-	if err := s.db.
+	if err := s.DB(c).
 		Set("issueProgress", true).
 		Joins("SprintFolder").
 		Preload("Issues.State").
@@ -154,11 +109,11 @@ func (s *Services) getSprintList(c echo.Context) error {
 	}
 
 	for i := range sprints {
-		sprintStatsUpdate(&sprints[i])
+		sprints[i].UpdateStats()
 	}
 
 	var folders []dao.SprintFolder
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ?", workspace.ID).
 		Find(&folders).Error; err != nil {
 		return EError(c, err)
@@ -228,7 +183,7 @@ func (s *Services) getSprintList(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/ [post]
 func (s *Services) createSprint(c echo.Context) error {
 	var req dto.RequestSprint
-	user := c.(WorkspaceContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	err := c.Bind(&req)
 	if err != nil {
@@ -256,7 +211,7 @@ func (s *Services) createSprint(c echo.Context) error {
 	}
 
 	if sprint.SprintFolderId.Valid {
-		if err := s.db.Where("workspace_id = ?", sprint.WorkspaceId).
+		if err := s.DB(c).Where("workspace_id = ?", sprint.WorkspaceId).
 			Where("id = ?", sprintReq.RequestSprint.Folder).
 			First(&sprint.SprintFolder).Error; err != nil {
 			sprint.SprintFolderId = uuid.NullUUID{}
@@ -264,7 +219,7 @@ func (s *Services) createSprint(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Create(&sprint).Error; err != nil {
+	if err := s.DB(c).Create(&sprint).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -297,7 +252,11 @@ func (s *Services) createSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/ [get]
 func (s *Services) GetSprint(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
+	apiCtx := apicontext.GetContext(c)
+	sprint := apiCtx.GetSprint(apicontext.WithSprintAll())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 	return c.JSON(http.StatusOK, sprint.ToDTO())
 }
 
@@ -320,9 +279,20 @@ func (s *Services) GetSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/ [patch]
 func (s *Services) updateSprint(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
-	oldSnapshot := tracker.SprintToSnapshot(&sprint)
+	//sprint := c.(SprintContext).Sprint
+	//user := c.(SprintContext).User
+
+	apiCtx := apicontext.GetContext(c)
+	sprint := apiCtx.GetSprint(
+		apicontext.WithSprintCreatedBy(),
+		apicontext.WithSprintUpdatedBy(),
+		apicontext.WithSprintFolder(),
+	)
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
+	oldSnapshot := tracker.SprintToSnapshot(sprint)
 
 	var req dto.RequestSprint
 	fields, err := BindData(c, "", &req)
@@ -342,7 +312,7 @@ func (s *Services) updateSprint(c echo.Context) error {
 			sprint.EndDate = req.EndDate.ToNullTime()
 		case "sprint_folder_id":
 			var folder *dao.SprintFolder
-			if eerr := s.db.Where("workspace_id = ?", sprint.WorkspaceId).
+			if eerr := s.DB(c).Where("workspace_id = ?", sprint.WorkspaceId).
 				Where("id = ?", req.Folder).
 				First(&folder).Error; eerr != nil {
 				sprint.SprintFolderId = uuid.NullUUID{}
@@ -363,15 +333,15 @@ func (s *Services) updateSprint(c echo.Context) error {
 				return EErrorDefined(c, apierrors.ErrInvalidSprintTimeWindow)
 			}
 		}
-		if err := s.db.Omit(clause.Associations).Select(fields).Updates(&sprint).Error; err != nil {
+		if err := s.DB(c).Omit(clause.Associations).Select(fields).Updates(sprint).Error; err != nil {
 			return EError(c, err)
 		}
 	}
 
 	if len(fields) > 0 {
-		newSnapshot := tracker.SprintToSnapshot(&sprint)
+		newSnapshot := tracker.SprintToSnapshot(sprint)
 
-		err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, &sprint, user)
+		err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, sprint, user)
 		if err != nil {
 			errStack.GetError(c, err)
 		}
@@ -399,11 +369,15 @@ func (s *Services) updateSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/issues/ [post]
 func (s *Services) sprintIssuesUpdate(c echo.Context) error {
-	workspace := c.(SprintContext).Workspace
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	sprint := apiCtx.GetSprint(apicontext.WithSprintIssues())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
-	oldSnapshot := tracker.SprintToSnapshot(&sprint)
+	oldSnapshot := tracker.SprintToSnapshot(sprint)
 
 	workspaceUUID := workspace.ID
 	userUUID := user.ID
@@ -415,10 +389,10 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		return EError(c, apierrors.ErrSprintBadRequest)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var issues []dao.Issue
 
-		if err := s.db.
+		if err := s.DB(c).
 			Where("workspace_id = ?", workspace.ID).
 			Where("sprint_id = ?", sprint.Id).
 			Where("issue_id IN (?)", req.IssuesRemove).
@@ -473,10 +447,10 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Project").
 		Where("id IN (?)",
-			s.db.Select("issue_id").
+			s.DB(c).Select("issue_id").
 				Where("workspace_id = ?", workspace.ID).
 				Where("sprint_id = ?", sprint.Id).
 				Model(&dao.SprintIssue{})).
@@ -484,9 +458,9 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newSnapshot := tracker.SprintToSnapshot(&sprint)
+	newSnapshot := tracker.SprintToSnapshot(sprint)
 
-	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, &sprint, user)
+	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, sprint, user) //TODO check
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -512,16 +486,20 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/ [delete]
 func (s *Services) deleteSprint(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
+	apiCtx := apicontext.GetContext(c)
+	sprint := apiCtx.GetSprint()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
-	oldSnapshot := tracker.SprintToSnapshot(&sprint)
-	err := s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, nil, &sprint, user)
+	oldSnapshot := tracker.SprintToSnapshot(sprint)
+	err := s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, nil, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
 
-	if err := s.db.Delete(&sprint).Error; err != nil {
+	if err := s.DB(c).Delete(sprint).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -546,11 +524,15 @@ func (s *Services) deleteSprint(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/watchers/ [post]
 func (s *Services) sprintWatchersUpdate(c echo.Context) error {
-	workspace := c.(SprintContext).Workspace
-	sprint := c.(SprintContext).Sprint
-	user := c.(SprintContext).User
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	sprint := apiCtx.GetSprint(apicontext.WithSprintWatchers())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
-	oldSnapshot := tracker.SprintToSnapshot(&sprint)
+	oldSnapshot := tracker.SprintToSnapshot(sprint)
 
 	workspaceUUID := workspace.ID
 	userUUID := user.ID
@@ -562,7 +544,7 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		return EError(c, apierrors.ErrSprintBadRequest)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var workspaceMembers []dao.WorkspaceMember
 
 		if err := tx.
@@ -607,9 +589,9 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.
+	if err := s.DB(c).
 		Where("id IN (?)",
-			s.db.Select("watcher_id").
+			s.DB(c).Select("watcher_id").
 				Where("workspace_id = ?", workspace.ID).
 				Where("sprint_id = ?", sprint.Id).
 				Model(&dao.SprintWatcher{})).
@@ -617,9 +599,9 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newSnapshot := tracker.SprintToSnapshot(&sprint)
+	newSnapshot := tracker.SprintToSnapshot(sprint)
 
-	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, &sprint, user)
+	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -646,8 +628,14 @@ func (s *Services) sprintWatchersUpdate(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/activities/ [get]
 func (s *Services) getSpringActivityList(c echo.Context) error {
-	sprintId := c.(SprintContext).Sprint.Id
-	workspaceId := c.(SprintContext).Workspace.ID
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	sprint := apiCtx.GetSprint()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	sprintId := sprint.Id
+	workspaceId := workspace.ID
 
 	offset := -1
 	limit := 100
@@ -658,7 +646,7 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Sprint").
 		Joins("Workspace").
 		Joins("Actor").
@@ -699,8 +687,12 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/sprint-view/ [post]
 func (s *Services) updateSprintView(c echo.Context) error {
-	user := *c.(SprintContext).User
-	sprint := c.(SprintContext).Sprint
+	apiCtx := apicontext.GetContext(c)
+	sprint := apiCtx.GetSprint()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
 	var viewProps types.ViewProps
 
@@ -719,7 +711,7 @@ func (s *Services) updateSprintView(c echo.Context) error {
 		ViewProps: viewProps,
 	}
 
-	if err := s.db.Clauses(clause.OnConflict{
+	if err := s.DB(c).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "sprint_id"}, {Name: "member_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"view_props", "updated_at"}),
 	}).Create(&view).Error; err != nil {
@@ -746,7 +738,11 @@ func (s *Services) updateSprintView(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints/{sprintId}/states/ [get]
 func (s *Services) getSprintStates(c echo.Context) error {
-	sprint := c.(SprintContext).Sprint
+	apiCtx := apicontext.GetContext(c)
+	sprint := apiCtx.GetSprint(apicontext.WithSprintIssues())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
 	projectMap := make(map[uuid.UUID]struct{})
 
@@ -756,7 +752,7 @@ func (s *Services) getSprintStates(c echo.Context) error {
 	}
 
 	var states []dao.State
-	if err := s.db.
+	if err := s.DB(c).
 		Where("project_id in (?)", slices.Collect(maps.Keys(projectMap))).
 		Order("sequence").
 		Find(&states).Error; err != nil {
@@ -783,8 +779,12 @@ func (s *Services) getSprintStates(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/ [post]
 func (s *Services) addSprintFolders(c echo.Context) error {
 	var req dto.RequestSprintFolder
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
 	err := c.Bind(&req)
 	if err != nil {
@@ -804,11 +804,11 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 		CreatedById: user.ID,
 		WorkspaceId: workspace.ID,
 		CreatedBy:   *user,
-		Workspace:   &workspace,
+		Workspace:   workspace,
 		Name:        req.Name,
 	}
 
-	if err := s.db.Create(&folder).Error; err != nil {
+	if err := s.DB(c).Create(&folder).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -834,12 +834,16 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/ [patch]
 func (s *Services) updateSprintFolders(c echo.Context) error {
 	var req dto.RequestSprintFolder
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
 
 	var folder dao.SprintFolder
-	if err := s.db.Where("workspace_id = ?", workspace.ID).
+	if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
 		Where("id = ?", sprintFolderId).First(&folder).Error; err != nil {
 		return EError(c, err)
 	}
@@ -860,7 +864,7 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 	folder.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	folder.UpdatedBy = user
 
-	if err := s.db.Updates(&folder).Error; err != nil {
+	if err := s.DB(c).Updates(&folder).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -884,14 +888,18 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/sprints-folder/{sprintFolderId}/ [delete]
 func (s *Services) deleteSprintFolders(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		var exists bool
-		if err := s.db.Model(&dao.Sprint{}).
+		if err := s.DB(c).Model(&dao.Sprint{}).
 			Select("EXISTS(?)",
-				s.db.Model(&dao.Sprint{}).
+				s.DB(c).Model(&dao.Sprint{}).
 					Select("1").
 					Where("sprint_folder_id = ?", sprintFolderId),
 			).
@@ -902,7 +910,7 @@ func (s *Services) deleteSprintFolders(c echo.Context) error {
 			return apierrors.ErrSprintFolderDelete
 		}
 
-		if err := s.db.Where("workspace_id = ?", workspace.ID).
+		if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
 			Where("id = ?", sprintFolderId).Delete(&dao.SprintFolder{}).Error; err != nil {
 			return err
 		}
@@ -922,15 +930,11 @@ func (rs *sprintDto) toDao(ctx echo.Context) (*dao.Sprint, error) {
 	if rs == nil {
 		return nil, fmt.Errorf("empty sprint")
 	}
-	var workspaceMember dao.WorkspaceMember
-	var workspace dao.Workspace
-	switch v := ctx.(type) {
-	case WorkspaceContext:
-		workspaceMember = v.WorkspaceMember
-		workspace = v.Workspace
-	case SprintContext:
-		workspaceMember = v.WorkspaceMember
-		workspace = v.Workspace
+	apiCtx := apicontext.GetContext(ctx)
+	workspace := apiCtx.GetWorkspace()
+	workspaceMember := apiCtx.GetWorkspaceMember()
+	if apiCtx.Error() != nil {
+		return nil, apiCtx.Error()
 	}
 
 	return &dao.Sprint{
