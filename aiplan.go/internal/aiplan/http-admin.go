@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -59,20 +60,9 @@ type UserCreateRequest struct {
 	Role        int    `json:"role"`         // optional
 }
 
-type WorkspaceContext struct {
-	AuthContext
-	Workspace       dao.Workspace
-	WorkspaceMember dao.WorkspaceMember
-}
-
-type ReleaseNoteContext struct {
-	AuthContext
-	ReleaseNote dao.ReleaseNote
-}
-
 func (s *Services) StaffPermissionsMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		user := *c.(AuthContext).User
+		user := apicontext.GetContext(c).GetUser()
 		if !user.IsSuperuser {
 			return EErrorDefined(c, apierrors.ErrNotEnoughRights)
 		}
@@ -88,15 +78,15 @@ func (s *Services) ReleaseNotesMiddleware(next echo.HandlerFunc) echo.HandlerFun
 			return next(c)
 		}
 
-		var note dao.ReleaseNote
-		if err := s.db.Where("id = ?", noteId).Or("tag_name = ?", noteId).First(&note).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrReleaseNoteNotFound)
-			}
+		exists, err := dao.IsReleaseNoteExists(s.DB(c), noteId)
+		if err != nil {
 			return EError(c, err)
 		}
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrReleaseNoteNotFound)
+		}
 
-		return next(ReleaseNoteContext{c.(AuthContext), note})
+		return next(c)
 	}
 }
 
@@ -213,10 +203,10 @@ func (s *Services) getAllWorkspaceList(c echo.Context) error {
 		limit = 100
 	}
 
-	query := s.db.Preload(clause.Associations).
+	query := s.DB(c).Preload(clause.Associations).
 		Select("*, (?) as total_members, (?) as total_projects, (ts_rank(name_tokens, websearch_to_tsquery('russian', lower(?)))) as search_rank, ts_headline('russian', name, websearch_to_tsquery('russian', lower(?))) as name_highlighted",
-			s.db.Select("count(*)").Where("workspace_id = workspaces.id").Model(&dao.WorkspaceMember{}),
-			s.db.Select("count(*)").Where("workspace_id = workspaces.id").Model(&dao.Project{}),
+			s.DB(c).Select("count(*)").Where("workspace_id = workspaces.id").Model(&dao.WorkspaceMember{}),
+			s.DB(c).Select("count(*)").Where("workspace_id = workspaces.id").Model(&dao.Project{}),
 			searchQuery,
 			searchQuery,
 		)
@@ -263,7 +253,7 @@ func (s *Services) getWorkspaceByAdmin(c echo.Context) error {
 	slugOrId := c.Param("slug")
 
 	var workspace dao.Workspace
-	workspaceQuery := s.db.
+	workspaceQuery := s.DB(c).
 		Joins("Owner").
 		Joins("LogoAsset")
 
@@ -297,12 +287,12 @@ func (s *Services) getWorkspaceByAdmin(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/workspaces/{slug} [delete]
 func (s *Services) deleteWorkspaceByAdmin(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	slugOrId := c.Param("slug")
 
 	var workspace dao.Workspace
 
-	workspaceQuery := s.db.Session(&gorm.Session{})
+	workspaceQuery := s.DB(c).Session(&gorm.Session{})
 	if id, err := uuid.FromString(slugOrId); err == nil {
 		workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
 	} else {
@@ -369,12 +359,12 @@ func (s *Services) getWorkspaceProjectList(c echo.Context) error {
 	if limit > 100 {
 		limit = 100
 	}
-	query := dao.PreloadProjectMembersWithFilters(s.db.
+	query := dao.PreloadProjectMembersWithFilters(s.DB(c).
 		Preload("Workspace").
 		Preload("ProjectLead").
 		Where("workspace_id = ?", workspaceId).
 		Select("*, (?) as total_members, (ts_rank(name_tokens, websearch_to_tsquery('russian', lower(?)))) as search_rank, ts_headline('russian', name, websearch_to_tsquery('russian', lower(?))) as name_highlighted",
-			s.db.Select("count(*)").Where("project_id = projects.id").Model(&dao.ProjectMember{}),
+			s.DB(c).Select("count(*)").Where("project_id = projects.id").Model(&dao.ProjectMember{}),
 			searchQuery,
 			searchQuery,
 		))
@@ -482,7 +472,7 @@ func (s *Services) exportUsersList(c echo.Context) error {
 	w.Write([]string{"ID", "FirstName", "LastName", "Username", "Email", "CreationDate", "LastActivity", "IsSuperUser", "IsActive", "IsBot"})
 
 	var users []dao.User
-	s.db.FindInBatches(&users, 100, func(tx *gorm.DB, batch int) error {
+	s.DB(c).FindInBatches(&users, 100, func(tx *gorm.DB, batch int) error {
 		for _, user := range users {
 			if err := w.Write([]string{
 				user.ID.String(),
@@ -539,7 +529,7 @@ func getBoolCSV(b bool) string {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/users [post]
 func (s *Services) createUser(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var req UserCreateRequest
 	if err := c.Bind(&req); err != nil {
@@ -570,21 +560,21 @@ func (s *Services) createUser(c echo.Context) error {
 		IsActive:    true,
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var workspace dao.Workspace
 		if req.WorkspaceId != "" {
-			if err := s.db.Where("id = ?", req.WorkspaceId).First(&workspace).Error; err != nil {
+			if err := s.DB(c).Where("id = ?", req.WorkspaceId).First(&workspace).Error; err != nil {
 				return err
 			}
 
 			u.LastWorkspaceId = uuid.NullUUID{UUID: workspace.ID, Valid: true}
 		}
-		if err := s.db.Create(&u).Error; err != nil {
+		if err := s.DB(c).Create(&u).Error; err != nil {
 			return err
 		}
 
 		if req.WorkspaceId != "" {
-			return s.db.Create(&dao.WorkspaceMember{
+			return s.DB(c).Create(&dao.WorkspaceMember{
 				ID:          dao.GenUUID(),
 				WorkspaceId: workspace.ID,
 				MemberId:    u.ID,
@@ -617,7 +607,7 @@ func (s *Services) getUserById(c echo.Context) error {
 	userId := c.Param("userId")
 
 	var user dao.User
-	if err := s.db.Where("id = ?", userId).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", userId).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrUserNotFound)
 		}
@@ -645,15 +635,10 @@ func (s *Services) getUserById(c echo.Context) error {
 func (s *Services) updateUser(c echo.Context) error {
 	userId := c.Param("userId")
 
-	var admin *dao.User
-	if context, ok := c.(AuthContext); ok {
-		admin = context.User
-	} else {
-		admin = c.(WorkspaceContext).User
-	}
+	admin := apicontext.GetContext(c).GetUser()
 
 	var user dao.User
-	if err := s.db.Where("id = ?", userId).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", userId).First(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -683,7 +668,7 @@ func (s *Services) updateUser(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Model(&user).Select(userUpdateFields).Updates(data).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select(userUpdateFields).Updates(data).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrDuplicateEmail)
 		}
@@ -737,7 +722,7 @@ func (s *Services) getUserFeedback(c echo.Context) error {
 	userId := c.Param("userId")
 
 	var feedback dao.UserFeedback
-	if err := s.db.Where("user_id = ?", userId).Preload(clause.Associations).First(&feedback).Error; err != nil {
+	if err := s.DB(c).Where("user_id = ?", userId).Preload(clause.Associations).First(&feedback).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.NoContent(http.StatusNoContent)
 		}
@@ -791,7 +776,7 @@ func (s *Services) geWorkspaceListByUser(c echo.Context) error {
 		limit = 100
 	}
 
-	query := s.db.Model(&dao.Workspace{})
+	query := s.DB(c).Model(&dao.Workspace{})
 
 	switch orderBy {
 	case "role":
@@ -820,7 +805,7 @@ func (s *Services) geWorkspaceListByUser(c echo.Context) error {
 
 	if !all {
 		query = query.
-			Where("workspaces.id in (?)", s.db.Model(&dao.WorkspaceMember{}).
+			Where("workspaces.id in (?)", s.DB(c).Model(&dao.WorkspaceMember{}).
 				Select("workspace_id").
 				Where("member_id = ?", userId))
 	}
@@ -888,7 +873,7 @@ func (s *Services) getProjectListByUser(c echo.Context) error {
 	}
 
 	var projects []dao.Project
-	query := s.db.Model(&dao.Project{}).
+	query := s.DB(c).Model(&dao.Project{}).
 		Set("userId", userId).
 		Where("workspace_id = ?", workspaceId).
 		Order("name")
@@ -900,7 +885,7 @@ func (s *Services) getProjectListByUser(c echo.Context) error {
 	}
 	if !all {
 		query = query.
-			Where("id in (?)", s.db.Model(&dao.ProjectMember{}).
+			Where("id in (?)", s.DB(c).Model(&dao.ProjectMember{}).
 				Select("project_id").
 				Where("member_id = ?", userId))
 	}
@@ -991,7 +976,7 @@ func (s *Services) createMessageForMember(c echo.Context) error {
 	}
 
 	if len(notificationSentAt) > 0 {
-		if err := s.db.Omit(clause.Associations).CreateInBatches(&notificationSentAt, 10).Error; err != nil {
+		if err := s.DB(c).Omit(clause.Associations).CreateInBatches(&notificationSentAt, 10).Error; err != nil {
 			return err
 		}
 	}
@@ -1017,7 +1002,7 @@ func (s *Services) createMessageForMember(c echo.Context) error {
 func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 	userId := c.Param("userId")
 	workspaceId := c.Param("workspaceId")
-	superUser := *c.(AuthContext).User
+	superUser := apicontext.GetContext(c).GetUser()
 
 	var role roleUpdRequest
 
@@ -1034,7 +1019,7 @@ func (s *Services) updateWorkspaceMemberAdmin(c echo.Context) error {
 	var workspace dao.Workspace
 	var member dao.WorkspaceMember
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
 			return apierrors.ErrGeneric
 		}
@@ -1144,9 +1129,9 @@ func (s *Services) deleteWorkspaceMemberAdmin(c echo.Context) error {
 	userId := c.Param("userId")
 	workspaceId := c.Param("workspaceId")
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var newOwner dao.WorkspaceMember
-		if err := s.db.
+		if err := s.DB(c).
 			Model(&dao.WorkspaceMember{}).
 			Joins("Member").
 			Where("workspace_id = ?", workspaceId).
@@ -1169,7 +1154,7 @@ func (s *Services) deleteWorkspaceMemberAdmin(c echo.Context) error {
 			First(&requestedMember).Error; err != nil {
 			return err
 		}
-		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != c.(AuthContext).User.ID {
+		if requestedMember.Member.IsSuperuser && requestedMember.MemberId != apicontext.GetContext(c).GetUser().ID {
 			return apierrors.ErrDeleteSuperUser
 		}
 
@@ -1200,7 +1185,7 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 	userId := c.Param("userId")
 	workspaceId := c.Param("workspaceId")
 	projectId := c.Param("projectId")
-	superUser := *c.(AuthContext).User
+	superUser := apicontext.GetContext(c).GetUser()
 
 	var role roleUpdRequest
 
@@ -1218,7 +1203,7 @@ func (s *Services) updateProjectMemberAdmin(c echo.Context) error {
 	var project dao.Project
 	var member dao.ProjectMember
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
 			return apierrors.ErrGeneric
 		}
@@ -1315,7 +1300,7 @@ func (s *Services) deleteProjectMemberAdmin(c echo.Context) error {
 	workspaceId := c.Param("workspaceId")
 	projectId := c.Param("projectId")
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		result := tx.
 			Where("workspace_id = ?", workspaceId).
 			Where("project_id = ?", projectId).
@@ -1359,13 +1344,13 @@ func (s *Services) createReleaseNote(c echo.Context) error {
 	if err := c.Bind(&note); err != nil {
 		return EError(c, err)
 	}
-	note.AuthorId = c.(AuthContext).User.ID
+	note.AuthorId = apicontext.GetContext(c).GetUser().ID
 	note.TagName = appVersion
 	note.PublishedAt = time.Now()
 	if len(note.Body.Body) == 0 {
 		return EErrorDefined(c, apierrors.ErrReleaseNoteEmptyBody)
 	}
-	if err := s.db.Create(&note).Error; err != nil {
+	if err := s.DB(c).Create(&note).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrReleaseNoteExists)
 		}
@@ -1389,7 +1374,11 @@ func (s *Services) createReleaseNote(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/release-notes/{noteId} [get]
 func (s *Services) getReleaseNote(c echo.Context) error {
-	rn := c.(ReleaseNoteContext).ReleaseNote
+	apiContext := apicontext.GetContext(c)
+	rn := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, rn.ToLightDTO())
 }
 
@@ -1415,13 +1404,19 @@ func (s *Services) updateReleaseNote(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	data.ID = c.(ReleaseNoteContext).ReleaseNote.ID
-	data.TagName = c.(ReleaseNoteContext).ReleaseNote.TagName
-	data.AuthorId = c.(ReleaseNoteContext).User.ID
+	apiContext := apicontext.GetContext(c)
+	rn := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	data.ID = rn.ID
+	data.TagName = rn.TagName
+	data.AuthorId = apiContext.GetUser().ID
 	if len(data.Body.Body) == 0 {
 		return EErrorDefined(c, apierrors.ErrReleaseNoteEmptyBody)
 	}
-	if err := s.db.Save(&data).Error; err != nil {
+	if err := s.DB(c).Save(&data).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1443,8 +1438,12 @@ func (s *Services) updateReleaseNote(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/admin/release-notes/{noteId} [delete]
 func (s *Services) deleteReleaseNote(c echo.Context) error {
-	note := c.(ReleaseNoteContext).ReleaseNote
-	if err := s.db.Delete(&note).Error; err != nil {
+	apiContext := apicontext.GetContext(c)
+	note := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	if err := s.DB(c).Delete(note).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -1488,7 +1487,7 @@ func (s *Services) getAllFeedbackList(c echo.Context) error {
 		limit = 100
 	}
 
-	query := s.db.Preload(clause.Associations)
+	query := s.DB(c).Preload(clause.Associations)
 
 	if orderBy != "" {
 		query = query.Order(clause.OrderByColumn{Column: clause.Column{Name: orderBy}, Desc: desc})
@@ -1524,7 +1523,7 @@ func (s *Services) getAllFeedbackList(c echo.Context) error {
 // @Router /api/auth/admin/feedbacks/export [get]
 func (s *Services) exportFeedbackList(c echo.Context) error {
 	var count int64
-	if err := s.db.Model(&dao.UserFeedback{}).Count(&count).Error; err != nil {
+	if err := s.DB(c).Model(&dao.UserFeedback{}).Count(&count).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1539,7 +1538,7 @@ func (s *Services) exportFeedbackList(c echo.Context) error {
 		_, err := dao.PaginationRequest(
 			offset,
 			100,
-			s.db.Preload(clause.Associations).Order("created_at"),
+			s.DB(c).Preload(clause.Associations).Order("created_at"),
 			&feedbacks,
 		)
 		if err != nil {
@@ -1582,7 +1581,7 @@ func (s *Services) exportFeedbackList(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Ошибка"
 // @Router /api/auth/admin/templates/reset/ [post]
 func (s *Services) reloadTemplates(c echo.Context) error {
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("1 = 1").Delete(&dao.Template{}).Error; err != nil {
 			return err
 		}
@@ -1712,7 +1711,7 @@ func (s *Services) getJitsiTokenLogList(c echo.Context) error {
 		limit = 100
 	}
 
-	query := s.db.Joins("User").Joins("Workspace").Order("created_at DESC")
+	query := s.DB(c).Joins("User").Joins("Workspace").Order("created_at DESC")
 
 	if userIdStr != "" {
 		userId, err := uuid.FromString(userIdStr)

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -70,7 +71,7 @@ type FilterParams struct {
 }
 
 func ExtractFilterRequest(c echo.Context) (*dao.User, FilterParams, int, int, error) {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	offset := -1
 	limit := 100
 	if err := echo.QueryParamsBinder(c).

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
@@ -53,7 +54,7 @@ func TestSearch(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/auth/issues/search/?order_by=author&light=true", bytes.NewBuffer(b))
 	req.Header.Add("Content-type", "application/json")
 	rec := httptest.NewRecorder()
-	c := getAuthContext(req, rec)
+	c := getAdminContext(req, rec)
 
 	st := time.Now()
 	if err := s.getIssueList(c); err != nil {
@@ -66,7 +67,8 @@ func TestSearch(t *testing.T) {
 	fmt.Println(data["count"], data["limit"], data["offset"], len(data["issues"].([]interface{})))
 }
 
-func getAuthContext(req *http.Request, rec http.ResponseWriter) echo.Context {
+func getAdminContext(req *http.Request, rec http.ResponseWriter) echo.Context {
 	c := e.NewContext(req, rec)
-	return AuthContext{c, admin, nil, nil, false}
+	apicontext.SetContext(c, s.db, &apicontext.UserMeta{User: admin})
+	return c
 }

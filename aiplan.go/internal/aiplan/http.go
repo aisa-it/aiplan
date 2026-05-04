@@ -41,12 +41,14 @@ import (
 	"syscall"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -102,6 +104,21 @@ type Services struct {
 
 	business *business.Business
 }
+
+// DB возвращает *gorm.DB, привязанный к контексту HTTP-запроса.
+// При cancel/timeout контекста pgx отправит pg_cancel_backend в Postgres,
+// что не даёт зависшим запросам копиться в пуле.
+func (s *Services) DB(c echo.Context) *gorm.DB {
+	return s.db.WithContext(c.Request().Context())
+}
+
+// RawDB возвращает исходный *gorm.DB без привязки к запросу.
+// Использовать только в фоновых задачах, кронах и не-HTTP-обработчиках.
+func (s *Services) RawDB() *gorm.DB {
+	return s.db
+}
+
+const requestTimeout = time.Second * 10
 
 var cfg *config.Config
 var appVersion string
@@ -388,6 +405,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}))
 	e.Use(echoprometheus.NewMiddleware("aiplan"))
 	e.Pre(
+		middleware.ContextTimeout(requestTimeout),
 		middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 			Skipper: func(c echo.Context) bool {
 				return !strings.HasPrefix(c.Path(), "/api")
@@ -452,7 +470,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s.AddBackupServices(authGroup)
 	s.AddAdminServices(authGroup)
 	s.AddGitServices(authGroup)
-	AddProfileServices(e.Group("/"))
+	//AddProfileServices(e.Group("/"))
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
 	s.AddDocServices(authGroup)
@@ -485,7 +503,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// Websocket notifications endpoint
 	authGroup.GET("ws/notifications/", func(c echo.Context) error {
-		s.notificationsService.Ws.Handle(c.(AuthContext).User.ID, c.Response(), c.Request())
+		s.notificationsService.Ws.Handle(apicontext.GetContext(c).GetUser().ID, c.Response(), c.Request())
 		return nil
 	})
 
@@ -592,20 +610,20 @@ func checkPassword(password string, pass string) bool {
 }
 
 // Генерация ключа доступа
-func createAccessToken(userId uuid.UUID) (*Token, *Token, error) {
-	ta, err := GenJwtToken([]byte(cfg.SecretKey), "access", userId)
+func createAccessToken(userId uuid.UUID) (*token.Token, *token.Token, error) {
+	ta, err := token.GenJwtToken([]byte(cfg.SecretKey), "access", userId)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tr, err := GenJwtToken([]byte(cfg.SecretKey), "refresh", userId)
+	tr, err := token.GenJwtToken([]byte(cfg.SecretKey), "refresh", userId)
 	if err != nil {
 		return nil, nil, err
 	}
 	return ta, tr, err
 }
 
-func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
+func setAuthCookies(c echo.Context, accessToken *token.Token, refreshToken *token.Token) {
 	accessCookie := new(http.Cookie)
 	accessCookie.Name = "access_token"
 	accessCookie.Value = accessToken.SignedString
@@ -659,46 +677,6 @@ func clearAuthCookies(c echo.Context) {
 	}
 	refreshCookie.MaxAge = -1
 	c.SetCookie(refreshCookie)
-}
-
-type Token struct {
-	JWT          *jwt.Token
-	SignedString string
-	Type         string
-}
-
-// Генерация JWT ключа
-func GenJwtToken(secret []byte, tokenType string, userid uuid.UUID) (*Token, error) {
-	u, _ := uuid.NewV4()
-	claims := jwt.MapClaims{
-		"exp":        jwt.NewNumericDate(time.Now().Add(types.TokenExpiresPeriod)),
-		"iat":        jwt.NewNumericDate(time.Now()),
-		"jti":        fmt.Sprintf("%x", u),
-		"token_type": tokenType,
-		"user_id":    userid.String(),
-	}
-	if tokenType == "refresh" {
-		claims["exp"] = jwt.NewNumericDate(time.Now().Add(types.RefreshTokenExpiresPeriod))
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedString, err := token.SignedString(secret)
-	if err != nil {
-		return nil, err
-	}
-
-	// Waiting for PR https://github.com/golang-jwt/jwt/pull/417
-	sigStr := signedString[strings.LastIndex(signedString, ".")+1:]
-	sig, err := base64.RawURLEncoding.DecodeString(sigStr)
-	if err != nil {
-		return nil, err
-	}
-	token.Signature = sig
-
-	return &Token{
-		JWT:          token,
-		SignedString: signedString,
-		Type:         tokenType,
-	}, nil
 }
 
 func GenInviteToken(email string) (string, error) {

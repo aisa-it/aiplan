@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/gofrs/uuid"
 
@@ -36,24 +37,16 @@ func DemoMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-type SearchFilterContext struct {
-	AuthContext
-	Filter dao.SearchFilter
-}
-
 func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		filterId := c.Param("filterId")
-
-		var filter dao.SearchFilter
-		if err := s.db.Where("id = ?", filterId).First(&filter).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return c.NoContent(http.StatusNotFound)
-			}
+		exists, err := dao.IsSearchFilterExists(s.DB(c), c.Param("filterId"))
+		if err != nil {
 			return EError(c, err)
 		}
-
-		return next(SearchFilterContext{c.(AuthContext), filter})
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrSearchFilterNotFound)
+		}
+		return next(c)
 	}
 }
 
@@ -110,16 +103,17 @@ func NewJitsiTokenLogMiddleware(db *gorm.DB) func(echo.HandlerFunc) echo.Handler
 			var workspaceId uuid.NullUUID
 			var room string
 
-			if workspaceCtx, ok := c.(WorkspaceContext); ok {
-				userId = workspaceCtx.User.ID
-				workspaceId = uuid.NullUUID{Valid: true, UUID: workspaceCtx.Workspace.ID}
-				room = workspaceCtx.Workspace.Slug
-			} else if authCtx, ok := c.(AuthContext); ok {
-				userId = authCtx.User.ID
-				room = c.Param("room")
-			} else {
+			apiContext := apicontext.GetContext(c)
+			if apiContext == nil || apiContext.GetUser() == nil {
 				slog.Warn("Jitsi token logger unsupported route", "route", c.Path(), "url", c.Request().URL)
 				return next(c)
+			}
+			userId = apiContext.GetUser().ID
+			room = c.Param("room")
+
+			if ws := apiContext.GetWorkspace(); ws != nil {
+				workspaceId = uuid.NullUUID{Valid: true, UUID: ws.ID}
+				room = ws.Slug
 			}
 
 			logLine := &dao.JitsiTokenLog{

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
@@ -45,22 +46,52 @@ func (s *Services) ProjectAdminPermissionMiddleware(next echo.HandlerFunc) echo.
 }
 
 func (s *Services) hasProjectPermissions(c echo.Context) (bool, error) {
-	projectContext, ok := c.(ProjectContext)
-	if !ok {
+	apiContext := apicontext.GetContext(c)
+	if apiContext == nil {
 		return false, errors.New("wrong context")
 	}
-	projectMember := projectContext.ProjectMember
-	//if projectContext.User.IsSuperuser {
-	//	return true, nil
-	//}
 
-	// Allow projectMember update notification
-	if strings.HasSuffix(c.Path(), "/me/notifications/") && c.Request().Method == http.MethodPost {
-		return true, nil
+	// Lightweight checks without load
+	{
+		// Allow projectMember update notification
+		if strings.HasSuffix(c.Path(), "/me/notifications/") && c.Request().Method == http.MethodPost {
+			return true, nil
+		}
+
+		// Allow search to all members
+		if strings.HasSuffix(c.Path(), "/issues/search/") && c.Request().Method == http.MethodPost {
+			return true, nil
+		}
+
+		switch c.Request().Method {
+		//Safe methods
+		case
+			http.MethodGet,
+			http.MethodOptions,
+			http.MethodHead:
+			return true, nil
+			// Admin methods
+		case
+			http.MethodPut,
+			http.MethodPost,
+			http.MethodPatch,
+			http.MethodDelete:
+			if strings.Contains(c.Path(), "/project-views/") {
+				return true, nil
+			}
+		}
+	}
+
+	user := apiContext.GetUser()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
 	}
 
 	// Allow workspace admin all
-	if projectContext.WorkspaceMember.Role == types.AdminRole {
+	if workspaceMember.Role == types.AdminRole {
 		return true, nil
 	}
 
@@ -69,30 +100,14 @@ func (s *Services) hasProjectPermissions(c echo.Context) (bool, error) {
 		return projectMember.Role > types.GuestRole, nil
 	}
 
-	// Allow search to all members
-	if strings.HasSuffix(c.Path(), "/issues/search/") && c.Request().Method == http.MethodPost {
-		return true, nil
-	}
-
 	switch c.Request().Method {
-	//Safe methods
-	case
-		http.MethodGet,
-		http.MethodOptions,
-		http.MethodHead:
-		return true, nil
-
-		// Admin methods
+	// Admin methods
 	case
 		http.MethodPut,
 		http.MethodPost,
 		http.MethodPatch,
 		http.MethodDelete:
-		if strings.Contains(c.Path(), "/project-views/") {
-			return true, nil
-		}
-
-		if projectMember.Role == 15 || projectContext.Project.ProjectLeadId == projectContext.User.ID {
+		if projectMember.Role == 15 || project.ProjectLeadId == user.ID {
 			return true, nil
 		}
 	}
@@ -100,18 +115,26 @@ func (s *Services) hasProjectPermissions(c echo.Context) (bool, error) {
 }
 
 func (s *Services) hasProjectAdminPermissions(c echo.Context) (bool, error) {
-	projectContext, ok := c.(ProjectContext)
-	if !ok {
+	apiContext := apicontext.GetContext(c)
+	if apiContext == nil {
 		return false, errors.New("wrong context")
 	}
 
-	// Allow projectMember update notification
-	if strings.HasSuffix(c.Path(), "/me/notifications/") && c.Request().Method == http.MethodPost {
-		return true, nil
+	// Lightweight checks without load
+	{
+		// Allow projectMember update notification
+		if strings.HasSuffix(c.Path(), "/me/notifications/") && c.Request().Method == http.MethodPost {
+			return true, nil
+		}
+	}
+
+	projectMember := apiContext.GetProjectMember()
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
 	}
 
 	// Allow project admin all
-	if projectContext.ProjectMember.Role == types.AdminRole {
+	if projectMember.Role == types.AdminRole {
 		return true, nil
 	}
 
@@ -132,39 +155,49 @@ func (s *Services) IssuePermissionMiddleware(next echo.HandlerFunc) echo.Handler
 }
 
 func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
-	issueContext, ok := c.(IssueContext)
-	if !ok {
+	apiContext := apicontext.GetContext(c)
+	if apiContext == nil {
 		return false, errors.New("wrong context")
 	}
-	projectMember := issueContext.ProjectMember
 
-	if issueContext.User.ID == issueContext.Issue.Author.ID {
+	// Lightweight checks without load
+	{
+		//Safe methods
+		switch c.Request().Method {
+		case
+			http.MethodGet,
+			http.MethodOptions,
+			http.MethodHead:
+			return true, nil
+		}
+	}
+
+	workspaceMember := apiContext.GetWorkspaceMember()
+	projectMember := apiContext.GetProjectMember()
+	issue := apiContext.GetIssue(apicontext.WithAssignees())
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
+	}
+	user := apiContext.GetUser()
+
+	if user.ID == issue.CreatedById {
 		return true, nil
 	}
 	// Allow workspace admin all
-	if issueContext.WorkspaceMember.Role == types.AdminRole {
+	if workspaceMember.Role == types.AdminRole {
 		return true, nil
 	}
 
 	if strings.HasSuffix(c.Path(), "/issue-labels/") && c.Request().Method == http.MethodPost {
-		if issueContext.Issue.CreatedById == issueContext.User.ID {
+		if issue.CreatedById == user.ID {
 			return true, nil
 		}
-		for _, user := range *issueContext.Issue.Assignees {
-			if user.ID == issueContext.User.ID {
+		for _, assignee := range *issue.Assignees {
+			if assignee.ID == user.ID {
 				return true, nil
 			}
 		}
 		return false, nil
-	}
-
-	//Safe methods
-	switch c.Request().Method {
-	case
-		http.MethodGet,
-		http.MethodOptions,
-		http.MethodHead:
-		return true, nil
 	}
 
 	switch projectMember.Role {
@@ -181,11 +214,11 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 			return true, nil
 		}
 
-		if issueContext.Issue.CreatedById == issueContext.User.ID {
+		if issue.CreatedById == user.ID {
 			// If issue author
 			return true, nil
 		} else {
-			return issueContext.Issue.IsAssignee(issueContext.User.ID), nil
+			return issue.IsAssignee(user.ID), nil
 		}
 	}
 
