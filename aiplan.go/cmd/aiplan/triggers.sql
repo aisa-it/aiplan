@@ -304,3 +304,75 @@ CREATE OR REPLACE TRIGGER deferred_notifications_notify
     ON deferred_notifications
     FOR EACH ROW
     EXECUTE PROCEDURE notify_deferred_notification();
+
+-- Light users cache sub
+CREATE OR REPLACE FUNCTION notify_users_light_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.username IS DISTINCT FROM OLD.username OR
+       NEW.email IS DISTINCT FROM OLD.email OR
+       NEW.first_name IS DISTINCT FROM OLD.first_name OR
+       NEW.last_name IS DISTINCT FROM OLD.last_name OR
+       NEW.avatar_id IS DISTINCT FROM OLD.avatar_id OR
+       NEW.user_timezone IS DISTINCT FROM OLD.user_timezone OR
+       NEW.telegram_id IS DISTINCT FROM OLD.telegram_id OR
+       NEW.status_emoji IS DISTINCT FROM OLD.status_emoji OR
+       NEW.status IS DISTINCT FROM OLD.status OR
+       NEW.status_end_date IS DISTINCT FROM OLD.status_end_date OR
+       NEW.created_at IS DISTINCT FROM OLD.created_at OR
+       NEW.is_superuser IS DISTINCT FROM OLD.is_superuser OR
+       NEW.is_active IS DISTINCT FROM OLD.is_active OR
+       NEW.blocked_until IS DISTINCT FROM OLD.blocked_until OR
+       NEW.is_onboarded IS DISTINCT FROM OLD.is_onboarded OR
+       NEW.is_bot IS DISTINCT FROM OLD.is_bot OR
+       NEW.is_integration IS DISTINCT FROM OLD.is_integration THEN
+
+        PERFORM pg_notify(
+            'users_light_changes',
+            json_build_object(
+                'id', NEW.id,
+                'username', NEW.username,
+                'email', NEW.email,
+                'first_name', NEW.first_name,
+                'last_name', NEW.last_name,
+                'avatar_id', NEW.avatar_id,
+                'user_timezone', NEW.user_timezone,
+                'telegram_id', NEW.telegram_id,
+                'status_emoji', NEW.status_emoji,
+                'status', NEW.status,
+                'status_end_date', NEW.status_end_date,
+                'created_at', NEW.created_at,
+                'is_superuser', NEW.is_superuser,
+                'is_active', NEW.is_active,
+                'blocked_until', NEW.blocked_until,
+                'is_onboarded', NEW.is_onboarded,
+                'is_bot', NEW.is_bot,
+                'is_integration', NEW.is_integration
+            )::text
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Триггер только при обновлении конкретных полей
+CREATE OR REPLACE TRIGGER users_light_notify
+    AFTER UPDATE OF username,
+    email,
+    first_name,
+    last_name,
+    avatar_id,
+    user_timezone,
+    telegram_id,
+    status_emoji,
+    status,
+    status_end_date,
+    created_at,
+    is_superuser,
+    is_active,
+    blocked_until,
+    is_onboarded,
+    is_bot,
+    is_integration ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_users_light_changes();

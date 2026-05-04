@@ -45,6 +45,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
@@ -231,6 +232,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		os.Exit(1)
 	}*/
 	//ts := notifications.NewTelegramService(db, cfg, tracker)
+	cache.InitUsersCache(db)
 
 	var ldapProvider *authprovider.LdapProvider
 	if cfg.LDAPServerURL.URL != nil {
@@ -308,6 +310,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	// Create a channel to handle termination signals
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	slog.Info("Start DB subscriptions")
+	go dao.NotifiSubscription.Start(ctx, cfg.DatabaseDSN)
 
 	// Запуск SSH сервера для Git (если включен)
 	var sshServer *SSHServer
