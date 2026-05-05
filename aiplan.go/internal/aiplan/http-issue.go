@@ -10,6 +10,7 @@ package aiplan
 
 import (
 	"archive/zip"
+	"bytes"
 	"compress/flate"
 	"encoding/csv"
 	"encoding/json"
@@ -22,15 +23,18 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
