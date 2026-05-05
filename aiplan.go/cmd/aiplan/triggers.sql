@@ -2,12 +2,12 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE OR REPLACE FUNCTION immutable_array_to_string(text[], text)
-RETURNS text AS $$
-    SELECT array_to_string($1, $2);
+    RETURNS text AS $$
+SELECT array_to_string($1, $2);
 $$ LANGUAGE sql IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION row_hash(VARIADIC text[])
-RETURNS bytea AS $$
+    RETURNS bytea AS $$
 BEGIN
     RETURN digest(immutable_array_to_string($1, '_'), 'sha256');
 END;
@@ -43,15 +43,15 @@ $$;
 
 -- add sort_order constraint
 DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'unique_sort_constraint'
-        AND conrelid = 'issues'::regclass
-    ) THEN
-        ALTER TABLE issues ADD CONSTRAINT unique_sort_constraint UNIQUE (parent_id, sort_order) DEFERRABLE INITIALLY DEFERRED;
-    END IF;
-END $$;
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'unique_sort_constraint'
+              AND conrelid = 'issues'::regclass
+        ) THEN
+            ALTER TABLE issues ADD CONSTRAINT unique_sort_constraint UNIQUE (parent_id, sort_order) DEFERRABLE INITIALLY DEFERRED;
+        END IF;
+    END $$;
 
 
 -- Function for tsvector generation
@@ -65,39 +65,39 @@ $$ LANGUAGE sql IMMUTABLE;
 
 -- Function for rank calculation
 CREATE OR REPLACE FUNCTION calc_rank(tokens tsvector, project_identifier text, sequence_id real, search_query text)
-RETURNS real
+    RETURNS real
 AS $$
-	SELECT coalesce(ts_rank(tokens, websearch_to_tsquery('simple', search_query)) + ts_rank(tokens, websearch_to_tsquery('russian', search_query)) + ts_rank(tokens, websearch_to_tsquery('english', search_query)), 0) +
-  	CASE
-    	WHEN CONCAT(project_identifier, '-', sequence_id) = search_query THEN 50
-      ELSE 0
-    END
-    +
-    CASE
-    	WHEN sequence_id::text = search_query THEN 50
-      ELSE 0
-    END
+SELECT coalesce(ts_rank(tokens, websearch_to_tsquery('simple', search_query)) + ts_rank(tokens, websearch_to_tsquery('russian', search_query)) + ts_rank(tokens, websearch_to_tsquery('english', search_query)), 0) +
+       CASE
+           WHEN CONCAT(project_identifier, '-', sequence_id) = search_query THEN 50
+           ELSE 0
+           END
+           +
+       CASE
+           WHEN sequence_id::text = search_query THEN 50
+           ELSE 0
+           END
 $$
-LANGUAGE sql STABLE;
+    LANGUAGE sql STABLE;
 
 -- Workspace name tokens
 CREATE OR REPLACE FUNCTION gen_workspace_name_tokens()
-   RETURNS TRIGGER
-   LANGUAGE PLPGSQL
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
 AS $$
 BEGIN
     IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name) THEN
-		UPDATE workspaces SET name_tokens=to_tsvector('russian', lower(name)) WHERE id = NEW.id;
-	END IF;
-	RETURN NEW;
+        UPDATE workspaces SET name_tokens=to_tsvector('russian', lower(name)) WHERE id = NEW.id;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
 CREATE OR REPLACE TRIGGER insert_or_update_workspaces
-  AFTER INSERT OR UPDATE
-  ON workspaces
-  FOR EACH ROW
-  EXECUTE PROCEDURE gen_workspace_name_tokens();
+    AFTER INSERT OR UPDATE
+    ON workspaces
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_workspace_name_tokens();
 
 -- Doc triggers
 CREATE OR REPLACE FUNCTION gen_doc_vectors()
@@ -120,22 +120,22 @@ EXECUTE PROCEDURE gen_doc_vectors();
 
 -- Project name tokens
 CREATE OR REPLACE FUNCTION gen_project_name_tokens()
-   RETURNS TRIGGER
-   LANGUAGE PLPGSQL
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
 AS $$
 BEGIN
     IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name) THEN
-		UPDATE projects SET name_tokens=to_tsvector('russian', lower(name)) WHERE id = NEW.id;
-	END IF;
-	RETURN NEW;
+        UPDATE projects SET name_tokens=to_tsvector('russian', lower(name)) WHERE id = NEW.id;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
 CREATE OR REPLACE TRIGGER insert_or_update_projects
-  AFTER INSERT OR UPDATE
-  ON projects
-  FOR EACH ROW
-  EXECUTE PROCEDURE gen_project_name_tokens();
+    AFTER INSERT OR UPDATE
+    ON projects
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_project_name_tokens();
 
 -- Sprint name tokens
 CREATE OR REPLACE FUNCTION gen_sprint_name_tokens()
@@ -158,79 +158,79 @@ EXECUTE PROCEDURE gen_sprint_name_tokens();
 
 -- Issues triggers
 CREATE OR REPLACE FUNCTION gen_issue_vectors()
-   RETURNS TRIGGER
-   LANGUAGE PLPGSQL
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
 AS $$
 BEGIN
-	IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name OR NEW.description_stripped <> OLD.description_stripped) THEN
-  UPDATE issues SET tokens=to_tsvector_multilang(name, description_stripped) where id = NEW.id;
-  END IF;
-	RETURN NEW;
+    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name OR NEW.description_stripped <> OLD.description_stripped) THEN
+        UPDATE issues SET tokens=to_tsvector_multilang(name, description_stripped) where id = NEW.id;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
 CREATE OR REPLACE TRIGGER insert_or_update_issues
-  AFTER INSERT OR UPDATE
-  ON issues
-  FOR EACH ROW
-  EXECUTE PROCEDURE gen_issue_vectors();
+    AFTER INSERT OR UPDATE
+    ON issues
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_issue_vectors();
 
 -- Labels trigger
 CREATE OR REPLACE FUNCTION gen_label_name_tokens()
-   RETURNS TRIGGER
-   LANGUAGE PLPGSQL
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
 AS $$
 BEGIN
     IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name) THEN
-		UPDATE labels SET name_tokens=to_tsvector('russian', lower(NEW.name)) WHERE id = NEW.id;
-	END IF;
-	RETURN NEW;
+        UPDATE labels SET name_tokens=to_tsvector('russian', lower(NEW.name)) WHERE id = NEW.id;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
 CREATE OR REPLACE TRIGGER insert_or_update_labels
-  AFTER INSERT OR UPDATE
-  ON labels
-  FOR EACH ROW
-  EXECUTE PROCEDURE gen_label_name_tokens();
+    AFTER INSERT OR UPDATE
+    ON labels
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_label_name_tokens();
 
 -- States trigger
 CREATE OR REPLACE FUNCTION gen_state_name_tokens()
-   RETURNS TRIGGER
-   LANGUAGE PLPGSQL
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
 AS $$
 BEGIN
     IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name) THEN
-		UPDATE states SET name_tokens=to_tsvector('russian', lower(NEW.name)) WHERE id = NEW.id;
-	END IF;
-	RETURN NEW;
+        UPDATE states SET name_tokens=to_tsvector('russian', lower(NEW.name)) WHERE id = NEW.id;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
 CREATE OR REPLACE TRIGGER insert_or_update_states
-  AFTER INSERT OR UPDATE
-  ON states
-  FOR EACH ROW
-  EXECUTE PROCEDURE gen_state_name_tokens();
+    AFTER INSERT OR UPDATE
+    ON states
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_state_name_tokens();
 
 -- Search Filters trigger
 CREATE OR REPLACE FUNCTION gen_search_filter_name_tokens()
-   RETURNS TRIGGER
-   LANGUAGE PLPGSQL
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
 AS $$
 BEGIN
     IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.name <> OLD.name) THEN
-		UPDATE search_filters SET name_tokens=to_tsvector('russian', lower(NEW.name)) WHERE id = NEW.id;
-	END IF;
-	RETURN NEW;
+        UPDATE search_filters SET name_tokens=to_tsvector('russian', lower(NEW.name)) WHERE id = NEW.id;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
 CREATE OR REPLACE TRIGGER insert_or_update_search_filters
-  AFTER INSERT OR UPDATE
-  ON search_filters
-  FOR EACH ROW
-  EXECUTE PROCEDURE gen_search_filter_name_tokens();
+    AFTER INSERT OR UPDATE
+    ON search_filters
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_search_filter_name_tokens();
 
 -- Deferred Notifications trigger for real-time notification delivery
 -- Отправляет NOTIFY только для уведомлений, готовых к обработке:
@@ -247,51 +247,51 @@ DECLARE
 BEGIN
     IF NEW.sent_at IS NULL AND NEW.time_send < NOW() AND NEW.attempt_count < 3 THEN
         SELECT json_build_object(
-            'id', NEW.id,
-            'user_id', NEW.user_id,
-            'issue_id', NEW.issue_id,
-            'project_id', NEW.project_id,
-            'workspace_id', NEW.workspace_id,
-            'notification_type', NEW.notification_type,
-            'delivery_method', NEW.delivery_method,
-            'time_send', NEW.time_send,
-            'attempt_count', NEW.attempt_count,
-            'last_attempt_at', NEW.last_attempt_at,
-            'sent_at', NEW.sent_at,
-            'notification_payload', NEW.notification_payload,
-            'user', CASE WHEN u.id IS NOT NULL THEN json_build_object(
-                'id', u.id,
-                'is_active', u.is_active,
-                'is_integration', u.is_integration,
-                'is_bot', u.is_bot,
-                'telegram_id', u.telegram_id,
-                'user_timezone', u.user_timezone,
-                'settings', u.settings,
-                'email', u.email
-            ) END,
-            'workspace', CASE WHEN w.id IS NOT NULL THEN json_build_object(
-                'id', w.id,
-                'name', w.name,
-                'slug', w.slug
-            ) END,
-            'project', CASE WHEN p.id IS NOT NULL THEN json_build_object(
-                'id', p.id,
-                'identifier', p.identifier
-            ) END,
-            'issue', CASE WHEN i.id IS NOT NULL THEN json_build_object(
-                'id', i.id,
-                'name', i.name,
-                'sequence_id', i.sequence_id,
-                'project', i.project_id,
-                'workspace', i.workspace_id,
-                'created_by', i.created_by_id
-            ) END
-        ) INTO payload
+                       'id', NEW.id,
+                       'user_id', NEW.user_id,
+                       'issue_id', NEW.issue_id,
+                       'project_id', NEW.project_id,
+                       'workspace_id', NEW.workspace_id,
+                       'notification_type', NEW.notification_type,
+                       'delivery_method', NEW.delivery_method,
+                       'time_send', NEW.time_send,
+                       'attempt_count', NEW.attempt_count,
+                       'last_attempt_at', NEW.last_attempt_at,
+                       'sent_at', NEW.sent_at,
+                       'notification_payload', NEW.notification_payload,
+                       'user', CASE WHEN u.id IS NOT NULL THEN json_build_object(
+                        'id', u.id,
+                        'is_active', u.is_active,
+                        'is_integration', u.is_integration,
+                        'is_bot', u.is_bot,
+                        'telegram_id', u.telegram_id,
+                        'user_timezone', u.user_timezone,
+                        'settings', u.settings,
+                        'email', u.email
+                                                               ) END,
+                       'workspace', CASE WHEN w.id IS NOT NULL THEN json_build_object(
+                        'id', w.id,
+                        'name', w.name,
+                        'slug', w.slug
+                                                                    ) END,
+                       'project', CASE WHEN p.id IS NOT NULL THEN json_build_object(
+                        'id', p.id,
+                        'identifier', p.identifier
+                                                                  ) END,
+                       'issue', CASE WHEN i.id IS NOT NULL THEN json_build_object(
+                        'id', i.id,
+                        'name', i.name,
+                        'sequence_id', i.sequence_id,
+                        'project', i.project_id,
+                        'workspace', i.workspace_id,
+                        'created_by', i.created_by_id
+                                                                ) END
+               ) INTO payload
         FROM (SELECT 1) AS dummy
-        LEFT JOIN users u ON u.id = NEW.user_id
-        LEFT JOIN workspaces w ON w.id = NEW.workspace_id
-        LEFT JOIN projects p ON p.id = NEW.project_id
-        LEFT JOIN issues i ON i.id = NEW.issue_id;
+                 LEFT JOIN users u ON u.id = NEW.user_id
+                 LEFT JOIN workspaces w ON w.id = NEW.workspace_id
+                 LEFT JOIN projects p ON p.id = NEW.project_id
+                 LEFT JOIN issues i ON i.id = NEW.issue_id;
 
         PERFORM pg_notify('notifications', payload::text);
     END IF;
@@ -303,7 +303,80 @@ CREATE OR REPLACE TRIGGER deferred_notifications_notify
     AFTER INSERT OR UPDATE
     ON deferred_notifications
     FOR EACH ROW
-    EXECUTE PROCEDURE notify_deferred_notification();
+EXECUTE PROCEDURE notify_deferred_notification();
+
+-- Light users cache sub
+CREATE OR REPLACE FUNCTION notify_users_light_changes()
+    RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.username IS DISTINCT FROM OLD.username OR
+       NEW.email IS DISTINCT FROM OLD.email OR
+       NEW.first_name IS DISTINCT FROM OLD.first_name OR
+       NEW.last_name IS DISTINCT FROM OLD.last_name OR
+       NEW.avatar_id IS DISTINCT FROM OLD.avatar_id OR
+       NEW.user_timezone IS DISTINCT FROM OLD.user_timezone OR
+       NEW.telegram_id IS DISTINCT FROM OLD.telegram_id OR
+       NEW.status_emoji IS DISTINCT FROM OLD.status_emoji OR
+       NEW.status IS DISTINCT FROM OLD.status OR
+       NEW.status_end_date IS DISTINCT FROM OLD.status_end_date OR
+       NEW.created_at IS DISTINCT FROM OLD.created_at OR
+       NEW.is_superuser IS DISTINCT FROM OLD.is_superuser OR
+       NEW.is_active IS DISTINCT FROM OLD.is_active OR
+       NEW.blocked_until IS DISTINCT FROM OLD.blocked_until OR
+       NEW.is_onboarded IS DISTINCT FROM OLD.is_onboarded OR
+       NEW.is_bot IS DISTINCT FROM OLD.is_bot OR
+       NEW.is_integration IS DISTINCT FROM OLD.is_integration THEN
+
+        PERFORM pg_notify(
+                'users_light_changes',
+                json_build_object(
+                        'id', NEW.id,
+                        'username', NEW.username,
+                        'email', NEW.email,
+                        'first_name', NEW.first_name,
+                        'last_name', NEW.last_name,
+                        'avatar_id', NEW.avatar_id,
+                        'user_timezone', NEW.user_timezone,
+                        'telegram_id', NEW.telegram_id,
+                        'status_emoji', NEW.status_emoji,
+                        'status', NEW.status,
+                        'status_end_date', NEW.status_end_date,
+                        'created_at', NEW.created_at,
+                        'is_superuser', NEW.is_superuser,
+                        'is_active', NEW.is_active,
+                        'blocked_until', NEW.blocked_until,
+                        'is_onboarded', NEW.is_onboarded,
+                        'is_bot', NEW.is_bot,
+                        'is_integration', NEW.is_integration
+                )::text
+                );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Триггер только при обновлении конкретных полей
+CREATE OR REPLACE TRIGGER users_light_notify
+    AFTER UPDATE OF username,
+        email,
+        first_name,
+        last_name,
+        avatar_id,
+        user_timezone,
+        telegram_id,
+        status_emoji,
+        status,
+        status_end_date,
+        created_at,
+        is_superuser,
+        is_active,
+        blocked_until,
+        is_onboarded,
+        is_bot,
+        is_integration ON users
+    FOR EACH ROW
+EXECUTE FUNCTION notify_users_light_changes();
+
 
 ALTER TABLE activity_events DROP CONSTRAINT IF EXISTS entity_fk_check;
 
@@ -366,75 +439,3 @@ ALTER TABLE activity_events
              sprint_id IS NOT NULL AND
              form_id IS NULL)
             )
-
--- Light users cache sub
-CREATE OR REPLACE FUNCTION notify_users_light_changes()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.username IS DISTINCT FROM OLD.username OR
-       NEW.email IS DISTINCT FROM OLD.email OR
-       NEW.first_name IS DISTINCT FROM OLD.first_name OR
-       NEW.last_name IS DISTINCT FROM OLD.last_name OR
-       NEW.avatar_id IS DISTINCT FROM OLD.avatar_id OR
-       NEW.user_timezone IS DISTINCT FROM OLD.user_timezone OR
-       NEW.telegram_id IS DISTINCT FROM OLD.telegram_id OR
-       NEW.status_emoji IS DISTINCT FROM OLD.status_emoji OR
-       NEW.status IS DISTINCT FROM OLD.status OR
-       NEW.status_end_date IS DISTINCT FROM OLD.status_end_date OR
-       NEW.created_at IS DISTINCT FROM OLD.created_at OR
-       NEW.is_superuser IS DISTINCT FROM OLD.is_superuser OR
-       NEW.is_active IS DISTINCT FROM OLD.is_active OR
-       NEW.blocked_until IS DISTINCT FROM OLD.blocked_until OR
-       NEW.is_onboarded IS DISTINCT FROM OLD.is_onboarded OR
-       NEW.is_bot IS DISTINCT FROM OLD.is_bot OR
-       NEW.is_integration IS DISTINCT FROM OLD.is_integration THEN
-
-        PERFORM pg_notify(
-            'users_light_changes',
-            json_build_object(
-                'id', NEW.id,
-                'username', NEW.username,
-                'email', NEW.email,
-                'first_name', NEW.first_name,
-                'last_name', NEW.last_name,
-                'avatar_id', NEW.avatar_id,
-                'user_timezone', NEW.user_timezone,
-                'telegram_id', NEW.telegram_id,
-                'status_emoji', NEW.status_emoji,
-                'status', NEW.status,
-                'status_end_date', NEW.status_end_date,
-                'created_at', NEW.created_at,
-                'is_superuser', NEW.is_superuser,
-                'is_active', NEW.is_active,
-                'blocked_until', NEW.blocked_until,
-                'is_onboarded', NEW.is_onboarded,
-                'is_bot', NEW.is_bot,
-                'is_integration', NEW.is_integration
-            )::text
-        );
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Триггер только при обновлении конкретных полей
-CREATE OR REPLACE TRIGGER users_light_notify
-    AFTER UPDATE OF username,
-    email,
-    first_name,
-    last_name,
-    avatar_id,
-    user_timezone,
-    telegram_id,
-    status_emoji,
-    status,
-    status_end_date,
-    created_at,
-    is_superuser,
-    is_active,
-    blocked_until,
-    is_onboarded,
-    is_bot,
-    is_integration ON users
-    FOR EACH ROW
-    EXECUTE FUNCTION notify_users_light_changes();

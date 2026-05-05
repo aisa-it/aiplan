@@ -1349,12 +1349,12 @@ func (s *Services) getFavoriteProjects(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/user-favorite-projects/ [post]
 func (s *Services) addProjectToFavorites(c echo.Context) error {
-	apiContext := apicontext.GetContext(c)
-	workspace := apiContext.GetWorkspace()
-	if apiContext.Error() != nil {
-		return EError(c, apiContext.Error())
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
 	}
-	user := apiContext.GetUser()
+	user := apiCtx.GetUser()
 
 	var req AddProjectToFavoritesRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
