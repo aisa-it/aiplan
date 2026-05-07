@@ -331,18 +331,6 @@ type FormEntityI interface {
 	GetFormId() uuid.UUID
 }
 
-// FormActivityExtendFields
-// -migration
-type FormActivityExtendFields struct {
-	//DocCommentExtendFields
-	//DocExtendFields
-	//DocAttachmentExtendFields
-}
-
-//func (fa FormActivity) SetAffectedUser(user *User) {
-//	fa.AffectedUser = user
-//}
-
 type FormAttachment struct {
 	Id uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
 	// created_at timestamp with time zone IS_NULL:NO
@@ -471,4 +459,17 @@ func (attachment *FormAttachment) AfterDelete(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// FormActivityExtendFields
+// -migration
+type FormActivityExtendFields struct {
+	TargetProjectExtendFields
+}
+
+// TargetProjectExtendFields
+// -migration
+type TargetProjectExtendFields struct {
+	NewTargetProject *Project `json:"-" gorm:"-" field:"target_project" extensions:"x-nullable"`
+	OldTargetProject *Project `json:"-" gorm:"-" field:"target_project" extensions:"x-nullable"`
 }

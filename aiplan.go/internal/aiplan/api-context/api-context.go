@@ -384,6 +384,11 @@ func (a *APIContext) GetSprint(options ...SprintFetchOption) *dao.Sprint {
 	return a.sprint.Sprint
 }
 
+func (a *APIContext) CleanForm() *APIContext {
+	a.form.Form = nil
+	return a
+}
+
 func (a *APIContext) GetForm(options ...FormFetchOption) *dao.Form {
 	fetchOptions := &FormFetchOptions{query: a.db.Session(&gorm.Session{}), loaded: make(map[string]struct{}, 5)}
 

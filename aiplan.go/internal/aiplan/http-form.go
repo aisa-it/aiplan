@@ -290,6 +290,7 @@ func (s *Services) updateForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
+	newForm = apiContext.CleanForm().GetForm(apicontext.WithFormAll())
 	newSnap := tracker.FormToSnapshot(newForm)
 
 	err = s.snapshotTracker.TrackChanges(types2.LayerForm, &oldSnap, &newSnap, &form, user)

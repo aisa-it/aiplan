@@ -53,6 +53,7 @@ type ActivityEvent struct {
 	WorkspaceActivityExtendFields
 	RootActivityExtendFields
 	SprintActivityExtendFields
+	FormActivityExtendFields
 }
 
 func (e *ActivityEvent) SetEntityRefs(layer types.EntityLayer, entity IDaoAct) {

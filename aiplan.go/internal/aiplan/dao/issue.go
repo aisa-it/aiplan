@@ -1899,10 +1899,6 @@ type IssueEntityI interface {
 	GetIssueId() uuid.UUID
 }
 
-//func (IssueActivity) GetCustomFields(fields []string) []string {
-//	return append(fields, "'issue' AS entity_type")
-//}
-
 // ToDTO преобразует объект RulesLog в структуру dto.RulesLog для упрощения передачи данных в клиентский код.
 //
 // Параметры:
