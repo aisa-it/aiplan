@@ -604,14 +604,6 @@ func (s *Services) getIssue(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq} [patch]
 func (s *Services) updateIssue(c echo.Context) error {
-
-	//user := *c.(IssueContext).User
-	//issue := c.(IssueContext).Issue
-	//projectMember := c.(IssueContext).ProjectMember
-	//project := c.(IssueContext).Project
-	//oldIssue := issue
-	//issueMapOld := StructToJSONMap(issue)
-
 	apiCtx := apicontext.GetContext(c)
 	project := apiCtx.GetProject()
 	projectMember := apiCtx.GetProjectMember()
@@ -1171,34 +1163,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var updatedIssue dao.Issue //TODO rewrite to apictx
-	query := s.db.
-		Joins("Parent").
-		//Joins("Workspace").
-		Joins("State").
-		//Joins("Project").
-		Preload("Sprints").
-		Preload("Assignees").
-		Preload("Watchers").
-		Preload("Labels").
-		Preload("Links").
-		Joins("Author").
-		Preload("Links.CreatedBy").
-		Preload("Labels.Workspace").
-		Preload("Labels.Project").
-		Where("issues.project_id = ?", project.ID).
-		Where("issues.id = ?", issue.ID)
+	updatedIssue := apiCtx.CleanIssue().GetIssue(apicontext.WithAll())
 
-	updatedIssue.Project = project
-	updatedIssue.Workspace = project.Workspace
-	updatedIssue.FullLoad = true
-
-	if err := query.
-		First(&updatedIssue).Error; err != nil {
-		return EError(c, err)
-	}
-
-	newSnapshot := tracker.IssueToSnapshot(updatedIssue)
+	newSnapshot := tracker.IssueToSnapshot(*updatedIssue)
 
 	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
 		return EError(c, err)
@@ -2188,7 +2155,6 @@ func (s *Services) deleteIssueLink(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// todo rewrite to apictx
 	if err := s.DB(c).Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
 		return EError(c, err)
 	}

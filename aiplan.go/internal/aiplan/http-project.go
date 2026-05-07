@@ -330,17 +330,6 @@ func (s *Services) updateProject(c echo.Context) error {
 			return err
 		}
 
-		if err := tx.
-			Preload("DefaultAssigneesDetails", "is_default_assignee = ?", true).
-			Preload("DefaultWatchersDetails", "is_default_watcher = ?", true).
-			Preload("DefaultAssigneesDetails.Member").
-			Preload("DefaultWatchersDetails.Member").
-			Preload("ProjectLead").
-			Where("id = ?", project.ID).
-			First(&project).Error; err != nil {
-			return err
-		}
-
 		return nil
 	}); err != nil {
 		return EError(c, err)
@@ -349,6 +338,8 @@ func (s *Services) updateProject(c echo.Context) error {
 	if err := statesflow.ParseGraph(s.db, project.ID, project.StatesFlow); err != nil {
 		return EError(c, err)
 	}
+
+	project = apiCtx.CleanProject().GetProject()
 
 	// Post-update activity tracking
 	newSnapshot := tracker.ProjectToSnapshot(project)
@@ -900,7 +891,7 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	oldSnapshot := tracker.ProjectMemberToSnapshot(&requestedProjectMember)
+	oldSnapshot := tracker.MemberToSnapshot(&requestedProjectMember)
 	requestedProjectMember.Role = data["role"]
 	requestedProjectMember.UpdatedById = userID
 
@@ -945,7 +936,7 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newSnapshot := tracker.ProjectMemberToSnapshot(&requestedProjectMember)
+	newSnapshot := tracker.MemberToSnapshot(&requestedProjectMember)
 
 	err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, project, user, requestedProjectMember.ID)
 	if err != nil {
@@ -1960,16 +1951,17 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	issueNew.Project = project
-
-	if err := s.db. //TODO rewrite to apictx
-			Preload("Assignees").
-			Preload("Watchers").
-			Preload("State").
-			Where("id = ?", issueNew.ID).
-			First(&issueNew).Error; err != nil {
-		return EError(c, err)
-	}
+	//issueNew.Project = project
+	//
+	//if err := s.db.
+	//		Preload("Assignees").
+	//		Preload("Watchers").
+	//		Preload("State").
+	//		Where("id = ?", issueNew.ID).
+	//		First(&issueNew).Error; err != nil {
+	//	return EError(c, err)
+	//}
+	issueNew = *apiContext.GetIssue(apicontext.WithAssignees(), apicontext.WithWatchers(), apicontext.WithState())
 
 	newSnapshot := tracker.IssueToSnapshot(issueNew)
 	err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, &issueNew, user)

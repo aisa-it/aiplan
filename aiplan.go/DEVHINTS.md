@@ -277,73 +277,126 @@ POST   /api/auth/workspaces/:ws/projects/:proj/issues/:issueId/properties/:templ
 
 ## Activity Tracker
 
-Система генерации событий активности при изменениях сущностей.
+Система генерации событий активности при изменениях сущностей на основе snapshots и diff.
 
-**Функция создания записи о событии:**
-
-`TrackEvent[E dao.IDaoAct](tracker *ActTracker, layer types.EntityLayer, activityAction string, ctx *Ctx, entity E, actor *dao.User) error`
-
-**принимает**
-- tracker *ActTracker
-- layer types.EntityLayer
-    - `LayerWorkspace` — пространства
-    - `LayerProject` — проекты
-    - `LayerIssue` — задачи
-    - `LayerDoc` — документы
-    - `LayerForm` — формы
-    - `LayerSprint` — спринты
-- activityAction string (verbs)
-    - `VerbUpdated` = "updated" (обновление полей)
-    - `VerbRemoved` = "removed" (удаление связанной сущности)
-    - `VerbAdded`   = "added" (добавление связанной сущности (assignee, watcher, label))
-    - `VerbDeleted` = "deleted" (удаление сущности)
-    - `VerbCreated` = "created" (создание сущности)
-    - `VerbMove`    = "move" (перемещение между родительскими сущностями)
-    - `VerbCopied`  = "copied" (создание в результате копирования)
-
-- ctx *Ctx ([контекст трекера](#контекст-трекера))
-- entity E (обновленная сущность реализующая интерфейс [dao.IDaoAct](#интерфейс-daoidaoact))
-- actor *dao.User (пользователь совершивший изменение)
-
-### Контекст трекера
+### Создание трекера
 
 ```go
-type Ctx struct {
-    New        ActivitySide  // изменяемые данные запроса (request)
-    Old        ActivitySide  // изменяемые данные старой структуры (current)
-    GormMap    *map[string]interface{} // данные из БД (новые значения)
-    OldGormMap *map[string]interface{} // данные из БД (старые значения)
-}
+tracker := tracker.NewSnapshotTracker(db)
+```
 
-// GormMap и OldGormMap используется для обновления данных в базе gorm.Update()
-// New и Old для корректировки названия полей при записи в лог активности 
+### Отслеживание изменений
 
-type ActivityCtx struct {
-    Tracker    *ActTracker
-    TrackerCtx *Ctx
-    RequestedData   DataEntity  // merge  GormMap и New
-    CurrentInstance DataEntity  // merge  OldGormMap и Old
-    Actor           *dao.User
-    Layer           types.EntityLayer
+```go
+err := tracker.TrackChanges(
+    types.LayerIssue,
+    oldSnapshot,
+    newSnapshot,
+    entity,
+    actor,
+)
+```
+
+### Snapshots
+
+Snapshots реализуют интерфейс `SnapshotI` и используют теги `act` для описания полей:
+
+```go
+type IssueSnapshot struct {
+    ID          uuid.UUID
+    Name        opt.Field[string]                 `act:"field:name;kind:scalar"`
+    Assignees   opt.Field[[]EntityRef]            `act:"field:assignees;kind:collection;preserve_id:true"`
+    Watchers    opt.Field[[]EntityRef]            `act:"field:watchers;kind:collection;preserve_id:true"`
+    // ...
 }
 ```
 
-**Ключи контекста (из activity-fields.go):**
-- `UpdateScopeKey` — scope для генерации составного имени поля (например, `label_name`)
-- `ParentKey` — поле родительской сущности для операций move
-- `ParentTitleKey` — название родительской сущности для логов
-- `EntityKey` — основная сущность для операции
-- `CustomVerbKey` — кастомный глагол
-- `OldTitleKey` — старое значение title при удалении
-- `FieldMoveKey` — тип перемещения для поля verb ("move_workspace_to_doc", "move_doc_to_doc")
+### Формат тега
 
-**FieldKind (суффиксы полей):**
-- `KindLogValue` — отображаемое значение (`{field}_activity_val`)
-- `KindScopeID` — ID области видимости (`{field}_updateScopeId`)
-- `KindTransform` — функция трансформации (`{field}_func_name`)
-- `KindLookup` — поле для получения из внешнего источника (`{field}_get_field`)
-- `KindLogOverride` — переопределённое имя поля (`field_log`)
-- `KindCustomKey` — кастомный ключ (`{field}_key`)
+`act:"field:{field_name};kind:{kind};{options}"`
+
+### Виды полей (kind)
+
+| Kind       | Описание                          | Пример |
+|------------|-----------------------------------|--------|
+| `scalar`   | Обычное поле                      | `field:name;kind:scalar` |
+| `collection` | Коллекция сущностей             | `field:assignees;kind:collection` |
+
+### Опции
+
+| Опция          | Описание                                      | Пример |
+|----------------|-----------------------------------------------|--------|
+| `preserve_id`  | Сохранять ID для поля (по умолчанию true)    | `preserve_id:true` |
+| `linked_field` | Обратное поле для linked-коллекций           | `linked_field:sub_issue` |
+| `linked_layer` | Слой для linked-активности                    | `linked_layer:sprint` |
+| `secret`       | Скрывать чувствительные данные                | `secret:true` |
+| `verb`         | Кастомный verb для collection активностей    | `verb:updated` |
+
+
+### Отслеживание изменений задачи
+
+```go
+oldSnap := &tracker.IssueSnapshot{...}
+newSnap := &tracker.IssueSnapshot{...}
+
+err := tracker.TrackChanges(
+    types.LayerIssue,
+    oldSnap,
+    newSnap,
+    issue,
+    actor,
+)
+```
+
+## TrackVerb
+
+Функция для создания простого события активности без использования snapshots.
+
+### Сигнатура
+
+```go
+func (t *SnapshotTracker) TrackVerb(layer types.EntityLayer, verb string, entity dao.IDaoAct, actor *dao.User, opts ...TrackOption) error
+```
+
+### Параметры
+
+| Параметр      | Тип                  | Описание |
+|---------------|----------------------|----------|
+| `layer`       | `types.EntityLayer` | Слой сущности (LayerIssue, LayerDoc и т.д.) |
+| `verb`        | `string`            | Тип действия (created, updated, deleted и т.д.) |
+| `entity`      | `dao.IDaoAct`       | Сущность, реализующая интерфейс IDaoAct |
+| `actor`       | `*dao.User`         | Пользователь, совершивший действие |
+| `opts`        | `...TrackOption`    | Опциональные параметры для настройки события |
+
+### TrackOption
+
+Опции для настройки события:
+
+```go
+func WithField(f actField.ActivityField) TrackOption
+func WithOldVal(v string) TrackOption
+func WithNewVal(v string) TrackOption
+func WithOldID(id uuid.UUID) TrackOption
+func WithNewID(id uuid.UUID) TrackOption
+func WithTgSender(id int64) TrackOption
+```
+
+### Примеры использования
+
+```go
+// Создание задачи
+err := tracker.TrackVerb(types.LayerIssue, "created", &issue, actor)
+
+// Удаление документа
+err := tracker.TrackVerb(types.LayerDoc, "deleted", &doc, actor)
+
+// Перемещение с дополнительными параметрами
+err := tracker.TrackVerb(types.LayerIssue, "moved", &issue, actor,
+    tracker.WithField(actField.Issue.Field),
+    tracker.WithOldVal("old_project"),
+    tracker.WithNewVal("new_project"),
+)
+```
 
 ### интерфейс dao.IDaoAct
 
@@ -377,19 +430,6 @@ ALTER TABLE activity_events
              form_id IS NULL AND
              custom_id IS NOT NULL)       -- новое поле в таблице
         )
-```
-
-**Примеры использования**
-
--  изменения роли документа
-
-```go
-ctx := tracker.NewTrackerCtx(&requestedMap, &currentMap)
-
-ctx.New.SetKey(actField.ReaderRole.Field.AsLogValue(), fmt.Sprint(newDoc.ReaderRole))
-ctx.Old.SetKey(actField.ReaderRole.Field.AsLogValue(), fmt.Sprint(oldDocMap["reader_role"]))
-//AsLogValue ожидает string для записи в поля new_value^ old_value 
-err := tracker.TrackEvent(trackerInst, types.LayerDoc, actField.VerbUpdated, ctx, newDoc, actor)
 ```
 
 ## notifications/member-role

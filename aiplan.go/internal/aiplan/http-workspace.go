@@ -214,11 +214,11 @@ func (s *Services) getWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug} [patch]
 func (s *Services) updateWorkspace(c echo.Context) error {
-	apiContext := apicontext.GetContext(c)
-	user := apiContext.GetUser()
-	workspace := apiContext.GetWorkspace()
-	if apiContext.Error() != nil {
-		return EError(c, apiContext.Error())
+	apiCtx := apicontext.GetContext(c)
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
 	}
 
 	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
@@ -272,22 +272,6 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
-	// Handle owner change separately
-	//if changeOwner {
-	//	err = tracker.TrackEvent(s.activityTracker, types.LayerWorkspace, activities.VerbUpdated,
-	//		tracker.NewTrackerCtx(
-	//			&map[string]interface{}{
-	//				"owner": newMemberOwnerEmail,
-	//			},
-	//			&map[string]interface{}{
-	//				"owner": user.Email,
-	//			},
-	//		), workspace, user)
-	//	if err != nil {
-	//		errStack.GetError(c, err)
-	//	}
-	//}
 
 	return c.JSON(http.StatusOK, workspace.ToDTO())
 }
@@ -506,7 +490,7 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 		Joins("Form").
 		Joins("Sprint").
 		Order("created_at desc").
-		Where("workspace_id = ?", workspaceId)
+		Where("activity_events.workspace_id = ?", workspaceId)
 
 	if !time.Time(day).IsZero() {
 		query = query.Where("created_at >= ?", time.Time(day)).Where("created_at < ?", time.Time(day).Add(time.Hour*24))

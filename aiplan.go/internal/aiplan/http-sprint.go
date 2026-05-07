@@ -460,7 +460,7 @@ func (s *Services) sprintIssuesUpdate(c echo.Context) error {
 
 	newSnapshot := tracker.SprintToSnapshot(sprint)
 
-	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, sprint, user) //TODO check
+	err = s.snapshotTracker.TrackChanges(types.LayerSprint, oldSnapshot, newSnapshot, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

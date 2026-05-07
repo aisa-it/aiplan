@@ -173,6 +173,11 @@ func (a *APIContext) GetWorkspaceMember() *dao.WorkspaceMember {
 	return a.workspaceMember
 }
 
+func (a *APIContext) CleanProject() *APIContext {
+	a.project = nil
+	return a
+}
+
 func (a *APIContext) GetProject() *dao.Project {
 	if a.project != nil {
 		return a.project
@@ -246,6 +251,11 @@ func (a *APIContext) GetProjectMember() *dao.ProjectMember {
 	}
 
 	return a.projectMember
+}
+
+func (a *APIContext) CleanIssue() *APIContext {
+	a.issue.Issue = nil
+	return a
 }
 
 func (a *APIContext) GetIssue(options ...FetchOption) *dao.Issue {
@@ -393,6 +403,11 @@ func (a *APIContext) GetForm(options ...FormFetchOption) *dao.Form {
 
 	a.form.LastOptions = *fetchOptions
 	return a.form.Form
+}
+
+func (a *APIContext) CleanDoc() *APIContext {
+	a.doc.Doc = nil
+	return a
 }
 
 func (a *APIContext) GetDoc(options ...DocFetchOption) *dao.Doc {
