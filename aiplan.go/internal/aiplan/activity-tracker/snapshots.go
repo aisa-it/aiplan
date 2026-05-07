@@ -97,7 +97,6 @@ func IssueToSnapshot(i dao.Issue, extraSubIssues ...dao.Issue) IssueSnapshot {
 			return EntityRef{ID: t.ID, NameValue: t.Name, NameField: actField.Label.Field.String()}
 		})),
 		LinkedIssues: func() opt.Field[[]EntityRef] {
-
 			refs := make([]EntityRef, len(i.LinkedIssues))
 			for j, li := range i.LinkedIssues {
 				li.Project = i.Project
@@ -148,14 +147,15 @@ func LabelToSnapshot(label *dao.Label) LabelSnapshot {
 }
 
 // ------ StateSnapshot -------
+type StateEnricher func(*StateSnapshot)
 
 type StateSnapshot struct {
 	ID          uuid.UUID
-	Name        opt.Field[string] `act:"field:status_name;kind:scalar;preserve_id:true"`
-	Description opt.Field[string] `act:"field:status_description;kind:scalar;preserve_id:true"`
-	Color       opt.Field[string] `act:"field:status_color;kind:scalar;preserve_id:true"`
-	Group       opt.Field[string] `act:"field:status_group;kind:scalar;preserve_id:true"`
-	Default     opt.Field[bool]   `act:"field:status_default;kind:scalar;preserve_id:true"`
+	Name        opt.Field[string]    `act:"field:status_name;kind:scalar;preserve_id:true"`
+	Description opt.Field[string]    `act:"field:status_description;kind:scalar;preserve_id:true"`
+	Color       opt.Field[string]    `act:"field:status_color;kind:scalar;preserve_id:true"`
+	Group       opt.Field[string]    `act:"field:status_group;kind:scalar;preserve_id:true"`
+	Default     opt.Field[EntityRef] `act:"field:status_default;kind:scalar;preserve_id:true"`
 }
 
 func (s StateSnapshot) GetName() string {
@@ -173,14 +173,24 @@ func (s StateSnapshot) GetField() actField.ActivityField {
 	return actField.Status.Field
 }
 
-func StateToSnapshot(state *dao.State) StateSnapshot {
-	return StateSnapshot{
+func StateToSnapshot(state *dao.State, enrichers ...StateEnricher) StateSnapshot {
+	snapshot := StateSnapshot{
 		ID:          state.ID,
 		Name:        opt.Some(state.Name),
 		Description: opt.Some(state.Description),
 		Color:       opt.Some(state.Color),
 		Group:       opt.Some(state.Group),
-		Default:     opt.Some(state.Default),
+	}
+	for _, enricher := range enrichers {
+		enricher(&snapshot)
+	}
+
+	return snapshot
+}
+
+func WithDefaultState(st dao.State) StateEnricher {
+	return func(s *StateSnapshot) {
+		s.Default = opt.Some(EntityRef{ID: st.ID, NameValue: st.Name})
 	}
 }
 
@@ -224,7 +234,7 @@ type WorkspaceSnapshot struct {
 	LogoId      opt.Field[uuid.UUID]   `act:"field:logo;kind:scalar"`
 	OwnerId     opt.Field[uuid.UUID]   `act:"field:owner;kind:ref"`
 	Token       opt.Field[EntityRef]   `act:"field:integration_token;kind:scalar;secret:true"`
-	Integration opt.Field[[]EntityRef] `act:"field:integration;kind:collection"`
+	Integration opt.Field[[]EntityRef] `act:"field:integration;kind:collection;preserve_id:true"`
 	Members     opt.Field[[]EntityRef] `act:"field:member;kind:collection;preserve_id:true"`
 }
 
@@ -350,7 +360,6 @@ type ProjectSnapshot struct {
 	DefaultAssignees opt.Field[[]EntityRef] `act:"field:default_assignees;kind:collection;preserve_id:true"`
 	DefaultWatchers  opt.Field[[]EntityRef] `act:"field:default_watchers;kind:collection;preserve_id:true"`
 	Members          opt.Field[[]EntityRef] `act:"field:member;kind:collection;preserve_id:true"`
-	Issues           opt.Field[[]EntityRef] `act:"field:issues;kind:collection;preserve_id:true"`
 }
 
 func (p ProjectSnapshot) GetName() string {
@@ -372,37 +381,16 @@ type ProjectEnricher func(*ProjectSnapshot)
 
 func ProjectToSnapshot(p *dao.Project, enrichers ...ProjectEnricher) ProjectSnapshot {
 	snapshot := ProjectSnapshot{
-		ID:         p.ID,
-		Name:       opt.Some(p.Name),
-		Public:     opt.Some(p.Public),
-		Identifier: opt.Some(p.Identifier),
-		ProjectLead: func() opt.Field[EntityRef] {
-			if p.ProjectLead != nil {
-				return opt.Some(daoToEntityRef(p.ProjectLead))
-			}
-			return opt.None[EntityRef]()
-		}(),
-		Emoji:       opt.Some(p.Emoji),
-		LogoId:      opt.Some(p.LogoId.UUID),
-		RulesScript: opt.Some(PtrToStr(p.RulesScript)),
-		DefaultAssignees: func() opt.Field[[]EntityRef] {
-			refs := make([]EntityRef, len(p.DefaultAssigneesDetails))
-			for i, pm := range p.DefaultAssigneesDetails {
-				if pm.Member != nil {
-					refs[i] = daoToEntityRef(pm.Member)
-				}
-			}
-			return opt.Some(refs)
-		}(),
-		DefaultWatchers: func() opt.Field[[]EntityRef] {
-			refs := make([]EntityRef, len(p.DefaultWatchersDetails))
-			for i, pm := range p.DefaultWatchersDetails {
-				if pm.Member != nil {
-					refs[i] = daoToEntityRef(pm.Member)
-				}
-			}
-			return opt.Some(refs)
-		}(),
+		ID:               p.ID,
+		Name:             opt.Some(p.Name),
+		Public:           opt.Some(p.Public),
+		Identifier:       opt.Some(p.Identifier),
+		ProjectLead:      opt.Some(daoToEntityRef(p.ProjectLead)),
+		Emoji:            opt.Some(p.Emoji),
+		LogoId:           opt.Some(p.LogoId.UUID),
+		RulesScript:      opt.Some(PtrToStr(p.RulesScript)),
+		DefaultAssignees: opt.Some(utils.SliceToSlice(&p.DefaultAssigneesDetails, func(t *dao.ProjectMember) EntityRef { return daoToEntityRef(t.Member) })),
+		DefaultWatchers:  opt.Some(utils.SliceToSlice(&p.DefaultWatchersDetails, func(t *dao.ProjectMember) EntityRef { return daoToEntityRef(t.Member) })),
 	}
 
 	for _, enricher := range enrichers {
@@ -429,14 +417,13 @@ func WithProjectMembers(members []dao.ProjectMember, getNameValue func(m dao.Pro
 // ------ FormSnapshot -------
 
 type FormSnapshot struct {
-	ID                   uuid.UUID
-	Title                opt.Field[string]            `act:"field:title;kind:scalar"`
-	Description          opt.Field[string]            `act:"field:description;kind:scalar"`
-	AuthRequire          opt.Field[bool]              `act:"field:auth_require;kind:scalar"`
-	EndDate              opt.Field[*types.TargetDate] `act:"field:end_date;kind:scalar"`
-	TargetProjectId      opt.Field[uuid.UUID]         `act:"field:target_project_id;kind:scalar;preserve_id:true"`
-	Fields               opt.Field[string]            `act:"field:fields;kind:scalar"`                // JSON string
-	NotificationChannels opt.Field[string]            `act:"field:notification_channels;kind:scalar"` // JSON string
+	ID            uuid.UUID
+	Title         opt.Field[string]            `act:"field:title;kind:scalar"`
+	Description   opt.Field[string]            `act:"field:description;kind:scalar"`
+	AuthRequire   opt.Field[bool]              `act:"field:auth_require;kind:scalar"`
+	EndDate       opt.Field[*types.TargetDate] `act:"field:end_date;kind:scalar"`
+	TargetProject opt.Field[EntityRef]         `act:"field:target_project;kind:scalar;preserve_id:true"`
+	Fields        opt.Field[string]            `act:"field:fields;kind:scalar"` // JSON string
 }
 
 func (f FormSnapshot) GetName() string {
@@ -461,14 +448,6 @@ func FormToSnapshot(form *dao.Form) FormSnapshot {
 			fieldsStr = string(b)
 		}
 	}
-	var notifyStr string
-	if b, err := json.Marshal(form.NotificationChannels); err == nil {
-		notifyStr = string(b)
-	}
-	var targetProjectId uuid.UUID
-	if form.TargetProjectId.Valid {
-		targetProjectId = form.TargetProjectId.UUID
-	}
 	var endDate *types.TargetDate
 	if form.EndDate != nil {
 		normalized := *form.EndDate
@@ -476,15 +455,13 @@ func FormToSnapshot(form *dao.Form) FormSnapshot {
 		endDate = &normalized
 	}
 	return FormSnapshot{
-		ID:                   form.ID,
-		Title:                opt.Some(form.Title),
-		Description:          opt.Some(form.Description.String()),
-		AuthRequire:          opt.Some(form.AuthRequire),
-		EndDate:              opt.Some(endDate),
-		TargetProjectId:      opt.Some(targetProjectId),
-		Fields:               opt.Some(fieldsStr),
-		NotificationChannels: opt.Some(notifyStr),
-	}
+		ID:            form.ID,
+		Title:         opt.Some(form.Title),
+		Description:   opt.Some(form.Description.String()),
+		AuthRequire:   opt.Some(form.AuthRequire),
+		EndDate:       opt.Some(endDate),
+		TargetProject: opt.Some(daoToEntityRef(form.TargetProject)),
+		Fields:        opt.Some(fieldsStr)}
 }
 
 // ------ FormAnswerSnapshot -------
@@ -526,6 +503,60 @@ func FormAnswerToSnapshot(answer *dao.FormAnswer) FormAnswerSnapshot {
 	}
 }
 
+// ------ SprintSnapshot -------
+
+type SprintSnapshot struct {
+	ID           uuid.UUID
+	Name         opt.Field[string]                 `act:"field:name;kind:scalar"`
+	Description  opt.Field[string]                 `act:"field:description;kind:scalar"`
+	StartDate    opt.Field[*types.TargetDateTimeZ] `act:"field:start_date;kind:scalar"`
+	EndDate      opt.Field[*types.TargetDateTimeZ] `act:"field:end_date;kind:scalar"`
+	SprintFolder opt.Field[EntityRef]              `act:"field:sprint_folder;kind:scalar;preserve_id:true"`
+	Watchers     opt.Field[[]EntityRef]            `act:"field:watchers;kind:collection;preserve_id:true"`
+	Issues       opt.Field[[]EntityRef]            `act:"field:issues;kind:collection;preserve_id:true;linked_field:sprint;linked_layer:issue"`
+}
+
+func SprintToSnapshot(s *dao.Sprint) SprintSnapshot {
+	snapshot := SprintSnapshot{
+		ID:          s.Id,
+		Name:        opt.Some(s.Name),
+		Description: opt.Some(s.Description.String()),
+		Watchers:    opt.Some(utils.SliceToSlice(&s.Watchers, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
+		Issues:      opt.Some(utils.SliceToSlice(&s.Issues, func(t *dao.Issue) EntityRef { return daoToEntityRef(t) })),
+	}
+
+	if s.StartDate.Valid {
+		snapshot.StartDate = opt.Some(utils.ToPtr(types.TargetDateTimeZ{Time: s.StartDate.Time}))
+	}
+
+	if s.EndDate.Valid {
+		snapshot.EndDate = opt.Some(utils.ToPtr(types.TargetDateTimeZ{Time: s.EndDate.Time}))
+	}
+
+	if s.SprintFolder != nil {
+		snapshot.SprintFolder = opt.Some(EntityRef{ID: s.SprintFolder.Id, NameValue: s.SprintFolder.Name, NameField: "sprint_folders"})
+	} else if s.SprintFolderId.Valid {
+		snapshot.SprintFolder = opt.Some(EntityRef{ID: s.SprintFolderId.UUID, NameValue: "", NameField: "sprint_folders"})
+	}
+
+	return snapshot
+}
+
+func (s SprintSnapshot) GetName() string {
+	if s.Name.IsSet() {
+		return s.Name.Value()
+	}
+	return ""
+}
+
+func (s SprintSnapshot) GetID() uuid.UUID {
+	return s.ID
+}
+
+func (s SprintSnapshot) GetField() actField.ActivityField {
+	return actField.Sprint.Field
+}
+
 // ------ MemberSnapshot -------
 
 type MemberSnapshot struct {
@@ -562,62 +593,6 @@ func (m MemberSnapshot) GetID() uuid.UUID {
 
 func (m MemberSnapshot) GetField() actField.ActivityField {
 	return actField.Member.Field
-}
-
-// ------ SprintSnapshot -------
-
-type SprintSnapshot struct {
-	ID           uuid.UUID
-	Name         opt.Field[string]                 `act:"field:name;kind:scalar"`
-	Description  opt.Field[string]                 `act:"field:description;kind:scalar"`
-	StartDate    opt.Field[*types.TargetDateTimeZ] `act:"field:start_date;kind:scalar"`
-	EndDate      opt.Field[*types.TargetDateTimeZ] `act:"field:end_date;kind:scalar"`
-	SprintFolder opt.Field[EntityRef]              `act:"field:sprint_folder;kind:scalar;preserve_id:true"`
-	Watchers     opt.Field[[]EntityRef]            `act:"field:watchers;kind:collection;preserve_id:true"`
-	Issues       opt.Field[[]EntityRef]            `act:"field:issues;kind:collection;preserve_id:true;linked_field:sprint;linked_layer:issue"`
-}
-
-func SprintToSnapshot(s *dao.Sprint) SprintSnapshot {
-	snapshot := SprintSnapshot{
-		ID:          s.Id,
-		Name:        opt.Some(s.Name),
-		Description: opt.Some(s.Description.String()),
-		Watchers:    opt.Some(utils.SliceToSlice(&s.Watchers, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
-		Issues:      opt.Some(utils.SliceToSlice(&s.Issues, func(t *dao.Issue) EntityRef { return daoToEntityRef(t) })),
-	}
-
-	if s.StartDate.Valid {
-		startDate := types.TargetDateTimeZ{Time: s.StartDate.Time}
-		snapshot.StartDate = opt.Some(&startDate)
-	}
-
-	if s.EndDate.Valid {
-		endDate := types.TargetDateTimeZ{Time: s.EndDate.Time}
-		snapshot.EndDate = opt.Some(&endDate)
-	}
-
-	if s.SprintFolder != nil {
-		snapshot.SprintFolder = opt.Some(EntityRef{ID: s.SprintFolder.Id, NameValue: s.SprintFolder.Name, NameField: "sprint_folders"})
-	} else if s.SprintFolderId.Valid {
-		snapshot.SprintFolder = opt.Some(EntityRef{ID: s.SprintFolderId.UUID, NameValue: "", NameField: "sprint_folders"})
-	}
-
-	return snapshot
-}
-
-func (s SprintSnapshot) GetName() string {
-	if s.Name.IsSet() {
-		return s.Name.Value()
-	}
-	return ""
-}
-
-func (s SprintSnapshot) GetID() uuid.UUID {
-	return s.ID
-}
-
-func (s SprintSnapshot) GetField() actField.ActivityField {
-	return actField.Sprint.Field
 }
 
 // ------ CommentSnapshot -------

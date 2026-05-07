@@ -287,12 +287,13 @@ func (s *Services) updateProject(c echo.Context) error {
 	project.ID = id
 	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	project.Name = strings.TrimSpace(project.Name)
-
+	projectLead := project.ProjectLead
+	project.ProjectLead = nil
 	err := c.Validate(project)
 	if err != nil {
 		return EError(c, err)
 	}
-
+	project.ProjectLead = projectLead
 	changeProjectLead := oldLead != project.ProjectLeadId
 
 	// Check new owner id exists and admin
@@ -2523,6 +2524,13 @@ func (s *Services) updateState(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	var defaultState dao.State
+	if err := s.DB(c).
+		Where("project_id = ?", project.ID).
+		Where(`"default" = ?`, true).
+		Find(&defaultState).Error; err != nil {
+		return EError(c, err)
+	}
 
 	var state dao.State
 	if err := s.DB(c).
@@ -2534,7 +2542,7 @@ func (s *Services) updateState(c echo.Context) error {
 	}
 
 	// Pre-update activity tracking
-	oldSnapshot := tracker.StateToSnapshot(&state)
+	oldSnapshot := tracker.StateToSnapshot(&state, tracker.WithDefaultState(defaultState))
 	oldStateMap := StructToJSONMap(state)
 
 	//	oldStateMap["updateScope"] = "status"
@@ -2596,7 +2604,7 @@ func (s *Services) updateState(c echo.Context) error {
 		return EError(c, err)
 	}
 	// Post-update activity tracking
-	newSnapshot := tracker.StateToSnapshot(&state)
+	newSnapshot := tracker.StateToSnapshot(&state, tracker.WithDefaultState(state))
 
 	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, project, user, state.ID); err != nil {
 		errStack.GetError(c, err)
