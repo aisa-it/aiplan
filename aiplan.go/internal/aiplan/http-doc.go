@@ -30,29 +30,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func loadDoc(tx *gorm.DB, doc *dao.Doc, memberRole int, memberId, workspaceId uuid.UUID, docId string) error {
-	if err := tx.
-		Set("member_id", memberId).
-		Set("member_role", memberRole).
-		Set("breadcrumbs", true).
-		Preload("AccessRules.Member").
-		Preload("ParentDoc").
-		Preload("Author").
-		Preload("Workspace").
-		Preload("InlineAttachments").
-		Where("docs.workspace_id = ?", workspaceId).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
-			memberRole, memberRole, memberId, memberId).
-		Where("docs.id = ?", docId).
-		First(&doc).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apierrors.ErrDocNotFound
-		}
-		return apierrors.ErrGeneric
-	}
-	return nil
-} // todo на апиконтекст перевести
-
 func (s *Services) AddDocServices(g *echo.Group) {
 	workspaceGroup := g.Group("workspaces/:workspaceSlug",
 		s.WorkspaceMiddleware,
@@ -328,7 +305,7 @@ func (s *Services) createDoc(c echo.Context) error {
 
 	newSnapshot := tracker.DocToSnapshot(doc)
 
-	err = s.snapshotTracker.TrackChanges(types.LayerDoc, nil, newSnapshot, doc, user)
+	err = s.snapshotTracker.TrackChanges(types.LayerDoc, nil, newSnapshot, parentDoc, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -535,7 +512,6 @@ func (s *Services) updateDoc(c echo.Context) error {
 							}
 						}
 					}
-					// todo refactor
 				case "reader_list":
 					readerListOk = true
 					updates := make([]MemberUpdate, len(newDoc.ReaderIDs))
@@ -632,9 +608,11 @@ func (s *Services) updateDoc(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := loadDoc(s.DB(c), newDoc, workspaceMember.Role, workspaceMember.MemberId, workspace.ID, doc.ID.String()); err != nil {
-		return EError(c, err)
-	}
+	//if err := loadDoc(s.DB(c), newDoc, workspaceMember.Role, workspaceMember.MemberId, workspace.ID, doc.ID.String()); err != nil {
+	//	return EError(c, err)
+	//}
+	newDoc = apiContext.CleanDoc().GetDoc(apicontext.WithDocAccessRules())
+
 	newSnapshot := tracker.DocToSnapshot(newDoc)
 	err = s.snapshotTracker.TrackChanges(types.LayerDoc, oldSnapshot, newSnapshot, newDoc, user)
 	if err != nil {

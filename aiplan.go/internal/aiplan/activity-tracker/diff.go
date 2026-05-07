@@ -3,6 +3,7 @@ package tracker
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
@@ -105,8 +106,8 @@ func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet b
 }
 
 func diffCollection(spec ActivityFieldSpec, oldValue, newValue any, linkedEntityID uuid.UUID, entityName string) []FieldChange {
-	oldSlice := toEntityRefSlice(oldValue, spec.Table)
-	newSlice := toEntityRefSlice(newValue, spec.Table)
+	oldSlice := toEntityRefSlice(oldValue)
+	newSlice := toEntityRefSlice(newValue)
 	if len(oldSlice) == 0 && len(newSlice) == 0 {
 		return nil
 	}
@@ -155,7 +156,7 @@ func makeUpdateChange(spec ActivityFieldSpec, oldVal, newVal string, oldID, newI
 		newVal = utils.MaskString(newVal)
 	}
 	return FieldChange{
-		Verb:       "updated",
+		Verb:       actField.VerbUpdated,
 		Field:      actField.ActivityField(spec.Field),
 		OldVal:     oldVal,
 		NewVal:     newVal,
@@ -182,8 +183,12 @@ func makeRemovedChange(spec ActivityFieldSpec, name string, id uuid.UUID) FieldC
 	if id != uuid.Nil {
 		oldID = uuid.NullUUID{UUID: id, Valid: true}
 	}
+	verb := actField.VerbRemoved
+	if spec.Verb != "" {
+		verb = spec.Verb
+	}
 	return FieldChange{
-		Verb:       "removed",
+		Verb:       verb,
 		Field:      actField.ActivityField(spec.Field),
 		OldVal:     name,
 		OldID:      oldID,
@@ -196,8 +201,12 @@ func makeAddedChange(spec ActivityFieldSpec, name string, id uuid.UUID) FieldCha
 	if id != uuid.Nil {
 		newID = uuid.NullUUID{UUID: id, Valid: true}
 	}
+	verb := actField.VerbAdded
+	if spec.Verb != "" {
+		verb = spec.Verb
+	}
 	return FieldChange{
-		Verb:       "added",
+		Verb:       verb,
 		Field:      actField.ActivityField(spec.Field),
 		NewVal:     name,
 		NewID:      newID,
@@ -208,15 +217,16 @@ func makeAddedChange(spec ActivityFieldSpec, name string, id uuid.UUID) FieldCha
 // shared linked helpers
 
 func makeLinkedRemovedChange(spec ActivityFieldSpec, targetID, linkedEntityID uuid.UUID, entityName string) FieldChange {
-	//if entityName == "" {
-	//	entityName = linkedEntityID.String()
-	//}
 	oldID := uuid.NullUUID{}
 	if linkedEntityID != uuid.Nil {
 		oldID = uuid.NullUUID{UUID: linkedEntityID, Valid: true}
 	}
+	verb := actField.VerbRemoved
+	if spec.Verb != "" {
+		verb = spec.Verb
+	}
 	return FieldChange{
-		Verb:       "removed",
+		Verb:       verb,
 		Field:      actField.ActivityField(spec.LinkedField),
 		OldVal:     entityName,
 		NewVal:     "",
@@ -225,19 +235,21 @@ func makeLinkedRemovedChange(spec ActivityFieldSpec, targetID, linkedEntityID uu
 		PreserveID: spec.PreserveID,
 		EntityID:   targetID,
 		IsLinked:   true,
+		Layer:      determineLinkedLayer(spec.LinkedLayer),
 	}
 }
 
 func makeLinkedAddedChange(spec ActivityFieldSpec, targetID, linkedEntityID uuid.UUID, entityName string) FieldChange {
-	//if entityName == "" {
-	//	entityName = linkedEntityID.String()
-	//}
 	newID := uuid.NullUUID{}
 	if linkedEntityID != uuid.Nil {
 		newID = uuid.NullUUID{UUID: linkedEntityID, Valid: true}
 	}
+	verb := actField.VerbAdded
+	if spec.Verb != "" {
+		verb = spec.Verb
+	}
 	return FieldChange{
-		Verb:       "added",
+		Verb:       verb,
 		Field:      actField.ActivityField(spec.LinkedField),
 		OldVal:     "",
 		NewVal:     entityName,
@@ -246,6 +258,7 @@ func makeLinkedAddedChange(spec ActivityFieldSpec, targetID, linkedEntityID uuid
 		PreserveID: spec.PreserveID,
 		EntityID:   targetID,
 		IsLinked:   true,
+		Layer:      determineLinkedLayer(spec.LinkedLayer),
 	}
 }
 
@@ -311,30 +324,50 @@ func formatValueToString(v interface{}) string {
 		}
 		return *ptrStr
 	}
-	// Handle TargetDateTimeZ
 	if targetDate, ok := v.(*types.TargetDateTimeZ); ok {
 		if targetDate == nil {
 			return ""
 		}
-		// Format to UTC to ignore timezone differences
 		return targetDate.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
 	return fmt.Sprintf("%v", v)
 }
 
-func toEntityRefSlice(v interface{}, table string) []EntityRef {
+func toEntityRefSlice(v interface{}) []EntityRef {
 	if v == nil {
 		return []EntityRef{}
 	}
 	if slice, ok := v.([]EntityRef); ok {
 		return slice
 	}
-	if slice, ok := v.([]uuid.UUID); ok {
-		result := make([]EntityRef, len(slice))
-		for i, id := range slice {
-			result[i] = EntityRef{ID: id, NameField: table}
-		}
-		return result
-	}
 	return []EntityRef{}
+}
+
+func ParseActivityTag(tag string) (ActivityFieldSpec, error) {
+	spec := ActivityFieldSpec{Kind: "scalar", PreserveID: false} // default - не сохранять ID
+
+	for _, param := range strings.Split(tag, ";") {
+		parts := strings.SplitN(param, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		switch parts[0] {
+		case "field":
+			spec.Field = parts[1]
+		case "kind":
+			spec.Kind = parts[1]
+		case "preserve_id":
+			spec.PreserveID = parts[1] == "true"
+		case "linked_field":
+			spec.LinkedField = parts[1]
+		case "linked_layer":
+			spec.LinkedLayer = parts[1]
+		case "secret":
+			spec.Secret = parts[1] == "true"
+		case "verb":
+			spec.Verb = parts[1]
+		}
+	}
+	return spec, nil
 }

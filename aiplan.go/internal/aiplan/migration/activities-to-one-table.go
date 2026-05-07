@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -86,6 +87,19 @@ func (a *ActivitiesToOneTable) Name() string {
 }
 
 func (a *ActivitiesToOneTable) Execute() error {
+	{ // UserNotifications clean
+		for {
+			result := a.db.Unscoped().Where("id IN (?)",
+				a.db.Table("user_notifications").Select("id").Limit(1000),
+			).Delete(&UserNotifications{})
+
+			if result.RowsAffected == 0 {
+				break
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 	{ //issue layer
 		var activities []IssueActivity
 		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {

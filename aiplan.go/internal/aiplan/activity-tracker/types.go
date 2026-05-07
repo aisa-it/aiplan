@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 )
@@ -18,20 +19,20 @@ type FieldChange struct {
 	NewVal     string
 	OldID      uuid.NullUUID
 	NewID      uuid.NullUUID
-	PreserveID bool      // нужно ли сохранять ID для этого поля
-	EntityID   uuid.UUID // target entity ID (для linked-событий, иначе основной entity)
-	IsLinked   bool      // является ли это linked-событием
+	PreserveID bool              // нужно ли сохранять ID для этого поля
+	EntityID   uuid.UUID         // target entity ID (для linked-событий, иначе основной entity)
+	IsLinked   bool              // является ли это linked-событием
+	Layer      types.EntityLayer // для linked-коллекций: слой на котором нужно создать активность
 }
 
 type ActivityFieldSpec struct {
-	Req         string
 	Field       string
 	Kind        string
-	Transform   string
-	Table       string
 	PreserveID  bool   // по умолчанию true - сохранять ID для этого поля
 	LinkedField string // для linked-коллекций: обратное поле (blocking -> blocked)
-	Secret      bool
+	LinkedLayer string // для linked-коллекций: слой на котором нужно создать активность
+	Secret      bool   // для скрытия чувствительных данных
+	Verb        string // кастомный verb для collection активностей (если отсутствует - дублирует слой от основной активности)
 }
 
 type TrackOption func(*trackParams)

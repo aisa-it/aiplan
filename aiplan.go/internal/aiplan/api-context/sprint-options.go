@@ -59,7 +59,7 @@ func WithSprintWatchers() SprintFetchOption {
 
 func WithSprintIssues() SprintFetchOption {
 	return func(sfo *SprintFetchOptions) {
-		sfo.query = sfo.query.Preload("Issues.State")
+		sfo.query = sfo.query.Preload("Issues.State").Preload("Issues.Project")
 		sfo.loaded["Issues"] = struct{}{}
 	}
 }

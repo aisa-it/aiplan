@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,6 +53,115 @@ type ActivityEvent struct {
 	WorkspaceActivityExtendFields
 	RootActivityExtendFields
 	SprintActivityExtendFields
+}
+
+func (e *ActivityEvent) SetEntityRefs(layer types.EntityLayer, entity IDaoAct) {
+	if de, ok := any(entity).(WorkspaceEntityI); ok && layer != types.LayerRoot {
+		e.WorkspaceID = uuid.NullUUID{UUID: de.GetWorkspaceId(), Valid: true}
+	}
+	if de, ok := any(entity).(DocEntityI); ok {
+		e.DocID = uuid.NullUUID{UUID: de.GetDocId(), Valid: true}
+	}
+	if fe, ok := any(entity).(FormEntityI); ok {
+		e.FormID = uuid.NullUUID{UUID: fe.GetFormId(), Valid: true}
+	}
+	if se, ok := any(entity).(SprintEntityI); ok {
+		e.SprintID = uuid.NullUUID{UUID: se.GetSprintId(), Valid: true}
+	}
+	if pe, ok := any(entity).(ProjectEntityI); ok && layer != types.LayerWorkspace {
+		e.ProjectID = uuid.NullUUID{UUID: pe.GetProjectId(), Valid: true}
+	}
+	if ie, ok := any(entity).(IssueEntityI); ok {
+		e.IssueID = uuid.NullUUID{UUID: ie.GetIssueId(), Valid: true}
+	}
+	e.EntityType = layer
+}
+
+var (
+	actEventRules = map[types.EntityLayer][]string{
+		types.LayerRoot:      {},
+		types.LayerWorkspace: {"WorkspaceID"},
+		types.LayerProject:   {"WorkspaceID", "ProjectID"},
+		types.LayerIssue:     {"WorkspaceID", "ProjectID", "IssueID"},
+		types.LayerDoc:       {"WorkspaceID", "DocID"},
+		types.LayerForm:      {"WorkspaceID", "FormID"},
+		types.LayerSprint:    {"WorkspaceID", "SprintID"},
+	}
+	actEventFields = []string{"WorkspaceID", "ProjectID", "IssueID", "DocID", "FormID", "SprintID"}
+)
+
+func (e *ActivityEvent) ValidateAndSet(tx *gorm.DB) error {
+
+	allowed, ok := actEventRules[e.EntityType]
+	if !ok {
+		return fmt.Errorf("unknown entity_type: %d", e.EntityType)
+	}
+
+	for _, field := range actEventFields {
+		isAllowed := slices.Contains(allowed, field)
+		isSet := e.isSet(field)
+
+		if isAllowed && !isSet {
+			var entity IDaoAct
+			switch e.EntityType {
+			case types.LayerWorkspace:
+				entity = &Workspace{}
+				if err := tx.Where("id = ?", e.WorkspaceID).First(entity).Error; err != nil {
+					return err
+				}
+			case types.LayerProject:
+				entity = &Project{}
+				if err := tx.Where("id = ?", e.ProjectID).First(entity).Error; err != nil {
+					return err
+				}
+			case types.LayerIssue:
+				entity = &Issue{}
+				if err := tx.Joins("Project").
+					Where("issues.id = ?", e.IssueID).First(entity).Error; err != nil {
+					return err
+				}
+			case types.LayerDoc:
+				entity = &Doc{}
+				if err := tx.Where("id = ?", e.DocID).First(entity).Error; err != nil {
+					return err
+				}
+			case types.LayerForm:
+				entity = &Form{}
+				if err := tx.Where("id = ?", e.FormID).First(entity).Error; err != nil {
+					return err
+				}
+			case types.LayerSprint:
+				entity = &Sprint{}
+				if err := tx.Where("id = ?", e.SprintID).First(entity).Error; err != nil {
+					return err
+				}
+			}
+			e.SetEntityRefs(e.EntityType, entity)
+		}
+		if !isAllowed && isSet {
+			return fmt.Errorf("%s must be NULL for entity_type=%s", field, e.EntityType.String())
+		}
+	}
+
+	return nil
+}
+
+func (e *ActivityEvent) isSet(field string) bool {
+	switch field {
+	case "WorkspaceID":
+		return e.WorkspaceID.Valid
+	case "ProjectID":
+		return e.ProjectID.Valid
+	case "IssueID":
+		return e.IssueID.Valid
+	case "DocID":
+		return e.DocID.Valid
+	case "FormID":
+		return e.FormID.Valid
+	case "SprintID":
+		return e.SprintID.Valid
+	}
+	return false
 }
 
 func (ActivityEvent) TableName() string {

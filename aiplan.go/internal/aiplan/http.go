@@ -197,8 +197,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	dao.FileStorage = storage
 
-	//slog.Info("Migrate old activities")
-	//activityMigrate(db) //TODO migrate to newActivities
 	// Query counter
 	ql := dao.NewQueryLogger()
 	if err := db.Callback().
