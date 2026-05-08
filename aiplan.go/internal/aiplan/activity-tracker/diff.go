@@ -2,14 +2,50 @@ package tracker
 
 import (
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 )
+
+const (
+	collectionKind = "collection"
+	scalarKind     = "scalar"
+)
+
+type fieldSpec struct {
+	index int
+	spec  ActivityFieldSpec
+}
+
+var typeFieldCache sync.Map
+
+func getFieldSpecs(t reflect.Type) []fieldSpec {
+	if v, ok := typeFieldCache.Load(t); ok {
+		return v.([]fieldSpec)
+	}
+
+	var specs []fieldSpec
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("act")
+		if tag == "" {
+			continue
+		}
+		spec, err := ParseActivityTag(tag)
+		if err != nil || spec.Field == "" {
+			continue
+		}
+		specs = append(specs, fieldSpec{index: i, spec: spec})
+	}
+
+	v, _ := typeFieldCache.LoadOrStore(t, specs)
+	return v.([]fieldSpec)
+}
 
 func Diff(old, new any, entityID uuid.UUID, entityName string) []FieldChange {
 	var changes []FieldChange
@@ -23,7 +59,6 @@ func Diff(old, new any, entityID uuid.UUID, entityName string) []FieldChange {
 
 	oldVal := reflect.ValueOf(old)
 	newVal := reflect.ValueOf(new)
-
 	if oldVal.Kind() == reflect.Ptr {
 		oldVal = oldVal.Elem()
 	}
@@ -31,38 +66,28 @@ func Diff(old, new any, entityID uuid.UUID, entityName string) []FieldChange {
 		newVal = newVal.Elem()
 	}
 
-	oldType := oldVal.Type()
+	for _, fs := range getFieldSpecs(oldVal.Type()) {
+		oldField := oldVal.Field(fs.index)
+		newField := newVal.Field(fs.index)
 
-	for i := 0; i < oldVal.NumField(); i++ {
-		field := oldType.Field(i)
-		tag := field.Tag.Get("act")
-		if tag == "" {
-			continue
-		}
-
-		spec, err := ParseActivityTag(tag)
-		if err != nil || spec.Field == "" {
-			continue
-		}
-
-		oldValue := getOptValueViaMethods(oldVal.Field(i))
-		newValue := getOptValueViaMethods(newVal.Field(i))
-
-		oldSet := isOptSetViaMethods(oldVal.Field(i))
-		newSet := isOptSetViaMethods(newVal.Field(i))
-
+		oldSet := isOptSetViaMethods(oldField)
+		newSet := isOptSetViaMethods(newField)
 		if !oldSet && !newSet {
 			continue
 		}
 
-		switch spec.Kind {
-		case "collection":
-			changes = append(changes, diffCollection(spec, oldValue, newValue, entityID, entityName)...)
-		default: // scalar
-			changes = append(changes, diffScalar(spec, oldValue, newValue, oldSet, newSet, snapshotID, entityID, entityName)...)
+		oldValue := getOptValueViaMethods(oldField)
+		newValue := getOptValueViaMethods(newField)
+
+		switch fs.spec.Kind {
+		case collectionKind:
+			changes = append(changes, diffCollection(fs.spec, oldValue, newValue, entityID, entityName)...)
+		case scalarKind:
+			changes = append(changes, diffScalar(fs.spec, oldValue, newValue, oldSet, newSet, snapshotID, entityID, entityName)...)
+		default:
+			slog.Info("act kind not supported: ", fs.spec.Kind)
 		}
 	}
-
 	return changes
 }
 

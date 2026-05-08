@@ -27,7 +27,7 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 			return err
 		}
 
-		if err := b.db.Where("workspace_id", workspace.ID).
+		if err := b.db.Where("workspace_id = ?", workspace.ID).
 			Unscoped().Delete(&dao.UserAppNotify{}).Error; err != nil {
 			return err
 		}
@@ -61,11 +61,11 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 	}
 
 	/*// Start hard deleting in foreground
-	go func(workspace dao.Workspace) {
-		if err := b.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
-			slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
-		}
-	}(*workspace)
+	  go func(workspace dao.Workspace) {
+	  	if err := b.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
+	  		slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
+	  	}
+	  }(*workspace)
 	*/
 
 	err := b.st.TrackChanges(types.LayerRoot, oldSnapshot, nil, workspace, user)

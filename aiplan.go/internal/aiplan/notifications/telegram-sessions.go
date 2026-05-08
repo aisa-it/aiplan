@@ -243,10 +243,4 @@ func (ts *TelegramService) createIssue(user dao.User, args []interface{}) {
 		slog.Error("Create issue from telegram", "err", err)
 		return
 	}
-
-	//err := tracker.TrackEvent(ts.ta, types.LayerProject, activities.VerbCreated, nil, issue, &user)
-	//if err != nil {
-	//	slog.Error("Track new issue from telegram activity", "err", err)
-	//	return
-	//}
 }

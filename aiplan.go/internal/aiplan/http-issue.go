@@ -614,7 +614,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 	user := apiCtx.GetUser()
 
 	oldIssue := *issue
-	issueMapOld := StructToJSONMap(*issue)
 	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
 	var data map[string]interface{}
@@ -666,13 +665,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var targetDateOk bool
 	var targetDate *string
 	if val, ok := data["target_date"]; ok {
-		if issue.TargetDate != nil {
-			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "2006-01-02T15:04:05Z07:00", nil); err != nil {
-				return EErrorDefined(c, apierrors.ErrGeneric)
-			} else {
-				issueMapOld["target_date_activity_val"] = date
-			}
-		}
 		if val != nil {
 			date, err := utils.FormatDateStr(val.(string), "2006-01-02T15:04:05Z07:00", nil)
 			if err != nil {
@@ -2085,11 +2077,8 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 	oldLink.Title = newLink.Title
 	oldLink.Url = newLink.Url
 
-	oldMap := StructToJSONMap(oldLink)
-
-	{ //rateLimit todo oldmap rewrite
-		dataField := utils.MapToSlice(oldMap, func(k string, v interface{}) string { return fmt.Sprintf("link_%s", actField.ReqFieldMapping(k)) })
-		if hasRecentFieldUpdate(s.DB(c).Where("issue_id = ?", oldLink.IssueId), user.ID, dataField...) {
+	{ //rateLimit
+		if hasRecentFieldUpdate(s.DB(c).Where("issue_id = ?", oldLink.IssueId), user.ID, []string{"link_url", "link_title"}...) {
 			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 		}
 	}
