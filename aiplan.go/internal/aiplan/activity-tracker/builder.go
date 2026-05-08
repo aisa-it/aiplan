@@ -1,7 +1,7 @@
 package tracker
 
 import (
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -34,7 +34,7 @@ func BuildActivityEvents(tx *gorm.DB, changes []FieldChange, entity dao.IDaoAct,
 			}
 
 			changeLayer := determineLayerForEntity(entity)
-			if change.IsLinked && change.Layer != types.LayerRoot { //todo!!!!
+			if change.IsLinked && change.Layer != types.LayerRoot {
 				changeLayer = change.Layer
 			}
 
@@ -60,7 +60,7 @@ func BuildActivityEvents(tx *gorm.DB, changes []FieldChange, entity dao.IDaoAct,
 				event.SetEntityRefs(changeLayer, entity)
 			}
 			if err := event.ValidateAndSet(tx); err != nil {
-				fmt.Println(err)
+				slog.Error("activity validation failed", "err", err, "event_id", event.ID)
 			}
 			events = append(events, event)
 		}

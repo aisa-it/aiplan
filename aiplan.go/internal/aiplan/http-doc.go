@@ -2188,11 +2188,6 @@ func (s *Services) updateDocFromHistory(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//newDocMap := StructToJSONMap(doc)
-
-	//if err := tracker.TrackEvent(s.activityTracker, types.LayerDoc, actField.VerbUpdated, tracker.NewTrackerCtx(&newDocMap, &oldDocMap), doc, user); err != nil {
-	//	errStack.GetError(c, err)
-	//}
 	newSnapshot := tracker.DocToSnapshot(&doc)
 	err := s.snapshotTracker.TrackChanges(types.LayerDoc, oldSnapshot, newSnapshot, doc, user)
 	if err != nil {
@@ -2378,92 +2373,3 @@ func (s *Services) uploadDocAttachments(tx *gorm.DB, form *multipart.Form, name 
 	}
 	return res, nil
 }
-
-//
-//func createDocActivity(track *tracker.ActTracker,
-//	activityType string,
-//	requestedData map[string]interface{},
-//	currentInstance map[string]interface{},
-//	doc dao.Doc,
-//	actor *dao.User, changes *docChanges) error {
-//	ctxTrack := tracker.NewTrackerCtx(&requestedData, &currentInstance)
-//	ctxTrack.New.SetKey(actField.ParentKey, "parent_doc_id")
-//	ctxTrack.Old.SetKey(actField.ParentKey, "parent_doc_id")
-//
-//	var err error
-//
-//	changeAct := map[bool]string{true: "doc", false: "workspace"}
-//
-//	if changes != nil {
-//		fromDoc := changes.FromDoc != nil
-//		toDoc := changes.ToDoc != nil
-//
-//		ctxTrack.New.SetKey(actField.FieldMoveKey.Field.AsLogValue(), fmt.Sprintf("%s_to_%s", changeAct[fromDoc], changeAct[toDoc]))
-//
-//		if currentInstance != nil {
-//			if fromDoc {
-//				ctxTrack.Old.SetKey(actField.EntityKey.Field.AsLogValue(), *changes.FromDoc)
-//				ctxTrack.Old.SetKey(actField.ParentTitleKey.Field.AsLogValue(), changes.FromDoc.Title)
-//				ctxTrack.Old.SetKey(actField.ParentKey.Field.WithScopeID(), changes.FromDoc.ID)
-//			} else {
-//				ctxTrack.Old.SetKey(actField.ParentTitleKey.Field.AsLogValue(), doc.Workspace.Name)
-//			}
-//		}
-//
-//		if requestedData != nil {
-//			if toDoc {
-//				ctxTrack.New.SetKey(actField.EntityKey.Field.AsLogValue(), *changes.ToDoc)
-//				ctxTrack.New.SetKey(actField.ParentKey.Field.AsLogValue(), changes.ToDoc.Title)
-//				ctxTrack.New.SetKey(actField.ParentKey.Field.WithScopeID(), changes.ToDoc.ID)
-//			} else {
-//				ctxTrack.Old.SetKey(actField.ParentTitleKey.Field.AsLogValue(), doc.Workspace.Name)
-//			}
-//		}
-//	}
-//
-//	switch activityType {
-//	case
-//		actField.VerbUpdated,
-//		actField.VerbMove:
-//		err = createToDocActivity(track, activityType, ctxTrack, doc, actor)
-//	case
-//		actField.VerbAdded:
-//		if changes != nil && changes.ToDoc != nil {
-//			err = createToDocActivity(track, activityType, ctxTrack, doc, actor)
-//		} else {
-//			err = createToWorkspaceActivity(track, activityType, ctxTrack, doc, actor)
-//		}
-//	case
-//		actField.VerbRemoved:
-//		if changes != nil && changes.FromDoc != nil {
-//			err = createToDocActivity(track, activityType, ctxTrack, doc, actor)
-//		} else {
-//			err = createToWorkspaceActivity(track, activityType, ctxTrack, doc, actor)
-//		}
-//	case
-//		actField.VerbDeleted:
-//		if doc.ParentDoc != nil {
-//			ctxTrack.Old.SetKey(actField.OldTitleKey.Field.AsLogValue(), doc.Title)
-//			err = createToDocActivity(track, activityType, ctxTrack, *doc.ParentDoc, actor)
-//		} else {
-//			err = createToWorkspaceActivity(track, activityType, ctxTrack, doc, actor)
-//		}
-//	default:
-//		err = createToWorkspaceActivity(track, activityType, ctxTrack, doc, actor)
-//	}
-//
-//	if err != nil {
-//		return err
-//	}
-//	return nil
-//}
-
-//func createToDocActivity(actTracker *tracker.ActTracker, acton string,
-//	ctx *tracker.Ctx, doc dao.Doc, actor *dao.User) error {
-//	return tracker.TrackEvent(actTracker, types.LayerDoc, acton, ctx, doc, actor)
-//}
-//
-//func createToWorkspaceActivity(actTracker *tracker.ActTracker, acton string,
-//	ctx *tracker.Ctx, doc dao.Doc, actor *dao.User) error {
-//	return tracker.TrackEvent(actTracker, types.LayerWorkspace, acton, ctx, doc, actor)
-//}

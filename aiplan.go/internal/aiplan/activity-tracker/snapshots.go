@@ -232,8 +232,8 @@ type WorkspaceSnapshot struct {
 	Name        opt.Field[string]      `act:"field:title;kind:scalar"`
 	Description opt.Field[string]      `act:"field:description;kind:scalar"`
 	LogoId      opt.Field[uuid.UUID]   `act:"field:logo;kind:scalar"`
-	OwnerId     opt.Field[uuid.UUID]   `act:"field:owner;kind:ref"`
-	Token       opt.Field[EntityRef]   `act:"field:integration_token;kind:scalar;secret:true"`
+	OwnerId     opt.Field[uuid.UUID]   `act:"field:owner;kind:scalar"`
+	Token       opt.Field[string]      `act:"field:integration_token;kind:scalar;secret:true"`
 	Integration opt.Field[[]EntityRef] `act:"field:integration;kind:collection;preserve_id:true"`
 	Members     opt.Field[[]EntityRef] `act:"field:member;kind:collection;preserve_id:true"`
 }
@@ -262,12 +262,7 @@ func WorkspaceToSnapshot(workspace *dao.Workspace, enrichers ...WorkspaceEnriche
 		Description: opt.Some(workspace.Description.String()),
 		LogoId:      opt.Some(workspace.LogoId.UUID),
 		OwnerId:     opt.Some(workspace.OwnerId),
-		Token: opt.Some(func() EntityRef {
-			return EntityRef{
-				ID:        uuid.UUID{},
-				NameValue: workspace.IntegrationToken,
-			}
-		}()),
+		Token:       opt.Some(workspace.IntegrationToken),
 	}
 
 	for _, enricher := range enrichers {

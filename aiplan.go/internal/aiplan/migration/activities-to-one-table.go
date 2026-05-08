@@ -83,7 +83,6 @@ func checkTable(tx *gorm.DB, model interface{}, layer *bool) error {
 
 func (a *ActivitiesToOneTable) Name() string {
 	return "ActivitiesToOneTable"
-
 }
 
 func (a *ActivitiesToOneTable) Execute() error {
@@ -100,371 +99,256 @@ func (a *ActivitiesToOneTable) Execute() error {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-	{ //issue layer
-		var activities []IssueActivity
-		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-			ae := make([]dao.ActivityEvent, 0, len(activities))
-			ids := make([]uuid.UUID, 0, len(activities))
-			for _, act := range activities {
-				if act.Field == nil {
-					continue
-				}
-				ae = append(ae, dao.ActivityEvent{
-					ID:            dao.GenUUID(),
-					CreatedAt:     act.CreatedAt,
-					ActorID:       act.ActorId.UUID,
-					Notified:      act.Notified,
-					Verb:          act.Verb,
-					Field:         actField.ActivityField(*act.Field),
-					OldValue:      ptrStrToString(act.OldValue),
-					NewValue:      act.NewValue,
-					NewIdentifier: act.NewIdentifier,
-					OldIdentifier: act.OldIdentifier,
-					EntityType:    types.LayerIssue,
-					WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-					ProjectID:     uuid.NullUUID{UUID: act.ProjectId, Valid: true},
-					IssueID:       uuid.NullUUID{UUID: act.IssueId, Valid: true},
-					DocID:         uuid.NullUUID{},
-					FormID:        uuid.NullUUID{},
-					SprintID:      uuid.NullUUID{},
-				})
 
-				ids = append(ids, act.Id)
-			}
-
-			if len(ae) > 0 {
-				result := tx.Create(&ae)
-				if result.Error != nil {
-					return result.Error
-				}
-				slog.Info(a.Name(), "from", IssueActivity{}.TableName(), "batch", batch, "rows", result.RowsAffected)
-			}
-
-			if err := tx.Where("id IN (?)", ids).Delete(&IssueActivity{}).Error; err != nil {
-				slog.Error(err.Error())
-				return err
-			}
-
-			return nil
-		}).Error; err != nil {
-			slog.Error(a.Name(), "error", err.Error())
-		}
+	if err := migrateActivities(a.db, IssueActivity{}.TableName(), convertIssue, a.Name()); err != nil {
+		return err
 	}
-
-	{ // project layer
-		var activities []ProjectActivity
-		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-			ae := make([]dao.ActivityEvent, 0, len(activities))
-			ids := make([]uuid.UUID, 0, len(activities))
-			for _, act := range activities {
-				if act.Field == nil {
-					continue
-				}
-				ae = append(ae, dao.ActivityEvent{
-					ID:            dao.GenUUID(),
-					CreatedAt:     act.CreatedAt,
-					ActorID:       act.ActorId.UUID,
-					Notified:      act.Notified,
-					Verb:          act.Verb,
-					Field:         actField.ActivityField(*act.Field),
-					OldValue:      ptrStrToString(act.OldValue),
-					NewValue:      act.NewValue,
-					NewIdentifier: act.NewIdentifier,
-					OldIdentifier: act.OldIdentifier,
-					EntityType:    types.LayerProject,
-					WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-					ProjectID:     uuid.NullUUID{UUID: act.ProjectId, Valid: true},
-					IssueID:       uuid.NullUUID{},
-					DocID:         uuid.NullUUID{},
-					FormID:        uuid.NullUUID{},
-					SprintID:      uuid.NullUUID{},
-				})
-
-				ids = append(ids, act.Id)
-			}
-
-			if len(ae) > 0 {
-				result := tx.Create(&ae)
-				if result.Error != nil {
-					return result.Error
-				}
-				slog.Info(a.Name(), "from", ProjectActivity{}.TableName(), "batch", batch, "rows", result.RowsAffected)
-			}
-
-			if err := tx.Where("id IN (?)", ids).Delete(&ProjectActivity{}).Error; err != nil {
-				slog.Error(err.Error())
-				return err
-			}
-
-			return nil
-		}).Error; err != nil {
-			slog.Error(a.Name(), "error", err.Error())
-		}
+	if err := migrateActivities(a.db, ProjectActivity{}.TableName(), convertProject, a.Name()); err != nil {
+		return err
 	}
-
-	{ // workspace layer
-		var activities []WorkspaceActivity
-		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-			ae := make([]dao.ActivityEvent, 0, len(activities))
-			ids := make([]uuid.UUID, 0, len(activities))
-			for _, act := range activities {
-				if act.Field == nil {
-					continue
-				}
-
-				newVal := act.NewValue
-				if *act.Field == actField.Form.Field.String() && act.Verb == actField.VerbCreated && act.NewForm != nil {
-					newVal = act.NewForm.Title
-				}
-
-				ae = append(ae, dao.ActivityEvent{
-					ID:            dao.GenUUID(),
-					CreatedAt:     act.CreatedAt,
-					ActorID:       act.ActorId.UUID,
-					Notified:      act.Notified,
-					Verb:          act.Verb,
-					Field:         actField.ActivityField(*act.Field),
-					OldValue:      ptrStrToString(act.OldValue),
-					NewValue:      newVal,
-					NewIdentifier: act.NewIdentifier,
-					OldIdentifier: act.OldIdentifier,
-					EntityType:    types.LayerWorkspace,
-					WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-					ProjectID:     uuid.NullUUID{},
-					IssueID:       uuid.NullUUID{},
-					DocID:         uuid.NullUUID{},
-					FormID:        uuid.NullUUID{},
-					SprintID:      uuid.NullUUID{},
-				})
-
-				ids = append(ids, act.Id)
-			}
-
-			if len(ae) > 0 {
-				result := tx.Create(&ae)
-				if result.Error != nil {
-					return result.Error
-				}
-				slog.Info(a.Name(), "from", WorkspaceActivity{}.TableName(), "batch", batch, "rows", result.RowsAffected)
-			}
-
-			if err := tx.Where("id IN (?)", ids).Delete(&WorkspaceActivity{}).Error; err != nil {
-				slog.Error(err.Error())
-				return err
-			}
-
-			return nil
-		}).Error; err != nil {
-			slog.Error(a.Name(), "error", err.Error())
-		}
+	if err := migrateActivities(a.db, DocActivity{}.TableName(), convertDoc, a.Name()); err != nil {
+		return err
 	}
-
-	{ // doc layer
-		var activities []DocActivity
-		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-			ae := make([]dao.ActivityEvent, 0, len(activities))
-			ids := make([]uuid.UUID, 0, len(activities))
-			for _, act := range activities {
-				if act.Field == nil {
-					continue
-				}
-				ae = append(ae, dao.ActivityEvent{
-					ID:            dao.GenUUID(),
-					CreatedAt:     act.CreatedAt,
-					ActorID:       act.ActorId.UUID,
-					Notified:      act.Notified,
-					Verb:          act.Verb,
-					Field:         actField.ActivityField(*act.Field),
-					OldValue:      ptrStrToString(act.OldValue),
-					NewValue:      act.NewValue,
-					NewIdentifier: act.NewIdentifier,
-					OldIdentifier: act.OldIdentifier,
-					EntityType:    types.LayerDoc,
-					WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-					ProjectID:     uuid.NullUUID{},
-					IssueID:       uuid.NullUUID{},
-					DocID:         uuid.NullUUID{UUID: act.DocId, Valid: true},
-					FormID:        uuid.NullUUID{},
-					SprintID:      uuid.NullUUID{},
-				})
-
-				ids = append(ids, act.Id)
-			}
-
-			if len(ae) > 0 {
-				result := tx.Create(&ae)
-				if result.Error != nil {
-					return result.Error
-				}
-				slog.Info(a.Name(), "from", DocActivity{}.TableName(), "batch", batch, "rows", result.RowsAffected)
-			}
-
-			if err := tx.Where("id IN (?)", ids).Delete(&DocActivity{}).Error; err != nil {
-				slog.Error(err.Error())
-				return err
-			}
-
-			return nil
-		}).Error; err != nil {
-			slog.Error(a.Name(), "error", err.Error())
-		}
+	if err := migrateActivities(a.db, WorkspaceActivity{}.TableName(), convertWorkspace, a.Name()); err != nil {
+		return err
 	}
-
-	{ // form layer
-		var activities []FormActivity
-		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-			ae := make([]dao.ActivityEvent, 0, len(activities))
-			ids := make([]uuid.UUID, 0, len(activities))
-			for _, act := range activities {
-				if act.Field == nil {
-					continue
-				}
-
-				ae = append(ae, dao.ActivityEvent{
-					ID:            dao.GenUUID(),
-					CreatedAt:     act.CreatedAt,
-					ActorID:       act.ActorId.UUID,
-					Notified:      act.Notified,
-					Verb:          act.Verb,
-					Field:         actField.ActivityField(*act.Field),
-					OldValue:      ptrStrToString(act.OldValue),
-					NewValue:      act.NewValue,
-					NewIdentifier: act.NewIdentifier,
-					OldIdentifier: act.OldIdentifier,
-					EntityType:    types.LayerForm,
-					WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-					ProjectID:     uuid.NullUUID{},
-					IssueID:       uuid.NullUUID{},
-					DocID:         uuid.NullUUID{},
-					FormID:        uuid.NullUUID{UUID: act.FormId, Valid: true},
-					SprintID:      uuid.NullUUID{},
-				})
-
-				ids = append(ids, act.Id)
-			}
-
-			if len(ae) > 0 {
-				result := tx.Create(&ae)
-				if result.Error != nil {
-					return result.Error
-				}
-				slog.Info(a.Name(), "from", FormActivity{}.TableName(), "batch", batch, "rows", result.RowsAffected)
-			}
-
-			if err := tx.Where("id IN (?)", ids).Delete(&FormActivity{}).Error; err != nil {
-				slog.Error(err.Error())
-				return err
-			}
-
-			return nil
-		}).Error; err != nil {
-			slog.Error(a.Name(), "error", err.Error())
-		}
+	if err := migrateActivities(a.db, FormActivity{}.TableName(), convertForm, a.Name()); err != nil {
+		return err
 	}
-
-	{ // sprint layer
-		var activities []SprintActivity
-		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-			ae := make([]dao.ActivityEvent, 0, len(activities))
-			ids := make([]uuid.UUID, 0, len(activities))
-			for _, act := range activities {
-				if act.Field == nil {
-					continue
-				}
-				ae = append(ae, dao.ActivityEvent{
-					ID:            dao.GenUUID(),
-					CreatedAt:     act.CreatedAt,
-					ActorID:       act.ActorId.UUID,
-					Notified:      act.Notified,
-					Verb:          act.Verb,
-					Field:         actField.ActivityField(*act.Field),
-					OldValue:      ptrStrToString(act.OldValue),
-					NewValue:      act.NewValue,
-					NewIdentifier: act.NewIdentifier,
-					OldIdentifier: act.OldIdentifier,
-					EntityType:    types.LayerSprint,
-					WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-					ProjectID:     uuid.NullUUID{},
-					IssueID:       uuid.NullUUID{},
-					DocID:         uuid.NullUUID{},
-					FormID:        uuid.NullUUID{},
-					SprintID:      uuid.NullUUID{UUID: act.SprintId, Valid: true},
-				})
-
-				ids = append(ids, act.Id)
-			}
-
-			if len(ae) > 0 {
-				result := tx.Create(&ae)
-				if result.Error != nil {
-					return result.Error
-				}
-				slog.Info(a.Name(), "from", SprintActivity{}.TableName(), "batch", batch, "rows", result.RowsAffected)
-			}
-
-			if err := tx.Where("id IN (?)", ids).Delete(&SprintActivity{}).Error; err != nil {
-				slog.Error(err.Error())
-				return err
-			}
-
-			return nil
-		}).Error; err != nil {
-			slog.Error(a.Name(), "error", err.Error())
-		}
+	if err := migrateActivities(a.db, SprintActivity{}.TableName(), convertSprint, a.Name()); err != nil {
+		return err
 	}
-
-	{ // root layer
-		var activities []RootActivity
-		if err := a.db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
-			ae := make([]dao.ActivityEvent, 0, len(activities))
-			ids := make([]uuid.UUID, 0, len(activities))
-			for _, act := range activities {
-				if act.Field == nil {
-					continue
-				}
-				ae = append(ae, dao.ActivityEvent{
-					ID:            dao.GenUUID(),
-					CreatedAt:     act.CreatedAt,
-					ActorID:       act.ActorId.UUID,
-					Notified:      act.Notified,
-					Verb:          act.Verb,
-					Field:         actField.ActivityField(*act.Field),
-					OldValue:      ptrStrToString(act.OldValue),
-					NewValue:      act.NewValue,
-					NewIdentifier: act.NewIdentifier,
-					OldIdentifier: act.OldIdentifier,
-					EntityType:    types.LayerRoot,
-					WorkspaceID:   uuid.NullUUID{},
-					ProjectID:     uuid.NullUUID{},
-					IssueID:       uuid.NullUUID{},
-					DocID:         uuid.NullUUID{},
-					FormID:        uuid.NullUUID{},
-					SprintID:      uuid.NullUUID{},
-				})
-
-				ids = append(ids, act.Id)
-			}
-
-			if len(ae) > 0 {
-				result := tx.Create(&ae)
-				if result.Error != nil {
-					return result.Error
-				}
-				slog.Info(a.Name(), "from", RootActivity{}.TableName(), "batch", batch, "rows", result.RowsAffected)
-			}
-
-			if err := tx.Where("id IN (?)", ids).Delete(&RootActivity{}).Error; err != nil {
-				slog.Error(err.Error())
-				return err
-			}
-
-			return nil
-		}).Error; err != nil {
-			slog.Error(a.Name(), "error", err.Error())
-		}
+	if err := migrateActivities(a.db, RootActivity{}.TableName(), convertRoot, a.Name()); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func migrateActivities[T any](
+	db *gorm.DB,
+	tableName string,
+	convertFunc func(item T) (dao.ActivityEvent, uuid.UUID, bool),
+	loggerName string,
+) error {
+	var activities []T
+
+	if err := db.FindInBatches(&activities, 30, func(tx *gorm.DB, batch int) error {
+		return tx.Transaction(func(batchTx *gorm.DB) error {
+			ae := make([]dao.ActivityEvent, 0, len(activities))
+			ids := make([]uuid.UUID, 0, len(activities))
+
+			for _, act := range activities {
+				event, id, ok := convertFunc(act)
+				if !ok {
+					continue
+				}
+				ae = append(ae, event)
+				ids = append(ids, id)
+			}
+
+			if len(ae) > 0 {
+				if err := batchTx.Create(&ae).Error; err != nil {
+					return err
+				}
+				slog.Info(loggerName, "from", tableName, "batch", batch, "rows", len(ae))
+			}
+
+			if len(ids) > 0 {
+				if err := batchTx.Where("id IN (?)", ids).Delete(&activities).Error; err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
+	}).Error; err != nil {
+		slog.Error(loggerName, "error", err.Error())
+		return err
+	}
+	return nil
+}
+
+// IssueActivity конвертер
+func convertIssue(act IssueActivity) (dao.ActivityEvent, uuid.UUID, bool) {
+	if act.Field == nil {
+		return dao.ActivityEvent{}, uuid.UUID{}, false
+	}
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		CreatedAt:     act.CreatedAt,
+		ActorID:       act.ActorId.UUID,
+		Notified:      act.Notified,
+		Verb:          act.Verb,
+		Field:         actField.ActivityField(*act.Field),
+		OldValue:      ptrStrToString(act.OldValue),
+		NewValue:      act.NewValue,
+		NewIdentifier: act.NewIdentifier,
+		OldIdentifier: act.OldIdentifier,
+		EntityType:    types.LayerIssue,
+		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
+		ProjectID:     uuid.NullUUID{UUID: act.ProjectId, Valid: true},
+		IssueID:       uuid.NullUUID{UUID: act.IssueId, Valid: true},
+		DocID:         uuid.NullUUID{},
+		FormID:        uuid.NullUUID{},
+		SprintID:      uuid.NullUUID{},
+	}, act.Id, true
+}
+
+// ProjectActivity конвертер
+func convertProject(act ProjectActivity) (dao.ActivityEvent, uuid.UUID, bool) {
+	if act.Field == nil {
+		return dao.ActivityEvent{}, uuid.UUID{}, false
+	}
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		CreatedAt:     act.CreatedAt,
+		ActorID:       act.ActorId.UUID,
+		Notified:      act.Notified,
+		Verb:          act.Verb,
+		Field:         actField.ActivityField(*act.Field),
+		OldValue:      ptrStrToString(act.OldValue),
+		NewValue:      act.NewValue,
+		NewIdentifier: act.NewIdentifier,
+		OldIdentifier: act.OldIdentifier,
+		EntityType:    types.LayerProject,
+		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
+		ProjectID:     uuid.NullUUID{UUID: act.ProjectId, Valid: true},
+		IssueID:       uuid.NullUUID{},
+		DocID:         uuid.NullUUID{},
+		FormID:        uuid.NullUUID{},
+		SprintID:      uuid.NullUUID{},
+	}, act.Id, true
+}
+
+func convertDoc(act DocActivity) (dao.ActivityEvent, uuid.UUID, bool) {
+	if act.Field == nil {
+		return dao.ActivityEvent{}, uuid.UUID{}, false
+	}
+
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		CreatedAt:     act.CreatedAt,
+		ActorID:       act.ActorId.UUID,
+		Notified:      act.Notified,
+		Verb:          act.Verb,
+		Field:         actField.ActivityField(*act.Field),
+		OldValue:      ptrStrToString(act.OldValue),
+		NewValue:      act.NewValue,
+		NewIdentifier: act.NewIdentifier,
+		OldIdentifier: act.OldIdentifier,
+		EntityType:    types.LayerDoc,
+		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
+		ProjectID:     uuid.NullUUID{},
+		IssueID:       uuid.NullUUID{},
+		DocID:         uuid.NullUUID{UUID: act.DocId, Valid: true},
+		FormID:        uuid.NullUUID{},
+		SprintID:      uuid.NullUUID{},
+	}, act.Id, true
+}
+
+func convertWorkspace(act WorkspaceActivity) (dao.ActivityEvent, uuid.UUID, bool) {
+	if act.Field == nil {
+		return dao.ActivityEvent{}, uuid.UUID{}, false
+	}
+
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		CreatedAt:     act.CreatedAt,
+		ActorID:       act.ActorId.UUID,
+		Notified:      act.Notified,
+		Verb:          act.Verb,
+		Field:         actField.ActivityField(*act.Field),
+		OldValue:      ptrStrToString(act.OldValue),
+		NewValue:      act.NewValue,
+		NewIdentifier: act.NewIdentifier,
+		OldIdentifier: act.OldIdentifier,
+		EntityType:    types.LayerWorkspace,
+		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
+		ProjectID:     uuid.NullUUID{},
+		IssueID:       uuid.NullUUID{},
+		DocID:         uuid.NullUUID{},
+		FormID:        uuid.NullUUID{},
+		SprintID:      uuid.NullUUID{},
+	}, act.Id, true
+}
+
+func convertForm(act FormActivity) (dao.ActivityEvent, uuid.UUID, bool) {
+	if act.Field == nil {
+		return dao.ActivityEvent{}, uuid.UUID{}, false
+	}
+
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		CreatedAt:     act.CreatedAt,
+		ActorID:       act.ActorId.UUID,
+		Notified:      act.Notified,
+		Verb:          act.Verb,
+		Field:         actField.ActivityField(*act.Field),
+		OldValue:      ptrStrToString(act.OldValue),
+		NewValue:      act.NewValue,
+		NewIdentifier: act.NewIdentifier,
+		OldIdentifier: act.OldIdentifier,
+		EntityType:    types.LayerForm,
+		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
+		ProjectID:     uuid.NullUUID{},
+		IssueID:       uuid.NullUUID{},
+		DocID:         uuid.NullUUID{},
+		FormID:        uuid.NullUUID{UUID: act.FormId, Valid: true},
+		SprintID:      uuid.NullUUID{},
+	}, act.Id, true
+}
+
+func convertSprint(act SprintActivity) (dao.ActivityEvent, uuid.UUID, bool) {
+	if act.Field == nil {
+		return dao.ActivityEvent{}, uuid.UUID{}, false
+	}
+
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		CreatedAt:     act.CreatedAt,
+		ActorID:       act.ActorId.UUID,
+		Notified:      act.Notified,
+		Verb:          act.Verb,
+		Field:         actField.ActivityField(*act.Field),
+		OldValue:      ptrStrToString(act.OldValue),
+		NewValue:      act.NewValue,
+		NewIdentifier: act.NewIdentifier,
+		OldIdentifier: act.OldIdentifier,
+		EntityType:    types.LayerSprint,
+		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
+		ProjectID:     uuid.NullUUID{},
+		IssueID:       uuid.NullUUID{},
+		DocID:         uuid.NullUUID{},
+		FormID:        uuid.NullUUID{},
+		SprintID:      uuid.NullUUID{UUID: act.SprintId, Valid: true},
+	}, act.Id, true
+}
+
+func convertRoot(act RootActivity) (dao.ActivityEvent, uuid.UUID, bool) {
+	if act.Field == nil {
+		return dao.ActivityEvent{}, uuid.UUID{}, false
+	}
+
+	return dao.ActivityEvent{
+		ID:            dao.GenUUID(),
+		CreatedAt:     act.CreatedAt,
+		ActorID:       act.ActorId.UUID,
+		Notified:      act.Notified,
+		Verb:          act.Verb,
+		Field:         actField.ActivityField(*act.Field),
+		OldValue:      ptrStrToString(act.OldValue),
+		NewValue:      act.NewValue,
+		NewIdentifier: act.NewIdentifier,
+		OldIdentifier: act.OldIdentifier,
+		EntityType:    types.LayerRoot,
+		WorkspaceID:   uuid.NullUUID{},
+		ProjectID:     uuid.NullUUID{},
+		IssueID:       uuid.NullUUID{},
+		DocID:         uuid.NullUUID{},
+		FormID:        uuid.NullUUID{},
+		SprintID:      uuid.NullUUID{},
+	}, act.Id, true
 }
 
 func ptrStrToString(str *string) string {
