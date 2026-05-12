@@ -512,11 +512,7 @@ func (s *Services) exportIssueList(c echo.Context) error {
 				return EError(c, err)
 			}
 
-			for _, item := range group.Issues {
-				issue, ok := item.(*dto.IssueWithCount)
-				if !ok {
-					continue
-				}
+			for _, issue := range group.Issues {
 				if err := w.Write(issueToCSVRow(issue)); err != nil {
 					return EError(c, err)
 				}
