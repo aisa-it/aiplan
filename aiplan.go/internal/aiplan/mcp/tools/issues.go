@@ -419,7 +419,7 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	}
 
 	// Получаем сырые данные из БД напрямую через BuildIssueListQuery
-	issues, count, err := search.BuildIssueListQuery(
+	issues, count, err := search.SearchIssuesList(
 		db,
 		*user,
 		dao.ProjectMember{}, // пустой - глобальный поиск

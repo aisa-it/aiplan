@@ -376,3 +376,211 @@ CREATE OR REPLACE TRIGGER users_light_notify
     is_integration ON users
     FOR EACH ROW
     EXECUTE FUNCTION notify_users_light_changes();
+
+-- ============================================================================
+-- Cached issue counters
+--   sub_issues_count    — non-deleted issues with parent_id = self.id
+--   link_count          — non-deleted issue_links with issue_id = self.id
+--   attachment_count    — issue_attachments with issue_id = self.id
+--   linked_issues_count — linked_issues rows where id1 = self.id OR id2 = self.id
+--   comments_count      — non-deleted issue_comments with issue_id = self.id
+-- Поддерживаются триггерами AFTER INSERT/UPDATE/DELETE на соответствующих таблицах.
+-- ============================================================================
+
+-- One-shot backfill: запускается только если триггеры ещё не были созданы.
+-- На последующих запусках CreateTriggers() пропускается (триггер уже есть).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'sync_issue_sub_issues_count'
+          AND tgrelid = 'issues'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        UPDATE issues i SET
+            sub_issues_count    = COALESCE((SELECT count(*) FROM issues c            WHERE c.parent_id = i.id AND c.deleted_at IS NULL), 0),
+            link_count          = COALESCE((SELECT count(*) FROM issue_links         WHERE issue_id = i.id AND deleted_at IS NULL), 0),
+            attachment_count    = COALESCE((SELECT count(*) FROM issue_attachments   WHERE issue_id = i.id), 0),
+            linked_issues_count = COALESCE((SELECT count(*) FROM linked_issues       WHERE id1 = i.id OR id2 = i.id), 0),
+            comments_count      = COALESCE((SELECT count(*) FROM issue_comments      WHERE issue_id = i.id AND deleted_at IS NULL), 0);
+    END IF;
+END $$;
+
+-- sub_issues_count: триггер на самой таблице issues (self-reference через parent_id).
+-- Gate против каскадной рекурсии вверх по дереву родителей: если parent_id и
+-- deleted_at не изменились — выходим сразу.
+CREATE OR REPLACE FUNCTION sync_sub_issues_count()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE'
+       AND NEW.parent_id IS NOT DISTINCT FROM OLD.parent_id
+       AND NEW.deleted_at IS NOT DISTINCT FROM OLD.deleted_at THEN
+        RETURN NULL;
+    END IF;
+
+    -- Пересчёт для OLD.parent_id если он изменился или строка удалена
+    IF (TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND NEW.parent_id IS DISTINCT FROM OLD.parent_id))
+       AND OLD.parent_id IS NOT NULL THEN
+        UPDATE issues SET sub_issues_count =
+            (SELECT count(*) FROM issues WHERE parent_id = OLD.parent_id AND deleted_at IS NULL)
+            WHERE id = OLD.parent_id;
+    END IF;
+
+    -- Пересчёт для NEW.parent_id на INSERT/UPDATE
+    IF TG_OP IN ('INSERT', 'UPDATE') AND NEW.parent_id IS NOT NULL THEN
+        UPDATE issues SET sub_issues_count =
+            (SELECT count(*) FROM issues WHERE parent_id = NEW.parent_id AND deleted_at IS NULL)
+            WHERE id = NEW.parent_id;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sync_issue_sub_issues_count
+    AFTER INSERT OR UPDATE OR DELETE
+    ON issues
+    FOR EACH ROW
+    EXECUTE PROCEDURE sync_sub_issues_count();
+
+-- link_count: триггер на issue_links (soft-delete через deleted_at).
+CREATE OR REPLACE FUNCTION sync_issue_link_count()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE'
+       AND NEW.issue_id IS NOT DISTINCT FROM OLD.issue_id
+       AND NEW.deleted_at IS NOT DISTINCT FROM OLD.deleted_at THEN
+        RETURN NULL;
+    END IF;
+
+    IF TG_OP = 'UPDATE' AND NEW.issue_id IS DISTINCT FROM OLD.issue_id THEN
+        UPDATE issues SET link_count =
+            (SELECT count(*) FROM issue_links WHERE issue_id = OLD.issue_id AND deleted_at IS NULL)
+            WHERE id = OLD.issue_id;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        UPDATE issues SET link_count =
+            (SELECT count(*) FROM issue_links WHERE issue_id = OLD.issue_id AND deleted_at IS NULL)
+            WHERE id = OLD.issue_id;
+    ELSE
+        UPDATE issues SET link_count =
+            (SELECT count(*) FROM issue_links WHERE issue_id = NEW.issue_id AND deleted_at IS NULL)
+            WHERE id = NEW.issue_id;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sync_issue_link_count
+    AFTER INSERT OR UPDATE OR DELETE
+    ON issue_links
+    FOR EACH ROW
+    EXECUTE PROCEDURE sync_issue_link_count();
+
+-- attachment_count: триггер на issue_attachments (без soft-delete).
+CREATE OR REPLACE FUNCTION sync_issue_attachment_count()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.issue_id IS NOT DISTINCT FROM OLD.issue_id THEN
+        RETURN NULL;
+    END IF;
+
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE issues SET attachment_count =
+            (SELECT count(*) FROM issue_attachments WHERE issue_id = OLD.issue_id)
+            WHERE id = OLD.issue_id;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        UPDATE issues SET attachment_count =
+            (SELECT count(*) FROM issue_attachments WHERE issue_id = OLD.issue_id)
+            WHERE id = OLD.issue_id;
+    ELSE
+        UPDATE issues SET attachment_count =
+            (SELECT count(*) FROM issue_attachments WHERE issue_id = NEW.issue_id)
+            WHERE id = NEW.issue_id;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sync_issue_attachment_count
+    AFTER INSERT OR UPDATE OR DELETE
+    ON issue_attachments
+    FOR EACH ROW
+    EXECUTE PROCEDURE sync_issue_attachment_count();
+
+-- linked_issues_count: триггер на linked_issues, обе стороны связки (id1, id2).
+CREATE OR REPLACE FUNCTION sync_issue_linked_issues_count()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE'
+       AND NEW.id1 IS NOT DISTINCT FROM OLD.id1
+       AND NEW.id2 IS NOT DISTINCT FROM OLD.id2 THEN
+        RETURN NULL;
+    END IF;
+
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        UPDATE issues SET linked_issues_count =
+            (SELECT count(*) FROM linked_issues WHERE id1 = issues.id OR id2 = issues.id)
+            WHERE id IN (OLD.id1, OLD.id2);
+    END IF;
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        UPDATE issues SET linked_issues_count =
+            (SELECT count(*) FROM linked_issues WHERE id1 = issues.id OR id2 = issues.id)
+            WHERE id IN (NEW.id1, NEW.id2);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sync_issue_linked_issues_count
+    AFTER INSERT OR UPDATE OR DELETE
+    ON linked_issues
+    FOR EACH ROW
+    EXECUTE PROCEDURE sync_issue_linked_issues_count();
+
+-- comments_count: триггер на issue_comments (soft-delete через deleted_at).
+CREATE OR REPLACE FUNCTION sync_issue_comments_count()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF TG_OP = 'UPDATE'
+       AND NEW.issue_id IS NOT DISTINCT FROM OLD.issue_id
+       AND NEW.deleted_at IS NOT DISTINCT FROM OLD.deleted_at THEN
+        RETURN NULL;
+    END IF;
+
+    IF TG_OP = 'UPDATE' AND NEW.issue_id IS DISTINCT FROM OLD.issue_id THEN
+        UPDATE issues SET comments_count =
+            (SELECT count(*) FROM issue_comments WHERE issue_id = OLD.issue_id AND deleted_at IS NULL)
+            WHERE id = OLD.issue_id;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        UPDATE issues SET comments_count =
+            (SELECT count(*) FROM issue_comments WHERE issue_id = OLD.issue_id AND deleted_at IS NULL)
+            WHERE id = OLD.issue_id;
+    ELSE
+        UPDATE issues SET comments_count =
+            (SELECT count(*) FROM issue_comments WHERE issue_id = NEW.issue_id AND deleted_at IS NULL)
+            WHERE id = NEW.issue_id;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sync_issue_comments_count
+    AFTER INSERT OR UPDATE OR DELETE
+    ON issue_comments
+    FOR EACH ROW
+    EXECUTE PROCEDURE sync_issue_comments_count();

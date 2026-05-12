@@ -86,6 +86,12 @@ type Issue struct {
 	Draft  bool `json:"draft"`
 	Pinned bool `gorm:"index"`
 
+	SubIssuesCount    int64 `json:"sub_issues_count" gorm:"->"`
+	LinkCount         int64 `json:"link_count" gorm:"->"`
+	AttachmentCount   int64 `json:"attachment_count" gorm:"->"`
+	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->"`
+	CommentsCount     int64 `json:"comments_count" gorm:"->"`
+
 	Parent    *Issue       `json:"parent_detail" gorm:"foreignKey:ParentId" extensions:"x-nullable"`
 	Workspace *Workspace   `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	State     *State       `json:"state_detail" gorm:"foreignKey:StateId" extensions:"x-nullable"`
@@ -420,11 +426,6 @@ func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
 // -migration
 type IssueWithCount struct {
 	Issue
-	SubIssuesCount    int64 `json:"sub_issues_count" gorm:"->;-:migration"`
-	LinkCount         int64 `json:"link_count" gorm:"->;-:migration"`
-	AttachmentCount   int64 `json:"attachment_count" gorm:"->;-:migration"`
-	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->;-:migration"`
-	CommentsCount     int64 `json:"comments_count" gorm:"->;-:migration"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 	DescHighlighted string `json:"desc_highlighted,omitempty" gorm:"->;-:migration"`
