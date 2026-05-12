@@ -70,7 +70,6 @@ func (s *Services) hasProjectPermissions(c echo.Context) (bool, error) {
 			http.MethodOptions,
 			http.MethodHead:
 			return true, nil
-			// Admin methods
 		case
 			http.MethodPut,
 			http.MethodPost,

@@ -66,6 +66,7 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 		s.WorkspaceMiddleware,
 		s.LastVisitedWorkspaceMiddleware,
 		s.ProjectMiddleware,
+		s.ProjectArchivedMiddleware,
 		s.FindIssueByIdOrSeqMiddleware,
 		s.IssuePermissionMiddleware,
 	)
