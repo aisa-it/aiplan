@@ -3,17 +3,29 @@ package cache
 import (
 	"crypto/md5"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/gofrs/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const spaceMembersTTL = time.Hour
 
-var WorkspaceMembersCache workspaceMembersCache = workspaceMembersCache{m: make(map[uuid.UUID]workspaceMembersEntry)}
+var (
+	WorkspaceMembersCache workspaceMembersCache = workspaceMembersCache{m: make(map[uuid.UUID]workspaceMembersEntry)}
+
+	workspaceMembersLoadDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Subsystem: "cache",
+		Name:      "workspace_members_load_duration_seconds",
+		Help:      "Duration of WorkspaceMembersCache.Load including hash recompute and user cache lookups, in seconds.",
+		Buckets:   []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+	})
+)
 
 type workspaceMembersCache struct {
 	rw sync.RWMutex
@@ -27,27 +39,31 @@ type workspaceMembersEntry struct {
 	Members []dto.WorkspaceMemberLight
 }
 
-func (e *workspaceMembersEntry) calcHash() {
-	h := md5.New()
-	for _, member := range e.Members {
-		fmt.Fprintf(h, "%s:%d", member.MemberId.String(), member.Role)
-	}
-	e.Hash = h.Sum(nil)
-}
-
 func (c *workspaceMembersCache) Load(workspaceId uuid.UUID) (*workspaceMembersEntry, bool) {
 	c.rw.RLock()
 	defer c.rw.RUnlock()
+	s := time.Now()
 	entry, ok := c.m[workspaceId]
 	if !ok || time.Now().After(entry.expire) {
 		return nil, false
 	}
-	for i, e := range entry.Members {
-		u, ok := UsersCache.Load(e.MemberId)
+
+	members := slices.Clone(entry.Members)
+
+	h := md5.New()
+	for i, member := range members {
+		fmt.Fprintf(h, "%s:%d", member.MemberId.String(), member.Role)
+		u, ok := UsersCache.Load(member.MemberId)
 		if ok {
-			entry.Members[i].Member = u
+			members[i].Member = u
+			fmt.Fprintf(h, "%x", u.Hash())
 		}
 	}
+	entry.Members = members
+	entry.Hash = h.Sum(nil)
+
+	workspaceMembersLoadDuration.Observe(time.Since(s).Seconds())
+
 	return &entry, true
 }
 
@@ -61,7 +77,6 @@ func (c *workspaceMembersCache) Store(workspaceId uuid.UUID, members []dto.Works
 	for i := range entry.Members {
 		entry.Members[i].Member = nil
 	}
-	entry.calcHash()
 	c.m[workspaceId] = entry
 }
 
@@ -98,4 +113,6 @@ func (c *workspaceMembersCache) Delete(workspaceId uuid.UUID, dltMember dao.Work
 			new = append(new, member)
 		}
 	}
+	entry.Members = new
+	c.m[workspaceId] = entry
 }

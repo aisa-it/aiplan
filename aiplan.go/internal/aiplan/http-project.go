@@ -82,16 +82,52 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func (s *Services) ProjectArchivedMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		// read only methods
+		switch c.Request().Method {
+		case
+			http.MethodGet,
+			http.MethodOptions,
+			http.MethodHead:
+			return next(c)
+		}
+
+		// search
+		if strings.Contains(c.Path(), "/issues/search/") {
+			return next(c)
+		}
+
+		// allow archive endpoints
+		if strings.Contains(c.Path(), "archive/") {
+			return next(c)
+		}
+
+		apiContext := apicontext.GetContext(c)
+		project := apiContext.GetProject()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
+
+		if project.Archived {
+			return EErrorDefined(c, apierrors.ErrProjectArchived)
+		}
+		return next(c)
+	}
+}
+
 func (s *Services) AddProjectServices(g *echo.Group) {
 	workspaceGroup := g.Group("workspaces/:workspaceSlug", s.WorkspaceMiddleware)
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
 
-	projectGroup := workspaceGroup.Group("/projects/:projectId", s.ProjectMiddleware)
-	projectGroup.Use(s.ProjectPermissionMiddleware)
-
-	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
+	projectGroup := workspaceGroup.Group("/projects/:projectId",
+		s.ProjectMiddleware,
+		s.ProjectArchivedMiddleware,
+		s.ProjectPermissionMiddleware)
 
 	projectAdminGroup := projectGroup.Group("", s.ProjectAdminPermissionMiddleware)
+
+	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
 
 	workspaceGroup.GET("/projects/", s.getProjectList)
 	workspaceGroup.POST("/projects/", s.createProject)
@@ -176,6 +212,9 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectAdminGroup.POST("/property-templates/", s.createPropertyTemplate)
 	projectAdminGroup.PATCH("/property-templates/:templateId/", s.updatePropertyTemplate)
 	projectAdminGroup.DELETE("/property-templates/:templateId/", s.deletePropertyTemplate)
+
+	projectAdminGroup.POST("/archive/", s.archiveProject)
+	projectAdminGroup.POST("/unarchive/", s.unarchiveProject)
 }
 
 // getProjectList godoc
@@ -189,6 +228,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param search_query query string false "Поисковый запрос для фильтрации проектов по названию"
+// @Param is_archived query bool false "Возвращать только архивные проекты"
 // @Success 200 {array} dto.ProjectLight "Список проектов с информацией о количестве участников и статусе избранного"
 // @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects [get]
@@ -202,8 +242,10 @@ func (s *Services) getProjectList(c echo.Context) error {
 	user := apiContext.GetUser()
 
 	searchQuery := ""
+	isArchived := false
 	if err := echo.QueryParamsBinder(c).
 		String("search_query", &searchQuery).
+		Bool("is_archived", &isArchived).
 		BindError(); err != nil {
 		return EError(c, err)
 	}
@@ -220,6 +262,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 					s.DB(c).Raw("EXISTS(SELECT 1 FROM project_favorites WHERE project_favorites.project_id = projects.id AND user_id = ?)", user.ID)).
 		Set("userId", user.ID). // Check if project favorite for this user and get memberships
 		Where("workspace_id = ?", workspace.ID).
+		Where("archived = ?", isArchived).
 		Order("is_favorite desc, lower(name)")
 
 	if searchQuery != "" {
@@ -3818,4 +3861,59 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+// archiveProject godoc
+// @id archiveProject
+// @Summary Проекты: архивирование
+// @Description Помечает проект как архивный. После архивирования над проектом и его задачами доступны только операции чтения и поиска; ручка `/unarchive/` возвращает проект из архива. Доступно только администраторам проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 "Проект успешно заархивирован"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на архивирование проекта"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Failure 423 {object} apierrors.DefinedError "Проект уже находится в архиве"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/archive/ [post]
+func (s *Services) archiveProject(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	if err := s.DB(c).Model(project).Update("archived", true).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+// unarchiveProject godoc
+// @id unarchiveProject
+// @Summary Проекты: восстановление из архива
+// @Description Возвращает архивный проект в рабочее состояние и снова разрешает все операции записи. Доступно только администраторам проекта.
+// @Tags Projects
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 "Проект успешно восстановлен из архива"
+// @Failure 403 {object} apierrors.DefinedError "Нет прав на восстановление проекта"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/unarchive/ [post]
+func (s *Services) unarchiveProject(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	if err := s.DB(c).Model(project).Update("archived", false).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
 }
