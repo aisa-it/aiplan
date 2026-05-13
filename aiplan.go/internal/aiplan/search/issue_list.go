@@ -11,6 +11,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -26,9 +27,17 @@ func buildSearchQuery(db *gorm.DB,
 
 	var query *gorm.DB
 	if searchParams.LightSearch {
-		query = db.Preload("Author").Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Watchers").Preload("Labels")
+		query = db.Preload("Author").Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Labels")
 	} else {
-		query = db.Preload(clause.Associations)
+		query = db.
+			Preload("Workspace").
+			Preload("State").
+			Preload("Project").
+			Preload("Author").
+			Preload("Assignees").
+			Preload("Labels").
+			Preload("Sprints").
+			Preload("Parent.State")
 	}
 
 	// Add membership info to project details on global search
@@ -253,10 +262,6 @@ func buildSearchQuery(db *gorm.DB,
 		}
 	}
 
-	if searchParams.GroupByParam == "" {
-		selectExprs = append(selectExprs, "count(*) over() as all_count")
-	}
-
 	// Rank count
 	if searchParams.Filters.SearchQuery != "" {
 		searchSelects := []string{
@@ -340,9 +345,8 @@ func SearchIssuesList(
 		return nil, 0, apierrors.ErrUnsupportedGroup
 	}
 
-	query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
-
 	if searchParams.OnlyCount {
+		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
 		var count int64
 		if err := query.Count(&count).Error; err != nil {
 			return nil, 0, err
@@ -350,23 +354,33 @@ func SearchIssuesList(
 		return []dao.IssueWithCount{}, int(count), nil
 	}
 
-	var issues []dao.IssueWithCount
-	if err := query.Find(&issues).Error; err != nil {
+	// Запускаем основной запрос и COUNT параллельно: раньше использовался
+	// count(*) over() в SELECT, что заставляло PG материализовать весь набор
+	// перед пагинацией. Отдельный COUNT-запрос быстрее даже с накладными
+	// расходами на второй round-trip к БД.
+	var (
+		issues []dao.IssueWithCount
+		count  int64
+		eg     errgroup.Group
+	)
+
+	eg.Go(func() error {
+		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+		return query.Find(&issues).Error
+	})
+
+	eg.Go(func() error {
+		countParams := *searchParams
+		countParams.OnlyCount = true
+		countQuery := buildSearchQuery(db, user, projectMember, sprint, globalSearch, &countParams)
+		return countQuery.Count(&count).Error
+	})
+
+	if err := eg.Wait(); err != nil {
 		return nil, 0, err
 	}
 
-	count := 0
-	if len(issues) > 0 {
-		count = issues[0].AllCount
-	}
-
-	if !searchParams.LightSearch {
-		if err := fetchParentsDetails(db, issues); err != nil {
-			return nil, 0, err
-		}
-	}
-
-	return issues, count, nil
+	return issues, int(count), nil
 }
 
 // GetIssueListData возвращает данные списка задач без привязки к HTTP контексту

@@ -254,10 +254,6 @@ func fetchIssuesByGroups(
 			return 0, err
 		}
 
-		if err := fetchParentsDetails(db, issues); err != nil {
-			return 0, err
-		}
-
 		if len(issues) == 0 {
 			slog.Error("Empty search result for not empty group", "groupBy", searchParams.GroupByParam, "groupKey", group.Key, "groupCount", group.Count)
 			continue
@@ -272,30 +268,6 @@ func fetchIssuesByGroups(
 		}
 	}
 	return totalCount, nil
-}
-
-// fetchParentsDetails загружает детали родительских задач
-func fetchParentsDetails(db *gorm.DB, issues []dao.IssueWithCount) error {
-	var parentIds []uuid.NullUUID
-	for _, issue := range issues {
-		if issue.ParentId.Valid {
-			parentIds = append(parentIds, issue.ParentId)
-		}
-	}
-	var parents []dao.Issue
-	if err := db.Where("id in (?)", parentIds).Find(&parents).Error; err != nil {
-		return err
-	}
-	parentsMap := make(map[string]*dao.Issue)
-	for i := range parents {
-		parentsMap[parents[i].ID.String()] = &parents[i]
-	}
-	for i := range issues {
-		if issues[i].ParentId.Valid {
-			issues[i].Parent = parentsMap[issues[i].ParentId.UUID.String()]
-		}
-	}
-	return nil
 }
 
 func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSize) (map[string]any, error) {

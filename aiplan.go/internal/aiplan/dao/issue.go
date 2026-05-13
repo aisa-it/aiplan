@@ -17,7 +17,9 @@ import (
 	"log/slog"
 	"net/url"
 	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -403,23 +405,38 @@ func (Issue) FieldsAllowedForAllUpdate() []string {
 	return []string{"state_id", "completed_at", "updated_at", "updated_by_id"}
 }
 
+// issueRefRegexp матчит ссылку на конкретную задачу вида "PROJ-123".
+var issueRefRegexp = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*)-(\d+)$`)
+
 // FullTextSearch выполняет полнотекстовый поиск по Issue. Он принимает объект базы данных (tx) и поисковый запрос (search_query) в качестве параметров. Функция возвращает объект базы данных (tx) для дальнейшей обработки или выполнения запроса.
 //
 // Параметры:
-//   - tx: объект базы данных GORM для выполнения запросов.
+//   - tx: объект базы данных GORM для выполнения запросов. Должен содержать JOIN на таблицу projects p.
 //   - search_query: поисковый запрос, который будет использоваться для поиска по Issue.
 //
 // Возвращает:
 //   - *gorom.DB: объект базы данных GORM, который можно использовать для выполнения дальнейших операций.
 func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
-	return tx.Or("issues.tokens @@ websearch_to_tsquery('simple', ?)", search_query).
-		Or("issues.tokens @@ websearch_to_tsquery('russian', ?)", search_query).
-		Or("issues.tokens @@ websearch_to_tsquery('english', ?)", search_query).
-		Or("issues.tokens @@ to_tsquery('simple', ?)", SplitTSQuery(search_query)).
-		Or("issues.tokens @@ to_tsquery('russian', ?)", SplitTSQuery(search_query)).
-		Or("issues.tokens @@ to_tsquery('english', ?)", SplitTSQuery(search_query)).
-		Or("issues.sequence_id::text like ?", strings.TrimSpace(search_query)+"%").              // Issue sequence search
-		Or("CONCAT(p.identifier, '-', issues.sequence_id) = ?", strings.TrimSpace(search_query)) // Full issue num ISS-1
+	q := strings.TrimSpace(search_query)
+
+	// Fast path: точная ссылка на задачу "PROJ-123" - прямой lookup по уникальному индексу
+	// project_identifier_idx без обращения к GIN на tokens.
+	if m := issueRefRegexp.FindStringSubmatch(q); m != nil {
+		seqID, _ := strconv.Atoi(m[2])
+		return tx.Where("p.identifier = ? AND issues.sequence_id = ?", m[1], seqID)
+	}
+
+	splitQ := SplitTSQuery(q)
+
+	// Объединяем три tsquery через || - один проход по GIN-индексу tokens_gin
+	// вместо BitmapOr из шести отдельных проверок.
+	return tx.Or(
+		"issues.tokens @@ (websearch_to_tsquery('simple', ?) || websearch_to_tsquery('russian', ?) || websearch_to_tsquery('english', ?))",
+		q, q, q,
+	).Or(
+		"issues.tokens @@ (to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?))",
+		splitQ, splitQ, splitQ,
+	).Or("issues.sequence_id::text like ?", q+"%") // поиск по номеру задачи
 }
 
 // IssueWithCount - вспомогательная структура задачи, для вытягивания счетчиков из запроса списка задач(без доп запросов)
@@ -429,8 +446,6 @@ type IssueWithCount struct {
 
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 	DescHighlighted string `json:"desc_highlighted,omitempty" gorm:"->;-:migration"`
-
-	AllCount int `json:"-" gorm:"->;-:migration"`
 
 	TsRank float64 `json:"ts_rank" gorm:"->;-:migration"` // Search debug
 }
