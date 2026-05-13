@@ -121,6 +121,14 @@ func (u *MemberNotify) GetUser() *dao.User {
 	return u.user
 }
 
+func (u *MemberNotify) Allowed(field, verb string, entityType types.EntityLayer,
+	authorRole Role, settings *MemberSettings, nCh types.NotifyChannel,
+) bool {
+	isAuthor := u.Has(authorRole)
+	event := dao.ActivityEvent{Field: actField.ActivityField(field), Verb: verb, EntityType: entityType}
+	return settings.Notify(*u, &event, isAuthor, nCh)
+}
+
 func (ur UserRegistry) AddUser(user *dao.User, roles ...Role) bool {
 	if user == nil || !user.CanReceiveNotifications() {
 		return false

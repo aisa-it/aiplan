@@ -49,7 +49,9 @@ import (
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
+
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -95,7 +97,7 @@ type Services struct {
 	db                  *gorm.DB
 	snapshotTracker     *tracker.SnapshotTracker
 	storage             filestorage.FileStorage
-	emailService        *notifications.EmailService
+	emailService        *email.EmailService
 	memDB               *mem.AIPlanMemAPI
 	integrationsService *integrations.IntegrationsService
 	importService       *issues_import.ImportService
@@ -216,12 +218,15 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		os.Exit(1)
 	}
 
-	es := notifications.NewEmailService(cfg, db)
+	//es := notifications.NewEmailService(cfg, db)
+	es := email.NewEmailService(cfg, db)
+
 	//at := tracker.NewTracker(db)
 
 	sst := tracker.NewSnapshotTracker(db)
 
 	bl, err := business.NewBL(db, sst)
+
 	if err != nil {
 		os.Exit(1)
 	}
@@ -1048,7 +1053,7 @@ func slicesEqualIgnoreOrder(s1, s2 reflect.Value) bool {
 	return true
 }
 
-func sendPasswordDefaultAdmin(tx *gorm.DB, es *notifications.EmailService) {
+func sendPasswordDefaultAdmin(tx *gorm.DB, es *email.EmailService) {
 	var user dao.User
 	if err := tx.Where("username = ?", "admin").Where("is_onboarded = ?", false).First(&user).Error; err != nil {
 		return

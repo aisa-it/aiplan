@@ -1,4 +1,4 @@
-// Пакет предоставляет функциональность для отправки различных уведомлений пользователям, таких как приглашения в рабочие пространства, уведомления о смене пароля, уведомления об импорте проектов из Jira и т.д.  Поддерживает персонализацию уведомлений с использованием шаблонов HTML и отправку как в виде HTML, так и в виде простого текста.  Также включает в себя обработку ошибок и логирование событий.
+// Пакет предоставляет функциональность для отправки различных уведомлений пользователям, таких как приглашения в рабочие пространства, уведомления о смене пароля, уведомления об импорте проектов из Jira и т.д.  Поддерживает персонализацию уведомлений с использованием шаблонов Content и отправку как в виде Content, так и в виде простого текста.  Также включает в себя обработку ошибок и логирование событий.
 //
 // Основные возможности:
 //   - Отправка уведомлений по email с использованием шаблонов.
@@ -9,12 +9,11 @@ package notifications
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	"log/slog"
 	"mime"
-	"path/filepath"
 	"strings"
+
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -32,9 +31,6 @@ import (
 var htmlStripPolicy *bluemonday.Policy = bluemonday.StrictPolicy()
 var minifier *minify.M = minify.New()
 
-//go:embed templates/*
-var defaultTemplates embed.FS
-
 type EmailNotification interface {
 	Process()
 }
@@ -47,12 +43,29 @@ func (es *EmailService) EmailActivity() {
 	if es.sending {
 		return
 	}
-
-	newEmailNotifyWorkspace(es).Process()
-	newEmailNotifyProject(es).Process()
-	newEmailNotifyIssue(es).Process()
-	newEmailNotifyDoc(es).Process()
-	newEmailNotifySprint(es).Process()
+	//pipeline := email.NewSprintPipeline( /* steps */ )
+	//
+	//buckets := email.RunLayerPipeline(es.db, pipeline)
+	//if len(buckets) == 0 {
+	//	return
+	//}
+	//
+	//messages := email.BuildEmailMessages(buckets, pipeline)
+	//if len(messages) == 0 {
+	//	return
+	//}
+	//
+	//for _, m := range messages {
+	//	if err := es.Send(m); err != nil {
+	//		slog.Error("send email", "to", m.To, "err", err)
+	//	}
+	//}
+	//email.RunLayerPipeline(es.db, email.NewSprintPipeline())
+	//newEmailNotifyWorkspace(es).Process()
+	//newEmailNotifyProject(es).Process()
+	//newEmailNotifyIssue(es).Process()
+	//newEmailNotifyDoc(es).Process()
+	//newEmailNotifySprint(es).Process()
 }
 
 type EmailService struct {
@@ -106,11 +119,12 @@ func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
 		})
 	}
 
-	es.CreateNewTemplates(db)
+	//es.CreateNewTemplates(db)
 
 	return es
 }
 
+// <<<<<<< HEAD
 func parseEmailFrom(s string) (email, systemName string) {
 	start := strings.IndexByte(s, '<')
 	if start == -1 {
@@ -159,47 +173,92 @@ func (es *EmailService) formatFrom(userName *string) string {
 	return encodedName + " <" + es.emailFrom + ">"
 }
 
-func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
-	dir, err := defaultTemplates.ReadDir("templates")
-	if err == nil {
-		for _, file := range dir {
-			var exist bool
-			name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-			if err := tx.Model(&dao.Template{}).
-				Select("EXISTS(?)",
-					tx.Model(&dao.Template{}).
-						Select("1").
-						Where("name = ?", name),
-				).
-				Find(&exist).Error; err != nil {
-				slog.Warn("Error check template in db", slog.String("name", name), "err", err)
-				continue
-			}
-			if exist {
-				continue
-			}
+//
+//func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
+//  dir, err := defaultTemplates.ReadDir("templates")
+//  if err == nil {
+//    for _, file := range dir {
+//      var exist bool
+//      name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+//      if err := tx.Model(&dao.Template{}).
+//          Select("EXISTS(?)",
+//            tx.Model(&dao.Template{}).
+//              Select("1").
+//              Where("name = ?", name),
+//          ).
+//        Find(&exist).Error; err != nil {
+//        slog.Warn("Error check template in db", slog.String("name", name), "err", err)
+//        continue
+//      }
+//      if exist {
+//        continue
+//      }
+//
+//      data, err := defaultTemplates.ReadFile(filepath.Join("templates", file.Name()))
+//      if err != nil {
+//        slog.Warn("Read embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
+//        continue
+//      }
+//
+//      data, err = minifier.Bytes("text/html", data)
+//      if err != nil {
+//        slog.Warn("Error minify embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
+//      }
+//
+//      if err := tx.Create(&dao.Template{
+//        Id:       dao.GenUUID(),
+//        Name:     name,
+//        Template: string(data),
+//      }).Error; err != nil {
+//        slog.Warn("Error insert default template", slog.String("name", name), "err", err)
+//      }
+//    }
+//  }
+//}
 
-			data, err := defaultTemplates.ReadFile(filepath.Join("templates", file.Name()))
-			if err != nil {
-				slog.Warn("Read embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
-				continue
-			}
-
-			data, err = minifier.Bytes("text/html", data)
-			if err != nil {
-				slog.Warn("Error minify embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
-			}
-
-			if err := tx.Create(&dao.Template{
-				Id:       dao.GenUUID(),
-				Name:     name,
-				Template: string(data),
-			}).Error; err != nil {
-				slog.Warn("Error insert default template", slog.String("name", name), "err", err)
-			}
-		}
-	}
-}
+//=======
+//func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
+//	dir, err := defaultTemplates.ReadDir("templates")
+//	if err == nil {
+//		for _, file := range dir {
+//			var exist bool
+//			name := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+//			if err := tx.Model(&dao.Template{}).
+//				Select("EXISTS(?)",
+//					tx.Model(&dao.Template{}).
+//						Select("1").
+//						Where("name = ?", name),
+//				).
+//				Find(&exist).Error; err != nil {
+//				slog.Warn("Error check template in db", slog.String("name", name), "err", err)
+//				continue
+//			}
+//			if exist {
+//				continue
+//			}
+//
+//			data, err := defaultTemplates.ReadFile(filepath.Join("templates", file.Name()))
+//			if err != nil {
+//				slog.Warn("Read embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
+//				continue
+//			}
+//
+//			data, err = minifier.Bytes("text/html", data)
+//			if err != nil {
+//				slog.Warn("Error minify embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
+//			}
+//
+//			if err := tx.Create(&dao.Template{
+//				Id:       dao.GenUUID(),
+//				Name:     name,
+//				Template: string(data),
+//			}).Error; err != nil {
+//				slog.Warn("Error insert default template", slog.String("name", name), "err", err)
+//			}
+//		}
+//	}
+//}
+//>>>>>>> refactor/mail
 
 func (es *EmailService) Close() {
 	es.monitorExit <- true

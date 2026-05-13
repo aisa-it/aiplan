@@ -8,6 +8,14 @@ import (
 	"gorm.io/gorm"
 )
 
+type notifySetting int
+
+const (
+	TgSettings notifySetting = iota
+	EmailSettings
+	AppSettings
+)
+
 type MemberSettings struct {
 	Notify IsNotifyFunc
 }
@@ -155,3 +163,15 @@ func LoadWorkspaceSettings(tx *gorm.DB, workspaceId uuid.UUID, ur UserRegistry) 
 
 	return nil
 }
+
+//func (ur UserRegistry) FilterActivity(field string, verb string, entity actField.ActivityField, f isNotifyFunc, authorRole Role) []MemberNotify {
+//  result := make([]MemberNotify, 0, len(ur))
+//
+//  for _, user := range ur {
+//    if !f(user, field, verb, entity, user.Has(authorRole)) {
+//      continue
+//    }
+//    result = append(result, *user)
+//  }
+//  return result
+//}

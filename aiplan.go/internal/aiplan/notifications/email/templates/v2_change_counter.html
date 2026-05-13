@@ -1,0 +1,27 @@
+{{if or (gt .ActivityCount 0) (gt .CommentCount 0)}}
+<tr>
+    <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>
+    <td style="padding: 0;">
+        <div class="mail-body-header" style="margin-top: 2px;">Всего
+            {{if gt .ActivityCount 0}}
+            <span class="updates-count"
+                  style="font-weight: bold;letter-spacing: 0.75px;">{{.ActivityCount}}
+                                    обновл{{if eq .ActivityCount 1}}ение{{else}}.{{end}}</span>
+            {{- end -}}
+            {{- if and (gt .ActivityCount 0) (gt .CommentCount 0) -}}
+            ,
+            {{end}}
+            {{if gt .CommentCount 0}}
+            <span class="updates-count"
+                  style="font-weight: bold;letter-spacing: 0.75px;">{{.CommentCount}}
+                                    коммент{{if eq .CommentCount 1}}арий{{else}}.{{end}}</span>
+            {{end}}
+        </div>
+    </td>
+    <td class="mail-body-h-spacing" style="width: 21px;height: 1px;padding: 0;"></td>
+</tr>
+<tr>
+    <td class="mail-body-v-spacing" colspan="3" style="width: 21px;height: 19px;padding: 0;">
+    </td>
+</tr>
+{{end}}
