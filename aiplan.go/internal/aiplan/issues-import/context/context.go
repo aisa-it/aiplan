@@ -22,7 +22,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/counters"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/errors"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/andygrunwald/go-jira"
 	"github.com/gofrs/uuid"
@@ -35,7 +35,7 @@ type ImportContext struct {
 
 	Client  *jira.Client
 	DB      *gorm.DB
-	Es      *notifications.EmailService
+	Es      *email.EmailService
 	Storage filestorage.FileStorage
 
 	ImportAuthor dao.User
@@ -131,7 +131,7 @@ func NewImportContext(
 	webUrl *url.URL,
 	client *jira.Client,
 	DB *gorm.DB,
-	es *notifications.EmailService,
+	es *email.EmailService,
 	storage filestorage.FileStorage,
 	user dao.User,
 	projectKey string,

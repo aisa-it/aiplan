@@ -1585,7 +1585,7 @@ func (s *Services) reloadTemplates(c echo.Context) error {
 		if err := tx.Where("1 = 1").Delete(&dao.Template{}).Error; err != nil {
 			return err
 		}
-
+		s.emailService.EmailActivity() /// todo отключить
 		s.emailService.CreateNewTemplates(tx)
 
 		return nil

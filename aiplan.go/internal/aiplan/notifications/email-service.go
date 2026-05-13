@@ -434,7 +434,7 @@ func (es *EmailService) JiraImportEndNotify(user dao.User, project *dao.Project,
 	})
 }
 
-func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, msg emailNotify) error {
+func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, msg EmailNotify) error {
 	subject := msg.Subj
 	mailContext := struct {
 		WebUrl     string
@@ -479,7 +479,7 @@ func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, ms
 	return es.Send(mailSend)
 }
 
-func (es *EmailService) DeadlineMessageNotify(user dao.User, notification dao.DeferredNotifications, nd notifyDeadline) error {
+func (es *EmailService) DeadlineMessageNotify(user dao.User, notification dao.DeferredNotifications, nd NotifyDeadline) error {
 	subject := fmt.Sprintf("Уведомление об истечении срока выполнения задачи: %s", notification.Issue.FullIssueName())
 
 	loc := time.Location(user.UserTimezone)
