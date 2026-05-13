@@ -431,8 +431,6 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		return logger.Error(err), nil
 	}
 
-	// Догружаем Watchers — нужны только в MCP Markdown-таблице, в основном
-	// поиске их не подтягиваем чтобы не нагружать фронт-выдачу.
 	if len(issues) > 0 {
 		ids := make([]uuid.UUID, len(issues))
 		for i := range issues {

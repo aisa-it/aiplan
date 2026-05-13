@@ -88,6 +88,12 @@ type Issue struct {
 	BlockerIssuesIDs []IssueBlockerLight `json:"blocker_issues,omitempty"`
 	BlockedIssuesIDs []IssueBlockerLight `json:"blocked_issues,omitempty" `
 	Sprints          []SprintLight       `json:"sprints"`
+
+	SubIssuesCount    int `json:"sub_issues_count"`
+	LinkCount         int `json:"link_count"`
+	AttachmentCount   int `json:"attachment_count"`
+	LinkedIssuesCount int `json:"linked_issues_count"`
+	CommentsCount     int `json:"comments_count"`
 }
 
 type IssueCommentLight struct {
@@ -123,11 +129,6 @@ type IssueComment struct {
 
 type IssueWithCount struct {
 	Issue
-	SubIssuesCount    int `json:"sub_issues_count"`
-	LinkCount         int `json:"link_count"`
-	AttachmentCount   int `json:"attachment_count"`
-	LinkedIssuesCount int `json:"linked_issues_count"`
-	CommentsCount     int `json:"comments_count"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
 	DescHighlighted string `json:"desc_highlighted,omitempty"`

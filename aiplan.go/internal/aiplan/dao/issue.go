@@ -380,6 +380,11 @@ func (i *Issue) ToDTO() *dto.Issue {
 		BlockerIssuesIDs:    utils.SliceToSlice(&i.BlockerIssuesIDs, func(ib *IssueBlocker) dto.IssueBlockerLight { return *ib.ToLightDTO() }),
 		BlockedIssuesIDs:    utils.SliceToSlice(&i.BlockedIssuesIDs, func(ib *IssueBlocker) dto.IssueBlockerLight { return *ib.ToLightDTO() }),
 		Sprints:             utils.SliceToSlice(i.Sprints, func(t *Sprint) dto.SprintLight { return *t.ToLightDTO() }),
+		SubIssuesCount:      int(i.SubIssuesCount),
+		LinkCount:           int(i.LinkCount),
+		AttachmentCount:     int(i.AttachmentCount),
+		LinkedIssuesCount:   int(i.LinkedIssuesCount),
+		CommentsCount:       int(i.CommentsCount),
 	}
 }
 
@@ -405,22 +410,12 @@ func (Issue) FieldsAllowedForAllUpdate() []string {
 	return []string{"state_id", "completed_at", "updated_at", "updated_by_id"}
 }
 
-// issueRefRegexp матчит ссылку на конкретную задачу вида "PROJ-123".
 var issueRefRegexp = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*)-(\d+)$`)
 
-// FullTextSearch выполняет полнотекстовый поиск по Issue. Он принимает объект базы данных (tx) и поисковый запрос (search_query) в качестве параметров. Функция возвращает объект базы данных (tx) для дальнейшей обработки или выполнения запроса.
-//
-// Параметры:
-//   - tx: объект базы данных GORM для выполнения запросов. Должен содержать JOIN на таблицу projects p.
-//   - search_query: поисковый запрос, который будет использоваться для поиска по Issue.
-//
-// Возвращает:
-//   - *gorom.DB: объект базы данных GORM, который можно использовать для выполнения дальнейших операций.
+// FullTextSearch требует JOIN на таблицу projects p в исходном запросе.
 func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
 	q := strings.TrimSpace(search_query)
 
-	// Fast path: точная ссылка на задачу "PROJ-123" - прямой lookup по уникальному индексу
-	// project_identifier_idx без обращения к GIN на tokens.
 	if m := issueRefRegexp.FindStringSubmatch(q); m != nil {
 		seqID, _ := strconv.Atoi(m[2])
 		return tx.Where("p.identifier = ? AND issues.sequence_id = ?", m[1], seqID)
@@ -428,15 +423,13 @@ func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
 
 	splitQ := SplitTSQuery(q)
 
-	// Объединяем три tsquery через || - один проход по GIN-индексу tokens_gin
-	// вместо BitmapOr из шести отдельных проверок.
 	return tx.Or(
 		"issues.tokens @@ (websearch_to_tsquery('simple', ?) || websearch_to_tsquery('russian', ?) || websearch_to_tsquery('english', ?))",
 		q, q, q,
 	).Or(
 		"issues.tokens @@ (to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?))",
 		splitQ, splitQ, splitQ,
-	).Or("issues.sequence_id::text like ?", q+"%") // поиск по номеру задачи
+	).Or("issues.sequence_id::text like ?", q+"%")
 }
 
 // IssueWithCount - вспомогательная структура задачи, для вытягивания счетчиков из запроса списка задач(без доп запросов)
@@ -463,14 +456,9 @@ func (iwc *IssueWithCount) ToDTO() *dto.IssueWithCount {
 	}
 
 	return &dto.IssueWithCount{
-		Issue:             *iwc.Issue.ToDTO(),
-		SubIssuesCount:    int(iwc.SubIssuesCount),
-		LinkCount:         int(iwc.LinkCount),
-		AttachmentCount:   int(iwc.AttachmentCount),
-		LinkedIssuesCount: int(iwc.LinkedIssuesCount),
-		CommentsCount:     int(iwc.CommentsCount),
-		NameHighlighted:   iwc.NameHighlighted,
-		DescHighlighted:   iwc.DescHighlighted,
+		Issue:           *iwc.Issue.ToDTO(),
+		NameHighlighted: iwc.NameHighlighted,
+		DescHighlighted: iwc.DescHighlighted,
 	}
 }
 
