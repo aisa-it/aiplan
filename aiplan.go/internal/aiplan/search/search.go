@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
@@ -259,19 +259,12 @@ func fetchIssuesByGroups(
 			continue
 		}
 
-		// Populate author from cache
-		res := make([]*dto.IssueWithCount, 0, len(issues))
-		for _, issue := range issues {
-			author, _ := cache.UsersCache.Load(issue.CreatedById)
-			converted := issue.ToDTO()
-			converted.Author = author
-			res = append(res, converted)
-		}
+		populateAuthors(issues)
 
 		if err := iterFunc(dto.IssuesGroupResponse{
 			Entity: groupsEntity[group.Key],
 			Count:  group.Count,
-			Issues: res,
+			Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) *dto.IssueWithCount { return i.ToDTO() }),
 		}); err != nil {
 			return 0, err
 		}
