@@ -431,6 +431,29 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		return logger.Error(err), nil
 	}
 
+	// Догружаем Watchers — нужны только в MCP Markdown-таблице, в основном
+	// поиске их не подтягиваем чтобы не нагружать фронт-выдачу.
+	if len(issues) > 0 {
+		ids := make([]uuid.UUID, len(issues))
+		for i := range issues {
+			ids[i] = issues[i].ID
+		}
+		var withWatchers []dao.Issue
+		if err := db.Select("issues.id").
+			Where("id in (?)", ids).
+			Preload("Watchers").
+			Find(&withWatchers).Error; err != nil {
+			return logger.Error(err), nil
+		}
+		watchersMap := make(map[uuid.UUID]*[]dao.User, len(withWatchers))
+		for i := range withWatchers {
+			watchersMap[withWatchers[i].ID] = withWatchers[i].Watchers
+		}
+		for i := range issues {
+			issues[i].Watchers = watchersMap[issues[i].ID]
+		}
+	}
+
 	// Форматируем в Markdown таблицу для экономии токенов
 	markdown := search.FormatIssuesToMarkdownTable(issues, count, searchParams.Offset, searchParams.Limit)
 
