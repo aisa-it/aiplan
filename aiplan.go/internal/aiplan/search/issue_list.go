@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -27,13 +27,12 @@ func buildSearchQuery(db *gorm.DB,
 
 	var query *gorm.DB
 	if searchParams.LightSearch {
-		query = db.Preload("Author").Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Labels")
+		query = db.Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Labels")
 	} else {
 		query = db.
 			Preload("Workspace").
 			Preload("State").
 			Preload("Project").
-			Preload("Author").
 			Preload("Assignees").
 			Preload("Labels").
 			Preload("Sprints").
@@ -354,10 +353,6 @@ func SearchIssuesList(
 		return []dao.IssueWithCount{}, int(count), nil
 	}
 
-	// Запускаем основной запрос и COUNT параллельно: раньше использовался
-	// count(*) over() в SELECT, что заставляло PG материализовать весь набор
-	// перед пагинацией. Отдельный COUNT-запрос быстрее даже с накладными
-	// расходами на второй round-trip к БД.
 	var (
 		issues []dao.IssueWithCount
 		count  int64
@@ -460,15 +455,33 @@ func GetIssueListData(
 
 	// Преобразование в map с DTO
 	if searchParams.LightSearch {
+		// Populate author from cache
+		res := make([]dto.SearchLightweightIssue, 0, len(issues))
+		for _, issue := range issues {
+			author, _ := cache.UsersCache.Load(issue.CreatedById)
+			converted := issue.ToSearchLightDTO()
+			converted.Author = author
+			res = append(res, converted)
+		}
+
 		return dto.IssuesLightSearchResponse{
 			PaginationMeta: paginationMeta,
-			Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.SearchLightweightIssue { return iwc.ToSearchLightDTO() }),
+			Issues:         res,
 		}, nil
+	}
+
+	// Populate author from cache
+	res := make([]dto.IssueWithCount, 0, len(issues))
+	for _, issue := range issues {
+		author, _ := cache.UsersCache.Load(issue.CreatedById)
+		converted := issue.ToDTO()
+		converted.Author = author
+		res = append(res, *converted)
 	}
 
 	return dto.IssuesSearchResponse{
 		PaginationMeta: paginationMeta,
-		Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
+		Issues:         res,
 	}, nil
 }
 
