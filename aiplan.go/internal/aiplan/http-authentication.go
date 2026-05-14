@@ -306,7 +306,7 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	if err := a.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			if a.ldapProvider != nil && a.ldapProvider.AuthUser(req.Email, req.Password) {
-				slog.Info("Create new user from LDAP", "email", req.Email)
+				slog.InfoContext(c.Request().Context(), "Create new user from LDAP", "email", req.Email)
 
 				user = dao.User{
 					ID:           dao.GenUUID(),
@@ -373,7 +373,7 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 
 		// block after 5 fails
 		if user.LoginAttempts >= 5 {
-			slog.Info("Block user for more than 5 failed attempts", "user", user.String())
+			slog.InfoContext(c.Request().Context(), "Block user for more than 5 failed attempts", "user", user.String())
 			user.BlockedUntil = sql.NullTime{Valid: true, Time: time.Now().Add(time.Minute * 20)}
 			user.LoginAttempts = 0
 		}

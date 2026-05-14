@@ -1388,12 +1388,12 @@ func (s *Services) signUp(c echo.Context) error {
 		if err == nil {
 			return c.NoContent(http.StatusOK)
 		}
-		slog.Error("Send user sign up email notification", "email", user.Email, "try", i+1, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Send user sign up email notification", "email", user.Email, "try", i+1, "err", err)
 		time.Sleep(time.Second * 5)
 	}
 	// If failed to deliver mail delete user and return error
 	if err := s.DB(c).Unscoped().Delete(&user).Error; err != nil {
-		slog.Error("Delete failed user", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Delete failed user", "err", err)
 	}
 	return EErrorDefined(c, apierrors.ErrNewUserMailFailed)
 }

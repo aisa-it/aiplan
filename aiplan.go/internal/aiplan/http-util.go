@@ -1,6 +1,7 @@
 package aiplan
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -127,7 +128,7 @@ func parseNullUUID(s *string) uuid.NullUUID {
 	return uuid.NullUUID{UUID: uuid.Must(uuid.FromString(*s)), Valid: true}
 }
 
-func activityMigrate(db *gorm.DB) {
+func activityMigrate(ctx context.Context, db *gorm.DB) {
 	var oldAct []dao.EntityActivity
 	db.FindInBatches(&oldAct, 100, func(tx *gorm.DB, batch int) error {
 		var ids []string
@@ -631,12 +632,12 @@ func activityMigrate(db *gorm.DB) {
 			return err
 		}
 		format := "%-30s %6d activities"
-		slog.Info(fmt.Sprintf(format, "from entityActivity:", len(ids)))
-		slog.Info(fmt.Sprintf(format, " - to issueActivity:", len(issueAct)))
-		slog.Info(fmt.Sprintf(format, " - to projectActivity:", len(projectAct)))
-		slog.Info(fmt.Sprintf(format, " - to formActivity:", len(formAct)))
-		slog.Info(fmt.Sprintf(format, " - to workspaceActivity:", len(workspaceAct)))
-		slog.Info(fmt.Sprintf(format, " - to rootActivity:", len(rootAct)))
+		slog.InfoContext(ctx, fmt.Sprintf(format, "from entityActivity:", len(ids)))
+		slog.InfoContext(ctx, fmt.Sprintf(format, " - to issueActivity:", len(issueAct)))
+		slog.InfoContext(ctx, fmt.Sprintf(format, " - to projectActivity:", len(projectAct)))
+		slog.InfoContext(ctx, fmt.Sprintf(format, " - to formActivity:", len(formAct)))
+		slog.InfoContext(ctx, fmt.Sprintf(format, " - to workspaceActivity:", len(workspaceAct)))
+		slog.InfoContext(ctx, fmt.Sprintf(format, " - to rootActivity:", len(rootAct)))
 
 		return nil
 	})
