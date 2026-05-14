@@ -35,7 +35,7 @@ func buildRecipient(m *memNotify.MemberNotify) (*Recipient, bool) {
 }
 
 func BuildRecipientsFromActivities(
-	tx *gorm.DB, acts []dao.ActivityEvent, actor func(event dao.ActivityEvent) *dao.User, ctx *EmailContext,
+	tx *gorm.DB, acts []dao.ActivityEvent, ctx *EmailContext,
 ) ([]memNotify.MemberNotify, EmailContext) {
 
 	users := make(memNotify.UserRegistry)
@@ -49,8 +49,8 @@ func BuildRecipientsFromActivities(
 
 	// добавляем по каждой активности, автора события
 	for _, act := range acts {
-		if u := actor(act); u != nil {
-			users.AddUser(u, memNotify.ActionAuthor)
+		if act.Actor != nil {
+			users.AddUser(act.Actor, memNotify.ActionAuthor) // todo проверить на двух пользователях, как авторы активности
 		}
 	}
 

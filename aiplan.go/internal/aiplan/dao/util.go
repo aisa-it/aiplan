@@ -973,3 +973,21 @@ func IsReleaseNoteExists(db *gorm.DB, idOrTag string) (bool, error) {
 func IsFormExists(db *gorm.DB, slug string) (bool, error) {
 	return Exists(db, db.Session(&gorm.Session{}).Model(&Form{}).Where("slug = ?", slug).Select("1"))
 }
+
+func ScanToMap[T any](query *gorm.DB, getId func(T) uuid.UUID) (map[uuid.UUID]T, error) {
+	rows, err := query.Rows()
+	if err != nil {
+		return nil, err
+	}
+
+	res := make(map[uuid.UUID]T)
+	for rows.Next() {
+		var entity T
+		if err := query.ScanRows(rows, &entity); err != nil {
+			return nil, err
+		}
+
+		res[getId(entity)] = entity
+	}
+	return res, nil
+}

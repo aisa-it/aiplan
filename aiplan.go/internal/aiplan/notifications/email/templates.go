@@ -99,7 +99,7 @@ func (*EmailService) CreateNewTemplates(tx *gorm.DB) {
 				continue
 			}
 
-			data, err = minifier.Bytes("text/html", data)
+			data, err = getEmailMinifier().Bytes("text/html", data)
 			if err != nil {
 				slog.Warn("Error minify embed template", slog.String("name", filepath.Join("templates", file.Name())), "err", err)
 			}

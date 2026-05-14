@@ -51,7 +51,7 @@ func ProcessLayer[E dao.IDaoAct](es *EmailService, p LayerPipeline[E], template 
 		}
 	}
 
-	updateNotified(es.db, p, buckets)
+	updateNotified(es.db, buckets)
 }
 
 func RunLayerPipeline[E dao.IDaoAct](tx *gorm.DB, p LayerPipeline[E]) ActivityBuckets[E] {
@@ -78,17 +78,6 @@ func RunLayerPipeline[E dao.IDaoAct](tx *gorm.DB, p LayerPipeline[E]) ActivityBu
 
 	return buckets
 }
-
-//func ddd[A dao.ActivityI, E dao.IDaoAct](acts []A) string {
-//  res headEntityCtx{
-//    WorkspaceName: "",
-//    Layer:         "",
-//    Identifier:    "",
-//    Title:         "",
-//    Url:           "",
-//    UrlText:       "",
-//  }
-//}
 
 func BuildEmailMessages[E dao.IDaoAct](
 	buckets ActivityBuckets[E],
@@ -130,8 +119,20 @@ func BuildEmailMessage[E dao.IDaoAct](
 	var visible []FieldPrerender
 
 	for field, html := range b.Prepared {
+		needActionAuthor := ctx.Plan.AuthorRole == member_role.ActionAuthor &&
+			!isUserInAuthors(html.Authors, r.MemberNotify.GetUser().Email)
 
-		if !r.MemberNotify.Allowed(field, html.Verb, ctx.Plan.EntityType, ctx.Plan.AuthorRole, &member_role.MemberSettings{Notify: ctx.Settings}, types.EmailCh) {
+		if needActionAuthor {
+			r.MemberNotify.Toggle(member_role.ActionAuthor)
+		}
+
+		allowed := r.MemberNotify.Allowed(field, html.Verb, ctx.Plan.EntityType, ctx.Plan.AuthorRole, &member_role.MemberSettings{Notify: ctx.Settings}, types.EmailCh)
+
+		if needActionAuthor {
+			r.MemberNotify.Toggle(member_role.ActionAuthor)
+		}
+
+		if !allowed {
 			continue
 		}
 
@@ -169,7 +170,13 @@ func BuildEmailMessage[E dao.IDaoAct](
 
 	msg := template.RenderBody(html)
 
+	from := actorView.Actors[0].GetName()
+	if actorView.AuthorsCount > 1 {
+		from += " и др."
+	}
+
 	return EmailMessage{
+		Actor:       utils.ToPtr(from),
 		To:          r.Email,
 		Content:     msg,
 		TextContent: policy.StripTagsPolicy.Sanitize(msg),
@@ -177,15 +184,22 @@ func BuildEmailMessage[E dao.IDaoAct](
 }
 
 func updateNotified[E dao.IDaoAct](
-	tx *gorm.DB, p LayerPipeline[E], buckets ActivityBuckets[E]) {
+	tx *gorm.DB, buckets ActivityBuckets[E]) {
 	var ids []uuid.UUID
 	for _, e := range buckets {
-
-		ids = append(ids,
-			utils.SliceToSlice(utils.ToPtr((*e).Activities), func(t *dao.ActivityEvent) uuid.UUID { return (*t).ID })...)
+		ids = append(ids, utils.SliceToSlice(utils.ToPtr(e.Activities), func(t *dao.ActivityEvent) uuid.UUID { return (*t).ID })...)
 	}
 
 	if err := tx.Model(&dao.ActivityEvent{}).Where("id IN (?)", ids).Update("notified", true).Error; err != nil {
 		slog.Error(err.Error())
 	}
+}
+
+func isUserInAuthors(authors []dao.User, userEmail string) bool {
+	for _, author := range authors {
+		if author.Email == userEmail {
+			return true
+		}
+	}
+	return false
 }

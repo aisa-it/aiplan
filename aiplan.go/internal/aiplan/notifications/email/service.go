@@ -5,7 +5,6 @@ import (
 	"log/slog"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
-	"github.com/tdewolff/minify/v2/html"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/gomail.v2"
 	"gorm.io/gorm"
@@ -27,7 +26,6 @@ type EmailService struct {
 }
 
 func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
-	minifier.AddFunc("text/html", html.Minify)
 	email, emailName := parseEmailFrom(cfg.EmailFrom)
 
 	es := &EmailService{
