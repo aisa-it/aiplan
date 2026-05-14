@@ -71,7 +71,7 @@ type IssuesSearchResponse struct {
 
 // IssuesGroupResponse - одна группа в группированном ответе
 type IssuesGroupResponse struct {
-	Entity any   `json:"entity"`
-	Count  int   `json:"count"`
-	Issues []any `json:"issues"`
+	Entity any               `json:"entity"`
+	Count  int               `json:"count"`
+	Issues []*IssueWithCount `json:"issues"`
 }

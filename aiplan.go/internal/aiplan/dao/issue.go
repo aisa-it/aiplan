@@ -17,7 +17,9 @@ import (
 	"log/slog"
 	"net/url"
 	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,6 +85,12 @@ type Issue struct {
 
 	Draft  bool `json:"draft"`
 	Pinned bool `gorm:"index"`
+
+	SubIssuesCount    int64 `json:"sub_issues_count" gorm:"->"`
+	LinkCount         int64 `json:"link_count" gorm:"->"`
+	AttachmentCount   int64 `json:"attachment_count" gorm:"->"`
+	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->"`
+	CommentsCount     int64 `json:"comments_count" gorm:"->"`
 
 	Parent    *Issue       `json:"parent_detail" gorm:"foreignKey:ParentId" extensions:"x-nullable"`
 	Workspace *Workspace   `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
@@ -371,6 +379,11 @@ func (i *Issue) ToDTO() *dto.Issue {
 		BlockerIssuesIDs:    utils.SliceToSlice(&i.BlockerIssuesIDs, func(ib *IssueBlocker) dto.IssueBlockerLight { return *ib.ToLightDTO() }),
 		BlockedIssuesIDs:    utils.SliceToSlice(&i.BlockedIssuesIDs, func(ib *IssueBlocker) dto.IssueBlockerLight { return *ib.ToLightDTO() }),
 		Sprints:             utils.SliceToSlice(i.Sprints, func(t *Sprint) dto.SprintLight { return *t.ToLightDTO() }),
+		SubIssuesCount:      int(i.SubIssuesCount),
+		LinkCount:           int(i.LinkCount),
+		AttachmentCount:     int(i.AttachmentCount),
+		LinkedIssuesCount:   int(i.LinkedIssuesCount),
+		CommentsCount:       int(i.CommentsCount),
 	}
 }
 
@@ -396,39 +409,35 @@ func (Issue) FieldsAllowedForAllUpdate() []string {
 	return []string{"state_id", "completed_at", "updated_at", "updated_by_id"}
 }
 
-// FullTextSearch выполняет полнотекстовый поиск по Issue. Он принимает объект базы данных (tx) и поисковый запрос (search_query) в качестве параметров. Функция возвращает объект базы данных (tx) для дальнейшей обработки или выполнения запроса.
-//
-// Параметры:
-//   - tx: объект базы данных GORM для выполнения запросов.
-//   - search_query: поисковый запрос, который будет использоваться для поиска по Issue.
-//
-// Возвращает:
-//   - *gorom.DB: объект базы данных GORM, который можно использовать для выполнения дальнейших операций.
+var issueRefRegexp = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*)-(\d+)$`)
+
+// FullTextSearch требует JOIN на таблицу projects p в исходном запросе.
 func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
-	return tx.Or("issues.tokens @@ websearch_to_tsquery('simple', ?)", search_query).
-		Or("issues.tokens @@ websearch_to_tsquery('russian', ?)", search_query).
-		Or("issues.tokens @@ websearch_to_tsquery('english', ?)", search_query).
-		Or("issues.tokens @@ to_tsquery('simple', ?)", SplitTSQuery(search_query)).
-		Or("issues.tokens @@ to_tsquery('russian', ?)", SplitTSQuery(search_query)).
-		Or("issues.tokens @@ to_tsquery('english', ?)", SplitTSQuery(search_query)).
-		Or("issues.sequence_id::text like ?", strings.TrimSpace(search_query)+"%").              // Issue sequence search
-		Or("CONCAT(p.identifier, '-', issues.sequence_id) = ?", strings.TrimSpace(search_query)) // Full issue num ISS-1
+	q := strings.TrimSpace(search_query)
+
+	if m := issueRefRegexp.FindStringSubmatch(q); m != nil {
+		seqID, _ := strconv.Atoi(m[2])
+		return tx.Where("p.identifier = ? AND issues.sequence_id = ?", m[1], seqID)
+	}
+
+	splitQ := SplitTSQuery(q)
+
+	return tx.Or(
+		"issues.tokens @@ (websearch_to_tsquery('simple', ?) || websearch_to_tsquery('russian', ?) || websearch_to_tsquery('english', ?))",
+		q, q, q,
+	).Or(
+		"issues.tokens @@ (to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?))",
+		splitQ, splitQ, splitQ,
+	).Or("issues.sequence_id::text like ?", q+"%")
 }
 
 // IssueWithCount - вспомогательная структура задачи, для вытягивания счетчиков из запроса списка задач(без доп запросов)
 // -migration
 type IssueWithCount struct {
 	Issue
-	SubIssuesCount    int64 `json:"sub_issues_count" gorm:"->;-:migration"`
-	LinkCount         int64 `json:"link_count" gorm:"->;-:migration"`
-	AttachmentCount   int64 `json:"attachment_count" gorm:"->;-:migration"`
-	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->;-:migration"`
-	CommentsCount     int64 `json:"comments_count" gorm:"->;-:migration"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 	DescHighlighted string `json:"desc_highlighted,omitempty" gorm:"->;-:migration"`
-
-	AllCount int `json:"-" gorm:"->;-:migration"`
 
 	TsRank float64 `json:"ts_rank" gorm:"->;-:migration"` // Search debug
 }
@@ -446,14 +455,9 @@ func (iwc *IssueWithCount) ToDTO() *dto.IssueWithCount {
 	}
 
 	return &dto.IssueWithCount{
-		Issue:             *iwc.Issue.ToDTO(),
-		SubIssuesCount:    int(iwc.SubIssuesCount),
-		LinkCount:         int(iwc.LinkCount),
-		AttachmentCount:   int(iwc.AttachmentCount),
-		LinkedIssuesCount: int(iwc.LinkedIssuesCount),
-		CommentsCount:     int(iwc.CommentsCount),
-		NameHighlighted:   iwc.NameHighlighted,
-		DescHighlighted:   iwc.DescHighlighted,
+		Issue:           *iwc.Issue.ToDTO(),
+		NameHighlighted: iwc.NameHighlighted,
+		DescHighlighted: iwc.DescHighlighted,
 	}
 }
 

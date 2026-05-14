@@ -35,7 +35,7 @@ func NewSprintPipeline(templates *EmailTemplates) LayerPipeline[*dao.Sprint] {
 				Steps:    steps,
 			}
 
-			return BuildRecipientsFromActivities(tx, acts, getSprintActivityAuthor, &ctx)
+			return BuildRecipientsFromActivities(tx, acts, &ctx)
 		},
 
 		BuildDigest: func(tx *gorm.DB, acts []dao.ActivityEvent, sprint *dao.Sprint) (map[string]FieldPrerender, int) {
@@ -83,17 +83,12 @@ func loadSprintActivities(tx *gorm.DB) []dao.ActivityEvent {
 func groupSprint(acts []dao.ActivityEvent) ActivityBuckets[*dao.Sprint] {
 	return GroupActivitiesByLayer(
 		acts,
-		func(a dao.ActivityEvent) uuid.UUID { return a.SprintID.UUID },
 		func(a dao.ActivityEvent) *dao.Sprint {
 			a.Sprint.Workspace = a.Workspace
 			a.Sprint.SetUrl()
 			return a.Sprint
 		},
 	)
-}
-
-func getSprintActivityAuthor(act dao.ActivityEvent) *dao.User {
-	return act.Actor
 }
 
 func getIssueIdFromSprintActivity(a dao.ActivityEvent) uuid.UUID {

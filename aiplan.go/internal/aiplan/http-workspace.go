@@ -545,6 +545,13 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	if len(c.Request().URL.Query()) == 0 {
 		members, ok := cache.WorkspaceMembersCache.Load(workspace.ID)
 		if ok {
+			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+				if hex.EncodeToString(members.Hash) == etag {
+					return c.NoContent(http.StatusNotModified)
+				}
+			}
+
+			c.Response().Header().Set("ETag", hex.EncodeToString(members.Hash))
 			return c.JSON(http.StatusOK, dao.PaginationResponse{
 				Offset: -1,
 				Limit:  1000,

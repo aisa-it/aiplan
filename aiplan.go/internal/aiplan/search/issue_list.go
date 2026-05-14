@@ -6,38 +6,37 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// BuildIssueListQuery - функция для построения запроса списка задач
-// Возвращает сырые данные из БД без преобразования в DTO
-// Не поддерживает группировку - для группировки используйте GetIssueListData
-// Используется в MCP handlers для прямого доступа к DAO объектам
-func BuildIssueListQuery(
-	db *gorm.DB,
+func buildSearchQuery(db *gorm.DB,
 	user dao.User,
 	projectMember dao.ProjectMember,
 	sprint *dao.Sprint,
 	globalSearch bool,
 	searchParams *types.SearchParams,
-) ([]dao.IssueWithCount, int, error) {
-	if searchParams.GroupByParam != "" {
-		return nil, 0, apierrors.ErrUnsupportedGroup
-	}
-
+) *gorm.DB {
 	searchParams.OrderByParam = strings.TrimPrefix(searchParams.OrderByParam, "-")
 
 	var query *gorm.DB
 	if searchParams.LightSearch {
-		query = db.Preload("Author").Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Watchers").Preload("Labels")
+		query = db.Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Labels")
 	} else {
-		query = db.Preload(clause.Associations)
+		query = db.
+			Preload("Workspace").
+			Preload("State").
+			Preload("Project").
+			Preload("Assignees").
+			Preload("Labels").
+			Preload("Sprints").
+			Preload("Parent.State")
 	}
 
 	// Add membership info to project details on global search
@@ -244,13 +243,7 @@ func BuildIssueListQuery(
 	}
 
 	if searchParams.OnlyCount {
-		var count int64
-		if err := query.Model(&dao.Issue{}).Count(&count).Error; err != nil {
-			return nil, 0, err
-		}
-
-		// Для OnlyCount возвращаем пустой слайс, но с правильным count
-		return []dao.IssueWithCount{}, int(count), nil
+		return query.Model(&dao.Issue{})
 	}
 
 	var selectExprs []string
@@ -260,24 +253,11 @@ func BuildIssueListQuery(
 	if !searchParams.LightSearch {
 		selectExprs = []string{
 			"issues.*",
-			"count(*) over() as all_count",
-			"(?) as sub_issues_count",
-			"(?) as link_count",
-			"(?) as attachment_count",
-			"(?) as linked_issues_count",
-			"(?) as comments_count",
 		}
-		selectInterface = []interface{}{
-			db.Table("issues as \"child\"").Select("count(*)").Where("\"child\".parent_id = issues.id"),
-			db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueLink{}),
-			db.Select("count(*)").Where("issue_id = issues.id::uuid").Model(&dao.IssueAttachment{}),
-			db.Select("count(*)").Where("id1 = issues.id OR id2 = issues.id").Model(&dao.LinkedIssues{}),
-			db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueComment{}),
-		}
+		selectInterface = []any{}
 	} else {
 		selectExprs = []string{
 			"issues.*",
-			"count(*) over() as all_count",
 		}
 	}
 
@@ -288,7 +268,7 @@ func BuildIssueListQuery(
 			"ts_headline('russian', issues.description_stripped, websearch_to_tsquery('russian', ?), 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted",
 			"calc_rank(tokens, p.identifier, issues.sequence_id, ?) as ts_rank",
 		}
-		searchInterface := []interface{}{
+		searchInterface := []any{
 			searchParams.Filters.SearchQuery,
 			searchParams.Filters.SearchQuery,
 			searchParams.Filters.SearchQuery,
@@ -313,7 +293,7 @@ func BuildIssueListQuery(
 		order.Column = clause.Column{Name: "author_sort"}
 	case "state":
 		selectExprs = append(selectExprs, "(?) as state_sort")
-		selectInterface = append(selectInterface, db.Select(`concat(case "group" when 'backlog' then 1 when 'unstarted' then 2 when 'started' then 3 when 'completed' then 4 when 'cancelled' then 5 end, name, color)`).Where("id = issues.state_id").Model(&dao.State{}))
+		selectInterface = append(selectInterface, db.Select(`concat(case "group" when 'backlog' then 1 when 'unstarted' then 2 when 'started' then 3 when 'completed' then 4 when 'cancelled' then 5 end, sequence, name, color)`).Where("id = issues.state_id").Model(&dao.State{}))
 		order.Column = clause.Column{Name: "state_sort"}
 	case "labels":
 		selectExprs = append(selectExprs, "array(?) as labels_sort")
@@ -346,24 +326,56 @@ func BuildIssueListQuery(
 		query = query.Order(*order)
 	}
 	query = query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(searchParams.Limit).Offset(searchParams.Offset)
+	return query
+}
 
-	var issues []dao.IssueWithCount
-	if err := query.Find(&issues).Error; err != nil {
+// SearchIssuesList выполняет поиск задач без группировки и возвращает сырые DAO-объекты.
+// Не поддерживает GroupByParam - для группировки используйте GetIssueListData.
+// Используется в MCP handlers для прямого доступа к DAO.
+func SearchIssuesList(
+	db *gorm.DB,
+	user dao.User,
+	projectMember dao.ProjectMember,
+	sprint *dao.Sprint,
+	globalSearch bool,
+	searchParams *types.SearchParams,
+) ([]dao.IssueWithCount, int, error) {
+	if searchParams.GroupByParam != "" {
+		return nil, 0, apierrors.ErrUnsupportedGroup
+	}
+
+	if searchParams.OnlyCount {
+		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+		var count int64
+		if err := query.Count(&count).Error; err != nil {
+			return nil, 0, err
+		}
+		return []dao.IssueWithCount{}, int(count), nil
+	}
+
+	var (
+		issues []dao.IssueWithCount
+		count  int64
+		eg     errgroup.Group
+	)
+
+	eg.Go(func() error {
+		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+		return query.Find(&issues).Error
+	})
+
+	eg.Go(func() error {
+		countParams := *searchParams
+		countParams.OnlyCount = true
+		countQuery := buildSearchQuery(db, user, projectMember, sprint, globalSearch, &countParams)
+		return countQuery.Count(&count).Error
+	})
+
+	if err := eg.Wait(); err != nil {
 		return nil, 0, err
 	}
 
-	count := 0
-	if len(issues) > 0 {
-		count = issues[0].AllCount
-	}
-
-	if !searchParams.LightSearch {
-		if err := FetchParentsDetails(db, issues); err != nil {
-			return nil, 0, err
-		}
-	}
-
-	return issues, count, nil
+	return issues, int(count), nil
 }
 
 // GetIssueListData возвращает данные списка задач без привязки к HTTP контексту
@@ -382,321 +394,27 @@ func GetIssueListData(
 		return nil, apierrors.ErrUnsupportedGroup
 	}
 
-	// OnlyCount - особый случай, используем BuildIssueListQuery
+	// OnlyCount - особый случай, считаем через SearchIssuesList
 	if searchParams.OnlyCount {
-		issues, count, err := BuildIssueListQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+		_, count, err := SearchIssuesList(db, user, projectMember, sprint, globalSearch, searchParams)
 		if err != nil {
 			return nil, err
 		}
-		// buildIssueListQuery уже вернула пустой слайс для OnlyCount
-		_ = issues
 		return map[string]any{
 			"count": count,
 		}, nil
 	}
 
-	// Группировка требует построения query вручную (не через buildIssueListQuery)
 	if searchParams.GroupByParam != "" {
-		searchParams.OrderByParam = strings.TrimPrefix(searchParams.OrderByParam, "-")
+		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
 
-		var query *gorm.DB
-		if searchParams.LightSearch {
-			query = db.Preload("Author").Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Watchers").Preload("Labels")
-		} else {
-			query = db.Preload(clause.Associations)
-		}
-
-		// Add membership info to project details on global search
-		if globalSearch && !searchParams.LightSearch {
-			query = query.Set("userId", user.ID)
-		}
-
-		// Fill filters
-		if !globalSearch && projectMember.ProjectId != uuid.Nil {
-			query = query.
-				Where("issues.workspace_id = ?", projectMember.WorkspaceId).
-				Where("issues.project_id = ?", projectMember.ProjectId)
-		} else /* if !user.IsSuperuser */ {
-			query = query.
-				Where("issues.project_id in (?)", db.
-					Select("project_id").
-					Where("member_id = ?", user.ID).
-					Model(&dao.ProjectMember{}),
-				)
-		}
-
-		// Filter only sprint issues
-		if sprint != nil {
-			issuesID := make([]uuid.UUID, len(sprint.Issues))
-			for i, issue := range sprint.Issues {
-				issuesID[i] = issue.ID
-			}
-			query = query.Where("issues.id in (?)", issuesID)
-		}
-
-		// Filters
-		{
-			if len(searchParams.Filters.AuthorIds) > 0 {
-				query = query.Where("issues.created_by_id in (?)", searchParams.Filters.AuthorIds)
-			}
-
-			if !searchParams.Filters.AssigneeIds.IsEmpty() {
-				q := db.Where("issues.id in (?)",
-					db.Select("issue_id").
-						Where("assignee_id in (?)", searchParams.Filters.AssigneeIds.Array).
-						Model(&dao.IssueAssignee{}))
-				if searchParams.Filters.AssigneeIds.IncludeEmpty {
-					q = q.Or("issues.id not in (?)", db.
-						Select("issue_id").
-						Model(&dao.IssueAssignee{}))
-				}
-				query = query.Where(q)
-			}
-
-			if !searchParams.Filters.WatcherIds.IsEmpty() {
-				q := db.Where("issues.id in (?)",
-					db.Select("issue_id").
-						Where("watcher_id in (?)", searchParams.Filters.WatcherIds.Array).
-						Model(&dao.IssueWatcher{}))
-				if searchParams.Filters.WatcherIds.IncludeEmpty {
-					q = q.Or("issues.id not in (?)", db.
-						Select("issue_id").
-						Model(&dao.IssueWatcher{}))
-				}
-				query = query.Where(q)
-			}
-
-			if len(searchParams.Filters.Priorities) > 0 {
-				hasNull := false
-				var arr []any
-				for _, p := range searchParams.Filters.Priorities {
-					if p != "" {
-						arr = append(arr, p)
-					} else {
-						hasNull = true
-					}
-				}
-				if hasNull {
-					query = query.Where("issues.priority in (?) or issues.priority is null", arr)
-				} else {
-					query = query.Where("issues.priority in (?)", arr)
-				}
-			}
-
-			if !searchParams.Filters.Labels.IsEmpty() {
-				q := db.Where("issues.id in (?)", db.
-					Model(&dao.IssueLabel{}).
-					Select("issue_id").
-					Where("label_id in (?)", searchParams.Filters.Labels.Array))
-				if searchParams.Filters.Labels.IncludeEmpty {
-					q = q.Or("issues.id not in (?)", db.
-						Select("issue_id").
-						Model(&dao.IssueLabel{}))
-				}
-				query = query.Where(q)
-			}
-
-			if len(searchParams.Filters.SprintIds) > 0 {
-				q := db.Where("issues.id in (?)", db.
-					Model(&dao.SprintIssue{}).
-					Select("issue_id").
-					Where("sprint_id in (?)", searchParams.Filters.SprintIds))
-				if slices.Contains(searchParams.Filters.SprintIds, "") {
-					q = q.Or("issues.id not in (?)", db.
-						Select("issue_id").
-						Model(&dao.SprintIssue{}))
-				}
-				query = query.Where(q)
-			}
-
-			if len(searchParams.Filters.WorkspaceIds) > 0 {
-				query = query.Where("issues.workspace_id in (?)",
-					db.Select("workspace_id").
-						Model(&dao.WorkspaceMember{}).
-						Where("member_id = ?", user.ID).
-						Where("workspace_id in (?)", searchParams.Filters.WorkspaceIds))
-			}
-
-			if len(searchParams.Filters.WorkspaceSlugs) > 0 {
-				query = query.Where("issues.workspace_id in (?)",
-					db.Model(&dao.WorkspaceMember{}).
-						Select("workspace_id").
-						Where("member_id = ?", user.ID).
-						Where("workspace_id in (?)", db.Model(&dao.Workspace{}).
-							Select("id").
-							Where("slug in (?)", searchParams.Filters.WorkspaceSlugs)))
-			}
-
-			if len(searchParams.Filters.ProjectIds) > 0 {
-				query = query.Where("issues.project_id in (?)",
-					db.Select("project_id").
-						Model(&dao.WorkspaceMember{}).
-						Where("member_id = ?", user.ID).
-						Where("project_id in (?)", searchParams.Filters.ProjectIds))
-			}
-
-			// If workspace not specified, use all user workspaces
-			if len(searchParams.Filters.WorkspaceIds) == 0 && len(searchParams.Filters.WorkspaceSlugs) == 0 && globalSearch && !user.IsSuperuser {
-				query = query.Where("issues.workspace_id in (?)",
-					db.Select("workspace_id").
-						Model(&dao.WorkspaceMember{}).
-						Where("member_id = ?", user.ID))
-			}
-
-			if searchParams.Filters.AssignedToMe {
-				query = query.Where("issues.id in (?)", db.Select("issue_id").Model(&dao.IssueAssignee{}).Where("assignee_id = ?", user.ID))
-			}
-
-			if searchParams.Filters.WatchedByMe {
-				query = query.Where("issues.id in (?)", db.Select("issue_id").Model(&dao.IssueWatcher{}).Where("watcher_id = ?", user.ID))
-			}
-
-			if searchParams.Filters.AuthoredByMe {
-				query = query.Where("issues.created_by_id = ?", user.ID)
-			}
-
-			if searchParams.OnlyActive || len(searchParams.Filters.StateIds) > 0 {
-				subQuery := db.Model(&dao.State{}).
-					Select("id")
-
-				if searchParams.OnlyActive {
-					subQuery = subQuery.
-						Where("\"group\" <> ?", "cancelled").
-						Where("\"group\" <> ?", "completed")
-				}
-
-				if len(searchParams.Filters.StateIds) > 0 {
-					subQuery = subQuery.
-						Where("issues.state_id in (?)", searchParams.Filters.StateIds)
-				}
-
-				query = query.Where("issues.state_id in (?)", subQuery)
-			}
-
-			if searchParams.OnlyPinned {
-				query = query.Where("issues.pinned = true")
-			}
-
-			if searchParams.Filters.SearchQuery != "" {
-				query = query.Joins("join projects p on p.id = issues.project_id").
-					Where("p.deleted_at IS NULL").
-					Where(dao.Issue{}.FullTextSearch(db, searchParams.Filters.SearchQuery))
-			}
-		}
-
-		// Ignore slave issues
-		if searchParams.HideSubIssues {
-			query = query.Where("issues.parent_id is null")
-		}
-
-		// Ignore draft issues
-		if !searchParams.Draft {
-			query = query.Where("issues.draft = false or issues.draft is null")
-		}
-
-		var selectExprs []string
-		var selectInterface []any
-
-		// Fetch counters fo full search
-		if !searchParams.LightSearch {
-			selectExprs = []string{
-				"issues.*",
-				"count(*) over() as all_count",
-				"(?) as sub_issues_count",
-				"(?) as link_count",
-				"(?) as attachment_count",
-				"(?) as linked_issues_count",
-				"(?) as comments_count",
-			}
-			selectInterface = []interface{}{
-				db.Table("issues as \"child\"").Select("count(*)").Where("\"child\".parent_id = issues.id"),
-				db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueLink{}),
-				db.Select("count(*)").Where("issue_id = issues.id::uuid").Model(&dao.IssueAttachment{}),
-				db.Select("count(*)").Where("id1 = issues.id OR id2 = issues.id").Model(&dao.LinkedIssues{}),
-				db.Select("count(*)").Where("issue_id = issues.id").Model(&dao.IssueComment{}),
-			}
-		} else {
-			selectExprs = []string{
-				"issues.*",
-				"count(*) over() as all_count",
-			}
-		}
-
-		// Rank count
-		if searchParams.Filters.SearchQuery != "" {
-			searchSelects := []string{
-				"ts_headline('russian', issues.name, websearch_to_tsquery('russian', ?)) as name_highlighted",
-				"ts_headline('russian', issues.description_stripped, websearch_to_tsquery('russian', ?), 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted",
-				"calc_rank(tokens, p.identifier, issues.sequence_id, ?) as ts_rank",
-			}
-			searchInterface := []interface{}{
-				searchParams.Filters.SearchQuery,
-				searchParams.Filters.SearchQuery,
-				searchParams.Filters.SearchQuery,
-			}
-
-			selectExprs = append(selectExprs, searchSelects...)
-			selectInterface = append(selectInterface, searchInterface...)
-		}
-
-		order := &clause.OrderByColumn{Desc: searchParams.Desc}
-		switch searchParams.OrderByParam {
-		case "priority":
-			order = nil
-			sql := "case when priority='urgent' then 5 when priority='high' then 4 when priority='medium' then 3 when priority='low' then 2 when priority is null then 1 end"
-			if searchParams.Desc {
-				sql += " DESC"
-			}
-			query = query.Order(sql)
-		case "author":
-			selectExprs = append(selectExprs, "(?) as author_sort")
-			selectInterface = append(selectInterface, db.Select("COALESCE(NULLIF(last_name,''), email)").Where("id = issues.created_by_id").Model(&dao.User{}))
-			order.Column = clause.Column{Name: "author_sort"}
-		case "state":
-			selectExprs = append(selectExprs, "(?) as state_sort")
-			selectInterface = append(selectInterface, db.Select(`concat(case "group" when 'backlog' then 1 when 'unstarted' then 2 when 'started' then 3 when 'completed' then 4 when 'cancelled' then 5 end, sequence, name, color)`).Where("id = issues.state_id").Model(&dao.State{}))
-			order.Column = clause.Column{Name: "state_sort"}
-		case "labels":
-			selectExprs = append(selectExprs, "array(?) as labels_sort")
-			selectInterface = append(selectInterface, db.Select("name").Where("id in (?)", db.Select("label_id").Where("issue_id = issues.id").Model(&dao.IssueLabel{})).Model(&dao.Label{}))
-			order.Column = clause.Column{Name: "labels_sort"}
-		case "sub_issues_count":
-			fallthrough
-		case "link_count":
-			fallthrough
-		case "linked_issues_count":
-			fallthrough
-		case "attachment_count":
-			order.Column = clause.Column{Name: searchParams.OrderByParam}
-		case "assignees":
-			selectExprs = append(selectExprs, "array(?) as assignees_sort")
-			selectInterface = append(selectInterface, db.Select("COALESCE(NULLIF(last_name,''), email)").Where("users.id in (?)", db.Select("assignee_id").Where("issue_id = issues.id").Model(&dao.IssueAssignee{})).Model(&dao.User{}))
-			order.Column = clause.Column{Name: searchParams.OrderByParam + "_sort"}
-		case "watchers":
-			selectExprs = append(selectExprs, "array(?) as watchers_sort")
-			selectInterface = append(selectInterface, db.Select("COALESCE(NULLIF(last_name,''), email)").Where("users.id in (?)", db.Select("watcher_id").Where("issue_id = issues.id").Model(&dao.IssueWatcher{})).Model(&dao.User{}))
-			order.Column = clause.Column{Name: searchParams.OrderByParam + "_sort"}
-		case "search_rank":
-			order = nil
-			query = query.Order("ts_rank desc")
-		default:
-			order.Column = clause.Column{Table: "issues", Name: searchParams.OrderByParam}
-		}
-
-		if order != nil {
-			query = query.Order(*order)
-		}
-		query = query.Select(strings.Join(selectExprs, ", "), selectInterface...).Limit(searchParams.Limit).Offset(searchParams.Offset)
-
-		// Выполнение группировки
-		groupSize, err := GetIssuesGroups(db, &user, projectMember.ProjectId, sprint, searchParams)
+		groupSize, err := getIssuesGroups(db, &user, projectMember.ProjectId, sprint, searchParams)
 		if err != nil {
 			return nil, err
 		}
 
 		var groupMap []dto.IssuesGroupResponse
-
-		totalCount, err := FetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group dto.IssuesGroupResponse) error {
+		totalCount, err := fetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group dto.IssuesGroupResponse) error {
 			if streamCallback != nil {
 				return streamCallback(group)
 			}
@@ -723,8 +441,8 @@ func GetIssueListData(
 		}, nil
 	}
 
-	// Обычный случай (без группировки) - используем BuildIssueListQuery
-	issues, count, err := BuildIssueListQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+	// Обычный случай (без группировки) - используем SearchIssuesList
+	issues, count, err := SearchIssuesList(db, user, projectMember, sprint, globalSearch, searchParams)
 	if err != nil {
 		return nil, err
 	}
@@ -737,15 +455,33 @@ func GetIssueListData(
 
 	// Преобразование в map с DTO
 	if searchParams.LightSearch {
+		// Populate author from cache
+		res := make([]dto.SearchLightweightIssue, 0, len(issues))
+		for _, issue := range issues {
+			author, _ := cache.UsersCache.Load(issue.CreatedById)
+			converted := issue.ToSearchLightDTO()
+			converted.Author = author
+			res = append(res, converted)
+		}
+
 		return dto.IssuesLightSearchResponse{
 			PaginationMeta: paginationMeta,
-			Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.SearchLightweightIssue { return iwc.ToSearchLightDTO() }),
+			Issues:         res,
 		}, nil
+	}
+
+	// Populate author from cache
+	res := make([]dto.IssueWithCount, 0, len(issues))
+	for _, issue := range issues {
+		author, _ := cache.UsersCache.Load(issue.CreatedById)
+		converted := issue.ToDTO()
+		converted.Author = author
+		res = append(res, *converted)
 	}
 
 	return dto.IssuesSearchResponse{
 		PaginationMeta: paginationMeta,
-		Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
+		Issues:         res,
 	}, nil
 }
 

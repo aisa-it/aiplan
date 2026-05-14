@@ -67,6 +67,7 @@ type Project struct {
 	RulesScript          *string          `json:"rules_script" extensions:"x-nullable"`
 	HideFields           types.HideFields `json:"hide_fields" gorm:"type:jsonb"`
 	IssueDeletionAllowed bool             `json:"issue_deletion_allowed" gorm:"default:true"`
+	Archived             bool             `gorm:"default:false;index"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
@@ -141,6 +142,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		CoverImage:              project.CoverImage,
 		Url:                     types.JsonURL{project.URL},
 		IsFavorite:              project.IsFavorite,
+		Archived:                project.Archived,
 		TotalMembers:            project.TotalMembers,
 		DefaultAssignees:        project.DefaultAssignees,
 		DefaultWatchers:         project.DefaultWatchers,

@@ -67,11 +67,15 @@ func (u *UserLight) Hash() []byte {
 		io.WriteString(h, *u.StatusEmoji)
 		io.WriteString(h, *u.Status)
 	}
-	io.WriteString(h, u.StatusEndDate.String())
+	if u.StatusEndDate != nil {
+		io.WriteString(h, u.StatusEndDate.String())
+	}
 	io.WriteString(h, u.CreatedAt.String())
 	fmt.Fprintf(h, "%t", u.IsSuperuser)
 	fmt.Fprintf(h, "%t", u.IsActive)
-	io.WriteString(h, u.BlockedUntil.String())
+	if u.BlockedUntil != nil {
+		io.WriteString(h, u.BlockedUntil.String())
+	}
 	fmt.Fprintf(h, "%t", u.IsOnboarded)
 	fmt.Fprintf(h, "%t", u.IsBot)
 	fmt.Fprintf(h, "%t", u.IsIntegration)

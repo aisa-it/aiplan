@@ -182,6 +182,8 @@ var (
 	ErrIssueTemplateDuplicatedName       = DefinedError{Code: 3029, StatusCode: http.StatusConflict, Err: "issue template name already exist", RuErr: "Шаблон задачи с таким именем уже существует"}
 	ErrAttachmentIsTooBig                = DefinedError{Code: 3030, StatusCode: http.StatusRequestEntityTooLarge, Err: "attachment size exceed 4GB size", RuErr: "Размер вложения не должен превышать 4ГБ"}
 	ErrProjectDefaultStateRequired       = DefinedError{Code: 3031, StatusCode: http.StatusBadRequest, Err: "project default state is required", RuErr: "В проекте должен быть статус по умолчанию"}
+	ErrProjectArchived                   = DefinedError{Code: 3032, StatusCode: http.StatusLocked, Err: "project archived", RuErr: "Данный проект заархивирован, доступны только операции на чтение"}
+
 	// 32** - form errors
 	ErrFormNotFound           = DefinedError{Code: 3201, StatusCode: http.StatusNotFound, Err: "form not found", RuErr: "Форма не найдена"}
 	ErrFormAnswerForbidden    = DefinedError{Code: 3202, StatusCode: http.StatusForbidden, Err: "access to the form requires authorization", RuErr: "Для доступа к форме необходимо пройти авторизацию"}

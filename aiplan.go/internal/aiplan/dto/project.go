@@ -24,8 +24,9 @@ type ProjectLight struct {
 	Emoji         int32         `json:"emoji,string"`
 	CoverImage    *string       `json:"cover_image" extensions:"x-nullable"`
 	LogoId        uuid.NullUUID `json:"logo"  extensions:"x-nullable" swaggertype:"string"`
-	Url           types.JsonURL `json:"url,omitempty"`
+	Url           types.JsonURL `json:"url"`
 	IsFavorite    bool          `json:"is_favorite"`
+	Archived      bool          `json:"archived"`
 
 	CurrentUserMembership *ProjectMemberLight `json:"current_user_membership,omitempty"  extensions:"x-nullable"`
 

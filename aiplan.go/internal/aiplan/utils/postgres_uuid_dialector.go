@@ -55,7 +55,8 @@ func (m *PostgresUUIDMigrator) DataTypeOf(field *schema.Field) string {
 	}
 
 	// Если это uuid.UUID или uuid.NullUUID - используем нативный uuid тип PostgreSQL
-	if fieldType == reflect.TypeOf(uuid.UUID{}) || fieldType == reflect.TypeOf(uuid.NullUUID{}) {
+	switch fieldType {
+	case reflect.TypeFor[uuid.UUID](), reflect.TypeFor[uuid.NullUUID]():
 		return "uuid"
 	}
 
@@ -74,44 +75,84 @@ func (m *PostgresUUIDMigrator) ColumnTypes(value interface{}) ([]gorm.ColumnType
 
 // AlterColumn переопределяет метод для предотвращения ненужных изменений UUID колонок.
 func (m *PostgresUUIDMigrator) AlterColumn(value interface{}, field string) error {
-	// Получаем информацию о поле
 	stmt := &gorm.Statement{DB: m.DB}
 	if err := stmt.Parse(value); err != nil {
 		return err
 	}
 
-	if schemaField := stmt.Schema.LookUpField(field); schemaField != nil {
-		// Проверяем текущий тип в базе данных
-		columnTypes, err := m.DB.Migrator().ColumnTypes(value)
-		if err != nil {
-			return err
+	schemaField := stmt.Schema.LookUpField(field)
+	if schemaField == nil {
+		return fmt.Errorf("failed to look up field with name: %s", field)
+	}
+
+	columnTypes, err := m.DB.Migrator().ColumnTypes(value)
+	if err != nil {
+		return err
+	}
+
+	targetType := m.DataTypeOf(schemaField)
+	if columnAlreadyHasType(columnTypes, schemaField, targetType) {
+		return nil
+	}
+
+	return m.DB.Exec(
+		"ALTER TABLE ? ALTER COLUMN ? TYPE ?",
+		clause.Table{Name: stmt.Table}, clause.Column{Name: schemaField.DBName},
+		clause.Expr{SQL: targetType},
+	).Error
+}
+
+// columnAlreadyHasType возвращает true, если колонка в БД уже имеет тип, эквивалентный целевому.
+// Покрывает два кейса: (1) UUID-колонки с uuid.UUID/uuid.NullUUID полем, (2) любой тип, нормализованно
+// совпадающий с targetType. Нужно чтобы пропускать ALTER COLUMN TYPE — он падает на колонках,
+// упомянутых в триггерах UPDATE OF (например, users.user_timezone в users_light_notify).
+func columnAlreadyHasType(columnTypes []gorm.ColumnType, schemaField *schema.Field, targetType string) bool {
+	for _, columnType := range columnTypes {
+		if columnType.Name() != schemaField.DBName {
+			continue
 		}
 
-		for _, columnType := range columnTypes {
-			if columnType.Name() == schemaField.DBName {
-				// Если колонка уже имеет тип uuid, не изменяем её
-				databaseType := columnType.DatabaseTypeName()
+		databaseType := columnType.DatabaseTypeName()
 
-				if strings.EqualFold(databaseType, "uuid") {
-					fieldType := schemaField.FieldType
-					if fieldType.Kind() == reflect.Pointer {
-						fieldType = fieldType.Elem()
-					}
-					if fieldType == reflect.TypeOf(uuid.UUID{}) || fieldType == reflect.TypeOf(uuid.NullUUID{}) {
-						// Колонка уже uuid и поле тоже uuid - пропускаем изменение
-						return nil
-					}
-				}
+		if strings.EqualFold(databaseType, "uuid") {
+			fieldType := schemaField.FieldType
+			if fieldType.Kind() == reflect.Pointer {
+				fieldType = fieldType.Elem()
+			}
+			switch fieldType {
+			case reflect.TypeFor[uuid.UUID](), reflect.TypeFor[uuid.NullUUID]():
+				return true
 			}
 		}
 
-		// Используем стандартную логику для остальных случаев
-		return m.DB.Exec(
-			"ALTER TABLE ? ALTER COLUMN ? TYPE ?",
-			clause.Table{Name: stmt.Table}, clause.Column{Name: schemaField.DBName},
-			clause.Expr{SQL: m.DataTypeOf(schemaField)},
-		).Error
+		return normalizeColumnType(databaseType) == normalizeColumnType(targetType)
 	}
+	return false
+}
 
-	return fmt.Errorf("failed to look up field with name: %s", field)
+// normalizeColumnType приводит SQL-тип к каноничной форме для сравнения:
+// нижний регистр, без размера/precision/timezone-суффиксов и без обёртывающих пробелов.
+// Используется чтобы пропустить ALTER COLUMN TYPE, когда фактический тип в БД
+// уже совпадает с целевым (например, "TEXT" vs "text" или "varchar(255)" vs "varchar").
+// Это критично для колонок с триггерами UPDATE OF — Postgres запрещает на них ALTER TYPE.
+func normalizeColumnType(t string) string {
+	s := strings.ToLower(strings.TrimSpace(t))
+	if i := strings.Index(s, "("); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	switch s {
+	case "character varying":
+		return "varchar"
+	case "character":
+		return "char"
+	case "timestamp without time zone":
+		return "timestamp"
+	case "timestamp with time zone":
+		return "timestamptz"
+	case "time without time zone":
+		return "time"
+	case "time with time zone":
+		return "timetz"
+	}
+	return s
 }

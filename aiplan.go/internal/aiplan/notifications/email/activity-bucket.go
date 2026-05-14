@@ -24,24 +24,24 @@ type ActivityBucket[E dao.IDaoAct] struct {
 	Ctx     EmailContext
 }
 
+// GroupActivitiesByLayer группирует активности по родительской сущности
 func GroupActivitiesByLayer[E dao.IDaoAct](
-	acts []dao.ActivityEvent, layerID func(event dao.ActivityEvent) uuid.UUID, layer func(event dao.ActivityEvent) E,
+	acts []dao.ActivityEvent, getLayer func(event dao.ActivityEvent) E,
 ) ActivityBuckets[E] {
 
 	res := make(ActivityBuckets[E])
-
 	for _, act := range acts {
-		id := layerID(act)
+		entity := getLayer(act)
 
-		b, ok := res[id]
+		b, ok := res[entity.GetId()]
 		if !ok {
 			b = &ActivityBucket[E]{
-				Entity:     layer(act),
+				Entity:     entity,
 				Activities: []dao.ActivityEvent{act},
 				FirstAt:    act.CreatedAt,
 				LastAt:     act.CreatedAt,
 			}
-			res[id] = b
+			res[entity.GetId()] = b
 			continue
 		}
 

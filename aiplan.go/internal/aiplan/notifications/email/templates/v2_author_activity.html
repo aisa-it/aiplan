@@ -62,10 +62,10 @@
         внес изменения
 
         {{if .IsPeriod}}
-        за период с {{.Start.Format "02.01.2006 15:04"}}
-        по {{.End.Format "02.01.2006 15:04"}}
+        за период <br>с {{.Start.Format "02.01.2006 15:04:05"}}
+        по {{.End.Format "02.01.2006 15:04:05"}}
         {{else}}
-        {{.Start.Format "02.01.2006 15:04"}}
+        {{.Start.Format "02.01.2006 15:04:05"}}
         {{end}}
 
     </th>
@@ -81,10 +81,10 @@
     <td  colspan="2" style="padding-left:8px;text-align:left;">
         Авторы изменений
         {{if .IsPeriod}}
-        за период с {{.Start.Format "02.01.2006 15:04"}}
-        по {{.End.Format "02.01.2006 15:04"}}
+        за период <br>с {{.Start.Format "02.01.2006 15:04:05"}}
+        по {{.End.Format "02.01.2006 15:04:05"}}
         {{else}}
-        {{.Start.Format "02.01.2006 15:04"}}
+        {{.Start.Format "02.01.2006 15:04:05"}}
         {{end}}
     </td>
 </tr>

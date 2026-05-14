@@ -1,7 +1,6 @@
 package email
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -52,7 +51,6 @@ func BuildActivityActorView(
 		for _, author := range fp.Authors {
 			if author.ID != uuid.Nil {
 				authors[author.ID] = author
-				fmt.Println("=", author.Avatar)
 			}
 		}
 
