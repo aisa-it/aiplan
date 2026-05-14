@@ -52,6 +52,9 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tracer"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -122,27 +125,10 @@ func (s *Services) RawDB() *gorm.DB {
 
 const requestTimeout = time.Second * 10
 
+const spanCtxKey = "trace.span_context"
+
 var cfg *config.Config
 var appVersion string
-
-// ServerHeader middleware adds a `Server` header to the response.
-func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Response().Header().Set(echo.HeaderServer, "AIPlan")
-		return next(c)
-	}
-}
-
-// PodHeader middleware adds a X-Pod-Name header with pod name to response for balancer debug
-func PodHeader(next echo.HandlerFunc) echo.HandlerFunc {
-	podName := os.Getenv("POD_NAME")
-	return func(c echo.Context) error {
-		if podName != "" {
-			c.Response().Header().Set("X-Pod-Name", podName)
-		}
-		return next(c)
-	}
-}
 
 func Server(db *gorm.DB, c *config.Config, version string) {
 	cfg = c
@@ -166,12 +152,41 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			c.NoContent(http.StatusNotFound)
 			return
 		}
-		slog.Error("Unhandled error in endpoint", "handler", c.Path(), "url", c.Request().URL, "err", err)
-		EErrorMsgStatus(c, nil, code)
+		ctx := c.Request().Context()
+		if sc, ok := c.Get(spanCtxKey).(trace.SpanContext); ok {
+			ctx = trace.ContextWithSpanContext(ctx, sc)
+		}
+		slog.ErrorContext(ctx, "API error",
+			"err", err,
+			"method", c.Request().Method,
+			"url", c.Request().URL.String(),
+		)
+		er := apierrors.ErrGeneric
+		er.StatusCode = code
+		if err != nil {
+			er.Err = err.Error()
+		}
+		EErrorDefined(c, er)
 	}
 
 	var storage filestorage.FileStorage
 	var err error
+
+	var stopTracer tracer.StopFn
+	if cfg.OTELEndpoint != "" {
+		slog.Info("Start OTEL tracer")
+		stopTracer, err = tracer.Init(context.Background(), &tracer.Config{
+			Endpoint:    cfg.OTELEndpoint,
+			Token:       cfg.OTELToken,
+			Version:     appVersion,
+			Env:         "test",
+			SampleRatio: 1.0,
+		}, db)
+		if err != nil {
+			slog.Error("Init OTEL tracer", "err", err)
+			os.Exit(1)
+		}
+	}
 
 	if cfg.AssetsPath == "" {
 		slog.Warn("ASSETS_PATH param empty, fallback to ./assets dir")
@@ -199,7 +214,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	dao.FileStorage = storage
 
 	//slog.Info("Migrate old activities")
-	//activityMigrate(db) //TODO migrate to newActivities
+	//activityMigrate(context.Background(), db) //TODO migrate to newActivities
 	// Query counter
 	ql := dao.NewQueryLogger()
 	if err := db.Callback().
@@ -348,13 +363,20 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	go func() {
 		<-ctx.Done()
 		slog.Info("Shutting down gracefully, press Ctrl+C again to force")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
 		// Останавливаем SSH сервер
 		if sshServer != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 			if err := sshServer.Shutdown(shutdownCtx); err != nil {
 				slog.Error("SSH server shutdown error", "err", err)
+			}
+		}
+
+		if stopTracer != nil {
+			// Stoping tracer
+			if err := stopTracer(shutdownCtx); err != nil {
+				slog.Error("Stop OTEL tracer", "err", err)
 			}
 		}
 
@@ -362,7 +384,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		np.Stop()
 		es.Stop()
 		ns.Tg.Stop()
-		e.Shutdown(context.Background())
+		e.Shutdown(shutdownCtx)
 		os.Exit(0)
 	}()
 
@@ -450,6 +472,20 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			},
 		}),
 	)
+	e.Use(otelecho.Middleware("aiplan",
+		otelecho.WithSkipper(func(c echo.Context) bool {
+			p := c.Path()
+			return strings.Contains(p, "_health") || strings.Contains(p, "/api/version") || strings.Contains(p, "/ws") || strings.Contains(p, "swagger") || !strings.HasPrefix(p, "/api/")
+		}),
+	))
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {
+				c.Set(spanCtxKey, sc)
+			}
+			return next(c)
+		}
+	})
 
 	e.Validator = NewRequestValidator()
 

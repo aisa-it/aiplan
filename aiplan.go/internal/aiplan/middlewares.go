@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -26,6 +27,25 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 )
+
+// ServerHeader middleware adds a `Server` header to the response.
+func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		c.Response().Header().Set(echo.HeaderServer, "AIPlan")
+		return next(c)
+	}
+}
+
+// PodHeader middleware adds a X-Pod-Name header with pod name to response for balancer debug
+func PodHeader(next echo.HandlerFunc) echo.HandlerFunc {
+	podName := os.Getenv("POD_NAME")
+	return func(c echo.Context) error {
+		if podName != "" {
+			c.Response().Header().Set("X-Pod-Name", podName)
+		}
+		return next(c)
+	}
+}
 
 // Запрет методов, если включен демо-режим
 func DemoMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

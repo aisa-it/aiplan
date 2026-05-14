@@ -39,18 +39,18 @@ func EError(c echo.Context, err error) error {
 		user = apiCtx.GetUser()
 	}
 	if err == nil {
-		slog.Error("Unknown API error",
+		slog.ErrorContext(c.Request().Context(), "Unknown API error",
 			"method", c.Request().Method,
-			"url", c.Request().URL,
-			"user", user,
+			"url", c.Request().URL.String(),
+			user.Attr(),
 			getCallerFile(),
 		)
 	} else {
-		slog.Error("API error",
+		slog.ErrorContext(c.Request().Context(), "API error",
 			"err", err,
 			"method", c.Request().Method,
-			"url", c.Request().URL,
-			"user", user,
+			"url", c.Request().URL.String(),
+			user.Attr(),
 			getCallerFile(),
 		)
 	}
@@ -69,11 +69,11 @@ func EErrorMsgStatus(c echo.Context, err error, status int) error {
 
 	if err == nil {
 		if status != http.StatusForbidden {
-			slog.Error("Unknown API error",
+			slog.ErrorContext(c.Request().Context(), "Unknown API error",
 				"method", c.Request().Method,
 				slog.Int("status", status),
-				"url", c.Request().URL,
-				"user", user,
+				"url", c.Request().URL.String(),
+				user.Attr(),
 				getCallerFile(),
 			)
 		}
@@ -83,12 +83,12 @@ func EErrorMsgStatus(c echo.Context, err error, status int) error {
 	} else {
 		// Ignore log 404 error
 		if status != http.StatusNotFound {
-			slog.Error("API error",
+			slog.ErrorContext(c.Request().Context(), "API error",
 				"err", err,
 				"method", c.Request().Method,
 				slog.Int("status", status),
-				"url", c.Request().URL,
-				"user", user,
+				"url", c.Request().URL.String(),
+				user.Attr(),
 				getCallerFile(),
 			)
 		}
@@ -106,19 +106,19 @@ func EErrorMsg(c echo.Context, err error) error {
 		user = apiCtx.GetUser()
 	}
 	if err == nil {
-		slog.Error("Unknown API error",
+		slog.ErrorContext(c.Request().Context(), "Unknown API error",
 			"method", c.Request().Method,
-			"url", c.Request().URL,
-			"user", user,
+			"url", c.Request().URL.String(),
+			user.Attr(),
 			getCallerFile(),
 		)
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	} else {
-		slog.Error("API error",
+		slog.ErrorContext(c.Request().Context(), "API error",
 			"err", err,
 			"method", c.Request().Method,
-			"url", c.Request().URL,
-			"user", user,
+			"url", c.Request().URL.String(),
+			user.Attr(),
 			getCallerFile(),
 		)
 		er := apierrors.ErrGeneric

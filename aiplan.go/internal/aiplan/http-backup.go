@@ -10,6 +10,7 @@ package aiplan
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/gob"
 	"log/slog"
 	"net/http"
@@ -225,7 +226,7 @@ func (s *Services) importWorkspaceMinio(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.importWorkspaceBackup(backup); err != nil {
+	if err := s.importWorkspaceBackup(c.Request().Context(), backup); err != nil {
 		return EError(c, err)
 	}
 
@@ -269,16 +270,16 @@ func (s *Services) importWorkspaceFile(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.importWorkspaceBackup(backup); err != nil {
+	if err := s.importWorkspaceBackup(c.Request().Context(), backup); err != nil {
 		return EError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Services) importWorkspaceBackup(backup WorkspaceBackup) error {
+func (s *Services) importWorkspaceBackup(ctx context.Context, backup WorkspaceBackup) error {
 	return s.RawDB().Transaction(func(tx *gorm.DB) error {
-		slog.Debug("Remove old workspace", "id", backup.Workspace.ID)
+		slog.DebugContext(ctx, "Remove old workspace", "id", backup.Workspace.ID)
 		var originalWorkspace dao.Workspace
 		if err := tx.Where("id = ?", backup.Workspace.ID).First(&originalWorkspace).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
@@ -290,7 +291,7 @@ func (s *Services) importWorkspaceBackup(backup WorkspaceBackup) error {
 			}
 		}
 
-		slog.Debug("Create workspace")
+		slog.DebugContext(ctx, "Create workspace")
 		if err := tx.Save(&backup.Workspace).Error; err != nil {
 			return err
 		}
@@ -312,7 +313,7 @@ func (s *Services) importWorkspaceBackup(backup WorkspaceBackup) error {
 				continue
 			}
 
-			slog.Debug("Create workspace entity", "table", vType.Field(i).Name)
+			slog.DebugContext(ctx, "Create workspace entity", "table", vType.Field(i).Name)
 			if err := tx.Save(v.Field(i).Interface()).Error; err != nil {
 				return err
 			}
