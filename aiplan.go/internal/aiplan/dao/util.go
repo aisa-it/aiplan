@@ -89,7 +89,7 @@ func PaginationRequest(offset int, limit int, query *gorm.DB, target any) (res P
 	return res, nil
 }
 
-func GetIssueFamily(issue Issue, db *gorm.DB) (family []Issue) {
+func GetIssueFamily(issue Issue, db *gorm.DB, authorId uuid.NullUUID) (family []Issue) {
 	var getChildren func(issueId uuid.UUID) []Issue
 
 	getChildren = func(issueId uuid.UUID) []Issue {
@@ -105,12 +105,32 @@ func GetIssueFamily(issue Issue, db *gorm.DB) (family []Issue) {
 	} else {
 		family = append(getChildren(issue.ID), issue)
 	}
+	skipIssueId := make(map[uuid.UUID]struct{})
+
+	if authorId.Valid {
+		filteredFamily := make([]Issue, 0, len(family))
+		for _, item := range family {
+			if item.CreatedById == authorId.UUID {
+				filteredFamily = append(filteredFamily, item)
+			} else {
+				skipIssueId[item.ID] = struct{}{}
+			}
+		}
+		family = filteredFamily
+	}
+
 	slices.SortFunc(family, func(a Issue, b Issue) int {
 		return a.SequenceId - b.SequenceId
 	})
 
 	for i := range family {
 		family[i].FetchLinkedIssues(db)
+		if len(skipIssueId) > 0 {
+			if _, ok := skipIssueId[family[i].ParentId.UUID]; ok {
+				family[i].ParentId = uuid.NullUUID{}
+				family[i].Parent = nil
+			}
+		}
 	}
 	return
 }
