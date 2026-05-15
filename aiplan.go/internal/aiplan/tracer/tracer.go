@@ -23,7 +23,6 @@ import (
 type Config struct {
 	Version     string
 	Endpoint    string
-	Env         string
 	Token       string
 	SampleRatio float64
 }
@@ -39,7 +38,6 @@ func Init(ctx context.Context, cfg *Config, db *gorm.DB) (StopFn, error) {
 		resource.WithAttributes(
 			semconv.ServiceName("aiplan"),
 			semconv.ServiceVersion(cfg.Version),
-			semconv.DeploymentEnvironment(cfg.Env),
 		),
 		resource.WithProcess(), resource.WithHost(), resource.WithFromEnv(),
 	)

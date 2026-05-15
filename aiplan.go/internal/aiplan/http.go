@@ -179,8 +179,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			Endpoint:    cfg.OTELEndpoint,
 			Token:       cfg.OTELToken,
 			Version:     appVersion,
-			Env:         "test",
-			SampleRatio: 1.0,
+			SampleRatio: cfg.OTELSampleRate,
 		}, db)
 		if err != nil {
 			slog.Error("Init OTEL tracer", "err", err)
@@ -215,14 +214,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	//slog.Info("Migrate old activities")
 	//activityMigrate(context.Background(), db) //TODO migrate to newActivities
-	// Query counter
-	ql := dao.NewQueryLogger()
-	if err := db.Callback().
-		Query().
-		After("*").
-		Register("instrumentation:after_query", ql.QueryCallback); err != nil {
-		slog.Error("Register query callback", "err", err)
-	}
 
 	memDBConn := "session.db"
 	if cfg.ExternalMemDB.URL != nil {
@@ -515,7 +506,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}))
 	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
-	authGroup.GET("queryLog/", ql.CountEndpoint)
 	s.AddFormServices(authGroup)
 	s.AddProjectServices(authGroup)
 	s.AddWorkspaceServices(authGroup)
