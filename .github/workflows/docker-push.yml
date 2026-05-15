@@ -24,12 +24,12 @@ jobs:
       #    git submodule update --recursive --init
 
       - name: Build and Push
-        uses: dagger/dagger-for-github@v8.1.0
+        uses: dagger/dagger-for-github@v8.4.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           call: build-app --source=. --version=${{ github.ref_name }} --registryUser=${{ github.actor }} --registrySecret=GITHUB_TOKEN --imageName=aisa-it/aiplan
-          version: "0.18.17"
+          version: "0.20.8"
 
   generate-api:
     runs-on: ubuntu-latest
