@@ -77,7 +77,6 @@ func InitTracer(ctx context.Context, cfg *Config, res *resource.Resource) (StopF
 			"Authorization": "Bearer " + cfg.Token,
 		}),
 		otlptracehttp.WithCompression(otlptracehttp.GzipCompression),
-		otlptracehttp.WithInsecure(),
 		otlptracehttp.WithURLPath("/api/otel/v1/traces"),
 	)
 	if err != nil {
@@ -108,7 +107,6 @@ func InitLogs(ctx context.Context, cfg *Config, res *resource.Resource) (StopFn,
 		otlploghttp.WithEndpoint(cfg.Endpoint),
 		otlploghttp.WithHeaders(map[string]string{"Authorization": "Bearer " + cfg.Token}),
 		otlploghttp.WithCompression(otlploghttp.GzipCompression),
-		otlploghttp.WithInsecure(),
 		otlploghttp.WithURLPath("/api/otel/v1/logs"),
 	)
 	if err != nil {
