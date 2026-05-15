@@ -1,6 +1,6 @@
 module dagger/aiplan
 
-go 1.26.3
+go 1.26.2
 
 require (
 	github.com/99designs/gqlgen v0.17.75
