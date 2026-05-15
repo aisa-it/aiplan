@@ -1,6 +1,6 @@
 module github.com/aisa-it/aiplan/aiplan.go
 
-go 1.26.3
+go 1.26.2
 
 require (
 	ariga.io/atlas-go-sdk v0.7.2
