@@ -324,10 +324,14 @@ func (s *Services) updateProject(c echo.Context) error {
 	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	project.Name = strings.TrimSpace(project.Name)
 
+	projectLead := project.ProjectLead
+	project.ProjectLead = nil
 	err := c.Validate(project)
 	if err != nil {
 		return EError(c, err)
 	}
+
+	project.ProjectLead = projectLead
 
 	changeProjectLead := oldLead != project.ProjectLeadId
 

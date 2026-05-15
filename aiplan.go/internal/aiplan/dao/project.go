@@ -93,7 +93,8 @@ type Project struct {
 // -migration
 type ProjectWithCount struct {
 	Project
-	TotalMembers int `json:"total_members" gorm:"->;-:migration"`
+	TotalMembers int  `json:"total_members" gorm:"->;-:migration"`
+	IsFavorite   bool `json:"is_favorite" gorm:"column:is_favorite;->;-:migration"`
 
 	NameHighlighted string `json:"name_highlighted,omitempty" gorm:"->;-:migration"`
 }
@@ -169,6 +170,7 @@ func (pwc *ProjectWithCount) ToLightDTO() *dto.ProjectLight {
 
 	p := pwc.Project.ToLightDTO()
 	p.TotalMembers = pwc.TotalMembers
+	p.IsFavorite = pwc.IsFavorite
 	p.NameHighlighted = pwc.NameHighlighted
 
 	return p
