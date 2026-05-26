@@ -2336,7 +2336,7 @@ func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body []uuid.UUID false "Список ID рабочих пространств"
-// @Success 200 {array} dto.WorkspaceMember "Список членств в рабочих пространствах"
+// @Success 200 {array} dto.WorkspaceMemberWithOwner "Список членств в рабочих пространствах"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -2372,7 +2372,7 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body []uuid.UUID false "Список ID проектов"
-// @Success 200 {array} dto.ProjectMember "Список членств в проектах"
+// @Success 200 {array} dto.ProjectMemberWithLead "Список членств в проектах"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
