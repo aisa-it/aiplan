@@ -5512,7 +5512,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/dto.ProjectMember"
+                                "$ref": "#/definitions/dto.ProjectMemberWithLead"
                             }
                         }
                     },
@@ -5575,7 +5575,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/dto.WorkspaceMember"
+                                "$ref": "#/definitions/dto.WorkspaceMemberWithOwner"
                             }
                         }
                     },
