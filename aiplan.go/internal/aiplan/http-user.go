@@ -1344,12 +1344,12 @@ func (s *Services) signUp(c echo.Context) error {
 		if err == nil {
 			return c.NoContent(http.StatusOK)
 		}
-		slog.Error("Send user sign up email notification", "email", user.Email, "try", i+1, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Send user sign up email notification", "email", user.Email, "try", i+1, "err", err)
 		time.Sleep(time.Second * 5)
 	}
 	// If failed to deliver mail delete user and return error
 	if err := s.DB(c).Unscoped().Delete(&user).Error; err != nil {
-		slog.Error("Delete failed user", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Delete failed user", "err", err)
 	}
 	return EErrorDefined(c, apierrors.ErrNewUserMailFailed)
 }
@@ -2166,7 +2166,7 @@ func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body []uuid.UUID false "Список ID рабочих пространств"
-// @Success 200 {array} dto.WorkspaceMember "Список членств в рабочих пространствах"
+// @Success 200 {array} dto.WorkspaceMemberWithOwner "Список членств в рабочих пространствах"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
@@ -2202,7 +2202,7 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body []uuid.UUID false "Список ID проектов"
-// @Success 200 {array} dto.ProjectMember "Список членств в проектах"
+// @Success 200 {array} dto.ProjectMemberWithLead "Список членств в проектах"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"

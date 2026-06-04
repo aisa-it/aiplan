@@ -9,6 +9,7 @@ package dao
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"path/filepath"
 	"time"
@@ -219,6 +220,13 @@ func (u *User) AfterFind(tx *gorm.DB) (err error) {
 
 func (u *User) String() string {
 	return fmt.Sprintf("%s (%s)", u.ID, u.Email)
+}
+
+func (u *User) Attr() slog.Attr {
+	if u != nil {
+		return slog.String("user", u.String())
+	}
+	return slog.String("user", "unknown")
 }
 
 func (u *User) GetName() string {

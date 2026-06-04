@@ -5512,7 +5512,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/dto.ProjectMember"
+                                "$ref": "#/definitions/dto.ProjectMemberWithLead"
                             }
                         }
                     },
@@ -5575,7 +5575,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/dto.WorkspaceMember"
+                                "$ref": "#/definitions/dto.WorkspaceMemberWithOwner"
                             }
                         }
                     },
@@ -10423,6 +10423,12 @@ const docTemplate = `{
                         "description": "Поисковый запрос для фильтрации проектов по названию",
                         "name": "search_query",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Возвращать только архивные проекты",
+                        "name": "is_archived",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -10812,6 +10818,66 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Проект не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/archive/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Помечает проект как архивный. После архивирования над проектом и его задачами доступны только операции чтения и поиска; ручка ` + "`" + `/unarchive/` + "`" + ` возвращает проект из архива. Доступно только администраторам проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты: архивирование",
+                "operationId": "archiveProject",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Проект успешно заархивирован"
+                    },
+                    "403": {
+                        "description": "Нет прав на архивирование проекта",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Проект не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "423": {
+                        "description": "Проект уже находится в архиве",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -16865,6 +16931,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/unarchive/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает архивный проект в рабочее состояние и снова разрешает все операции записи. Доступно только администраторам проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты: восстановление из архива",
+                "operationId": "unarchiveProject",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Проект успешно восстановлен из архива"
+                    },
+                    "403": {
+                        "description": "Нет прав на восстановление проекта",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Проект не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/sprints-folder/": {
             "post": {
                 "security": [
@@ -18622,6 +18742,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/forms/{formSlug}/form-attachments/": {
+            "post": {
+                "description": "Загружает новое вложение в ответ формы, доступной без аутентификации",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Forms"
+                ],
+                "summary": "вложения: загрузка вложения в ответ формы (без аутентификации)",
+                "operationId": "createFormAttachmentsNoAuth",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug формы",
+                        "name": "formSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Файл для загрузки",
+                        "name": "asset",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Созданное вложение",
+                        "schema": {
+                            "$ref": "#/definitions/dto.FormAttachmentLight"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Форма доступна только с аутентификацией",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Форма не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/sign-in": {
             "post": {
                 "description": "Аутентифицирует пользователя с использованием email и пароля, с проверкой капчи",
@@ -19020,6 +19204,9 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "attachment_count": {
+                    "type": "integer"
+                },
                 "author_detail": {
                     "allOf": [
                         {
@@ -19051,6 +19238,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "comments_count": {
+                    "type": "integer"
                 },
                 "completed_at": {
                     "type": "string",
@@ -19106,6 +19296,12 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "link_count": {
+                    "type": "integer"
+                },
+                "linked_issues_count": {
+                    "type": "integer"
                 },
                 "llm_content": {
                     "type": "boolean"
@@ -19168,6 +19364,9 @@ const docTemplate = `{
                         }
                     ],
                     "x-nullable": true
+                },
+                "sub_issues_count": {
+                    "type": "integer"
                 },
                 "target_date": {
                     "type": "string",
@@ -20687,6 +20886,9 @@ const docTemplate = `{
                     },
                     "x-nullable": true
                 },
+                "attachment_count": {
+                    "type": "integer"
+                },
                 "author_detail": {
                     "allOf": [
                         {
@@ -20706,6 +20908,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.IssueBlockerLight"
                     }
+                },
+                "comments_count": {
+                    "type": "integer"
                 },
                 "completed_at": {
                     "type": "string",
@@ -20755,6 +20960,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.LabelLight"
                     },
                     "x-nullable": true
+                },
+                "link_count": {
+                    "type": "integer"
+                },
+                "linked_issues_count": {
+                    "type": "integer"
                 },
                 "llm_content": {
                     "type": "boolean"
@@ -20817,6 +21028,9 @@ const docTemplate = `{
                         }
                     ],
                     "x-nullable": true
+                },
+                "sub_issues_count": {
+                    "type": "integer"
                 },
                 "target_date": {
                     "type": "string",
@@ -21562,6 +21776,9 @@ const docTemplate = `{
         "dto.Project": {
             "type": "object",
             "properties": {
+                "archived": {
+                    "type": "boolean"
+                },
                 "cover_image": {
                     "type": "string",
                     "x-nullable": true
@@ -21694,6 +21911,9 @@ const docTemplate = `{
         "dto.ProjectLight": {
             "type": "object",
             "properties": {
+                "archived": {
+                    "type": "boolean"
+                },
                 "cover_image": {
                     "type": "string",
                     "x-nullable": true

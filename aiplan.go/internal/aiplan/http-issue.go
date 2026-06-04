@@ -12,6 +12,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/flate"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -214,7 +215,7 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 	assetName, err := uuid.FromString(strings.Split(event.Upload.ID, "+")[0])
 	if err != nil {
-		slog.Error("Parse uploaded file id", "id", event.Upload.ID, "err", err)
+		slog.ErrorContext(event.Context, "Parse uploaded file id", "id", event.Upload.ID, "err", err)
 		return
 	}
 	userId := event.Upload.MetaData["user_id"]
@@ -224,14 +225,14 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 
 	var user dao.User
 	if err := s.RawDB().Where("id = ?", userId).First(&user).Error; err != nil {
-		slog.Error("Find new attachment user", "err", err)
+		slog.ErrorContext(event.Context, "Find new attachment user", "err", err)
 		return
 	}
 
 	if iOk {
 		var issue dao.Issue
 		if err := s.RawDB().Select("issues.id", "issues.workspace_id", "issues.project_id").Joins("Project").Where("issues.id = ?", issueId).First(&issue).Error; err != nil {
-			slog.Error("Find issue for attachment", "issueId", issueId, "err", err)
+			slog.ErrorContext(event.Context, "Find issue for attachment", "issueId", issueId, "err", err)
 			return
 		}
 
@@ -266,7 +267,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			}
 			return nil
 		}); err != nil {
-			slog.Error("Save attachment info to db", "err", err)
+			slog.ErrorContext(event.Context, "Save attachment info to db", "err", err)
 			return
 		}
 		issueAttachment.Asset = &fa
@@ -279,7 +280,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 	} else if dOk {
 		var doc dao.Doc
 		if err := s.RawDB().Select("docs.id", "docs.workspace_id").Joins("Workspace").Where("docs.id = ?", docId).First(&doc).Error; err != nil {
-			slog.Error("Find doc for attachment", "docId", docId, "err", err)
+			slog.ErrorContext(event.Context, "Find doc for attachment", "docId", docId, "err", err)
 			return
 		}
 
@@ -313,7 +314,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			}
 			return nil
 		}); err != nil {
-			slog.Error("Save attachment info to db", "err", err)
+			slog.ErrorContext(event.Context, "Save attachment info to db", "err", err)
 			return
 		}
 
@@ -424,7 +425,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrLimitTooHigh)
 	}
 
-	result, err := search.GetIssueListData(s.db, *user, projectMember, sprint, globalSearch, searchParams, streamCallback)
+	result, err := search.GetIssueListData(s.DB(c), *user, projectMember, sprint, globalSearch, searchParams, streamCallback)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
 			return EErrorDefined(c, definedErr)
@@ -474,7 +475,7 @@ func (s *Services) exportIssueList(c echo.Context) error {
 	searchParams.Offset = 0
 	searchParams.Limit = 1_000_000
 
-	result, err := search.GetIssueListData(s.db, *user, dao.ProjectMember{}, nil, true, searchParams, nil)
+	result, err := search.GetIssueListData(s.DB(c), *user, dao.ProjectMember{}, nil, true, searchParams, nil)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
 			return EErrorDefined(c, definedErr)
@@ -727,7 +728,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var rulesLog []dao.RulesLog
 	defer func() {
 		if err := rules.AddLog(s.db, rulesLog); err != nil {
-			slog.Error("Create rules log", "err", err)
+			slog.ErrorContext(c.Request().Context(), "Create rules log", "err", err)
 		}
 	}()
 
@@ -3774,7 +3775,7 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	}
 
 	// Валидируем значение через JSON Schema
-	if err := validatePropertyValue(template, request.Value); err != nil {
+	if err := validatePropertyValue(c.Request().Context(), template, request.Value); err != nil {
 		return EErrorDefined(c, apierrors.ErrPropertyValueValidationFailed)
 	}
 
@@ -3866,7 +3867,7 @@ func parsePropertyValue(propType, value string) any {
 }
 
 // validatePropertyValue валидирует значение через JSON Schema
-func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) error {
+func validatePropertyValue(ctx context.Context, template dao.ProjectPropertyTemplate, value any) error {
 	schema := types.GenValueSchema(template.Type, template.Options)
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("schema.json", schema); err != nil {
@@ -3880,7 +3881,7 @@ func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) erro
 
 	err = sch.Validate(value)
 	if errors.Is(err, &jsonschema.ValidationError{}) {
-		slog.Debug("JSON schema validation error", "err", err)
+		slog.DebugContext(ctx, "JSON schema validation error", "err", err)
 	}
 	return err
 }

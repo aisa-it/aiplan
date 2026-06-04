@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"sync"
@@ -57,4 +58,49 @@ func (c *usersCache) Load(id uuid.UUID) (*dto.UserLight, bool) {
 	c.m[u.ID] = user
 	c.rw.Unlock()
 	return &user, true
+}
+
+func (c *usersCache) LoadAsDAO(id uuid.UUID) (*dao.User, bool) {
+	light, ok := c.Load(id)
+	if !ok {
+		return nil, false
+	}
+	return userLightToDAO(light), true
+}
+
+func userLightToDAO(u *dto.UserLight) *dao.User {
+	if u == nil {
+		return nil
+	}
+	d := &dao.User{
+		ID:            u.ID,
+		Username:      u.Username,
+		Email:         u.Email,
+		FirstName:     u.FirstName,
+		LastName:      u.LastName,
+		Avatar:        u.Avatar,
+		AvatarId:      u.AvatarId,
+		UserTimezone:  u.UserTimezone,
+		LastActive:    u.LastActive,
+		TelegramId:    u.TelegramId,
+		CreatedAt:     u.CreatedAt,
+		IsSuperuser:   u.IsSuperuser,
+		IsActive:      u.IsActive,
+		IsOnboarded:   u.IsOnboarded,
+		IsBot:         u.IsBot,
+		IsIntegration: u.IsIntegration,
+	}
+	if u.StatusEmoji != nil {
+		d.StatusEmoji = sql.NullString{String: *u.StatusEmoji, Valid: true}
+	}
+	if u.Status != nil {
+		d.Status = sql.NullString{String: *u.Status, Valid: true}
+	}
+	if u.StatusEndDate != nil {
+		d.StatusEndDate = sql.NullTime{Time: *u.StatusEndDate, Valid: true}
+	}
+	if u.BlockedUntil != nil {
+		d.BlockedUntil = sql.NullTime{Time: *u.BlockedUntil, Valid: true}
+	}
+	return d
 }

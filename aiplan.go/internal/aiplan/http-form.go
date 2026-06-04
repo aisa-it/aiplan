@@ -610,7 +610,7 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	if form.TargetProjectId.Valid {
 		go func(form *dao.Form, answer *dao.FormAnswer, user *dao.User) {
 			if err := s.createAnswerIssue(c, form, answer, user); err != nil {
-				slog.Error("Create answer issue", "formId", form.ID, "err", err)
+				slog.ErrorContext(c.Request().Context(), "Create answer issue", "formId", form.ID, "err", err)
 			}
 		}(&form, &answer, user)
 	}

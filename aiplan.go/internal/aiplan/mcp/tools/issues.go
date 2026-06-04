@@ -339,8 +339,11 @@ var issuesTools = []Tool{
 }
 
 func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
+	all := append([]Tool{}, issuesTools...)
+	all = append(all, issuesActionsTools...)
+
 	var resources []server.ServerTool
-	for _, t := range issuesTools {
+	for _, t := range all {
 		resources = append(resources, server.ServerTool{
 			Tool:    t.Tool,
 			Handler: WrapTool(db, bl, t.Handler),

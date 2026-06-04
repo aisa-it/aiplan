@@ -41,6 +41,15 @@ func GetBoolEnv(key string) bool {
 	return v
 }
 
+func GetFloatEnv(key string) float64 {
+	val, _ := os.LookupEnv(key)
+	v, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
 func GetURLEnv(key string) types.JsonURL {
 	val, _ := os.LookupEnv(key)
 	u, err := url.Parse(val)
