@@ -225,9 +225,20 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		createEntities = false
 	}
 
+	var projectMember dao.ProjectMember
+
+	if err := s.DB(c).Where("project_id = ?", srcProject.ID).
+		Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+		return EError(c, err)
+	}
+
 	var srcIssues []dao.Issue
 	if linkedIssues {
-		srcIssues = dao.GetIssueFamily(srcIssue, s.db)
+		compareAuthorId := uuid.NullUUID{}
+		if projectMember.Role != types.AdminRole {
+			compareAuthorId = uuid.NullUUID{UUID: user.ID, Valid: true}
+		}
+		srcIssues = dao.GetIssueFamily(srcIssue, s.db, compareAuthorId)
 	} else {
 		srcIssues = []dao.Issue{srcIssue}
 	}
@@ -654,12 +665,24 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	var projectMember dao.ProjectMember
+
+	if err := s.DB(c).Where("project_id = ?", srcProject.ID).
+		Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+		return EError(c, err)
+	}
+
 	if linkedIssues {
 		srcIssueMap := make(map[uuid.UUID]dao.Issue)
+		compereAuthorId := uuid.NullUUID{}
+		if projectMember.Role != types.AdminRole {
+			compereAuthorId = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+		}
 		for i, srcIssue := range srcIssues {
 			srcIssues[i].FetchLinkedIssues(s.db)
 			srcIssueMap[srcIssue.ID] = srcIssue
-			for _, issue := range dao.GetIssueFamily(srcIssue, s.db) {
+			for _, issue := range dao.GetIssueFamily(srcIssue, s.db, compereAuthorId) {
 				srcIssueMap[issue.ID] = issue
 			}
 		}

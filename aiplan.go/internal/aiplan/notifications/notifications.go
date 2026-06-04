@@ -15,11 +15,9 @@ type Notification struct {
 	Ws *WebsocketNotificationService
 	Tg *tg.TgService
 	Db *gorm.DB
-	//IssueActivityHandler(activity *dao.IssueActivity)
 }
 
 func NewNotificationService(cfg *config.Config, db *gorm.DB, bl *business.Business) *Notification {
-	//NewTelegramService(db, cfg, tracker, bl),
 	return &Notification{
 		Ws: NewWebsocketNotificationService(),
 		Tg: tg.New(db, cfg, bl),

@@ -76,13 +76,7 @@ func (s *Services) ProjectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if !exists {
 			return EErrorDefined(c, apierrors.ErrProjectNotFound)
 		}
-		//
-		//<<<<<<< HEAD
-		//		project.Workspace = &workspace
-		//		projectMember.Project = &project
-		//
-		//		return next(ProjectContext{c.(WorkspaceContext), project, projectMember})
-		//=======
+
 		return next(c)
 	}
 }
@@ -330,6 +324,7 @@ func (s *Services) updateProject(c echo.Context) error {
 	project.ID = id
 	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	project.Name = strings.TrimSpace(project.Name)
+
 	projectLead := project.ProjectLead
 	project.ProjectLead = nil
 	err := c.Validate(project)
@@ -598,7 +593,7 @@ func (s *Services) getProjectActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Project").
 		Joins("Workspace").
 		Joins("Actor").
@@ -1400,7 +1395,7 @@ func (s *Services) addProjectToFavorites(c echo.Context) error {
 
 	userId := user.ID
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	project, err := dao.GetProject(s.db, workspace.Slug, userId, projectID)
+	project, err := dao.GetProject(s.DB(c), workspace.Slug, userId, projectID)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -1445,7 +1440,7 @@ func (s *Services) removeProjectFromFavorites(c echo.Context) error {
 	projectId := c.Param("projectId")
 
 	userId := user.ID
-	project, err := dao.GetProject(s.db, workspace.Slug, userId, projectId)
+	project, err := dao.GetProject(s.DB(c), workspace.Slug, userId, projectId)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -1997,7 +1992,7 @@ func (s *Services) createIssue(c echo.Context) error {
 
 	issueNew.Project = project
 
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Assignees").
 		Preload("Watchers").
 		Preload("State").
@@ -2015,7 +2010,7 @@ func (s *Services) createIssue(c echo.Context) error {
 
 	if issueNew.ParentId.Valid {
 		var parentIssue dao.Issue
-		if err := s.db.Where("id = ?", issueNew.ParentId.UUID).First(&parentIssue).Error; err == nil {
+		if err := s.DB(c).Where("id = ?", issueNew.ParentId.UUID).First(&parentIssue).Error; err == nil {
 			oldParentSnapshot := tracker.IssueToSnapshot(parentIssue)
 			issueNew.Parent = &parentIssue
 			parentIssue.Project = issueNew.Project
@@ -2449,7 +2444,7 @@ func (s *Services) createState(c echo.Context) error {
 	state.CreatedAt = time.Now()
 	state.UpdatedAt = time.Now()
 
-	if err := updateStatesGroup(s.db, &state, "create"); err != nil {
+	if err := updateStatesGroup(s.DB(c), &state, "create"); err != nil {
 		return EError(c, err)
 	}
 
@@ -2587,24 +2582,6 @@ func (s *Services) updateState(c echo.Context) error {
 	// Pre-update activity tracking
 	oldSnapshot := tracker.StateToSnapshot(&state, tracker.WithDefaultState(defaultState))
 	oldStateMap := StructToJSONMap(state)
-
-	//	oldStateMap["updateScope"] = "status"
-	//	oldStateMap["updateScopeId"] = stateId
-	//	//TODO rate limit
-	//
-	//	var currentDefaultState dao.State
-	//	if err := s.DB(c).
-	//		Preload(clause.Associations).
-	//		Where("project_id = ?", project.ID).
-	//		Where(gorm.Expr(`"default" = ?`, true)).
-	//		First(&currentDefaultState).Error; err == nil {
-	//		if currentDefaultState.Name != "" {
-	//			if req.Default != nil && *req.Default {
-	//				oldStateMap["default_activity_val"] = currentDefaultState.Name
-	//				oldStateMap["updateScopeId"] = currentDefaultState.ID
-	//			}
-	//		}
-	//	}
 
 	req.UpdatedById = user.ID
 	fields = append(fields, "updated_by")
@@ -3223,8 +3200,8 @@ func (s *Services) deleteIssueTemplate(c echo.Context) error {
 		}
 		oldSnapshot := tracker.IssueTemplateToSnapshot(&template)
 
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
-			return s.DB(c).
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+			return tx.
 				Delete(&template).Error
 		}); err != nil {
 			return EError(c, err)

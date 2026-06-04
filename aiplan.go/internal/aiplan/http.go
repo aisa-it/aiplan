@@ -51,8 +51,10 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
-
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tracer"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -102,10 +104,12 @@ type Services struct {
 	integrationsService *integrations.IntegrationsService
 	importService       *issues_import.ImportService
 	jitsiTokenIss       *jitsi_token.JitsiTokenIssuer
+	authProvider        *authprovider.LdapProvider
 
 	notificationsService *notifications.Notification
 
-	business *business.Business
+	business    *business.Business
+	tokensCache *tokenscache.TokensCache
 }
 
 // DB возвращает *gorm.DB, привязанный к контексту HTTP-запроса.
@@ -123,27 +127,10 @@ func (s *Services) RawDB() *gorm.DB {
 
 const requestTimeout = time.Second * 10
 
+const spanCtxKey = "trace.span_context"
+
 var cfg *config.Config
 var appVersion string
-
-// ServerHeader middleware adds a `Server` header to the response.
-func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Response().Header().Set(echo.HeaderServer, "AIPlan")
-		return next(c)
-	}
-}
-
-// PodHeader middleware adds a X-Pod-Name header with pod name to response for balancer debug
-func PodHeader(next echo.HandlerFunc) echo.HandlerFunc {
-	podName := os.Getenv("POD_NAME")
-	return func(c echo.Context) error {
-		if podName != "" {
-			c.Response().Header().Set("X-Pod-Name", podName)
-		}
-		return next(c)
-	}
-}
 
 func Server(db *gorm.DB, c *config.Config, version string) {
 	cfg = c
@@ -167,12 +154,40 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			c.NoContent(http.StatusNotFound)
 			return
 		}
-		slog.Error("Unhandled error in endpoint", "handler", c.Path(), "url", c.Request().URL, "err", err)
-		EErrorMsgStatus(c, nil, code)
+		ctx := c.Request().Context()
+		if sc, ok := c.Get(spanCtxKey).(trace.SpanContext); ok {
+			ctx = trace.ContextWithSpanContext(ctx, sc)
+		}
+		slog.ErrorContext(ctx, "API error",
+			"err", err,
+			"method", c.Request().Method,
+			"url", c.Request().URL.String(),
+		)
+		er := apierrors.ErrGeneric
+		er.StatusCode = code
+		if err != nil {
+			er.Err = err.Error()
+		}
+		EErrorDefined(c, er)
 	}
 
 	var storage filestorage.FileStorage
 	var err error
+
+	var stopTracer tracer.StopFn
+	if cfg.OTELEndpoint != "" {
+		slog.Info("Start OTEL tracer")
+		stopTracer, err = tracer.Init(context.Background(), &tracer.Config{
+			Endpoint:    cfg.OTELEndpoint,
+			Token:       cfg.OTELToken,
+			Version:     appVersion,
+			SampleRatio: cfg.OTELSampleRate,
+		}, db)
+		if err != nil {
+			slog.Error("Init OTEL tracer", "err", err)
+			os.Exit(1)
+		}
+	}
 
 	if cfg.AssetsPath == "" {
 		slog.Warn("ASSETS_PATH param empty, fallback to ./assets dir")
@@ -199,15 +214,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	dao.FileStorage = storage
 
-	// Query counter
-	ql := dao.NewQueryLogger()
-	if err := db.Callback().
-		Query().
-		After("*").
-		Register("instrumentation:after_query", ql.QueryCallback); err != nil {
-		slog.Error("Register query callback", "err", err)
-	}
-
 	memDBConn := "session.db"
 	if cfg.ExternalMemDB.URL != nil {
 		memDBConn = cfg.ExternalMemDB.URL.String()
@@ -218,25 +224,16 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		os.Exit(1)
 	}
 
-	//es := notifications.NewEmailService(cfg, db)
 	es := email.NewEmailService(cfg, db)
-
-	//at := tracker.NewTracker(db)
-
-	sst := tracker.NewSnapshotTracker(db)
-
-	bl, err := business.NewBL(db, sst)
+	snapshotTracker := tracker.NewSnapshotTracker(db)
+	bl, err := business.NewBL(db, snapshotTracker)
 
 	if err != nil {
 		os.Exit(1)
 	}
 	ns := notifications.NewNotificationService(cfg, db, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
-	/*if err := np.ListenNotifications(cfg.DatabaseDSN); err != nil {
-		slog.Error("Notification listener fail", "err", err)
-		os.Exit(1)
-	}*/
-	//ts := notifications.NewTelegramService(db, cfg, tracker)
+
 	cache.InitUsersCache(db)
 
 	var ldapProvider *authprovider.LdapProvider
@@ -296,17 +293,17 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	s := &Services{
-		db:              db,
-		snapshotTracker: sst,
-		storage:         storage,
-		emailService:    es,
-		//telegramService:       ts,
-		memDB:         memDB,
-		importService: issues_import.NewImportService(db, storage, es),
-		//wsNotificationService: ws,
+		db:                   db,
+		snapshotTracker:      snapshotTracker,
+		storage:              storage,
+		emailService:         es,
+		memDB:                memDB,
+		importService:        issues_import.NewImportService(db, storage, es),
 		notificationsService: ns,
 		business:             bl,
 		jitsiTokenIss:        jitsi_token.NewJitsiTokenIssuer(cfg.JitsiJWTSecret, cfg.JitsiAppID),
+		authProvider:         ldapProvider,
+		tokensCache:          tokenscache.NewTokensCache(),
 	}
 
 	// Start cronManager
@@ -353,13 +350,20 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	go func() {
 		<-ctx.Done()
 		slog.Info("Shutting down gracefully, press Ctrl+C again to force")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
 		// Останавливаем SSH сервер
 		if sshServer != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 			if err := sshServer.Shutdown(shutdownCtx); err != nil {
 				slog.Error("SSH server shutdown error", "err", err)
+			}
+		}
+
+		if stopTracer != nil {
+			// Stoping tracer
+			if err := stopTracer(shutdownCtx); err != nil {
+				slog.Error("Stop OTEL tracer", "err", err)
 			}
 		}
 
@@ -367,13 +371,13 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		np.Stop()
 		es.Stop()
 		ns.Tg.Stop()
-		e.Shutdown(context.Background())
+		e.Shutdown(shutdownCtx)
 		os.Exit(0)
 	}()
 
 	sendPasswordDefaultAdmin(db, es)
 
-	sst.RegisterHandler(notifications.NewEventNotificationService(ns))
+	snapshotTracker.RegisterHandler(notifications.NewEventNotificationService(ns))
 
 	// Global middlewares
 	e.Use(ServerHeader)
@@ -440,22 +444,30 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			},
 		}),
 	)
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {
+				c.Set(spanCtxKey, sc)
+			}
+			return next(c)
+		}
+	})
 
 	e.Validator = NewRequestValidator()
 
-	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es, ldapProvider)
-
 	//services with auth
-	apiGroup := e.Group("/api/")
+	apiGroup := e.Group("/api/",
+		otelecho.Middleware("aiplan",
+			otelecho.WithSkipper(func(c echo.Context) bool {
+				p := c.Path()
+				return strings.Contains(p, "_health") || strings.Contains(p, "/api/version") || strings.Contains(p, "/ws") || strings.Contains(p, "swagger")
+			}),
+		),
+	)
 
 	s.integrationsService = integrations.NewIntegrationService(apiGroup, db, s.notificationsService.Tg, s.storage, bl)
 
-	authMiddleware := AuthMiddleware(AuthConfig{
-		Secret:      []byte(cfg.SecretKey),
-		DB:          db,
-		MemDB:       memDB,
-		TokensCache: tokenscache.NewTokensCache(),
-	})
+	authMiddleware := s.AuthMiddleware([]byte(cfg.SecretKey), nil)
 	authGroup := apiGroup.Group("auth/", authMiddleware)
 
 	apiGroup.Group("docs", middleware.StaticWithConfig(middleware.StaticConfig{
@@ -469,7 +481,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}))
 	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
-	authGroup.GET("queryLog/", ql.CountEndpoint)
+	s.AddAuthenticationServices(apiGroup, []byte(cfg.SecretKey))
 	s.AddFormServices(authGroup)
 	s.AddProjectServices(authGroup)
 	s.AddWorkspaceServices(authGroup)

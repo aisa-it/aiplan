@@ -10,11 +10,20 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+func populateAuthors(issues []dao.IssueWithCount) {
+	for i := range issues {
+		if author, ok := cache.UsersCache.LoadAsDAO(issues[i].CreatedById); ok {
+			issues[i].Author = author
+		}
+	}
+}
 
 func buildSearchQuery(db *gorm.DB,
 	user dao.User,
@@ -375,6 +384,8 @@ func SearchIssuesList(
 		return nil, 0, err
 	}
 
+	populateAuthors(issues)
+
 	return issues, int(count), nil
 }
 
@@ -453,35 +464,16 @@ func GetIssueListData(
 		Limit:  searchParams.Limit,
 	}
 
-	// Преобразование в map с DTO
 	if searchParams.LightSearch {
-		// Populate author from cache
-		res := make([]dto.SearchLightweightIssue, 0, len(issues))
-		for _, issue := range issues {
-			author, _ := cache.UsersCache.Load(issue.CreatedById)
-			converted := issue.ToSearchLightDTO()
-			converted.Author = author
-			res = append(res, converted)
-		}
-
 		return dto.IssuesLightSearchResponse{
 			PaginationMeta: paginationMeta,
-			Issues:         res,
+			Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.SearchLightweightIssue { return iwc.ToSearchLightDTO() }),
 		}, nil
-	}
-
-	// Populate author from cache
-	res := make([]dto.IssueWithCount, 0, len(issues))
-	for _, issue := range issues {
-		author, _ := cache.UsersCache.Load(issue.CreatedById)
-		converted := issue.ToDTO()
-		converted.Author = author
-		res = append(res, *converted)
 	}
 
 	return dto.IssuesSearchResponse{
 		PaginationMeta: paginationMeta,
-		Issues:         res,
+		Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
 	}, nil
 }
 
