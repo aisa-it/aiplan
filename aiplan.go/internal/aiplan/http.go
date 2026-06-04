@@ -104,10 +104,12 @@ type Services struct {
 	integrationsService *integrations.IntegrationsService
 	importService       *issues_import.ImportService
 	jitsiTokenIss       *jitsi_token.JitsiTokenIssuer
+	authProvider        *authprovider.LdapProvider
 
 	notificationsService *notifications.Notification
 
-	business *business.Business
+	business    *business.Business
+	tokensCache *tokenscache.TokensCache
 }
 
 // DB возвращает *gorm.DB, привязанный к контексту HTTP-запроса.
@@ -308,6 +310,8 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		notificationsService: ns,
 		business:             bl,
 		jitsiTokenIss:        jitsi_token.NewJitsiTokenIssuer(cfg.JitsiJWTSecret, cfg.JitsiAppID),
+		authProvider:         ldapProvider,
+		tokensCache:          tokenscache.NewTokensCache(),
 	}
 
 	// Start cronManager
@@ -463,12 +467,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			},
 		}),
 	)
-	e.Use(otelecho.Middleware("aiplan",
-		otelecho.WithSkipper(func(c echo.Context) bool {
-			p := c.Path()
-			return strings.Contains(p, "_health") || strings.Contains(p, "/api/version") || strings.Contains(p, "/ws") || strings.Contains(p, "swagger") || !strings.HasPrefix(p, "/api/")
-		}),
-	))
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {
@@ -480,19 +478,19 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	e.Validator = NewRequestValidator()
 
-	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es, ldapProvider)
-
 	//services with auth
-	apiGroup := e.Group("/api/")
+	apiGroup := e.Group("/api/",
+		otelecho.Middleware("aiplan",
+			otelecho.WithSkipper(func(c echo.Context) bool {
+				p := c.Path()
+				return strings.Contains(p, "_health") || strings.Contains(p, "/api/version") || strings.Contains(p, "/ws") || strings.Contains(p, "swagger")
+			}),
+		),
+	)
 
 	s.integrationsService = integrations.NewIntegrationService(apiGroup, db, s.notificationsService.Tg, s.storage, tr, bl)
 
-	authMiddleware := AuthMiddleware(AuthConfig{
-		Secret:      []byte(cfg.SecretKey),
-		DB:          db,
-		MemDB:       memDB,
-		TokensCache: tokenscache.NewTokensCache(),
-	})
+	authMiddleware := s.AuthMiddleware([]byte(cfg.SecretKey), nil)
 	authGroup := apiGroup.Group("auth/", authMiddleware)
 
 	apiGroup.Group("docs", middleware.StaticWithConfig(middleware.StaticConfig{
@@ -506,6 +504,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}))
 	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
+	s.AddAuthenticationServices(apiGroup, []byte(cfg.SecretKey))
 	s.AddFormServices(authGroup)
 	s.AddProjectServices(authGroup)
 	s.AddWorkspaceServices(authGroup)

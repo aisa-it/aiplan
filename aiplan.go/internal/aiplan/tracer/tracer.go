@@ -57,6 +57,7 @@ func Init(ctx context.Context, cfg *Config, db *gorm.DB) (StopFn, error) {
 	db.Use(tracing.NewPlugin(
 		tracing.WithoutMetrics(),
 		tracing.WithDBSystem("aiplan-db"),
+		tracing.WithoutQueryVariables(),
 	))
 
 	return func(ctx context.Context) error {
