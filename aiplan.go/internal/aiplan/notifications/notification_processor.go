@@ -19,6 +19,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/microcosm-cc/bluemonday"
 	"gorm.io/gorm/clause"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -32,6 +33,8 @@ const (
 	maxRetryAttempts     = 3
 	notificationsChannel = "notifications"
 )
+
+var htmlStripPolicy *bluemonday.Policy = bluemonday.StrictPolicy()
 
 // NotificationProcessor is responsible for processing notifications
 type NotificationProcessor struct {

@@ -1995,20 +1995,20 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//issueNew.Project = project
-	//
-	//if err := s.db.
-	//		Preload("Assignees").
-	//		Preload("Watchers").
-	//		Preload("State").
-	//		Where("id = ?", issueNew.ID).
-	//		First(&issueNew).Error; err != nil {
-	//	return EError(c, err)
-	//}
-	issueNew = *apiContext.GetIssue(apicontext.WithAssignees(), apicontext.WithWatchers(), apicontext.WithState())
+	issueNew.Project = project
+
+	if err := s.db.
+		Preload("Assignees").
+		Preload("Watchers").
+		Preload("State").
+		Where("id = ?", issueNew.ID).
+		First(&issueNew).Error; err != nil {
+		return EError(c, err)
+	}
+	//issueNew = *apiContext.GetIssue(apicontext.WithAssignees(), apicontext.WithWatchers(), apicontext.WithState())
 
 	newSnapshot := tracker.IssueToSnapshot(issueNew)
-	err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, &issueNew, user)
+	err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, issueNew.Project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

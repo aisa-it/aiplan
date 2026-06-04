@@ -40,11 +40,15 @@ var StatusTranslation map[string]string = map[string]string{
 	"started":   "Начато",
 }
 
-var RoleTranslation map[string]string = map[string]string{
+var RoleTranslation = map[string]string{
 	"5":  "Гость",
 	"10": "Участник",
 	"15": "Администратор",
 }
+
+var ProjectPublicTranslate = map[string]string{
+	"true":  "публичный",
+	"false": "приватный"}
 
 func TranslateMap(tMap map[string]string, str *string) string {
 	key := "<nil>"

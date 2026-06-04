@@ -60,13 +60,13 @@ func (e *ActivityEvent) SetEntityRefs(layer types.EntityLayer, entity IDaoAct) {
 	if de, ok := any(entity).(WorkspaceEntityI); ok && layer != types.LayerRoot {
 		e.WorkspaceID = uuid.NullUUID{UUID: de.GetWorkspaceId(), Valid: true}
 	}
-	if de, ok := any(entity).(DocEntityI); ok {
+	if de, ok := any(entity).(DocEntityI); ok && layer != types.LayerWorkspace {
 		e.DocID = uuid.NullUUID{UUID: de.GetDocId(), Valid: true}
 	}
-	if fe, ok := any(entity).(FormEntityI); ok {
+	if fe, ok := any(entity).(FormEntityI); ok && layer != types.LayerWorkspace {
 		e.FormID = uuid.NullUUID{UUID: fe.GetFormId(), Valid: true}
 	}
-	if se, ok := any(entity).(SprintEntityI); ok {
+	if se, ok := any(entity).(SprintEntityI); ok && layer != types.LayerWorkspace {
 		e.SprintID = uuid.NullUUID{UUID: se.GetSprintId(), Valid: true}
 	}
 	if pe, ok := any(entity).(ProjectEntityI); ok && layer != types.LayerWorkspace {

@@ -6,17 +6,45 @@ import (
 	"fmt"
 	htmlTemplate "html/template"
 	"log/slog"
-	"mime"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	"github.com/microcosm-cc/bluemonday"
 )
 
-var htmlStripPolicy *bluemonday.Policy = bluemonday.StrictPolicy()
+func (es *EmailService) getHTML(title string, body string) (string, error) {
+	return es.getHTMLWithParams(title, body, nil, nil, 0, 0)
+}
+
+func (es *EmailService) getHTMLWithParams(title string, body string, issue *dao.Issue, project *dao.Project, commentCount int, activityCount int) (string, error) {
+	var template dao.Template
+	if err := es.db.Where("name = ?", "body").First(&template).Error; err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := template.ParsedTemplate.Execute(&buf, struct {
+		Issue         *dao.Issue
+		Title         string
+		CreatedAt     time.Time
+		Body          string
+		CommentCount  int
+		ActivityCount int
+		Project       *dao.Project
+	}{
+		Title:         title,
+		CreatedAt:     time.Now(),
+		Body:          body,
+		Issue:         issue,
+		CommentCount:  commentCount,
+		ActivityCount: activityCount,
+		Project:       project,
+	}); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
 
 type MessageNotifyCtx struct {
 	WebUrl     string
@@ -51,7 +79,6 @@ func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, su
 
 	textContent := htmlStripPolicy.Sanitize(content)
 	mailSend := EmailMessage{
-
 		To:          notification.User.Email,
 		Subject:     subject,
 		Content:     content,
@@ -522,85 +549,4 @@ func (es *EmailService) UserBlockedUntil(user dao.User, until time.Time) error {
 		Content:     content,
 		TextContent: textContent,
 	})
-}
-
-func (es *EmailService) getHTML(title string, body string) (string, error) {
-	return es.getHTMLWithParams(title, body, nil, nil, 0, 0)
-}
-
-func (es *EmailService) getHTMLWithParams(title string, body string, issue *dao.Issue, project *dao.Project, commentCount int, activityCount int) (string, error) {
-	var template dao.Template
-	if err := es.db.Where("name = ?", "body").First(&template).Error; err != nil {
-		return "", err
-	}
-
-	var buf bytes.Buffer
-	if err := template.ParsedTemplate.Execute(&buf, struct {
-		Issue         *dao.Issue
-		Title         string
-		CreatedAt     time.Time
-		Body          string
-		CommentCount  int
-		ActivityCount int
-		Project       *dao.Project
-	}{
-		Title:         title,
-		CreatedAt:     time.Now(), //TODO: timezone
-		Body:          body,
-		Issue:         issue,
-		CommentCount:  commentCount,
-		ActivityCount: activityCount,
-		Project:       project,
-	}); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
-
-func parseEmailFrom(s string) (email, systemName string) {
-	start := strings.IndexByte(s, '<')
-	if start == -1 {
-		return s, ""
-	}
-
-	end := strings.IndexByte(s[start:], '>')
-	if end == -1 {
-		return s, ""
-	}
-
-	email = s[start+1 : start+end]
-
-	if start > 0 {
-		systemName = strings.TrimSpace(s[:start])
-	}
-
-	return email, systemName
-}
-
-func (es *EmailService) formatFrom(userName *string) string {
-
-	var user, system string
-
-	if userName != nil {
-		user = *userName
-	}
-	if es.senderName != "" {
-		system = es.senderName
-	}
-
-	var displayName string
-	if user != "" && system != "" {
-		displayName = user + " (" + system + ")"
-	} else if user != "" {
-		displayName = user
-	} else if system != "" {
-		displayName = system
-	}
-
-	if displayName == "" {
-		return es.emailFrom
-	}
-
-	encodedName := mime.QEncoding.Encode("UTF-8", displayName)
-	return encodedName + " <" + es.emailFrom + ">"
 }

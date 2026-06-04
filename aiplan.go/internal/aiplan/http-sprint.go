@@ -224,7 +224,7 @@ func (s *Services) createSprint(c echo.Context) error {
 	}
 
 	newSnapshot := tracker.SprintToSnapshot(sprint)
-	err = s.snapshotTracker.TrackChanges(types.LayerSprint, nil, newSnapshot, sprint, user)
+	err = s.snapshotTracker.TrackChanges(types.LayerWorkspace, nil, newSnapshot, sprint, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

@@ -1972,7 +1972,7 @@ func (s *Services) getIssueLinkList(c echo.Context) error {
 func (s *Services) createIssueLink(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	project := apiContext.GetProject()
-	issue := apiContext.GetIssue()
+	issue := apiContext.GetIssue(apicontext.WithLinks())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
@@ -2041,6 +2041,7 @@ func (s *Services) createIssueLink(c echo.Context) error {
 func (s *Services) updateIssueLink(c echo.Context) error {
 
 	user := apicontext.GetContext(c).GetUser()
+	//issue := apicontext.GetContext(c).GetIssue(apicontext.WithLinks())
 
 	linkId := c.Param("linkId")
 
@@ -2054,7 +2055,7 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	oldSnapshot := tracker.IssueToSnapshot(issue)
+	oldSnapshot := tracker.LinkToSnapshot(&oldLink)
 
 	var newLink IssueLinkRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&newLink); err != nil {
@@ -2088,7 +2089,7 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
-	newSnapshot := tracker.IssueToSnapshot(issue)
+	newSnapshot := tracker.LinkToSnapshot(&oldLink)
 
 	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
 		return EError(c, err)

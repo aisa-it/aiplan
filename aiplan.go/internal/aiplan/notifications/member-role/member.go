@@ -3,6 +3,7 @@ package member_role
 import (
 	"fmt"
 	"regexp"
+	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -58,11 +59,23 @@ type MemberNotify struct {
 	authorWorkspaceSettings *workspaceMemberNotifies
 	memberWorkspaceSettings *workspaceMemberNotifies
 
-	roles Role
+	customIdActivities map[uuid.UUID]struct{}
+	roles              Role
 }
 
 func (m *MemberNotify) GetLoc() *types.TimeZone {
 	return &m.loc
+}
+
+func (m *MemberNotify) IsActNotify(uuids []uuid.UUID) bool {
+	if m.customIdActivities == nil || len(m.customIdActivities) == 0 {
+		return true
+	}
+
+	return slices.ContainsFunc(uuids, func(id uuid.UUID) bool {
+		_, ok := m.customIdActivities[id]
+		return ok
+	})
 }
 
 type projectMemberNotifies struct {
@@ -129,7 +142,7 @@ func (u *MemberNotify) Allowed(field, verb string, entityType types.EntityLayer,
 	return settings.Notify(*u, &event, isAuthor, nCh)
 }
 
-func (ur UserRegistry) AddUser(user *dao.User, roles ...Role) bool {
+func (ur UserRegistry) AddUser(user *dao.User, conf *memberConfig, roles ...Role) bool {
 	if user == nil || !user.CanReceiveNotifications() {
 		return false
 	}
@@ -140,40 +153,37 @@ func (ur UserRegistry) AddUser(user *dao.User, roles ...Role) bool {
 			user: user,
 			loc:  user.UserTimezone,
 		}
+
 		ur[user.ID] = m
 	}
 
 	for _, r := range roles {
 		m.Add(r)
+		if conf != nil && conf.customActivityId.Valid {
+			if m.customIdActivities == nil {
+				m.customIdActivities = make(map[uuid.UUID]struct{})
+			}
+			m.customIdActivities[conf.customActivityId.UUID] = struct{}{}
+		}
 	}
 
 	return true
-}
-
-// TODO ref to new notify
-func (ur UserRegistry) FilterActivity(field string, verb string, entity actField.ActivityField, f IsNotifyFunc, authorRole Role) []*MemberNotify {
-	result := make([]*MemberNotify, 0, len(ur))
-
-	for _, user := range ur {
-		//if !f(user, field, verb, entity, user.Has(authorRole)) {
-		//	continue
-		//}
-		result = append(result, user)
-	}
-	return result
 }
 
 // UsersStep helpers
 type UsersStep func(tx *gorm.DB, users UserRegistry) error
 
 func AddUserRole(actor *dao.User, role Role) UsersStep {
+	conf := &memberConfig{}
 	return func(tx *gorm.DB, users UserRegistry) error {
-		users.AddUser(actor, role)
+		users.AddUser(actor, conf, role)
 		return nil
 	}
 }
 
 func AddOriginalCommentAuthor(act *dao.ActivityEvent) UsersStep {
+	conf := &memberConfig{}
+
 	return func(tx *gorm.DB, users UserRegistry) error {
 
 		if act.NewIssueComment == nil || !act.NewIssueComment.ReplyToCommentId.Valid {
@@ -191,12 +201,14 @@ func AddOriginalCommentAuthor(act *dao.ActivityEvent) UsersStep {
 			return fmt.Errorf("reply comment not found for issue %d", act.IssueID)
 		}
 
-		users.AddUser(act.NewIssueComment.OriginalComment.Actor, IssueCommentCreator)
+		users.AddUser(act.NewIssueComment.OriginalComment.Actor, conf, IssueCommentCreator)
 		return nil
 	}
 }
 
 func AddProjectAdmin(projectId uuid.UUID) UsersStep {
+	conf := &memberConfig{}
+
 	return func(tx *gorm.DB, users UserRegistry) error {
 
 		var member []dao.ProjectMember
@@ -208,13 +220,15 @@ func AddProjectAdmin(projectId uuid.UUID) UsersStep {
 		}
 
 		for _, v := range member {
-			users.AddUser(v.Member, ProjectAdminRole)
+			users.AddUser(v.Member, conf, ProjectAdminRole)
 		}
 		return nil
 	}
 }
 
 func AddWorkspaceAdmins(workspaceId uuid.UUID) UsersStep {
+	conf := &memberConfig{}
+
 	return func(tx *gorm.DB, users UserRegistry) error {
 		var member []dao.WorkspaceMember
 		if err := tx.Joins("Member").
@@ -225,13 +239,15 @@ func AddWorkspaceAdmins(workspaceId uuid.UUID) UsersStep {
 		}
 
 		for _, v := range member {
-			users.AddUser(v.Member, WorkspaceAdminRole)
+			users.AddUser(v.Member, conf, WorkspaceAdminRole)
 		}
 		return nil
 	}
 }
 
 func AddDocMembers(docID uuid.UUID) UsersStep {
+	conf := &memberConfig{}
+
 	return func(tx *gorm.DB, users UserRegistry) error {
 		var docUsers []dao.DocAccessRules
 		if err := tx.Joins("Member").
@@ -248,13 +264,18 @@ func AddDocMembers(docID uuid.UUID) UsersStep {
 			if u.Watch {
 				roles = append(roles, DocWatcher)
 			}
-			users.AddUser(u.Member, roles...)
+			users.AddUser(u.Member, conf, roles...)
 		}
 		return nil
 	}
 }
 
-func AddDefaultWatchers(projectId uuid.UUID) UsersStep {
+func AddDefaultWatchers(projectId uuid.UUID, opts ...MemberOption) UsersStep {
+	config := &memberConfig{}
+	for _, opt := range opts {
+		opt(config)
+	}
+
 	return func(tx *gorm.DB, users UserRegistry) error {
 
 		var defaultWatchers []struct {
@@ -282,28 +303,44 @@ func AddDefaultWatchers(projectId uuid.UUID) UsersStep {
 				Settings:     w.Settings,
 			}
 
-			users.AddUser(user, ProjectDefaultWatcher)
+			users.AddUser(user, config, ProjectDefaultWatcher)
 		}
 		return nil
 	}
 }
 
-func AddIssueUsers(issue *dao.Issue) UsersStep {
+type memberConfig struct {
+	customActivityId uuid.NullUUID
+}
+
+type MemberOption func(*memberConfig)
+
+func WithActivityId(id uuid.UUID) MemberOption {
+	return func(config *memberConfig) {
+		config.customActivityId = uuid.NullUUID{UUID: id, Valid: true}
+	}
+}
+
+func AddIssueUsers(issue *dao.Issue, opts ...MemberOption) UsersStep {
+	config := &memberConfig{}
+	for _, opt := range opts {
+		opt(config)
+	}
 	return func(tx *gorm.DB, users UserRegistry) error {
 		if issue == nil {
 			return nil
 		}
-		users.AddUser(issue.Author, IssueAuthor)
+		users.AddUser(issue.Author, config, IssueAuthor)
 
 		if issue.Assignees != nil {
 			for _, assignee := range *issue.Assignees {
-				users.AddUser(&assignee, IssueAssigner)
+				users.AddUser(&assignee, config, IssueAssigner)
 			}
 		}
 
 		if issue.Watchers != nil {
 			for _, watcher := range *issue.Watchers {
-				users.AddUser(&watcher, IssueWatcher)
+				users.AddUser(&watcher, config, IssueWatcher)
 			}
 		}
 		return nil
@@ -311,15 +348,18 @@ func AddIssueUsers(issue *dao.Issue) UsersStep {
 }
 
 func AddUsers(from []dao.User, r Role) UsersStep {
+	config := &memberConfig{}
 	return func(tx *gorm.DB, users UserRegistry) error {
 		for _, u := range from {
-			users.AddUser(&u, r)
+			users.AddUser(&u, config, r)
 		}
 		return nil
 	}
 }
 
 func AddCommentMentionedUsers[R dao.IRedactorHTML](comment *R) UsersStep {
+	config := &memberConfig{}
+
 	return func(tx *gorm.DB, users UserRegistry) error {
 		if comment == nil {
 			return nil
@@ -341,7 +381,7 @@ func AddCommentMentionedUsers[R dao.IRedactorHTML](comment *R) UsersStep {
 		var us []dao.User
 		tx.Where("username in (?)", usernames).Find(&us)
 		for _, u := range us {
-			users.AddUser(&u, CommentMentioned)
+			users.AddUser(&u, config, CommentMentioned)
 		}
 		return nil
 	}

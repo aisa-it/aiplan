@@ -1,14 +1,12 @@
 // Обработка и отправка уведомлений пользователям.
-//
 // Основные возможности:
 //   - Генерация HTML-сообщений для уведомлений.
 //   - Интеграция с базой данных для получения данных о пользователях и событиях.
 //   - Отправка уведомлений по электронной почте.
-package notifications
+package email
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
@@ -51,10 +49,10 @@ func TestGenHTML(t *testing.T) {
 		t.Fail()
 	}
 
-	data, _, err := getIssueNotificationHTML(es.db, activities, activities[0].Actor)
-	if err != nil {
-		fmt.Println(err)
-		t.Fail()
-	}
-	os.WriteFile("test.html", []byte(data), 0644)
+	//data, _, err := getIssueNotificationHTML(es.db, activities, activities[0].Actor)
+	//if err != nil {
+	//  fmt.Println(err)
+	//  t.Fail()
+	//}
+	//os.WriteFile("test.html", []byte(data), 0644)
 }

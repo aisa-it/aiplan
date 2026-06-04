@@ -110,7 +110,14 @@ func LoadProjectSettings(tx *gorm.DB, projectID uuid.UUID, ur UserRegistry) erro
 
 	for _, member := range members {
 		user := ur[member.MemberId]
-
+		switch member.Role {
+		case types.AdminRole:
+			user.Add(ProjectAdminRole)
+		case types.MemberRole:
+			user.Add(ProjectMemberRole)
+		case types.GuestRole:
+			user.Add(ProjectGuestRole)
+		}
 		user.authorProjectSettings = &projectMemberNotifies{
 			App:   member.NotificationAuthorSettingsApp,
 			Tg:    member.NotificationAuthorSettingsTG,
@@ -146,7 +153,14 @@ func LoadWorkspaceSettings(tx *gorm.DB, workspaceId uuid.UUID, ur UserRegistry) 
 
 	for _, member := range members {
 		user := ur[member.MemberId]
-
+		switch member.Role {
+		case types.AdminRole:
+			user.Add(WorkspaceAdminRole)
+		case types.MemberRole:
+			user.Add(WorkspaceMemberRole)
+		case types.GuestRole:
+			user.Add(WorkspaceGuestRole)
+		}
 		user.authorWorkspaceSettings = &workspaceMemberNotifies{
 			App:   member.NotificationAuthorSettingsApp,
 			Tg:    member.NotificationAuthorSettingsTG,
