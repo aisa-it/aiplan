@@ -36,7 +36,12 @@ func buildSearchQuery(db *gorm.DB,
 
 	var query *gorm.DB
 	if searchParams.LightSearch {
-		query = db.Preload("State").Preload("Project").Preload("Workspace").Preload("Assignees").Preload("Labels")
+		query = db.
+			Preload("State").
+			Preload("Project").
+			Preload("Workspace").
+			Preload("Assignees").
+			Preload("Labels")
 	} else {
 		query = db.
 			Preload("Workspace").
@@ -424,12 +429,21 @@ func GetIssueListData(
 			return nil, err
 		}
 
-		var groupMap []dto.IssuesGroupResponse
+		groupMap := make([]*dto.IssuesGroupResponse, len(groupSize))
+		i := 0
 		totalCount, err := fetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group dto.IssuesGroupResponse) error {
 			if streamCallback != nil {
-				return streamCallback(group)
+				if i == group.SortId {
+					i++
+					return streamCallback(group)
+				}
+
+				if groupMap[i] != nil {
+					i++
+					return streamCallback(*groupMap[i])
+				}
 			}
-			groupMap = append(groupMap, group)
+			groupMap[group.SortId] = &group
 			return nil
 		})
 		if err != nil {
@@ -438,6 +452,12 @@ func GetIssueListData(
 
 		// Для streaming возвращаем nil - данные уже отправлены через callback
 		if streamCallback != nil {
+			for i < len(groupSize) {
+				if groupMap[i] != nil {
+					streamCallback(*groupMap[i])
+				}
+				i++
+			}
 			return nil, nil
 		}
 
