@@ -113,6 +113,37 @@ func IssueToSnapshot(i dao.Issue, extraSubIssues ...dao.Issue) IssueSnapshot {
 	}
 }
 
+// ------ IssueLinkSnapshot -------
+
+type LinkSnapshot struct {
+	ID    uuid.UUID
+	Title opt.Field[string] `act:"field:link_title;kind:scalar;preserve_id:true"`
+	Url   opt.Field[string] `act:"field:link_url;kind:scalar;preserve_id:true;"`
+}
+
+func (l LinkSnapshot) GetName() string {
+	if l.Title.IsSet() {
+		return l.Title.Value()
+	}
+	return ""
+}
+
+func (l LinkSnapshot) GetID() uuid.UUID {
+	return l.ID
+}
+
+func (l LinkSnapshot) GetField() actField.ActivityField {
+	return actField.Link.Field
+}
+
+func LinkToSnapshot(link *dao.IssueLink) LinkSnapshot {
+	return LinkSnapshot{
+		ID:    link.Id,
+		Title: opt.Some(link.Title),
+		Url:   opt.Some(link.Url),
+	}
+}
+
 // ------ LabelSnapshot -------
 
 type LabelSnapshot struct {
@@ -229,7 +260,7 @@ func IssueTemplateToSnapshot(template *dao.IssueTemplate) IssueTemplateSnapshot 
 
 type WorkspaceSnapshot struct {
 	ID          uuid.UUID
-	Name        opt.Field[string]      `act:"field:title;kind:scalar"`
+	Name        opt.Field[string]      `act:"field:name;kind:scalar"`
 	Description opt.Field[string]      `act:"field:description;kind:scalar"`
 	LogoId      opt.Field[uuid.UUID]   `act:"field:logo;kind:scalar"`
 	OwnerId     opt.Field[uuid.UUID]   `act:"field:owner;kind:scalar"`
@@ -508,7 +539,7 @@ type SprintSnapshot struct {
 	EndDate      opt.Field[*types.TargetDateTimeZ] `act:"field:end_date;kind:scalar"`
 	SprintFolder opt.Field[EntityRef]              `act:"field:sprint_folder;kind:scalar;preserve_id:true"`
 	Watchers     opt.Field[[]EntityRef]            `act:"field:watchers;kind:collection;preserve_id:true"`
-	Issues       opt.Field[[]EntityRef]            `act:"field:issues;kind:collection;preserve_id:true;linked_field:sprint;linked_layer:issue"`
+	Issues       opt.Field[[]EntityRef]            `act:"field:issue;kind:collection;preserve_id:true;linked_field:sprint;linked_layer:issue"`
 }
 
 func SprintToSnapshot(s *dao.Sprint) SprintSnapshot {

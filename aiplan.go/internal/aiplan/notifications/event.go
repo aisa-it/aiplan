@@ -30,7 +30,6 @@ type EventNotificationService struct {
 	db        *gorm.DB
 	tgService *tg.TgService
 	wsService *WebsocketNotificationService
-	emailSvc  *EmailService
 
 	channels []NotificationChannel
 }

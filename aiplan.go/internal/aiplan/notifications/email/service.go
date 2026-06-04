@@ -3,6 +3,9 @@ package email
 import (
 	"fmt"
 	"log/slog"
+	"mime"
+	"strings"
+	"sync"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"golang.org/x/sync/errgroup"
@@ -11,18 +14,21 @@ import (
 )
 
 type EmailService struct {
-	d           *gomail.Dialer
-	cfg         *config.Config
-	db          *gorm.DB
-	monitorExit chan bool
-	sending     bool
-	disabled    bool
+	d            *gomail.Dialer
+	cfg          *config.Config
+	db           *gorm.DB
+	monitorExit  chan bool
+	sending      bool
+	sendingMutex sync.Mutex
+	disabled     bool
 
 	emailChan chan EmailMessage
 	eg        errgroup.Group
 
 	emailFrom  string
 	senderName string
+
+	an *ActivityNotification
 }
 
 func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
@@ -51,6 +57,8 @@ func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
 
 	es.CreateNewTemplates(db)
 
+	es.an = InitActivityNotificationService(db, es)
+
 	return es
 }
 
@@ -72,6 +80,26 @@ func (es *EmailService) sendEmail(e EmailMessage) error {
 	m.AddAlternative("text/html", e.Content)
 
 	return es.d.DialAndSend(m)
+}
+
+func parseEmailFrom(s string) (email, systemName string) {
+	start := strings.IndexByte(s, '<')
+	if start == -1 {
+		return s, ""
+	}
+
+	end := strings.IndexByte(s[start:], '>')
+	if end == -1 {
+		return s, ""
+	}
+
+	email = s[start+1 : start+end]
+
+	if start > 0 {
+		systemName = strings.TrimSpace(s[:start])
+	}
+
+	return email, systemName
 }
 
 func (es *EmailService) worker(emailChan <-chan EmailMessage) error {
@@ -116,4 +144,44 @@ type EmailMessage struct {
 	TextContent string
 
 	Actor *string
+}
+
+func (es *EmailService) formatFrom(userName *string) string {
+	var user, system string
+
+	if userName != nil {
+		user = *userName
+	}
+	if es.senderName != "" {
+		system = es.senderName
+	}
+
+	var displayName string
+	if user != "" && system != "" {
+		displayName = user + " (" + system + ")"
+	} else if user != "" {
+		displayName = user
+	} else if system != "" {
+		displayName = system
+	}
+
+	if displayName == "" {
+		return es.emailFrom
+	}
+
+	encodedName := mime.QEncoding.Encode("UTF-8", displayName)
+	return encodedName + " <" + es.emailFrom + ">"
+}
+
+type EmailError struct {
+	Type string
+	User string
+	Err  error
+}
+
+func (e EmailError) Error() string {
+	if e.User != "" {
+		return "email error for user " + e.User + " (" + e.Type + "): " + e.Err.Error()
+	}
+	return "email error (" + e.Type + "): " + e.Err.Error()
 }

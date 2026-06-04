@@ -50,12 +50,21 @@ func BuildRecipientsFromActivities(
 	// добавляем по каждой активности, автора события
 	for _, act := range acts {
 		if act.Actor != nil {
-			users.AddUser(act.Actor, memNotify.ActionAuthor) // todo проверить на двух пользователях, как авторы активности
+			users.AddUser(act.Actor, nil, memNotify.ActionAuthor)
 		}
+		// если заданны кастомные роли для групп событий
+		for _, f := range ctx.CustomRoleFunc {
+			for _, customRoleFunc := range f(act) {
+				if err := customRoleFunc(tx, users); err != nil {
+					slog.Error("customRoleFunc step", "err", err)
+				}
+			}
+		}
+
 	}
 
 	switch ctx.Plan.EntityType {
-	case types.LayerIssue:
+	case types.LayerIssue, types.LayerProject:
 		err := memNotify.LoadProjectSettings(tx, acts[0].ProjectID.UUID, users)
 		if err != nil {
 			return []memNotify.MemberNotify{}, *ctx

@@ -1,0 +1,88 @@
+<!--{{- /*gotype: github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email.DigestComplexView*/ -}}-->
+
+{{ if .Title -}}
+    {{- if .WithBlock }}
+        <table style="background-color: #f0f4ff; border-radius: 8px; width: 100%; font-size: 14px; padding: 0 6px;">
+    {{- else }}
+        <table style="width: 100%; font-size: 16px; padding: 0 4px;">
+    {{- end }}
+    <tr>
+        {{- if .WithBlock }}
+        <td style="text-align: right; word-break: break-word;">
+            {{- else }}
+        <td style="text-align: left; word-break: break-word;">
+            {{- end }}
+            {{- if .IsNew }}
+                <span style="color:#05bd8d">{{ .Title }}</span>
+            {{- else if or .IsUpdate .IsInfo}}
+                <span>{{ .Title }}</span>
+            {{- else if .IsGone }}
+                <del style="color:#999999">{{ .Title }}</del>
+            {{- else }}
+                {{ .Title }}
+            {{- end }}
+        </td>
+    </tr>
+
+    {{- if or .IsNew .IsInfo }}
+        <tr>
+            <td style="text-align: left; word-break: break-word;">
+                {{ .New }}
+            </td>
+        </tr>
+
+    {{- else if .IsGone }}
+        <tr>
+            <td style="text-align: left;">
+                <del style="color:#999999">{{ .Old }}</del>
+            </td>
+        </tr>
+    {{- else if .IsUpdate }}
+        <tr>
+            <td style="text-align: left;">
+                <del style="color:#999999">{{ .Old }}</del>
+                <br><span style="color:#05bd8d">{{ .New }}</span>
+            </td>
+        </tr>
+    {{- end }}
+
+    {{- if .TimeAction }}
+        <tr>
+            <td style="text-align: right; font-size: 12px">
+                <span style="color:#999999">{{ .TimeAction }}</span>
+            </td>
+        </tr>
+    {{- end }}
+
+    </table>
+
+{{ else if or .IsNew .IsGone .IsUpdate -}}
+    {{ $hasMultiple := gt (len $.Views) 1 -}}
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="width: 100%; font-size: 16px; padding: 0 4px;">
+
+        {{- if .IsNew }}
+            <tr>
+                <td style="text-align: left; word-break: break-word;color:#05bd8d;">
+                    {{- if $hasMultiple }}- {{ end }}{{ .New }}
+                </td>
+            </tr>
+        {{- else if .IsGone }}
+            <tr>
+                <td style="text-align: left;">
+                    {{- if $hasMultiple }}- {{ end }}
+                    <del style="color:#999999">{{ .Old }}</del>
+                </td>
+            </tr>
+        {{- else if .IsUpdate }}
+            <tr>
+                <td style="text-align: left;">
+                    {{- if $hasMultiple }}- {{ end }}
+                    <del style="color:#999999">{{ .Old }}</del>
+                    <br><span style="color:#05bd8d">{{ .New }}</span>
+                </td>
+            </tr>
+        {{- end }}
+
+    </table>
+{{- end }}

@@ -159,6 +159,7 @@ func (s sprintEvent) GetRecipientsSteps(event *dao.ActivityEvent) []member_role.
 	return []member_role.UsersStep{
 		member_role.AddUserRole(&event.Sprint.CreatedBy, member_role.SprintAuthor),
 		member_role.AddUsers(event.Sprint.Watchers, member_role.SprintWatcher),
+		member_role.AddWorkspaceAdmins(event.WorkspaceID.UUID),
 	}
 }
 
