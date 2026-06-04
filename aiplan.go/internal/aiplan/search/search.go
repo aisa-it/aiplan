@@ -11,6 +11,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
@@ -182,94 +183,96 @@ func fetchIssuesByGroups(
 		return 0, err
 	}
 
-	for _, group := range groupSize {
+	g := errgroup.Group{}
+	g.SetLimit(10)
+
+	for i, group := range groupSize {
 		totalCount += group.Count
+		g.Go(func() error {
+			q := groupSelectQuery.Session(&gorm.Session{})
 
-		q := groupSelectQuery.Session(&gorm.Session{})
+			if group.Count == 0 {
+				return iterFunc(dto.IssuesGroupResponse{
+					SortId: i,
+					Entity: groupsEntity[group.Key],
+					Count:  group.Count,
+				})
+			}
 
-		if group.Count == 0 {
-			if err := iterFunc(dto.IssuesGroupResponse{
+			switch searchParams.GroupByParam {
+			case "priority":
+				if len(searchParams.Filters.Priorities) > 0 && !slices.Contains(searchParams.Filters.Priorities, group.Key) {
+					return nil
+				}
+				if group.Key != "" {
+					q = q.Where("issues.priority = ?", group.Key)
+				} else {
+					q = q.Where("issues.priority is null")
+				}
+			case "author":
+				if len(searchParams.Filters.AuthorIds) > 0 && !slices.Contains(searchParams.Filters.AuthorIds, group.Key) {
+					return nil
+				}
+				q = q.Where("created_by_id = ?", group.Key)
+			case "state":
+				q = q.Where("state_id in (select id from states where concat(name, color, \"group\") = ?)", group.Key)
+			case "labels":
+				if !searchParams.Filters.Labels.IsEmpty() && !searchParams.Filters.Labels.Contains(group.Key) {
+					return nil
+				}
+				if group.Key == "" {
+					q = q.Where("not exists (select 1 from issue_labels where issue_id = issues.id)")
+				} else {
+					q = q.Where("exists (select 1 from issue_labels where label_id = ? and issue_id = issues.id)", group.Key)
+				}
+			case "assignees":
+				if !searchParams.Filters.AssigneeIds.IsEmpty() && !searchParams.Filters.AssigneeIds.Contains(group.Key) {
+					//fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
+					return nil
+				}
+				if group.Key == "" {
+					q = q.Where("not exists (select 1 from issue_assignees where issue_id = issues.id)")
+				} else {
+					q = q.Where("exists (select 1 from issue_assignees where assignee_id = ? and issue_id = issues.id)", group.Key)
+				}
+			case "watchers":
+				if !searchParams.Filters.WatcherIds.IsEmpty() && !searchParams.Filters.WatcherIds.Contains(group.Key) {
+					return nil
+				}
+				if group.Key == "" {
+					q = q.Where("not exists (select 1 from issue_watchers where issue_id = issues.id)")
+				} else {
+					q = q.Where("exists (select 1 from issue_watchers where watcher_id = ? and issue_id = issues.id)", group.Key)
+				}
+			case "project":
+				if len(searchParams.Filters.ProjectIds) > 0 && !slices.Contains(searchParams.Filters.ProjectIds, group.Key) {
+					return nil
+				}
+				q = q.Where("issues.project_id = ?", group.Key)
+			}
+
+			var issues []dao.IssueWithCount
+			if err := q.Find(&issues).Error; err != nil {
+				return err
+			}
+
+			if len(issues) == 0 {
+				slog.Error("Empty search result for not empty group", "groupBy", searchParams.GroupByParam, "groupKey", group.Key, "groupCount", group.Count)
+				return nil
+			}
+
+			populateAuthors(issues)
+
+			return iterFunc(dto.IssuesGroupResponse{
+				SortId: i,
 				Entity: groupsEntity[group.Key],
 				Count:  group.Count,
-			}); err != nil {
-				return 0, err
-			}
-			continue
-		}
-
-		switch searchParams.GroupByParam {
-		case "priority":
-			if len(searchParams.Filters.Priorities) > 0 && !slices.Contains(searchParams.Filters.Priorities, group.Key) {
-				continue
-			}
-			if group.Key != "" {
-				q = q.Where("issues.priority = ?", group.Key)
-			} else {
-				q = q.Where("issues.priority is null")
-			}
-		case "author":
-			if len(searchParams.Filters.AuthorIds) > 0 && !slices.Contains(searchParams.Filters.AuthorIds, group.Key) {
-				continue
-			}
-			q = q.Where("created_by_id = ?", group.Key)
-		case "state":
-			q = q.Where("state_id in (select id from states where concat(name, color, \"group\") = ?)", group.Key)
-		case "labels":
-			if !searchParams.Filters.Labels.IsEmpty() && !searchParams.Filters.Labels.Contains(group.Key) {
-				continue
-			}
-			if group.Key == "" {
-				q = q.Where("not exists (select 1 from issue_labels where issue_id = issues.id)")
-			} else {
-				q = q.Where("exists (select 1 from issue_labels where label_id = ? and issue_id = issues.id)", group.Key)
-			}
-		case "assignees":
-			if !searchParams.Filters.AssigneeIds.IsEmpty() && !searchParams.Filters.AssigneeIds.Contains(group.Key) {
-				//fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
-				continue
-			}
-			if group.Key == "" {
-				q = q.Where("not exists (select 1 from issue_assignees where issue_id = issues.id)")
-			} else {
-				q = q.Where("exists (select 1 from issue_assignees where assignee_id = ? and issue_id = issues.id)", group.Key)
-			}
-		case "watchers":
-			if !searchParams.Filters.WatcherIds.IsEmpty() && !searchParams.Filters.WatcherIds.Contains(group.Key) {
-				continue
-			}
-			if group.Key == "" {
-				q = q.Where("not exists (select 1 from issue_watchers where issue_id = issues.id)")
-			} else {
-				q = q.Where("exists (select 1 from issue_watchers where watcher_id = ? and issue_id = issues.id)", group.Key)
-			}
-		case "project":
-			if len(searchParams.Filters.ProjectIds) > 0 && !slices.Contains(searchParams.Filters.ProjectIds, group.Key) {
-				continue
-			}
-			q = q.Where("issues.project_id = ?", group.Key)
-		}
-
-		var issues []dao.IssueWithCount
-		if err := q.Find(&issues).Error; err != nil {
-			return 0, err
-		}
-
-		if len(issues) == 0 {
-			slog.Error("Empty search result for not empty group", "groupBy", searchParams.GroupByParam, "groupKey", group.Key, "groupCount", group.Count)
-			continue
-		}
-
-		populateAuthors(issues)
-
-		if err := iterFunc(dto.IssuesGroupResponse{
-			Entity: groupsEntity[group.Key],
-			Count:  group.Count,
-			Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) *dto.IssueWithCount { return i.ToDTO() }),
-		}); err != nil {
-			return 0, err
-		}
+				Issues: utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) *dto.IssueWithCount { return i.ToDTO() }),
+			})
+		})
 	}
-	return totalCount, nil
+
+	return totalCount, g.Wait()
 }
 
 func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSize) (map[string]any, error) {
