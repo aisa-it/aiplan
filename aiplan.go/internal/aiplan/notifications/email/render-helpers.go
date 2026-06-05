@@ -264,7 +264,6 @@ func renderEntityChangeComplex(tx *gorm.DB, t *EmailTemplates, acts []dao.Activi
 	}
 
 	views, meta, count, replaceMap := buildComplexEntityChange(acts, opts...)
-	// todo чинить тут
 	m := make(map[uuid.UUID]string)
 	for _, v := range views {
 		p := t.RenderCollectValues(v)

@@ -224,9 +224,9 @@ func renderProjectIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent
 
 	return renderEntityChangeComplex(tx, t, acts, "Задачи",
 		WithTitleFunc(func(act *dao.ActivityEvent) *string {
-			var issue dao.Issue
+			var issue *dao.Issue
 			if act.ProjectActivityExtendFields.NewIssue != nil {
-				issue = *act.ProjectActivityExtendFields.NewIssue
+				issue = act.ProjectActivityExtendFields.NewIssue
 				if err := tx.Unscoped().
 					Joins("Parent").
 					Joins("State").
@@ -234,12 +234,16 @@ func renderProjectIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent
 					Preload("Assignees").
 					Preload("Watchers").
 					Preload("Sprints").
-					First(&issue).Error; err != nil {
+					First(issue).Error; err != nil {
 					return nil
 				}
+				issue.Project = project
+				act.ProjectActivityExtendFields.NewIssue = issue
 			}
-			issue.Project = project
-			*act.ProjectActivityExtendFields.NewIssue = issue
+			if issue == nil {
+				return utils.ToPtr(act.OldValue)
+			}
+
 			return utils.ToPtr(issue.FullIssueName())
 		}),
 		WithComplexAggregateFunc(issueCreateFunc),
