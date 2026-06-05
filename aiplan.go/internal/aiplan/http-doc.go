@@ -704,7 +704,7 @@ func CascadeUpdateChildDocsRole(tx *gorm.DB, parentID uuid.UUID, roleField strin
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/  [delete]
 func (s *Services) deleteDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
-	docPtr := apiContext.GetDoc()
+	docPtr := apiContext.GetDoc(apicontext.WithDocParent())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
