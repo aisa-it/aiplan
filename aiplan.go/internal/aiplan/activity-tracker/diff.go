@@ -85,7 +85,7 @@ func Diff(old, new any, entityID uuid.UUID, entityName string) []FieldChange {
 		case scalarKind:
 			changes = append(changes, diffScalar(fs.spec, oldValue, newValue, oldSet, newSet, snapshotID, entityID, entityName)...)
 		default:
-			slog.Info("act kind not supported: ", fs.spec.Kind)
+			slog.Warn("unsupported act kind", "kind", fs.spec.Kind, "field", fs.spec.Field)
 		}
 	}
 	return changes

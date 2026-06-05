@@ -2007,7 +2007,7 @@ func (s *Services) createIssueLink(c echo.Context) error {
 	}
 
 	// Reload issue with updated links
-	if err := s.db.Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+	if err := s.DB(c).Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -2077,7 +2077,7 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 	oldLink.Url = newLink.Url
 
 	{ //rateLimit
-		if hasRecentFieldUpdate(s.DB(c).Where("issue_id = ?", oldLink.IssueId), user.ID, []string{"link_url", "link_title"}...) {
+		if hasRecentFieldUpdate(s.DB(c).Where("issue_id = ?", oldLink.IssueId), user.ID, "link_url", "link_title") {
 			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 		}
 	}
@@ -2188,6 +2188,7 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 	if err := s.DB(c).Preload(clause.Associations).
 		Where("issue_id = ?", issueId).
 		Where("project_id = ?", project.ID).
+		Where("entity_type = ?", types.LayerIssue).
 		Where("field != ?", actField.Comment.Field.String()).
 		Order("created_at DESC").Find(&issueActivities).Error; err != nil {
 		return EError(c, err)
@@ -2580,6 +2581,7 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 		Where("activity_events.project_id = ?", project.ID).
 		Where("activity_events.issue_id = ?", issueId).
 		Where("activity_events.new_identifier = ? ", commentId).
+		Where("entity_type = ?", types.LayerIssue).
 		Order("activity_events.created_at DESC")
 
 	resp, err := dao.PaginationRequest(

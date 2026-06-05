@@ -27,7 +27,7 @@ type ActivityActorView struct {
 func (t *EmailTemplates) RenderChangesActivities(c ActivityActorView) string {
 	var buf bytes.Buffer
 	if err := t.ChangeCounter.Execute(&buf, c); err != nil {
-		slog.Error("err", err.Error())
+		slog.Error("RenderChangesActivities", "err", err.Error())
 		return ""
 	}
 	return buf.String()
@@ -36,7 +36,7 @@ func (t *EmailTemplates) RenderChangesActivities(c ActivityActorView) string {
 func (t *EmailTemplates) RenderActivityAuthor(c ActivityActorView) string {
 	var buf bytes.Buffer
 	if err := t.AuthorActivity.Execute(&buf, c); err != nil {
-		slog.Error("err", err.Error())
+		slog.Error("RenderActivityAuthor", "err", err.Error())
 		return ""
 	}
 	return buf.String()
@@ -160,7 +160,7 @@ type activityBodyCtx struct {
 func (t *EmailTemplates) RenderActivity(c activityBodyCtx) string {
 	var buf bytes.Buffer
 	if err := t.Activity.Execute(&buf, c); err != nil {
-		slog.Error("err", err.Error())
+		slog.Error("RenderActivity", "err", err.Error())
 		return ""
 	}
 	return buf.String()
@@ -176,7 +176,7 @@ type finalBodyCtx struct {
 func (t *EmailTemplates) RenderBody(c finalBodyCtx) string {
 	var buf bytes.Buffer
 	if err := t.Body.Execute(&buf, c); err != nil {
-		slog.Error("err", err.Error())
+		slog.Error("RenderBody", "err", err.Error())
 		return ""
 	}
 	return buf.String()
@@ -194,7 +194,7 @@ type headEntityCtx struct {
 func (t *EmailTemplates) RenderHead(ddd headEntityCtx) string {
 	var buf bytes.Buffer
 	if err := t.HeadEntity.Execute(&buf, ddd); err != nil {
-		slog.Error("err", err.Error())
+		slog.Error("RenderHead", "err", err.Error())
 		return ""
 	}
 	return buf.String()

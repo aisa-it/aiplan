@@ -127,7 +127,7 @@ func (es *EmailService) Stop() {
 	close(es.emailChan)
 
 	if err := es.eg.Wait(); err != nil {
-		slog.Error("Worker err:", err)
+		slog.Error("WorkerStop", "err", err)
 	}
 
 	slog.Info("Email workers successfully stopped")
