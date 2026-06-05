@@ -86,6 +86,8 @@ func (a *ActivitiesToOneTable) Name() string {
 }
 
 func (a *ActivitiesToOneTable) Execute() error {
+	var errs []error
+
 	{ // UserNotifications clean
 		for {
 			result := a.db.Unscoped().Where("id IN (?)",
@@ -101,25 +103,29 @@ func (a *ActivitiesToOneTable) Execute() error {
 	}
 
 	if err := migrateActivities(a.db, IssueActivity{}.TableName(), convertIssue, a.Name()); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("migrate %s: %w", IssueActivity{}.TableName(), err))
 	}
 	if err := migrateActivities(a.db, ProjectActivity{}.TableName(), convertProject, a.Name()); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("migrate %s: %w", ProjectActivity{}.TableName(), err))
 	}
 	if err := migrateActivities(a.db, DocActivity{}.TableName(), convertDoc, a.Name()); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("migrate %s: %w", DocActivity{}.TableName(), err))
 	}
 	if err := migrateActivities(a.db, WorkspaceActivity{}.TableName(), convertWorkspace, a.Name()); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("migrate %s: %w", WorkspaceActivity{}.TableName(), err))
 	}
 	if err := migrateActivities(a.db, FormActivity{}.TableName(), convertForm, a.Name()); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("migrate %s: %w", FormActivity{}.TableName(), err))
 	}
 	if err := migrateActivities(a.db, SprintActivity{}.TableName(), convertSprint, a.Name()); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("migrate %s: %w", SprintActivity{}.TableName(), err))
 	}
 	if err := migrateActivities(a.db, RootActivity{}.TableName(), convertRoot, a.Name()); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("migrate %s: %w", RootActivity{}.TableName(), err))
+	}
+
+	for _, err := range errs {
+		slog.Error("ActivitiesToOneTable", "error", err.Error())
 	}
 
 	return nil

@@ -182,11 +182,12 @@ type StateEnricher func(*StateSnapshot)
 
 type StateSnapshot struct {
 	ID          uuid.UUID
-	Name        opt.Field[string]    `act:"field:status_name;kind:scalar;preserve_id:true"`
-	Description opt.Field[string]    `act:"field:status_description;kind:scalar;preserve_id:true"`
-	Color       opt.Field[string]    `act:"field:status_color;kind:scalar;preserve_id:true"`
-	Group       opt.Field[string]    `act:"field:status_group;kind:scalar;preserve_id:true"`
-	Default     opt.Field[EntityRef] `act:"field:status_default;kind:scalar;preserve_id:true"`
+	Name        opt.Field[string] `act:"field:status_name;kind:scalar;preserve_id:true"`
+	Description opt.Field[string] `act:"field:status_description;kind:scalar;preserve_id:true"`
+	Color       opt.Field[string] `act:"field:status_color;kind:scalar;preserve_id:true"`
+	Group       opt.Field[string] `act:"field:status_group;kind:scalar;preserve_id:true"`
+
+	Default opt.Field[EntityRef] `act:"field:status_default;kind:scalar;preserve_id:true"`
 }
 
 func (s StateSnapshot) GetName() string {

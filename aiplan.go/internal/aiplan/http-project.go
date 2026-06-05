@@ -325,13 +325,10 @@ func (s *Services) updateProject(c echo.Context) error {
 	project.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	project.Name = strings.TrimSpace(project.Name)
 
-	projectLead := project.ProjectLead
-	project.ProjectLead = nil
 	err := c.Validate(project)
 	if err != nil {
 		return EError(c, err)
 	}
-	project.ProjectLead = projectLead
 	changeProjectLead := oldLead != project.ProjectLeadId
 
 	// Check new owner id exists and admin
@@ -2566,7 +2563,7 @@ func (s *Services) updateState(c echo.Context) error {
 	if err := s.DB(c).
 		Where("project_id = ?", project.ID).
 		Where(`"default" = ?`, true).
-		Find(&defaultState).Error; err != nil {
+		First(&defaultState).Error; err != nil {
 		return EError(c, err)
 	}
 

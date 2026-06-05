@@ -437,8 +437,9 @@ func deleteIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	issue.Project = &project
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](bl.GetTracker(), activities.EntityDeleteActivity, nil, nil, *issue, user); err != nil {
+		if err := bl.GetSnapshotTracker().TrackChanges(types.LayerProject, oldSnapshot, nil, project, user); err != nil {
 			return err
 		}
 		return tx.Delete(issue).Error
@@ -571,11 +572,10 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		return logger.Error(err), nil
 	}
 
-	oldData := make([]map[string]interface{}, len(subIssues))
+	oldSubIssuesData := make([]tracker.IssueSnapshot, len(subIssues))
+
 	for i, si := range subIssues {
-		old := structToMap(si)
-		old["parent"] = uuid.NullUUID{}
-		oldData[i] = old
+		oldSubIssuesData[i] = tracker.IssueToSnapshot(si)
 	}
 
 	parentNullID := uuid.NullUUID{UUID: parentIssue.ID, Valid: true}
@@ -593,9 +593,10 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		return logger.Error(err), nil
 	}
 
-	for i := range subIssues {
-		newData := map[string]interface{}{"parent": parentNullID.UUID}
-		_ = tracker.TrackActivity[dao.Issue, dao.IssueActivity](bl.GetTracker(), activities.EntityUpdatedActivity, newData, oldData[i], subIssues[i], user)
+	for i, subIssue := range subIssues {
+		subIssue.Parent = parentIssue
+		newSnapshot := tracker.IssueToSnapshot(subIssue)
+		_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSubIssuesData[i], newSnapshot, subIssues[i], user)
 	}
 
 	return mcp.NewToolResultJSON(utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
@@ -672,7 +673,7 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return logger.Error(err), nil
 	}
 
-	oldMap := map[string]interface{}{"linked_issues_ids": issue.LinkedIssuesIDs}
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
 	var issues []dao.Issue
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -692,9 +693,8 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return logger.Error(err), nil
 	}
 
-	newMap := map[string]interface{}{"linked_issues_ids": issue.LinkedIssuesIDs}
-	_ = tracker.TrackActivity[dao.Issue, dao.IssueActivity](bl.GetTracker(), activities.EntityUpdatedActivity, newMap, oldMap, *issue, user)
-
+	newSnapshot := tracker.IssueToSnapshot(*issue)
+	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
 	return mcp.NewToolResultJSON(utils.SliceToSlice(&issues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
 }
 
@@ -715,6 +715,7 @@ func createIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	if errRes != nil {
 		return errRes, nil
 	}
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	link := dao.IssueLink{
@@ -732,7 +733,13 @@ func createIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return logger.Error(err), nil
 	}
 
-	_ = tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](bl.GetTracker(), activities.EntityCreateActivity, nil, nil, link, user)
+	if err := db.Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(*issue)
+
+	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
 
 	return mcp.NewToolResultJSON(link.ToLightDTO())
 }
@@ -762,13 +769,10 @@ func updateIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return logger.Error(err), nil
 	}
 
+	oldSnapshot := tracker.LinkToSnapshot(&link)
+
 	if newURL == link.Url && newTitle == link.Title {
 		return mcp.NewToolResultJSON(link.ToLightDTO())
-	}
-
-	oldMap := map[string]interface{}{
-		"url":   link.Url,
-		"title": link.Title,
 	}
 
 	link.Title = newTitle
@@ -779,16 +783,13 @@ func updateIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	if err := db.Omit(clause.Associations).Save(&link).Error; err != nil {
 		return logger.Error(err), nil
 	}
+	newSnapshot := tracker.LinkToSnapshot(&link)
 
-	newMap := map[string]interface{}{
-		"url":           link.Url,
-		"title":         link.Title,
-		"updateScopeId": link.Id,
+	var issue dao.Issue
+	if err := db.Preload("Links").Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
+		return logger.Error(err), nil
 	}
-	oldMap["updateScope"] = "link"
-	oldMap["updateScopeId"] = link.Id
-
-	_ = tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](bl.GetTracker(), activities.EntityUpdatedActivity, newMap, oldMap, link, user)
+	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
 
 	return mcp.NewToolResultJSON(link.ToLightDTO())
 }
@@ -810,15 +811,24 @@ func deleteIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		}
 		return logger.Error(err), nil
 	}
-
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](bl.GetTracker(), activities.EntityDeleteActivity, nil, nil, link, user); err != nil {
-			return err
-		}
-		return tx.Delete(&link).Error
-	}); err != nil {
+	var issue dao.Issue
+	if err := db.Preload("Links").Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
 		return logger.Error(err), nil
 	}
+
+	oldSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := db.Delete(&issue).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	if err := db.Preload("Links").Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(issue)
+
+	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
 
 	return mcp.NewToolResultText("ссылка удалена"), nil
 }
@@ -858,6 +868,8 @@ func updateIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return errRes, nil
 	}
 
+	oldSnapshot := tracker.CommentToSnapshot(comment)
+
 	if !comment.ActorId.Valid || comment.ActorId.UUID != user.ID {
 		return apierrors.ErrCommentEditForbidden.MCPError(), nil
 	}
@@ -872,11 +884,6 @@ func updateIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return apierrors.ErrIssueCommentEmpty.MCPError(), nil
 	}
 
-	oldMap := map[string]interface{}{
-		"comment_html":     comment.CommentHtml.Body,
-		"comment_stripped": comment.CommentStripped,
-	}
-
 	comment.CommentHtml = body
 	comment.CommentStripped = stripped
 	comment.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -885,16 +892,10 @@ func updateIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return logger.Error(err), nil
 	}
 
-	newMap := map[string]interface{}{
-		"comment_html":     comment.CommentHtml.Body,
-		"comment_stripped": comment.CommentStripped,
-		"updateScopeId":    comment.Id,
-	}
-	oldMap["updateScope"] = "comment"
-	oldMap["updateScopeId"] = comment.Id
+	newSnapshot := tracker.CommentToSnapshot(comment)
 
 	comment.Actor = user
-	_ = tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](bl.GetTracker(), activities.EntityUpdatedActivity, newMap, oldMap, *comment, user)
+	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, comment.Issue, user)
 
 	return mcp.NewToolResultJSON(comment.ToDTO())
 }
@@ -909,19 +910,18 @@ func deleteIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 	if errRes != nil {
 		return errRes, nil
 	}
+	oldSnapshot := tracker.CommentToSnapshot(comment)
+	issue := comment.Issue
 
 	if pm.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
 		return apierrors.ErrCommentEditForbidden.MCPError(), nil
 	}
 
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](bl.GetTracker(), activities.EntityDeleteActivity, nil, nil, *comment, user); err != nil {
-			return err
-		}
-		return tx.Delete(comment).Error
-	}); err != nil {
+	if err := db.Delete(comment).Error; err != nil {
 		return logger.Error(err), nil
 	}
+
+	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, nil, issue, user)
 
 	return mcp.NewToolResultText("комментарий удалён"), nil
 }
@@ -999,11 +999,12 @@ func getIssueHistory(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return errRes, nil
 	}
 
-	var issueActivities []dao.EntityActivity
+	var issueActivities []dao.ActivityEvent
 	if err := db.Preload(clause.Associations).
 		Where("issue_id = ?", issue.ID).
 		Where("project_id = ?", issue.ProjectId).
-		Where("field != ?", "comment").
+		Where("field != ?", activities.Comment.Field.String()).
+		Where("entity_type = ?", types.LayerIssue).
 		Order("created_at DESC").
 		Find(&issueActivities).Error; err != nil {
 		return logger.Error(err), nil
@@ -1019,15 +1020,15 @@ func getIssueHistory(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	}
 
 	type historyEntry struct {
-		Kind      string                  `json:"kind"`
-		CreatedAt time.Time               `json:"created_at"`
-		Activity  *dto.EntityActivityFull `json:"activity,omitempty"`
-		Comment   *dto.IssueComment       `json:"comment,omitempty"`
+		Kind      string                 `json:"kind"`
+		CreatedAt time.Time              `json:"created_at"`
+		Activity  *dto.ActivityEventFull `json:"activity,omitempty"`
+		Comment   *dto.IssueComment      `json:"comment,omitempty"`
 	}
 
 	entries := make([]historyEntry, 0, len(issueActivities)+len(issueComments))
 	for i := range issueActivities {
-		a := issueActivities[i].ToFullDTO()
+		a := issueActivities[i].ToDTO()
 		entries = append(entries, historyEntry{Kind: "activity", CreatedAt: a.CreatedAt, Activity: a})
 	}
 	for i := range issueComments {
@@ -1071,21 +1072,22 @@ func getCommentHistory(ctx context.Context, db *gorm.DB, bl *business.Business, 
 		offset = int(o)
 	}
 
-	var activities []dao.IssueActivity
+	var activities []dao.ActivityEvent
 	query := db.
 		Joins("Actor").
-		Where("issue_activities.project_id = ?", issue.ProjectId).
-		Where("issue_activities.issue_id = ?", issue.ID).
-		Where("issue_activities.new_identifier = ?", commentID).
-		Order("issue_activities.created_at DESC")
+		Where("activity_events.project_id = ?", issue.ProjectId).
+		Where("activity_events.issue_id = ?", issue.ID).
+		Where("activity_events.new_identifier = ?", commentID).
+		Where("entity_type = ?", types.LayerIssue).
+		Order("activity_events.created_at DESC")
 
 	resp, err := dao.PaginationRequest(offset, limit, query, &activities)
 	if err != nil {
 		return logger.Error(err), nil
 	}
 
-	result := utils.SliceToSlice(resp.Result.(*[]dao.IssueActivity),
-		func(a *dao.IssueActivity) dto.CommentHistory {
+	result := utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent),
+		func(a *dao.ActivityEvent) dto.CommentHistory {
 			body := types.RedactorHTML{Body: a.NewValue}
 			var commentNullID uuid.NullUUID
 			if a.NewIssueComment != nil {
@@ -1094,7 +1096,7 @@ func getCommentHistory(ctx context.Context, db *gorm.DB, bl *business.Business, 
 			return dto.CommentHistory{
 				CommentHtml:     body,
 				CommentStripped: body.StripTags(),
-				UpdatedById:     a.ActorId.UUID,
+				UpdatedById:     a.ActorID,
 				ActorUpdate:     a.Actor.ToLightDTO(),
 				CommentId:       commentNullID,
 				CreatedAt:       a.CreatedAt,

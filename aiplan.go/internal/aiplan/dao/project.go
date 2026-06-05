@@ -76,7 +76,7 @@ type Project struct {
 	StatesFlow types.StatesFlowGraph `json:"states_flow" gorm:"type:jsonb"`
 
 	Workspace               *Workspace      `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	ProjectLead             *User           `json:"project_lead_detail" gorm:"foreignKey:ProjectLeadId" extensions:"x-nullable"`
+	ProjectLead             *User           `json:"project_lead_detail" gorm:"foreignKey:ProjectLeadId" extensions:"x-nullable" validate:"-"`
 	CreatedBy               *User           `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
 	UpdatedBy               *User           `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
 	DefaultAssigneesDetails []ProjectMember `json:"default_assignees_details" gorm:"foreignKey:ProjectId;associationForeignKey:ProjectId;where:IsDefaultAssignee=true"`
