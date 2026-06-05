@@ -41,7 +41,7 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 			Table("issues i").
 			Select("count(*) as Count, coalesce(priority, '') as \"Key\"").
 			Where("i.deleted_at is null").
-			Where("project_id in (?)", projectQuery).
+			Where("i.project_id in (?)", projectQuery).
 			Group("priority").
 			Order("case when priority='urgent' then 5 when priority='high' then 4 when priority='medium' then 3 when priority='low' then 2 when priority is null then 1 end")
 	case "author":
