@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -596,7 +597,9 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	for i, subIssue := range subIssues {
 		subIssue.Parent = parentIssue
 		newSnapshot := tracker.IssueToSnapshot(subIssue)
-		_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSubIssuesData[i], newSnapshot, subIssues[i], user)
+		if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSubIssuesData[i], newSnapshot, subIssues[i], user); err != nil {
+			slog.Error("MCP addSubIssues: track changes failed", "error", err)
+		}
 	}
 
 	return mcp.NewToolResultJSON(utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
@@ -694,7 +697,9 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	}
 
 	newSnapshot := tracker.IssueToSnapshot(*issue)
-	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
+	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
 	return mcp.NewToolResultJSON(utils.SliceToSlice(&issues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
 }
 
@@ -739,7 +744,9 @@ func createIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 
 	newSnapshot := tracker.IssueToSnapshot(*issue)
 
-	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
+	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
 
 	return mcp.NewToolResultJSON(link.ToLightDTO())
 }
@@ -789,7 +796,9 @@ func updateIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	if err := db.Preload("Links").Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
 		return logger.Error(err), nil
 	}
-	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
+	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
 
 	return mcp.NewToolResultJSON(link.ToLightDTO())
 }
@@ -818,7 +827,7 @@ func deleteIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 
 	oldSnapshot := tracker.IssueToSnapshot(issue)
 
-	if err := db.Delete(&issue).Error; err != nil {
+	if err := db.Delete(&link).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
@@ -828,7 +837,9 @@ func deleteIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, us
 
 	newSnapshot := tracker.IssueToSnapshot(issue)
 
-	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
+	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
 
 	return mcp.NewToolResultText("ссылка удалена"), nil
 }
@@ -895,7 +906,9 @@ func updateIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 	newSnapshot := tracker.CommentToSnapshot(comment)
 
 	comment.Actor = user
-	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, comment.Issue, user)
+	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, comment.Issue, user); err != nil {
+		slog.Error("MCP comment action: track changes failed", "error", err)
+	}
 
 	return mcp.NewToolResultJSON(comment.ToDTO())
 }
@@ -921,7 +934,9 @@ func deleteIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return logger.Error(err), nil
 	}
 
-	_ = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, nil, issue, user)
+	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, nil, issue, user); err != nil {
+		slog.Error("MCP issue delete: track changes failed", "error", err)
+	}
 
 	return mcp.NewToolResultText("комментарий удалён"), nil
 }

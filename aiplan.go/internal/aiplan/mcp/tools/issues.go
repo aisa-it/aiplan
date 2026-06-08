@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
-	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
@@ -634,7 +634,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	err = bl.GetSnapshotTracker().TrackChanges(types.LayerProject, nil, tracker.IssueToSnapshot(issueNew), &project, user)
 	if err != nil {
-		errStack.GetError(nil, err)
+		slog.Error("MCP createIssue: track changes failed", "error", err)
 	}
 
 	return mcp.NewToolResultJSON(createdIssue.ToDTO())
@@ -915,7 +915,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		tracker.IssueToSnapshot(oldIssue),
 		tracker.IssueToSnapshot(updatedIssue), &updatedIssue, user)
 	if err != nil {
-		errStack.GetError(nil, err)
+		slog.Error("MCP updateIssue: track changes failed", "error", err)
 	}
 
 	return mcp.NewToolResultJSON(updatedIssue.ToDTO())
@@ -1270,11 +1270,11 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		Offset(offset)
 
 	if field != "" {
-		query = query.Where("issue_activities.field = ?", field)
+		query = query.Where("activity_events.field = ?", field)
 	}
 
 	var activities []dao.ActivityEvent
-	if err := query.Find(&activities).Error; err != nil {
+	if err := dao.LoadActivitiesBatched(query, &activities); err != nil {
 		return logger.Error(err), nil
 	}
 
@@ -1598,7 +1598,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 	newSnapshot := tracker.CommentToSnapshot(&comment)
 	err = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
 	if err != nil {
-		errStack.GetError(nil, err)
+		slog.Error("MCP createIssueComment: track changes failed", "error", err)
 	}
 
 	return mcp.NewToolResultJSON(comment.ToDTO())

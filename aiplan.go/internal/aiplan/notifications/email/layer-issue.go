@@ -178,7 +178,7 @@ func renderIssueWatchers(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEven
 	if !ok || issue == nil {
 		return FieldPrerender{}
 	}
-	return renderEntityChange(tx, t, acts, *issue.Assignees,
+	return renderEntityChange(tx, t, acts, *issue.Watchers,
 		"Наблюдатели",
 		entitySpec[dao.User]{
 			entityID: func(event dao.ActivityEvent) uuid.UUID {
@@ -294,10 +294,6 @@ func renderIssueSprint(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent,
 	issue, ok := entity.(*dao.Issue)
 	if !ok || issue == nil {
 		return FieldPrerender{}
-	}
-
-	for i := range issue.LinkedIssues {
-		issue.LinkedIssues[i].Project = issue.Project
 	}
 
 	return renderEntityChange(tx, t, acts, *issue.Sprints,

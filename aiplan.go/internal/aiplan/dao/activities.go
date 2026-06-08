@@ -169,49 +169,35 @@ func (ActivityEvent) TableName() string {
 	return "activity_events"
 }
 
-func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
-	targetField := string(a.Field)
+// entityResolver заполняет ptr (*T) сущностью с данным id; true — если найдена.
+type entityResolver func(id uuid.UUID, ptr reflect.Value) bool
 
-	switch targetField {
-	case "target_date", "end_date":
-		if a.NewValue != "" {
-			if formatted, err := utils.FormatDateStr(a.NewValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
-				a.NewValue = formatted
-			} else {
-				slog.Error("date format", "newValue", a.NewValue, "id", a.ID, "error", err)
-			}
-		}
+// idGetter — общий аксессор первичного ключа целевых сущностей.
+type idGetter interface {
+	GetId() uuid.UUID
+}
 
-		if a.OldValue != "" {
-			if formatted, err := utils.FormatDateStr(a.OldValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
-				a.OldValue = formatted
-			} else {
-				slog.Error("date format", "oldValue", a.OldValue, "id", a.ID, "error", err)
-			}
-		}
-	}
-
+// resolveEntities обходит поля New*/Old*, подходящие под a.Field, и вызывает для них
+// resolver. Обход общий для хука AfterFind и батча BatchPreloadActivityEntities.
+func (a *ActivityEvent) resolveEntities(resolveNew, resolveOld entityResolver) {
 	if !a.NewIdentifier.Valid && !a.OldIdentifier.Valid {
-		return nil
+		return
 	}
 
-	val := reflect.ValueOf(a).Elem()
-	typ := val.Type()
-
+	targetField := string(a.Field)
 	targetFieldExt := fmt.Sprintf("%s::%s", targetField, a.EntityType.String())
 
-	var walkStruct func(reflect.Value, reflect.Type) error
+	val := reflect.ValueOf(a).Elem()
 
-	walkStruct = func(v reflect.Value, t reflect.Type) error {
+	var walk func(reflect.Value, reflect.Type)
+	walk = func(v reflect.Value, t reflect.Type) {
 		for i := 0; i < t.NumField(); i++ {
 			structField := t.Field(i)
 			fieldVal := v.Field(i)
 
 			// Рекурсивно обходим встроенные структуры
 			if structField.Anonymous && structField.Type.Kind() == reflect.Struct {
-				if err := walkStruct(fieldVal, structField.Type); err != nil {
-					return err
-				}
+				walk(fieldVal, structField.Type)
 				continue
 			}
 
@@ -235,44 +221,130 @@ func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
 
 			fieldName := structField.Name
 
-			// Загружаем новую сущность
 			if a.NewIdentifier.Valid && strings.HasPrefix(fieldName, "New") {
 				ptr := reflect.New(structField.Type.Elem()) // *T
-				err := tx.Where("id = ?", a.NewIdentifier.UUID).First(ptr.Interface()).Error
-				if err == nil {
+				if resolveNew(a.NewIdentifier.UUID, ptr) {
 					fieldVal.Set(ptr)
-				} else if err != gorm.ErrRecordNotFound {
-					slog.Debug("failed to load new entity", "field", fieldName, "fieldTag", fieldTag, "id", a.NewIdentifier.UUID, "activityId", a.ID, "error", err.Error())
-					continue
-				} else {
-					slog.Debug("entity not found",
-						"field", fieldName,
-						"fieldTag", fieldTag,
-						"id", a.NewIdentifier.UUID,
-						"activityId", a.ID)
-					continue
 				}
 			}
 
-			// Загружаем старую сущность
 			if a.OldIdentifier.Valid && strings.HasPrefix(fieldName, "Old") {
 				ptr := reflect.New(structField.Type.Elem()) // *T
-				err := tx.Where("id = ?", a.OldIdentifier.UUID).First(ptr.Interface()).Error
-				if err == nil {
+				if resolveOld(a.OldIdentifier.UUID, ptr) {
 					fieldVal.Set(ptr)
-				} else if err != gorm.ErrRecordNotFound {
-					slog.Debug("failed to load old entity", "field", fieldName, "fieldTag", fieldTag, "id", a.OldIdentifier.UUID, "activityId", a.ID, "error", err.Error())
-					continue
-				} else {
-					slog.Debug("entity not found", "field", fieldName, "fieldTag", fieldTag, "id", a.OldIdentifier.UUID, "activityId", a.ID)
-					continue
 				}
 			}
 		}
+	}
+
+	walk(val, val.Type())
+}
+
+// formatDateFields нормализует строковые даты в значениях; нужен и батчу (SkipHooks).
+func (a *ActivityEvent) formatDateFields() {
+	switch string(a.Field) {
+	case "target_date", "end_date":
+		if a.NewValue != "" {
+			if formatted, err := utils.FormatDateStr(a.NewValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
+				a.NewValue = formatted
+			} else {
+				slog.Error("date format", "newValue", a.NewValue, "id", a.ID, "error", err)
+			}
+		}
+
+		if a.OldValue != "" {
+			if formatted, err := utils.FormatDateStr(a.OldValue, "2006-01-02T15:04:05Z07:00", nil); err == nil {
+				a.OldValue = formatted
+			} else {
+				slog.Error("date format", "oldValue", a.OldValue, "id", a.ID, "error", err)
+			}
+		}
+	}
+}
+
+func (a *ActivityEvent) AfterFind(tx *gorm.DB) error {
+	a.formatDateFields()
+
+	// Per-row подгрузка. На списках это N+1 — там используйте LoadActivitiesBatched.
+	dbResolver := func(id uuid.UUID, ptr reflect.Value) bool {
+		err := tx.Where("id = ?", id).First(ptr.Interface()).Error
+		if err == nil {
+			return true
+		}
+		if err != gorm.ErrRecordNotFound {
+			slog.Debug("failed to load activity entity", "id", id, "activityId", a.ID, "error", err.Error())
+		}
+		return false
+	}
+
+	a.resolveEntities(dbResolver, dbResolver)
+	return nil
+}
+
+// BatchPreloadActivityEntities подгружает New*/Old*-сущности для среза активностей
+// одним запросом на тип (анти-N+1). Активности должны грузиться с SkipHooks.
+func BatchPreloadActivityEntities(tx *gorm.DB, events []*ActivityEvent) error {
+	if len(events) == 0 {
 		return nil
 	}
 
-	return walkStruct(val, typ)
+	// Проход 1: собрать id по типам + отформатировать даты (замена работы хука).
+	needed := map[reflect.Type]map[uuid.UUID]struct{}{}
+	collect := func(id uuid.UUID, ptr reflect.Value) bool {
+		et := ptr.Type().Elem()
+		if needed[et] == nil {
+			needed[et] = map[uuid.UUID]struct{}{}
+		}
+		needed[et][id] = struct{}{}
+		return false // проход 1 ничего не присваивает
+	}
+	for _, ev := range events {
+		ev.formatDateFields()
+		ev.resolveEntities(collect, collect)
+	}
+
+	// По одному IN-запросу на тип, результат — в кэш по id.
+	cache := map[reflect.Type]map[uuid.UUID]reflect.Value{}
+	for et, idset := range needed {
+		ids := make([]uuid.UUID, 0, len(idset))
+		for id := range idset {
+			ids = append(ids, id)
+		}
+
+		slicePtr := reflect.New(reflect.SliceOf(et)) // *[]T
+		if err := tx.Where("id IN ?", ids).Find(slicePtr.Interface()).Error; err != nil {
+			return err
+		}
+
+		slice := slicePtr.Elem()
+		m := make(map[uuid.UUID]reflect.Value, slice.Len())
+		for i := 0; i < slice.Len(); i++ {
+			elem := slice.Index(i)
+			if getter, ok := elem.Interface().(idGetter); ok {
+				m[getter.GetId()] = elem
+			}
+		}
+		cache[et] = m
+	}
+
+	// Проход 2: разложить сущности из кэша по полям.
+	fromCache := func(id uuid.UUID, ptr reflect.Value) bool {
+		m, ok := cache[ptr.Type().Elem()]
+		if !ok {
+			return false
+		}
+		v, ok := m[id]
+		if !ok {
+			return false
+		}
+		ptr.Elem().Set(v)
+		return true
+	}
+	for _, ev := range events {
+		ev.resolveEntities(fromCache, fromCache)
+	}
+
+	return nil
 }
 
 func (a *ActivityEvent) Comment() string {

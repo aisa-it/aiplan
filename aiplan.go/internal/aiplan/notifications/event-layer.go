@@ -267,7 +267,7 @@ func (f formEvent) Preload(tx *gorm.DB, event *dao.ActivityEvent) error {
 	if err := tx.Unscoped().
 		Joins("Workspace").
 		Joins("TargetProject").
-		Where("forms.id = ?", event.ProjectID.UUID).
+		Where("forms.id = ?", event.FormID.UUID).
 		First(&event.Form).Error; err != nil {
 		return fmt.Errorf("preloadFormActivity: %v", err)
 	}

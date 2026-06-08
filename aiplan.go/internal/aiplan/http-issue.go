@@ -2185,12 +2185,12 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 	issueId := issue.ID
 
 	var issueActivities []dao.ActivityEvent
-	if err := s.DB(c).Preload(clause.Associations).
+	if err := dao.LoadActivitiesBatched(s.DB(c).Preload(clause.Associations).
 		Where("issue_id = ?", issueId).
 		Where("project_id = ?", project.ID).
 		Where("entity_type = ?", types.LayerIssue).
 		Where("field != ?", actField.Comment.Field.String()).
-		Order("created_at DESC").Find(&issueActivities).Error; err != nil {
+		Order("created_at DESC"), &issueActivities); err != nil {
 		return EError(c, err)
 	}
 

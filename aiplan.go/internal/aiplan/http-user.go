@@ -469,7 +469,7 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 		Set("userId", currentUser.ID)
 
 	if !currentUser.IsSuperuser {
-		query.Where("workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
+		query = query.Where("workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
 	}
 
 	if !time.Time(day).IsZero() {
