@@ -55,8 +55,8 @@ type PaginationMeta struct {
 // IssuesGroupedResponse - ответ с группированными задачами
 type IssuesGroupedResponse struct {
 	PaginationMeta
-	GroupBy string                `json:"group_by"`
-	Issues  []IssuesGroupResponse `json:"issues"`
+	GroupBy string                 `json:"group_by"`
+	Issues  []*IssuesGroupResponse `json:"issues"`
 }
 
 type IssuesLightSearchResponse struct {
@@ -71,6 +71,7 @@ type IssuesSearchResponse struct {
 
 // IssuesGroupResponse - одна группа в группированном ответе
 type IssuesGroupResponse struct {
+	SortId int               `json:"sort_id"`
 	Entity any               `json:"entity"`
 	Count  int               `json:"count"`
 	Issues []*IssueWithCount `json:"issues"`
