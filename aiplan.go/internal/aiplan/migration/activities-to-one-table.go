@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -126,6 +127,10 @@ func (a *ActivitiesToOneTable) Execute() error {
 
 	for _, err := range errs {
 		slog.Error("ActivitiesToOneTable", "error", err.Error())
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil

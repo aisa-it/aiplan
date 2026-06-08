@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -87,6 +88,9 @@ func setTargetId(event *dao.ActivityEvent, layer types.EntityLayer, id uuid.UUID
 }
 
 func (t *SnapshotTracker) TrackChanges(layer types.EntityLayer, oldSnapshot, newSnapshot SnapshotI, entity dao.IDaoAct, actor *dao.User, targetEntityID ...uuid.UUID) error {
+	if actor == nil {
+		return fmt.Errorf("TrackChanges: actor is nil (layer %v)", layer)
+	}
 	targetID := uuid.Nil
 	if len(targetEntityID) > 0 {
 		targetID = targetEntityID[0]

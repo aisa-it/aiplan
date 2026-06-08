@@ -602,7 +602,12 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 
 	newSnap := tracker.FormAnswerToSnapshot(&answer)
 
-	err = s.snapshotTracker.TrackChanges(types2.LayerForm, nil, &newSnap, &answer, user)
+	// no-auth-роут: user == nil, актор активности — системный пользователь
+	actor := user
+	if actor == nil {
+		actor = dao.GetSystemUser(s.db)
+	}
+	err = s.snapshotTracker.TrackChanges(types2.LayerForm, nil, &newSnap, &answer, actor)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

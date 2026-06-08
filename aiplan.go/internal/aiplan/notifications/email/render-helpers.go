@@ -2,6 +2,7 @@ package email
 
 import (
 	"database/sql"
+	"html"
 	"strconv"
 	"time"
 
@@ -12,6 +13,12 @@ import (
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 )
+
+// escapeText экранирует plain-text (имена, заголовки) для text/template-шаблонов,
+// которые не экранируют HTML сами. Rich-text сюда не передаётся — он уже HTML.
+func escapeText(s string) string {
+	return html.EscapeString(s)
+}
 
 type EntityChangeMeta struct {
 	Authors map[uuid.UUID]dao.User
@@ -71,8 +78,9 @@ func createFieldRenderer(label string, fieldType FieldType, opts ...RendererOpti
 			newV = toValueCtx(nil, &n)
 			oldV = toValueCtx(nil, &v)
 		} else {
-			newV = toValueCtx(&n, nil)
-			oldV = toValueCtx(&v, nil)
+			en, ev := escapeText(n), escapeText(v)
+			newV = toValueCtx(&en, nil)
+			oldV = toValueCtx(&ev, nil)
 		}
 
 		if config.customText != nil {
@@ -123,7 +131,7 @@ func buildEntityChange[E dao.IDaoAct](tx *gorm.DB, activities []dao.ActivityEven
 		t := transitions[entity.GetId()]
 
 		view := DigestView{
-			Title: spec.entityTitle(entity),
+			Title: escapeText(spec.entityTitle(entity)),
 		}
 
 		if t != nil && t.Created && !t.Deleted {
@@ -156,7 +164,7 @@ func buildEntityChange[E dao.IDaoAct](tx *gorm.DB, activities []dao.ActivityEven
 			}
 
 			views = append(views, DigestView{
-				Title:  title,
+				Title:  escapeText(title),
 				IsGone: true,
 			})
 

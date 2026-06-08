@@ -192,6 +192,10 @@ type headEntityCtx struct {
 }
 
 func (t *EmailTemplates) RenderHead(ddd headEntityCtx) string {
+	// plain-text поля заголовка экранируем — шаблон рендерится через text/template
+	ddd.WorkspaceName = escapeText(ddd.WorkspaceName)
+	ddd.Identifier = escapeText(ddd.Identifier)
+	ddd.Title = escapeText(ddd.Title)
 	var buf bytes.Buffer
 	if err := t.HeadEntity.Execute(&buf, ddd); err != nil {
 		slog.Error("RenderHead", "err", err.Error())

@@ -76,8 +76,15 @@ func PaginationRequest(offset int, limit int, query *gorm.DB, target any) (res P
 	}
 
 	// Data query
-	if err := query.Offset(offset).Limit(limit).Find(target).Error; err != nil {
-		return res, err
+	if acts, ok := target.(*[]ActivityEvent); ok {
+		// Активности грузим батчем, без per-row хука AfterFind (анти-N+1).
+		if err := LoadActivitiesBatched(query.Offset(offset).Limit(limit), acts); err != nil {
+			return res, err
+		}
+	} else {
+		if err := query.Offset(offset).Limit(limit).Find(target).Error; err != nil {
+			return res, err
+		}
 	}
 
 	res.Result = target
@@ -85,6 +92,20 @@ func PaginationRequest(offset int, limit int, query *gorm.DB, target any) (res P
 	res.Offset = offset
 
 	return res, nil
+}
+
+// LoadActivitiesBatched грузит активности по готовому query без хука AfterFind и
+// подгружает New*/Old*-сущности батчем (анти-N+1). Сущности тянутся через чистую
+// сессию, чтобы не наследовать накопленные условия/Joins.
+func LoadActivitiesBatched(query *gorm.DB, dest *[]ActivityEvent) error {
+	if err := query.Session(&gorm.Session{SkipHooks: true}).Find(dest).Error; err != nil {
+		return err
+	}
+	ptrs := make([]*ActivityEvent, len(*dest))
+	for i := range *dest {
+		ptrs[i] = &(*dest)[i]
+	}
+	return BatchPreloadActivityEntities(query.Session(&gorm.Session{NewDB: true}), ptrs)
 }
 
 func GetIssueFamily(issue Issue, db *gorm.DB, authorId uuid.NullUUID) (family []Issue) {
