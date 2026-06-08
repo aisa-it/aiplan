@@ -71,7 +71,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -4660,7 +4660,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -4894,7 +4894,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -6729,7 +6729,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -7309,7 +7309,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -8605,78 +8605,6 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Доступ запрещен",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    },
-                    "500": {
-                        "description": "Ошибка сервера",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/auth/workspaces/{workspaceSlug}/doc/{docId}/move/": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "перенос документа",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Docs"
-                ],
-                "summary": "doc: перенос документа",
-                "operationId": "moveDoc",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Slug рабочего пространства",
-                        "name": "workspaceSlug",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Id документа",
-                        "name": "docId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "документ перемещен"
-                    },
-                    "400": {
-                        "description": "Некорректные параметры запроса",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    },
-                    "401": {
-                        "description": "Необходима авторизация",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    },
-                    "403": {
-                        "description": "Доступ запрещен",
-                        "schema": {
-                            "$ref": "#/definitions/apierrors.DefinedError"
-                        }
-                    },
-                    "404": {
-                        "description": "Ошибка: не найдено",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -10802,7 +10730,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -11660,7 +11588,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -17637,7 +17565,7 @@ const docTemplate = `{
                                         "result": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dto.EntityActivityFull"
+                                                "$ref": "#/definitions/dto.ActivityEventFull"
                                             }
                                         }
                                     }
@@ -20007,6 +19935,117 @@ const docTemplate = `{
                 "result": {}
             }
         },
+        "dto.ActivityEventFull": {
+            "type": "object",
+            "properties": {
+                "actor_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.UserLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "doc_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.DocLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "entity_url": {
+                    "type": "string"
+                },
+                "field": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "form_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.FormLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "id": {
+                    "type": "string"
+                },
+                "issue_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.IssueLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "new_entity_detail": {
+                    "x-nullable": true
+                },
+                "new_identifier": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "new_value": {
+                    "type": "string"
+                },
+                "old_entity_detail": {
+                    "x-nullable": true
+                },
+                "old_identifier": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "old_value": {
+                    "type": "string"
+                },
+                "project_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.ProjectLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "sprint_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.SprintLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "state_lag_ms": {
+                    "type": "integer"
+                },
+                "verb": {
+                    "type": "string"
+                },
+                "workspace_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.WorkspaceLight"
+                        }
+                    ],
+                    "x-nullable": true
+                }
+            }
+        },
         "dto.AddSSHKeyRequest": {
             "type": "object",
             "required": [
@@ -20457,118 +20496,6 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
-                }
-            }
-        },
-        "dto.EntityActivityFull": {
-            "type": "object",
-            "properties": {
-                "actor_detail": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.UserLight"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "doc_detail": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.DocLight"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "entity_type": {
-                    "type": "string"
-                },
-                "entity_url": {
-                    "type": "string"
-                },
-                "field": {
-                    "type": "string",
-                    "x-nullable": true
-                },
-                "form_detail": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.FormLight"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "id": {
-                    "type": "string"
-                },
-                "issue_detail": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.IssueLight"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "new_entity_detail": {
-                    "x-nullable": true
-                },
-                "new_identifier": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "new_value": {
-                    "type": "string"
-                },
-                "old_entity_detail": {
-                    "x-nullable": true
-                },
-                "old_identifier": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "old_value": {
-                    "type": "string",
-                    "x-nullable": true
-                },
-                "project_detail": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.ProjectLight"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "sprint_detail": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.SprintLight"
-                        }
-                    ],
-                    "x-nullable": true
-                },
-                "state_lag_ms": {
-                    "type": "integer"
-                },
-                "verb": {
-                    "type": "string"
-                },
-                "workspace_detail": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.WorkspaceLight"
-                        }
-                    ],
-                    "x-nullable": true
                 }
             }
         },
