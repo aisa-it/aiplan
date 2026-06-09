@@ -25,7 +25,7 @@ type DocActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// doc_id uuid IS_NULL:YES
-	DocId uuid.UUID `json:"doc" gorm:"type:uuid;index:doc_activities_doc_index,priority:1" `
+	DocId uuid.NullUUID `json:"doc" gorm:"type:uuid;index:doc_activities_doc_index,priority:1" `
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
@@ -209,9 +209,9 @@ type IssueActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// issue_id uuid IS_NULL:YES
-	IssueId uuid.UUID `json:"issue_id" gorm:"type:uuid;index:issue_activities_issue_index,priority:1" extensions:"x-nullable"`
+	IssueId uuid.NullUUID `json:"issue_id" gorm:"type:uuid;index:issue_activities_issue_index,priority:1" extensions:"x-nullable"`
 	// project_id uuid IS_NULL:YES
-	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
+	ProjectId uuid.NullUUID `json:"project_id" gorm:"type:uuid"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
@@ -258,7 +258,7 @@ type SprintActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// sprint_id uuid IS_NULL:YES
-	SprintId uuid.UUID `json:"sprint_id" gorm:"type:uuid;index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
+	SprintId uuid.NullUUID `json:"sprint_id" gorm:"type:uuid;index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
@@ -299,7 +299,7 @@ type ProjectActivity struct {
 	Comment string `json:"comment"`
 	// project_id uuid IS_NULL:YES
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid;index:project_activities_project_index,priority:1" extensions:"x-nullable"`
+	ProjectId uuid.NullUUID `json:"project_id" gorm:"type:uuid;index:project_activities_project_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES
@@ -343,7 +343,7 @@ type FormActivity struct {
 	// comment text IS_NULL:NO
 	Comment string `json:"comment"`
 	// form_id uuid IS_NULL:YES
-	FormId uuid.UUID `json:"form_id,omitempty" gorm:"type:uuid;index:form_activities_form_index,priority:1" extensions:"x-nullable"`
+	FormId uuid.NullUUID `json:"form_id,omitempty" gorm:"type:uuid;index:form_activities_form_index,priority:1" extensions:"x-nullable"`
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 	// actor_id uuid IS_NULL:YES

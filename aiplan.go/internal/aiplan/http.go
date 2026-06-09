@@ -125,7 +125,7 @@ func (s *Services) RawDB() *gorm.DB {
 	return s.db
 }
 
-const requestTimeout = time.Second * 10
+const requestTimeout = time.Second * 20
 
 const spanCtxKey = "trace.span_context"
 
