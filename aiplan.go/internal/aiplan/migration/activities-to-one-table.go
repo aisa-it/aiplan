@@ -184,6 +184,14 @@ func migrateActivities[T any](
 
 			for _, act := range activities {
 				event, id, ok := convertFunc(act)
+				if id == uuid.Nil {
+					// нет PK для удаления — пропускаем целиком (защитный кейс)
+					continue
+				}
+				// Удаляем строку из старой таблицы в любом случае — и сконвертированную,
+				// и пропущенную (field IS NULL). Иначе старые таблицы никогда не опустеют
+				// и CheckMigrate будет вечно возвращать true → миграция при каждом старте.
+				ids = append(ids, id)
 				if !ok {
 					continue
 				}
@@ -193,7 +201,6 @@ func migrateActivities[T any](
 					event.ActorID = systemUserID
 				}
 				ae = append(ae, event)
-				ids = append(ids, id)
 			}
 
 			if len(ae) > 0 {
@@ -221,7 +228,7 @@ func migrateActivities[T any](
 // IssueActivity конвертер
 func convertIssue(act IssueActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 	if act.Field == nil {
-		return dao.ActivityEvent{}, uuid.UUID{}, false
+		return dao.ActivityEvent{}, act.Id, false
 	}
 	return dao.ActivityEvent{
 		ID:            dao.GenUUID(),
@@ -247,7 +254,7 @@ func convertIssue(act IssueActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 // ProjectActivity конвертер
 func convertProject(act ProjectActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 	if act.Field == nil {
-		return dao.ActivityEvent{}, uuid.UUID{}, false
+		return dao.ActivityEvent{}, act.Id, false
 	}
 	return dao.ActivityEvent{
 		ID:            dao.GenUUID(),
@@ -272,7 +279,7 @@ func convertProject(act ProjectActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 
 func convertDoc(act DocActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 	if act.Field == nil {
-		return dao.ActivityEvent{}, uuid.UUID{}, false
+		return dao.ActivityEvent{}, act.Id, false
 	}
 
 	return dao.ActivityEvent{
@@ -298,7 +305,7 @@ func convertDoc(act DocActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 
 func convertWorkspace(act WorkspaceActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 	if act.Field == nil {
-		return dao.ActivityEvent{}, uuid.UUID{}, false
+		return dao.ActivityEvent{}, act.Id, false
 	}
 
 	return dao.ActivityEvent{
@@ -324,7 +331,7 @@ func convertWorkspace(act WorkspaceActivity) (dao.ActivityEvent, uuid.UUID, bool
 
 func convertForm(act FormActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 	if act.Field == nil {
-		return dao.ActivityEvent{}, uuid.UUID{}, false
+		return dao.ActivityEvent{}, act.Id, false
 	}
 
 	return dao.ActivityEvent{
@@ -350,7 +357,7 @@ func convertForm(act FormActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 
 func convertSprint(act SprintActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 	if act.Field == nil {
-		return dao.ActivityEvent{}, uuid.UUID{}, false
+		return dao.ActivityEvent{}, act.Id, false
 	}
 
 	return dao.ActivityEvent{
@@ -376,7 +383,7 @@ func convertSprint(act SprintActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 
 func convertRoot(act RootActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 	if act.Field == nil {
-		return dao.ActivityEvent{}, uuid.UUID{}, false
+		return dao.ActivityEvent{}, act.Id, false
 	}
 
 	return dao.ActivityEvent{
