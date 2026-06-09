@@ -103,25 +103,57 @@ func (a *ActivitiesToOneTable) Execute() error {
 		}
 	}
 
-	if err := migrateActivities(a.db, IssueActivity{}.TableName(), convertIssue, a.Name()); err != nil {
+	// Системный пользователь — мишень для FK на actor_id, когда у активности
+	// actor_id IS NULL (комментарии IS_NULL:YES). Целевое поле ActivityEvent.ActorID
+	// объявлено NOT NULL + FK на users, поэтому пустой actor подменяем системным.
+	systemUser := dao.GetSystemUser(a.db)
+	if systemUser == nil {
+		return fmt.Errorf("%s: cannot resolve system user for null actor substitution", a.Name())
+	}
+
+	{ // Orphaned references cleanup
+		// Doc/Form удаляются жёстко (без soft-delete), поэтому *_activities могут
+		// ссылаться на уже несуществующие строки. Обнуляем такие ссылки до конвертации,
+		// иначе FK activity_events->docs/forms упадёт на вставке.
+		orphanCleanups := []struct{ table, column, refTable string }{
+			{"doc_activities", "doc_id", "docs"},
+			{"form_activities", "form_id", "forms"},
+		}
+		for _, oc := range orphanCleanups {
+			sql := fmt.Sprintf(
+				"UPDATE %s t SET %s = NULL WHERE t.%s IS NOT NULL AND NOT EXISTS (SELECT 1 FROM %s r WHERE r.id = t.%s)",
+				oc.table, oc.column, oc.column, oc.refTable, oc.column,
+			)
+			res := a.db.Exec(sql)
+			if res.Error != nil {
+				errs = append(errs, fmt.Errorf("cleanup orphaned %s.%s: %w", oc.table, oc.column, res.Error))
+				continue
+			}
+			if res.RowsAffected > 0 {
+				slog.Info(a.Name(), "orphan_cleanup", oc.table, "nulled", res.RowsAffected)
+			}
+		}
+	}
+
+	if err := migrateActivities(a.db, IssueActivity{}.TableName(), convertIssue, a.Name(), systemUser.ID); err != nil {
 		errs = append(errs, fmt.Errorf("migrate %s: %w", IssueActivity{}.TableName(), err))
 	}
-	if err := migrateActivities(a.db, ProjectActivity{}.TableName(), convertProject, a.Name()); err != nil {
+	if err := migrateActivities(a.db, ProjectActivity{}.TableName(), convertProject, a.Name(), systemUser.ID); err != nil {
 		errs = append(errs, fmt.Errorf("migrate %s: %w", ProjectActivity{}.TableName(), err))
 	}
-	if err := migrateActivities(a.db, DocActivity{}.TableName(), convertDoc, a.Name()); err != nil {
+	if err := migrateActivities(a.db, DocActivity{}.TableName(), convertDoc, a.Name(), systemUser.ID); err != nil {
 		errs = append(errs, fmt.Errorf("migrate %s: %w", DocActivity{}.TableName(), err))
 	}
-	if err := migrateActivities(a.db, WorkspaceActivity{}.TableName(), convertWorkspace, a.Name()); err != nil {
+	if err := migrateActivities(a.db, WorkspaceActivity{}.TableName(), convertWorkspace, a.Name(), systemUser.ID); err != nil {
 		errs = append(errs, fmt.Errorf("migrate %s: %w", WorkspaceActivity{}.TableName(), err))
 	}
-	if err := migrateActivities(a.db, FormActivity{}.TableName(), convertForm, a.Name()); err != nil {
+	if err := migrateActivities(a.db, FormActivity{}.TableName(), convertForm, a.Name(), systemUser.ID); err != nil {
 		errs = append(errs, fmt.Errorf("migrate %s: %w", FormActivity{}.TableName(), err))
 	}
-	if err := migrateActivities(a.db, SprintActivity{}.TableName(), convertSprint, a.Name()); err != nil {
+	if err := migrateActivities(a.db, SprintActivity{}.TableName(), convertSprint, a.Name(), systemUser.ID); err != nil {
 		errs = append(errs, fmt.Errorf("migrate %s: %w", SprintActivity{}.TableName(), err))
 	}
-	if err := migrateActivities(a.db, RootActivity{}.TableName(), convertRoot, a.Name()); err != nil {
+	if err := migrateActivities(a.db, RootActivity{}.TableName(), convertRoot, a.Name(), systemUser.ID); err != nil {
 		errs = append(errs, fmt.Errorf("migrate %s: %w", RootActivity{}.TableName(), err))
 	}
 
@@ -141,6 +173,7 @@ func migrateActivities[T any](
 	tableName string,
 	convertFunc func(item T) (dao.ActivityEvent, uuid.UUID, bool),
 	loggerName string,
+	systemUserID uuid.UUID,
 ) error {
 	var activities []T
 
@@ -153,6 +186,11 @@ func migrateActivities[T any](
 				event, id, ok := convertFunc(act)
 				if !ok {
 					continue
+				}
+				// actor_id NOT NULL + FK на users: пустой актор (zero-UUID из NULL)
+				// подменяем системным пользователем, иначе FK упадёт на вставке.
+				if event.ActorID == uuid.Nil {
+					event.ActorID = systemUserID
 				}
 				ae = append(ae, event)
 				ids = append(ids, id)
@@ -198,8 +236,8 @@ func convertIssue(act IssueActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 		OldIdentifier: act.OldIdentifier,
 		EntityType:    types.LayerIssue,
 		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-		ProjectID:     uuid.NullUUID{UUID: act.ProjectId, Valid: true},
-		IssueID:       uuid.NullUUID{UUID: act.IssueId, Valid: true},
+		ProjectID:     act.ProjectId,
+		IssueID:       act.IssueId,
 		DocID:         uuid.NullUUID{},
 		FormID:        uuid.NullUUID{},
 		SprintID:      uuid.NullUUID{},
@@ -224,7 +262,7 @@ func convertProject(act ProjectActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 		OldIdentifier: act.OldIdentifier,
 		EntityType:    types.LayerProject,
 		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
-		ProjectID:     uuid.NullUUID{UUID: act.ProjectId, Valid: true},
+		ProjectID:     act.ProjectId,
 		IssueID:       uuid.NullUUID{},
 		DocID:         uuid.NullUUID{},
 		FormID:        uuid.NullUUID{},
@@ -252,7 +290,7 @@ func convertDoc(act DocActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 		WorkspaceID:   uuid.NullUUID{UUID: act.WorkspaceId, Valid: true},
 		ProjectID:     uuid.NullUUID{},
 		IssueID:       uuid.NullUUID{},
-		DocID:         uuid.NullUUID{UUID: act.DocId, Valid: true},
+		DocID:         act.DocId,
 		FormID:        uuid.NullUUID{},
 		SprintID:      uuid.NullUUID{},
 	}, act.Id, true
@@ -305,7 +343,7 @@ func convertForm(act FormActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 		ProjectID:     uuid.NullUUID{},
 		IssueID:       uuid.NullUUID{},
 		DocID:         uuid.NullUUID{},
-		FormID:        uuid.NullUUID{UUID: act.FormId, Valid: true},
+		FormID:        act.FormId,
 		SprintID:      uuid.NullUUID{},
 	}, act.Id, true
 }
@@ -332,7 +370,7 @@ func convertSprint(act SprintActivity) (dao.ActivityEvent, uuid.UUID, bool) {
 		IssueID:       uuid.NullUUID{},
 		DocID:         uuid.NullUUID{},
 		FormID:        uuid.NullUUID{},
-		SprintID:      uuid.NullUUID{UUID: act.SprintId, Valid: true},
+		SprintID:      act.SprintId,
 	}, act.Id, true
 }
 
