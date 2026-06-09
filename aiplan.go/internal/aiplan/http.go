@@ -54,6 +54,7 @@ import (
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tracer"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
@@ -158,11 +159,19 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		if sc, ok := c.Get(spanCtxKey).(trace.SpanContext); ok {
 			ctx = trace.ContextWithSpanContext(ctx, sc)
 		}
-		slog.ErrorContext(ctx, "API error",
-			"err", err,
-			"method", c.Request().Method,
-			"url", c.Request().URL.String(),
-		)
+		// Обрыв запроса (клиент отвалился) — не ошибка сервера: пишем в otel
+		// root span запроса вместо лога.
+		if errors.Is(err, context.Canceled) {
+			span := trace.SpanFromContext(c.Request().Context())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "request canceled")
+		} else {
+			slog.ErrorContext(ctx, "API error",
+				"err", err,
+				"method", c.Request().Method,
+				"url", c.Request().URL.String(),
+			)
+		}
 		er := apierrors.ErrGeneric
 		er.StatusCode = code
 		if err != nil {

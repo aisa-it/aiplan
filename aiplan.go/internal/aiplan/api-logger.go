@@ -22,7 +22,23 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// recordCanceledErr проверяет, что запрос оборвался (context.Canceled — клиент
+// закрыл соединение/отменил запрос). В этом случае ошибка пишется в otel root
+// span запроса вместо лога, и возвращается true, чтобы вызывающий код пропустил
+// логирование (обрыв запроса — сетевой шум, а не ошибка сервера).
+func recordCanceledErr(c echo.Context, err error) bool {
+	if !errors.Is(err, context.Canceled) {
+		return false
+	}
+	span := trace.SpanFromContext(c.Request().Context())
+	span.RecordError(err)
+	span.SetStatus(codes.Error, "request canceled")
+	return true
+}
 
 // Возврат ошибки 400 с универсальным сообщением
 func EError(c echo.Context, err error) error {
@@ -32,6 +48,10 @@ func EError(c echo.Context, err error) error {
 
 	if errors.Is(err, context.DeadlineExceeded) {
 		return EErrorDefined(c, apierrors.ErrRequestTimeout)
+	}
+
+	if recordCanceledErr(c, err) {
+		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
 	var user *dao.User
@@ -65,6 +85,13 @@ func EErrorMsgStatus(c echo.Context, err error, status int) error {
 	}
 	if status == http.StatusRequestEntityTooLarge {
 		return EErrorDefined(c, apierrors.ErrEntityToLarge)
+	}
+
+	if recordCanceledErr(c, err) {
+		er := apierrors.ErrGeneric
+		er.StatusCode = status
+		er.Err = err.Error()
+		return EErrorDefined(c, er)
 	}
 
 	if err == nil {
@@ -101,6 +128,12 @@ func EErrorMsgStatus(c echo.Context, err error, status int) error {
 
 // Возврат ошибки 400 с сообщением ошибки
 func EErrorMsg(c echo.Context, err error) error {
+	if recordCanceledErr(c, err) {
+		er := apierrors.ErrGeneric
+		er.Err = err.Error()
+		return EErrorDefined(c, er)
+	}
+
 	var user *dao.User
 	if apiCtx := apicontext.GetContext(c); apiCtx != nil {
 		user = apiCtx.GetUser()
