@@ -926,9 +926,19 @@ func (s *Services) updateProjectMember(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrCannotUpdateHigherRole)
 	}
 
+	// Валидируем НОВУЮ роль: должна быть задана, допустима и не выше роли
+	// вызывающего (проверка выше сравнивает лишь с текущей ролью цели).
+	newRole, ok := data["role"]
+	if !ok || !IsValidRole(newRole) {
+		return EErrorDefined(c, apierrors.ErrUnsupportedRole.WithFormattedMessage(newRole))
+	}
+	if newRole > projectMember.Role {
+		return EErrorDefined(c, apierrors.ErrCannotUpdateHigherRole)
+	}
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	oldSnapshot := tracker.MemberToSnapshot(&requestedProjectMember)
-	requestedProjectMember.Role = data["role"]
+	requestedProjectMember.Role = newRole
 	requestedProjectMember.UpdatedById = userID
 
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {

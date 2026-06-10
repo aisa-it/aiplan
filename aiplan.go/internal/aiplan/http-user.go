@@ -1796,9 +1796,17 @@ func (s *Services) createSearchFilter(c echo.Context) error {
 func (s *Services) getSearchFilter(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
+
+	// Фильтр грузится в middleware только по id, поэтому проверяем доступ здесь:
+	// читать может владелец, кто угодно (если фильтр публичный) или суперюзер.
+	if filter.AuthorID != user.ID && !filter.Public && !user.IsSuperuser {
+		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
+	}
+
 	return c.JSON(http.StatusOK, filter.ToFullDTO())
 }
 

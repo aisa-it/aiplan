@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
@@ -18,6 +19,22 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
 )
+
+// inlineSafeContentTypes — типы, которые безопасно отдавать браузеру inline
+// (растровые картинки, не исполняющие скрипты). Всё остальное (в т.ч. text/html
+// и image/svg+xml, способный нести JS) отдаётся как attachment, чтобы загруженный
+// файл нельзя было использовать для stored-XSS в origin приложения.
+var inlineSafeContentTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/jpg":  true,
+	"image/gif":  true,
+	"image/webp": true,
+	"image/bmp":  true,
+	// PDF рендерится в песочнице-вьюере браузера (не как HTML в origin) —
+	// inline-превью допустимо. text/html и image/svg+xml сюда НЕ добавлять.
+	"application/pdf": true,
+}
 
 const (
 	selectFileWithPermissionCheck = `
@@ -106,6 +123,17 @@ func (s *Services) assetsHandler(c echo.Context) error {
 
 	c.Response().Header().Set("ETag", stats.ETag)
 	c.Response().Header().Set("Content-Length", fmt.Sprint(stats.Size))
+
+	// Небезопасные для inline типы (text/html, svg и пр.) форсим на скачивание,
+	// чтобы исключить stored-XSS через загруженный файл. Имя файла —
+	// пользовательский ввод, поэтому percent-кодируем (RFC 5987) во избежание
+	// инъекции в заголовок.
+	disposition := "attachment"
+	if inlineSafeContentTypes[asset.ContentType] {
+		disposition = "inline"
+	}
+	c.Response().Header().Set("Content-Disposition",
+		fmt.Sprintf("%s; filename*=UTF-8''%s", disposition, url.PathEscape(asset.Name)))
 
 	r, err := s.storage.LoadReader(asset.Id)
 	if err != nil {

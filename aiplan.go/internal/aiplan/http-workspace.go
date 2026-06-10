@@ -714,6 +714,15 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 
 	var oldMemberRole int
 	if req.Role != nil {
+		// Валидируем НОВОЕ значение роли: оно должно быть допустимым и не выше
+		// роли вызывающего (проверка выше сравнивает лишь с текущей ролью цели).
+		if !IsValidRole(*req.Role) {
+			return EErrorDefined(c, apierrors.ErrUnsupportedRole.WithFormattedMessage(*req.Role))
+		}
+		if *req.Role > workspaceMember.Role {
+			return EErrorDefined(c, apierrors.ErrUpdateHigherRoleUserForbidden)
+		}
+
 		oldMemberRole = *req.Role
 
 		userID := uuid.NullUUID{UUID: user.ID, Valid: true}

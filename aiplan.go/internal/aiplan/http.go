@@ -31,7 +31,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/mail"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -391,9 +390,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	// Global middlewares
 	e.Use(ServerHeader)
 	e.Use(PodHeader)
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowCredentials: true,
-	}))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
 		Limit: "5M",
 		Skipper: func(c echo.Context) bool {
@@ -453,6 +449,13 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			},
 		}),
 	)
+	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+		XFrameOptions:         "DENY",
+		ContentTypeNosniff:    "nosniff",
+		HSTSMaxAge:            31536000,
+		HSTSExcludeSubdomains: false,
+		ReferrerPolicy:        "strict-origin-when-cross-origin",
+	}))
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {
@@ -580,15 +583,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			NewSPACacheMiddleware(config),
 			middleware.StaticWithConfig(config),
 		)
-
-		uHttp, _ := url.Parse(fmt.Sprintf("http://%s", cfg.AWSEndpoint))
-		e.Group("/"+cfg.AWSBucketName,
-			middleware.RemoveTrailingSlash(),
-			middleware.Proxy(middleware.NewRoundRobinBalancer([]*middleware.ProxyTarget{
-				{
-					URL: utils.CheckHttps(uHttp),
-				},
-			})))
 	}
 
 	// Prometheus metrics

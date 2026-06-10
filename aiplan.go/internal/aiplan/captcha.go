@@ -21,10 +21,6 @@ import (
 
 var CaptchaService = NewCaptchaService()
 
-const (
-	AltchaHMACKey = "qwdlelqwedmkdejmi931jnfk8wedweffwe23nefdqd0-q"
-)
-
 var AltchaExpires time.Duration = time.Hour
 
 type CaptchaSignatures struct {
@@ -85,7 +81,7 @@ func (c *CaptchaSignatures) Validate(payload string) bool {
 		return false
 	}
 
-	verified, err := altcha.VerifySolution(m, AltchaHMACKey, true)
+	verified, err := altcha.VerifySolution(m, cfg.CaptchaSecret, true)
 	if err != nil || !verified {
 		return false
 	}

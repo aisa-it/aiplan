@@ -338,18 +338,16 @@ func (s *Services) emailLogin(c echo.Context) error {
 		}
 	}
 
-	if !cfg.LDAPForce {
-		if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
-			return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
-		}
+	if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
+		return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
+	}
 
-		if !user.IsActive {
-			return EErrorDefined(c, apierrors.ErrLoginTriesExceed)
-		}
+	if !user.IsActive {
+		return EErrorDefined(c, apierrors.ErrLoginTriesExceed)
+	}
 
-		if user.IsIntegration {
-			return EErrorDefined(c, apierrors.ErrIntegrationLogin)
-		}
+	if user.IsIntegration {
+		return EErrorDefined(c, apierrors.ErrIntegrationLogin)
 	}
 
 	sucessfullLogin := false
@@ -373,10 +371,6 @@ func (s *Services) emailLogin(c echo.Context) error {
 	}
 
 	if !sucessfullLogin {
-		if cfg.LDAPForce {
-			return EErrorDefined(c, apierrors.ErrFailedLogin)
-		}
-
 		user.LoginAttempts++
 		time.Sleep(time.Second * time.Duration(user.LoginAttempts))
 
@@ -514,7 +508,7 @@ func (s *Services) tokenProlong(c echo.Context, tkn *token.Token) (*token.Token,
 func (s *Services) requestCaptcha(c echo.Context) error {
 	expires := time.Now().Add(AltchaExpires)
 	challenge, err := altcha.CreateChallenge(altcha.ChallengeOptions{
-		HMACKey:   AltchaHMACKey,
+		HMACKey:   cfg.CaptchaSecret,
 		MaxNumber: 10000,
 		Expires:   &expires,
 		Params:    url.Values{},
