@@ -1961,6 +1961,14 @@ func (s *Services) createSearchFilter(c echo.Context) error {
 // @Router /api/auth/filters/{filterId}/ [get]
 func (s *Services) getSearchFilter(c echo.Context) error {
 	filter := c.(SearchFilterContext).Filter
+	user := c.(SearchFilterContext).User
+
+	// Фильтр грузится в middleware только по id, поэтому проверяем доступ здесь:
+	// читать может владелец, кто угодно (если фильтр публичный) или суперюзер.
+	if filter.AuthorID != user.ID && !filter.Public && !user.IsSuperuser {
+		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
+	}
+
 	return c.JSON(http.StatusOK, filter.ToFullDTO())
 }
 

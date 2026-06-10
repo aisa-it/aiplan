@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 )
 
 type Config struct {
@@ -69,7 +70,8 @@ type Config struct {
 	SwaggerEnable bool `env:"SWAGGER"`
 	NYEnable      bool `env:"NY_ENABLE"`
 
-	CaptchaDisabled bool `env:"CAPTCHA_DISABLED"`
+	CaptchaDisabled bool   `env:"CAPTCHA_DISABLED"`
+	CaptchaSecret   string `env:"CAPTCHA_SECRET"`
 
 	ExternalLimiter types.JsonURL `env:"EXTERNAL_LIMITER_URL"`
 	ExternalMemDB   types.JsonURL `env:"EXTERNAL_MEMDB"`
@@ -119,6 +121,10 @@ func ReadConfig(configPath string) *Config {
 	}
 	if config.LDAPServerURL.URL != nil && config.LDAPFilter == "" {
 		config.LDAPFilter = "(&(uniqueIdentifier={email}))"
+	}
+
+	if config.CaptchaSecret == "" && !config.CaptchaDisabled {
+		config.CaptchaSecret = uuid.Must(uuid.NewV4()).String()
 	}
 
 	return config
