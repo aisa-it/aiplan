@@ -801,6 +801,10 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 	user := *c.(AuthContext).User
 	accessToken := c.(AuthContext).AccessToken
 
+	if cfg.LDAPForce {
+		return EErrorDefined(c, apierrors.ErrResetPasswordForbidden)
+	}
+
 	var data PasswordRequest
 	if err := c.Bind(&data); err != nil {
 		return EError(c, err)
