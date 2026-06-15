@@ -755,6 +755,10 @@ func (s *Services) forgotPassword(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	if cfg.LDAPForce {
+		return EErrorDefined(c, apierrors.ErrResetPasswordForbidden)
+	}
+
 	if !CaptchaService.Validate(data.CaptchaPayload) {
 		return EError(c, nil)
 	}
@@ -1009,6 +1013,10 @@ func (s *Services) resetPassword(c echo.Context) error {
 	uidb64 := c.Param("uidb64")
 	token := c.Param("token")
 
+	if cfg.LDAPForce {
+		return EErrorDefined(c, apierrors.ErrResetPasswordForbidden)
+	}
+
 	id, err := base64.StdEncoding.DecodeString(uidb64)
 	if err != nil {
 		return EError(c, err)
@@ -1164,6 +1172,10 @@ func (s *Services) signOutEverywhere(c echo.Context) error {
 func (s *Services) resetUserPassword(c echo.Context) error {
 	admin := *c.(AuthContext).User
 	uidb64 := c.Param("uidb64")
+
+	if cfg.LDAPForce {
+		return EErrorDefined(c, apierrors.ErrResetPasswordForbidden)
+	}
 
 	if !admin.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrChangePasswordForbidden)
