@@ -64,6 +64,6 @@ func (ns *NotifyService) pgListen(ctx context.Context, dsn string) error {
 		if !ok {
 			slog.Warn("Notify channel not registered", "channel", notification.Channel)
 		}
-		fn(notification.Payload)
+		go fn(notification.Payload)
 	}
 }
