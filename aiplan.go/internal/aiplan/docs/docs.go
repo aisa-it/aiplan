@@ -17968,6 +17968,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/summary/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает сводку рабочего пространства (проекты, спринты, формы) с учётом роли пользователя",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Workspace"
+                ],
+                "summary": "Пространство: получение сводки рабочего пространства",
+                "operationId": "getWorkspaceSummary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Сводка рабочего пространства",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WorkspaceSummaryResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Рабочее пространство не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/tariff/": {
             "get": {
                 "security": [
@@ -23215,6 +23262,29 @@ const docTemplate = `{
                 },
                 "workspace_id": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.WorkspaceSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "forms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FormLight"
+                    }
+                },
+                "projects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ProjectLight"
+                    }
+                },
+                "sprints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SprintLight"
+                    }
                 }
             }
         },
