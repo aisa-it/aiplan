@@ -1159,6 +1159,10 @@ func (u JsonURL) MarshalJSON() ([]byte, error) {
 	return []byte("\"" + u.URL.String() + "\""), nil
 }
 
+func (u JsonURL) String() string {
+	return u.URL.String()
+}
+
 func (d *JsonURL) UnmarshalJSON(b []byte) error {
 	rawUrl := string(b)
 	if rawUrl == "null" || rawUrl == "" {
