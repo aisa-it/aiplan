@@ -78,3 +78,9 @@ type LastWorkspaceResponse struct {
 	WorkspaceDetails interface{} `json:"workspace_details"`
 	ProjectDetails   interface{} `json:"project_details"`
 }
+
+type WorkspaceSummary struct {
+	Projects []ProjectLight `json:"projects"`
+	Sprints  []SprintLight  `json:"sprints"`
+	Forms    []FormLight    `json:"forms"`
+}
