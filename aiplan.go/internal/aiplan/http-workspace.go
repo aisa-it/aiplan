@@ -115,6 +115,8 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.DELETE("/logo/", s.deleteWorkspaceLogo)
 	workspaceGroup.DELETE("/", s.deleteWorkspace)
 
+	workspaceGroup.GET("/summary/", s.getWorkspaceSummary)
+
 	workspaceGroup.POST("/invite/", s.addToWorkspace)
 
 	workspaceGroup.GET("/activities/", s.getWorkspaceActivityList)
@@ -441,6 +443,67 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+// getWorkspaceSummary godoc
+// @id getWorkspaceSummary
+// @Summary Пространство: получение сводки рабочего пространства
+// @Description Возвращает сводку рабочего пространства (проекты, спринты, формы) с учётом роли пользователя
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceSummaryResponse "Сводка рабочего пространства"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/summary/ [get]
+func (s *Services) getWorkspaceSummary(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	workspaceSummary := cache.WorkspaceSummary.Load(c.Request().Context(), workspaceMember.WorkspaceId)
+	if workspaceSummary == nil {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	// Show forms only for admins
+	if workspaceMember.Role != types.AdminRole && len(workspaceSummary.Forms) > 0 {
+		workspaceSummary.Forms = make([]dto.FormLight, 0)
+	}
+
+	// Show sprints only for members and admins
+	if workspaceMember.Role < types.MemberRole && len(workspaceSummary.Sprints) > 0 {
+		workspaceSummary.Sprints = make([]dto.SprintLight, 0)
+	}
+
+	if workspaceMember.Role < types.AdminRole && len(workspaceSummary.Projects) > 0 {
+		var memberships []dao.ProjectMember
+		if err := s.DB(c).
+			Where("workspace_id = ?", workspaceMember.WorkspaceId).
+			Where("member_id = ?", user.ID).
+			Find(&memberships).Error; err != nil {
+			return EError(c, err)
+		}
+
+		membershipsMap := make(map[uuid.UUID]struct{})
+		for _, member := range memberships {
+			membershipsMap[member.ProjectId] = struct{}{}
+		}
+
+		filteredProjects := make([]dto.ProjectLight, 0, len(workspaceSummary.Projects))
+		for _, project := range workspaceSummary.Projects {
+			if _, ok := membershipsMap[project.ID]; ok || project.Public {
+				filteredProjects = append(filteredProjects, project)
+			}
+		}
+		workspaceSummary.Projects = filteredProjects
+	}
+
+	return c.JSON(http.StatusOK, workspaceSummary)
 }
 
 // ############# Activities methods ###################
