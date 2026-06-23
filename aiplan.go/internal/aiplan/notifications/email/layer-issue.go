@@ -392,6 +392,5 @@ func issueCreateFunc(c *entityChange, act dao.ActivityEvent) {
 	case actField.VerbDeleted:
 		c.Deleted = true
 		c.FirstOld = utils.ToPtr("удалена")
-
 	}
 }

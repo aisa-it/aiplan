@@ -143,10 +143,14 @@ func msgReplace(user member_role.MemberNotify, msg FieldPrerender) FieldPrerende
 		case complexActivities:
 			if msg.Has(optPrerenderComplex) {
 				res := make(map[uuid.UUID]string)
-				msg.Count = 0
+				if !msg.Has(optCompositeFields) {
+					msg.Count = 0
+				}
 				for u, s := range msg.ValueComplex {
 					if user.IsActNotify([]uuid.UUID{u}) {
-						msg.Count++
+						if !msg.Has(optCompositeFields) {
+							msg.Count++
+						}
 						res[u] = s
 					}
 				}
@@ -202,6 +206,7 @@ const (
 	optPrerenderAll
 	optPrerenderComplex
 	optComplexBlock
+	optCompositeFields
 )
 
 func (fp *FieldPrerender) Has(t prerenderType) bool {
