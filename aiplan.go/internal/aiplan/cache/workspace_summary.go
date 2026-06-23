@@ -1,19 +1,6 @@
 package cache
 
 import (
-<<<<<<< HEAD
-	"sync"
-
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
-	"github.com/gofrs/uuid"
-	"gorm.io/gorm"
-)
-
-type WorkspaceSummaryCache struct {
-	db *gorm.DB
-	m  sync.RWMutex
-	c  map[uuid.UUID]dto.WorkspaceSummary
-=======
 	"context"
 	"log/slog"
 	"sync"
@@ -130,5 +117,4 @@ func (wsc *WorkspaceSummaryCache) Load(ctx context.Context, workspaceId uuid.UUI
 		return nil
 	}
 	return &e
->>>>>>> b187935bd432609293fed49e4028d7e6f48568c7
 }

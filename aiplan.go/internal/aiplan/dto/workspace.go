@@ -79,15 +79,8 @@ type LastWorkspaceResponse struct {
 	ProjectDetails   interface{} `json:"project_details"`
 }
 
-<<<<<<< HEAD
-type WorkspaceSummary struct {
-	Projects []ProjectLight `json:"projects"`
-	Sprints  []SprintLight  `json:"sprints"`
-	Forms    []FormLight    `json:"forms"`
-=======
 type WorkspaceSummaryResponse struct {
 	Projects []ProjectLight `json:"projects"`
 	Sprints  []SprintLight  `json:"sprints,omitempty"`
 	Forms    []FormLight    `json:"forms,omitempty"`
->>>>>>> b187935bd432609293fed49e4028d7e6f48568c7
 }
