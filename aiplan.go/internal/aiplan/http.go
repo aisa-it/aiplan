@@ -243,6 +243,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 
 	cache.InitUsersCache(db)
+	cache.InitWorkspaceSummaryCache(db)
 
 	var ldapProvider *authprovider.LdapProvider
 	if cfg.LDAPServerURL.URL != nil {
