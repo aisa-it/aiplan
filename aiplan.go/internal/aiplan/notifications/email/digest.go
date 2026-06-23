@@ -2,6 +2,7 @@ package email
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
@@ -31,20 +32,24 @@ type FieldPrerender struct {
 
 func collectOne(act dao.ActivityEvent, m map[string][]dao.ActivityEvent) {
 	key := act.Field.String()
-
 	if prev := m[key]; len(prev) > 0 {
-		if act.CreatedAt.After(prev[0].CreatedAt) {
-			m[key] = []dao.ActivityEvent{act}
-		}
+		m[key] = []dao.ActivityEvent{prev[0], act}
 		return
 	}
-
 	m[key] = []dao.ActivityEvent{act}
 }
 
 func collectAll(act dao.ActivityEvent, m map[string][]dao.ActivityEvent) {
 	key := act.Field.String()
 	m[key] = append(m[key], act)
+}
+
+func collectCompositeField(str string) func(act dao.ActivityEvent, m map[string][]dao.ActivityEvent) {
+	return func(act dao.ActivityEvent, m map[string][]dao.ActivityEvent) {
+		if strings.HasPrefix(act.Field.String(), str) {
+			m[str] = append(m[str], act)
+		}
+	}
 }
 
 type activityFieldCollector func(dao.ActivityEvent, map[string][]dao.ActivityEvent)
@@ -94,8 +99,7 @@ func collectActivitiesByField(acts []dao.ActivityEvent, collectors map[actField.
 	result := make(map[string][]dao.ActivityEvent)
 
 	for _, act := range acts {
-		key := act.Field.String()
-		collector, ok := collectors[actField.ActivityField(key)]
+		collector, ok := collectors[act.Field]
 		if !ok {
 			continue
 		}

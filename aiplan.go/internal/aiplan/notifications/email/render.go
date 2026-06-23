@@ -28,8 +28,15 @@ type entityChange struct {
 	FirstOld *string
 	LastNew  *string
 
-	Title      *string
-	TimeAction *string
+	Title           *string
+	TimeAction      *string
+	CompositeFields map[string]compositeFields
+}
+
+type compositeFields struct {
+	transitionFlags
+	Old *string
+	New *string
 }
 
 type funcReplacer func(*string) *string
@@ -42,6 +49,8 @@ type rendererConfig struct {
 	replaceMap                 map[string]any
 	customValFunc              func(act dao.ActivityEvent) (string, string)
 	complexBlock               bool
+	compositeFields            bool
+	groupBlock                 func(act *dao.ActivityEvent) string
 	customText                 *string
 	customComplexAggregateFunc func(c *entityChange, act dao.ActivityEvent)
 	formatInfoFunc             func(act dao.ActivityEvent) string
@@ -77,6 +86,12 @@ func WithComplexBlock() RendererOption {
 	}
 }
 
+func WithCompositeFields() RendererOption {
+	return func(c *rendererConfig) {
+		c.compositeFields = true
+	}
+}
+
 func WithTranslation(translationMap map[string]string) RendererOption {
 	return func(c *rendererConfig) {
 		c.translationMap = translationMap
@@ -97,6 +112,12 @@ func WithActionTime(template string) RendererOption {
 func WithTitleFunc(f func(act *dao.ActivityEvent) *string) RendererOption {
 	return func(c *rendererConfig) {
 		c.titleFunc = f
+	}
+}
+
+func WithGroupBlock(f func(act *dao.ActivityEvent) string) RendererOption {
+	return func(c *rendererConfig) {
+		c.groupBlock = f
 	}
 }
 
