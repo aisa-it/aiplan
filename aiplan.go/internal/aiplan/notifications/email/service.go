@@ -114,7 +114,7 @@ func (es *EmailService) worker(emailChan <-chan EmailMessage) error {
 			if err := es.sendEmail(e); err != nil {
 				slog.Error("email send failed", "to", e.To, "err", err)
 			} else {
-				slog.Info("email sent successfully", "to", e.To)
+				slog.Debug("email sent successfully", "to", e.To)
 			}
 		}()
 	}
