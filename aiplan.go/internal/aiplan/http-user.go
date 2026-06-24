@@ -553,12 +553,7 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 		query = query.Where("project_id::text IN (?)", projectIds)
 	}
 
-	resp, err := dao.PaginationRequest(
-		offset,
-		limit,
-		query,
-		&activities,
-	)
+	resp, err := dao.PaginationRequest(offset, limit, query, &activities)
 	if err != nil {
 		return EError(c, err)
 	}

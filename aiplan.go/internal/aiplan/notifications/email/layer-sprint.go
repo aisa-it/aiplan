@@ -112,7 +112,7 @@ func (sp *SprintProcessor) BuildHead(templates *EmailTemplates, entity dao.IDaoA
 }
 
 func getIssueIdFromSprintActivity(a dao.ActivityEvent) uuid.UUID {
-	return getUUIDFromActivity(uuidPtrFrom(a.NewSprintIssue), uuidPtrFrom(a.OldSprintIssue))
+	return getUUIDFromActivity(uuidPtrFrom(a.SprintIssuesExtendFields.NewSprintIssue), uuidPtrFrom(a.SprintIssuesExtendFields.OldSprintIssue))
 }
 
 func getWatcherIdFromSprintActivity(a dao.ActivityEvent) uuid.UUID {

@@ -584,6 +584,36 @@ func (s SprintSnapshot) GetField() actField.ActivityField {
 	return actField.Sprint.Field
 }
 
+// ------ SprintFolderSnapshot -------
+
+type SprintFolderSnapshot struct {
+	ID   uuid.UUID
+	Name opt.Field[string] `act:"field:sprint_folder_name;kind:scalar;preserve_id:true"`
+}
+
+func SprintFolderToSnapshot(sf *dao.SprintFolder) SprintFolderSnapshot {
+	snapshot := SprintFolderSnapshot{
+		ID:   sf.Id,
+		Name: opt.Some(sf.Name),
+	}
+	return snapshot
+}
+
+func (s SprintFolderSnapshot) GetName() string {
+	if s.Name.IsSet() {
+		return s.Name.Value()
+	}
+	return ""
+}
+
+func (s SprintFolderSnapshot) GetID() uuid.UUID {
+	return s.ID
+}
+
+func (s SprintFolderSnapshot) GetField() actField.ActivityField {
+	return actField.SprintFolder.Field
+}
+
 // ------ MemberSnapshot -------
 
 type MemberSnapshot struct {
