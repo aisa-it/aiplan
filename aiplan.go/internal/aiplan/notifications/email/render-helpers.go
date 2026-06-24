@@ -40,16 +40,17 @@ type DigestView struct {
 }
 
 type DigestComplexView struct {
-	ActivityMap map[uuid.UUID]dao.ActivityEvent
-	Title       *string
-	Old         *string
-	New         *string
-	TimeAction  *string
-	IsNew       bool
-	IsGone      bool
-	IsUpdate    bool
-	IsInfo      bool
-	WithBlock   bool
+	ActivityMap     map[uuid.UUID]dao.ActivityEvent
+	Title           *string
+	Old             *string
+	New             *string
+	TimeAction      *string
+	IsNew           bool
+	IsGone          bool
+	IsUpdate        bool
+	IsInfo          bool
+	WithBlock       bool
+	CompositeFields map[string]compositeFields
 }
 
 func createFieldRenderer(label string, fieldType FieldType, opts ...RendererOption) FieldRenderer {
@@ -60,8 +61,11 @@ func createFieldRenderer(label string, fieldType FieldType, opts ...RendererOpti
 
 	return func(_ *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, _ dao.IDaoAct) FieldPrerender {
 		var newV, oldV *actValueCtx
-		n := acts[0].NewValue
-		v := acts[0].OldValue
+		first := acts[0]
+		last := acts[len(acts)-1]
+		n := last.NewValue
+		v := first.OldValue
+
 		if fieldType == EmojiField {
 			if nInt, err := strconv.Atoi(n); err == nil {
 				n = string(rune(nInt))
@@ -72,6 +76,10 @@ func createFieldRenderer(label string, fieldType FieldType, opts ...RendererOpti
 		if config.translationMap != nil {
 			n = types.TranslateMap(config.translationMap, &n)
 			v = types.TranslateMap(config.translationMap, &v)
+		}
+
+		if len(acts) > 1 && v == n {
+			return FieldPrerender{}
 		}
 
 		if fieldType == BodyField {
@@ -291,6 +299,7 @@ func renderEntityChangeComplex(tx *gorm.DB, t *EmailTemplates, acts []dao.Activi
 	if config.complexBlock {
 		pp.Add(optComplexBlock)
 	}
+
 	pp.Replace = replaceMap
 	pp.Verb = meta.Verb
 	pp.ValueComplex = m
@@ -309,6 +318,14 @@ func buildComplexEntityChange(activities []dao.ActivityEvent, opts ...RendererOp
 	}
 
 	agg := aggregateComplexChanges(activities, config)
+
+	for _, change := range agg.Changes {
+		if !change.Created && !change.Deleted &&
+			change.FirstOld != nil && change.LastNew != nil &&
+			*change.FirstOld == *change.LastNew {
+			delete(agg.Changes, change.ID)
+		}
+	}
 
 	for _, change := range agg.Changes {
 		switch {
@@ -386,26 +403,48 @@ func aggregateComplexChanges(activities []dao.ActivityEvent, config rendererConf
 	un := make(map[string]struct{})
 
 	var (
-		start   time.Time
-		end     time.Time
-		hasTime bool
+		start          time.Time
+		end            time.Time
+		hasTime        bool
+		groupUUIDCache map[string]uuid.UUID
 	)
 
+	if config.groupBlock != nil {
+		groupUUIDCache = make(map[string]uuid.UUID)
+	}
+
 	for _, act := range activities {
-		id, ok := activityEntityID(act)
-		if !ok {
-			switch act.Verb {
-			case actField.VerbCreated:
-				un[act.NewValue] = struct{}{}
-				continue
-			case actField.VerbDeleted:
-				if _, exist := un[act.OldValue]; exist {
+		var id uuid.UUID
+		var ok bool
+
+		switch {
+		case config.groupBlock != nil:
+			groupKey := config.groupBlock(&act)
+
+			if cached, exists := groupUUIDCache[groupKey]; exists {
+				id = cached
+			} else {
+				id = dao.GenUUID()
+				groupUUIDCache[groupKey] = id
+			}
+		case config.complexBlock:
+			id = dao.GenUUID()
+		default:
+			id, ok = activityEntityID(act)
+			if !ok {
+				switch act.Verb {
+				case actField.VerbCreated:
+					un[act.NewValue] = struct{}{}
+					continue
+				case actField.VerbDeleted:
+					if _, exist := un[act.OldValue]; exist {
+						continue
+					}
+				case actField.VerbUpdated:
 					continue
 				}
-			case actField.VerbUpdated:
-				continue
+				id = dao.GenUUID()
 			}
-			id = dao.GenUUID()
 		}
 
 		newVal := &act.NewValue
@@ -419,9 +458,14 @@ func aggregateComplexChanges(activities []dao.ActivityEvent, config rendererConf
 		change := result.Changes[id]
 		if change == nil {
 			m := make(map[uuid.UUID]dao.ActivityEvent)
+			var mapCF map[string]compositeFields
+			if config.compositeFields {
+				mapCF = make(map[string]compositeFields)
+			}
 			change = &entityChange{
-				ID:          id,
-				ActivityMap: m,
+				ID:              id,
+				ActivityMap:     m,
+				CompositeFields: mapCF,
 			}
 			result.Changes[id] = change
 		}
@@ -491,6 +535,142 @@ func aggregateComplexChanges(activities []dao.ActivityEvent, config rendererConf
 	}
 
 	return result
+}
+
+func renderCompositeFieldChange(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, key string, opts ...RendererOption) FieldPrerender {
+	config := rendererConfig{}
+	for _, opt := range opts {
+		opt(&config)
+	}
+
+	views, meta, count, replaceMap := buildCompositeFieldChange(acts, opts...)
+	m := make(map[uuid.UUID]string)
+
+	for _, v := range views {
+		var p FieldPrerender
+
+		if len(v.CompositeFields) > 0 {
+			var title string
+			if v.Title != nil {
+				title = *v.Title
+			}
+			p = t.RenderCompositeFields(collectCompositeFields{Title: title, ValuesMap: v.CompositeFields, IsNew: v.IsNew, IsGone: v.IsGone, IsUpdate: v.IsUpdate})
+		} else {
+			p = t.RenderCollectValues(v)
+		}
+
+		m[dao.GenUUID()] = p.Value
+	}
+
+	ctx := collectComplexCtx{
+		Key:    key,
+		Value:  ApplyCustomReplaceText(complexActivities, replaceMap),
+		Start:  meta.Start,
+		End:    meta.End,
+		Author: meta.Authors,
+	}
+
+	pp := t.RenderCollectComplex(ctx, count)
+	if config.complexBlock {
+		pp.Add(optComplexBlock)
+	}
+
+	pp.Replace = replaceMap
+	pp.Verb = meta.Verb
+	pp.ValueComplex = m
+	pp.Add(optPrerenderComplex)
+	pp.Add(optCompositeFields)
+	return pp
+}
+
+func buildCompositeFieldChange(activities []dao.ActivityEvent, opts ...RendererOption) (
+	views []DigestComplexView, meta EntityChangeMeta, count int, replace map[string]any) {
+
+	config := rendererConfig{}
+	for _, opt := range opts {
+		opt(&config)
+	}
+
+	agg := aggregateComplexChanges(activities, config)
+
+	for _, change := range agg.Changes {
+		for key, cf := range change.CompositeFields {
+			if cf.Old != nil && cf.New != nil && *cf.Old == *cf.New {
+				delete(change.CompositeFields, key)
+			}
+		}
+	}
+
+	for _, change := range agg.Changes {
+		switch {
+		case change.Created && change.Deleted: // Created -> Deleted
+			continue
+		case change.Created: // Created -> Updated*
+			views = append(views, DigestComplexView{
+				Title:           change.Title,
+				New:             change.LastNew,
+				IsNew:           true,
+				TimeAction:      change.TimeAction,
+				WithBlock:       config.complexBlock,
+				ActivityMap:     change.ActivityMap,
+				CompositeFields: change.CompositeFields,
+			})
+			count++
+		case change.Deleted: // Updated* -> Deleted
+			views = append(views, DigestComplexView{
+				Title:           change.Title,
+				Old:             change.FirstOld,
+				IsGone:          true,
+				TimeAction:      change.TimeAction,
+				WithBlock:       config.complexBlock,
+				ActivityMap:     change.ActivityMap,
+				CompositeFields: change.CompositeFields,
+			})
+
+			count++
+		case change.Updated: // Updated*
+			views = append(views, DigestComplexView{
+				Title:           change.Title,
+				Old:             change.FirstOld,
+				New:             change.LastNew,
+				IsUpdate:        true,
+				TimeAction:      change.TimeAction,
+				WithBlock:       config.complexBlock,
+				ActivityMap:     change.ActivityMap,
+				CompositeFields: change.CompositeFields,
+			})
+			if len(change.CompositeFields) > 0 {
+				count += len(change.CompositeFields)
+			} else {
+				count++
+			}
+		case change.Info:
+			views = append(views, DigestComplexView{
+				Title:           change.Title,
+				New:             change.LastNew,
+				IsInfo:          true,
+				TimeAction:      change.TimeAction,
+				WithBlock:       config.complexBlock,
+				ActivityMap:     change.ActivityMap,
+				CompositeFields: change.CompositeFields,
+			})
+			if len(change.CompositeFields) > 0 {
+				count += len(change.CompositeFields)
+			} else {
+				count++
+			}
+		}
+	}
+
+	meta.Authors = agg.Authors
+	meta.Start = agg.Start
+	meta.End = agg.End
+	meta.Verb = activities[0].Verb
+
+	if config.replaceMap == nil {
+		config.replaceMap = make(map[string]any)
+	}
+	return views, meta, count, config.replaceMap
 }
 
 func activityEntityID(act dao.ActivityEvent) (uuid.UUID, bool) {
@@ -572,4 +752,90 @@ func getAuthorTitle(act *dao.ActivityEvent) *string {
 		return utils.ToPtr(act.Actor.GetName())
 	}
 	return nil
+}
+
+func renderWithDeletedSeparated(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct, key string,
+	delAggFunc func(c *entityChange, act dao.ActivityEvent), titleFunc func(act *dao.ActivityEvent) *string, complexFunc func(c *entityChange, act dao.ActivityEvent)) FieldPrerender {
+	var deletions, others []dao.ActivityEvent
+	for _, a := range acts {
+		if a.Verb == actField.VerbDeleted {
+			deletions = append(deletions, a)
+		} else {
+			others = append(others, a)
+		}
+	}
+
+	var fp FieldPrerender
+	if len(deletions) > 0 {
+		fp = renderEntityChangeComplex(tx, t, deletions, key,
+			WithTitleFunc(func(act *dao.ActivityEvent) *string {
+				return utils.ToPtr(act.OldValue)
+			}),
+			WithComplexAggregateFunc(delAggFunc),
+		)
+	}
+
+	if len(others) > 0 {
+		otherFP := renderCompositeFieldChange(tx, t, others, key,
+			WithTitleFunc(titleFunc),
+			WithGroupBlock(func(act *dao.ActivityEvent) string {
+				if act.NewIdentifier.Valid {
+					return act.NewIdentifier.UUID.String()
+				}
+				if act.OldIdentifier.Valid {
+					return act.OldIdentifier.UUID.String()
+				}
+				return ""
+			}),
+			WithComplexAggregateFunc(complexFunc),
+			WithCompositeFields(),
+		)
+
+		if fp.Count == 0 {
+			fp = otherFP
+		} else if otherFP.Count > 0 {
+			fp = mergeFieldPrerender(fp, otherFP)
+		}
+	}
+
+	return fp
+}
+
+func mergeFieldPrerender(a, b FieldPrerender) FieldPrerender {
+	for k, v := range b.ValueComplex {
+		a.ValueComplex[k] = v
+	}
+	a.Count += b.Count
+
+	for _, author := range b.Authors {
+		found := false
+		for _, existing := range a.Authors {
+			if existing.ID == author.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			a.Authors = append(a.Authors, author)
+		}
+	}
+
+	if b.Start.Valid && (!a.Start.Valid || b.Start.Time.Before(a.Start.Time)) {
+		a.Start = b.Start
+	}
+	if b.End.Valid && (!a.End.Valid || b.End.Time.After(a.End.Time)) {
+		a.End = b.End
+	}
+
+	a.ActivityIds = append(a.ActivityIds, b.ActivityIds...)
+
+	if a.Replace == nil {
+		a.Replace = b.Replace
+	} else if b.Replace != nil {
+		for k, v := range b.Replace {
+			a.Replace[k] = v
+		}
+	}
+
+	return a
 }

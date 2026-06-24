@@ -30,17 +30,26 @@ func NewProjectPipeline() (types.EntityLayer, EmailProcessor) {
 }
 
 var projectFieldConfigs = map[actField.ActivityField]EntityFieldConfig{
-	actField.Name.Field:             {collectOne, createFieldRenderer("Имя", StringField)},
-	actField.Identifier.Field:       {collectOne, createFieldRenderer("Идентификатор", StringField)},
-	actField.Emoj.Field:             {collectOne, createFieldRenderer("Емоджи", EmojiField)},
-	actField.Logo.Field:             {collectOne, createFieldRenderer("Логотип", StringField, WithCustomText("изменен логотип проекта"))},
-	actField.Public.Field:           {collectOne, createFieldRenderer("Публичность", StringField, WithTranslation(types.ProjectPublicTranslate))},
-	actField.DefaultWatchers.Field:  {collectAll, renderProjectDefaultWatchers},
-	actField.DefaultAssignees.Field: {collectAll, renderProjectDefaultAssignees},
-	actField.ProjectLead.Field:      {collectOne, renderProjectLead},
-	actField.Member.Field:           {collectAll, renderProjectMember},
-	actField.Role.Field:             {collectOne, renderProjectMemberRole},
-	actField.Issue.Field:            {collectAll, renderProjectIssue},
+	actField.Name.Field:              {collectOne, createFieldRenderer("Имя", StringField)},
+	actField.Identifier.Field:        {collectOne, createFieldRenderer("Идентификатор", StringField)},
+	actField.Emoj.Field:              {collectOne, createFieldRenderer("Емоджи", EmojiField)},
+	actField.Logo.Field:              {collectOne, createFieldRenderer("Логотип", StringField, WithCustomText("изменен логотип проекта"))},
+	actField.Public.Field:            {collectOne, createFieldRenderer("Публичность", StringField, WithTranslation(types.ProjectPublicTranslate))},
+	actField.DefaultWatchers.Field:   {collectAll, renderProjectDefaultWatchers},
+	actField.DefaultAssignees.Field:  {collectAll, renderProjectDefaultAssignees},
+	actField.ProjectLead.Field:       {collectOne, renderProjectLead},
+	actField.Member.Field:            {collectAll, renderProjectMember},
+	actField.Role.Field:              {collectOne, renderProjectMemberRole},
+	actField.Issue.Field:             {collectAll, renderProjectIssue},
+	actField.Status.Field:            {collectCompositeField("status"), renderProjectState},
+	actField.StatusName.Field:        {collectCompositeField("status"), renderProjectState},
+	actField.StatusColor.Field:       {collectCompositeField("status"), renderProjectState},
+	actField.StatusDescription.Field: {collectCompositeField("status"), renderProjectState},
+	actField.StatusDefault.Field:     {collectCompositeField("status"), renderProjectState},
+	actField.StatusGroup.Field:       {collectCompositeField("status"), renderProjectState},
+	actField.Label.Field:             {collectCompositeField("label"), renderProjectLabel},
+	actField.LabelName.Field:         {collectCompositeField("label"), renderProjectLabel},
+	actField.LabelColor.Field:        {collectCompositeField("label"), renderProjectLabel},
 }
 
 func (p ProjectProcessor) LoadActivities(tx *gorm.DB) []dao.ActivityEvent {
@@ -216,6 +225,7 @@ func renderProjectMemberRole(tx *gorm.DB, t *EmailTemplates, acts []dao.Activity
 		}),
 	)
 }
+
 func renderProjectIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct) FieldPrerender {
 	project, ok := entity.(*dao.Project)
 	if !ok || project == nil {
@@ -279,4 +289,144 @@ func renderProjectMember(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEven
 			},
 			loadRemoved: getRemovedMembers,
 		})
+}
+
+func renderProjectState(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct) FieldPrerender {
+	return renderWithDeletedSeparated(tx, t, acts, entity, "Статус",
+		func(c *entityChange, act dao.ActivityEvent) {
+			c.Deleted = true
+			c.FirstOld = utils.ToPtr("удалена")
+		},
+		func(act *dao.ActivityEvent) *string {
+			if act.ProjectActivityExtendFields.NewState != nil {
+				return utils.ToPtr(act.ProjectActivityExtendFields.NewState.Name)
+
+			} else if act.ProjectActivityExtendFields.OldState != nil {
+				return utils.ToPtr(act.ProjectActivityExtendFields.OldState.Name)
+			}
+			return utils.ToPtr(act.OldValue)
+		},
+		stateComplexFunc,
+	)
+}
+
+func stateComplexFunc(c *entityChange, act dao.ActivityEvent) {
+	var newState dao.State
+	if act.ProjectActivityExtendFields.NewState != nil {
+		newState = *act.ProjectActivityExtendFields.NewState
+	}
+
+	cFields := c.CompositeFields != nil
+
+	switch act.Verb {
+	case actField.VerbCreated:
+		c.Created = true
+		if cFields {
+			c.CompositeFields["Группа"] = compositeFields{
+				transitionFlags: transitionFlags{Created: true},
+				New:             new(types.TranslateMap(types.StatusTranslation, new(newState.Group))),
+			}
+			if newState.Description != "" {
+				c.CompositeFields["Описание"] = compositeFields{
+					transitionFlags: transitionFlags{Created: true},
+					New:             htmlReplacer(&newState.Description),
+				}
+			}
+			if newState.Default {
+				c.CompositeFields["По умолчанию"] = compositeFields{
+					transitionFlags: transitionFlags{Created: true},
+					New:             new("установлен"),
+				}
+			}
+		}
+	case actField.VerbDeleted:
+		c.Deleted = true
+		c.FirstOld = utils.ToPtr("удалена")
+	case actField.VerbUpdated:
+		c.Updated = true
+		switch act.Field {
+		case actField.StatusColor.Field:
+			cf := c.CompositeFields["Цвет"]
+			cf.Created = true
+			cf.New = new("Обновлен")
+			c.CompositeFields["Цвет"] = cf
+		case actField.StatusDescription.Field:
+			cf := c.CompositeFields["Описание"]
+			cf.Updated = true
+			if cf.Old == nil {
+				cf.Old = new(act.OldValue)
+			}
+			cf.New = new(act.NewValue)
+			c.CompositeFields["Описание"] = cf
+		case actField.StatusName.Field:
+			cf := c.CompositeFields["Имя"]
+			cf.Updated = true
+			if cf.Old == nil {
+				cf.Old = new(act.OldValue)
+			}
+			cf.New = new(act.NewValue)
+			c.CompositeFields["Имя"] = cf
+		case actField.StatusGroup.Field:
+			cf := c.CompositeFields["Группа"]
+			cf.Updated = true
+			if cf.Old == nil {
+				cf.Old = new(types.TranslateMap(types.StatusTranslation, new(act.OldValue)))
+
+			}
+			cf.New = new(types.TranslateMap(types.StatusTranslation, new(act.NewValue)))
+			c.CompositeFields["Группа"] = cf
+		case actField.StatusDefault.Field:
+			cf := c.CompositeFields["По умолчанию"]
+			cf.Created = true
+			cf.New = new("Установлен")
+			c.CompositeFields["По умолчанию"] = cf
+		}
+	}
+}
+
+func renderProjectLabel(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct) FieldPrerender {
+	return renderWithDeletedSeparated(tx, t, acts, entity, "Тег",
+		func(c *entityChange, act dao.ActivityEvent) {
+			c.Deleted = true
+			c.FirstOld = utils.ToPtr("удален")
+		},
+		func(act *dao.ActivityEvent) *string {
+			if act.ProjectActivityExtendFields.NewLabel != nil {
+				return utils.ToPtr(act.ProjectActivityExtendFields.NewLabel.Name)
+
+			} else if act.ProjectActivityExtendFields.OldLabel != nil {
+				return utils.ToPtr(act.ProjectActivityExtendFields.OldLabel.Name)
+			}
+			return utils.ToPtr(act.OldValue)
+		},
+		labelComplexFunc,
+	)
+}
+
+func labelComplexFunc(c *entityChange, act dao.ActivityEvent) {
+	switch act.Verb {
+	case actField.VerbCreated:
+		c.Created = true
+		c.LastNew = new("создан")
+	case actField.VerbDeleted:
+		c.Deleted = true
+		c.FirstOld = new("удален")
+	case actField.VerbUpdated:
+		c.Updated = true
+		switch act.Field {
+		case actField.LabelColor.Field:
+			cf := c.CompositeFields["Цвет"]
+			cf.Created = true
+			cf.New = new("Обновлен")
+			c.CompositeFields["Цвет"] = cf
+		case actField.LabelName.Field:
+			cf := c.CompositeFields["Имя"]
+			cf.Updated = true
+			if cf.Old == nil {
+				cf.Old = new(act.OldValue)
+			}
+			cf.New = new(act.NewValue)
+			c.CompositeFields["Имя"] = cf
+		}
+	}
 }

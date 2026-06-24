@@ -19,15 +19,16 @@ import (
 var defaultTemplates embed.FS
 
 const (
-	templateCollectAll     = "v2_collect_all"
-	templateCollectOne     = "v2_collect_one"
-	templateCollectComplex = "v2_collect_complex"
-	templateBody           = "v2_body"
-	templateActivity       = "v2_activity"
-	templateAuthorActivity = "v2_author_activity"
-	templateChangeCounter  = "v2_change_counter"
-	templateHeadEntity     = "v2_head_entity"
-	templateCollectValues  = "v2_collect_values"
+	templateCollectAll      = "v2_collect_all"
+	templateCollectOne      = "v2_collect_one"
+	templateCollectComplex  = "v2_collect_complex"
+	templateCompositeFields = "v2_composite_fields"
+	templateBody            = "v2_body"
+	templateActivity        = "v2_activity"
+	templateAuthorActivity  = "v2_author_activity"
+	templateChangeCounter   = "v2_change_counter"
+	templateHeadEntity      = "v2_head_entity"
+	templateCollectValues   = "v2_collect_values"
 )
 
 var (
@@ -36,6 +37,7 @@ var (
 		templateCollectOne,
 		templateCollectComplex,
 		templateCollectValues,
+		templateCompositeFields,
 		templateBody,
 		templateActivity,
 		templateAuthorActivity,
@@ -45,16 +47,17 @@ var (
 )
 
 type EmailTemplates struct {
-	ReplaceTxtToSvg func(string) string
-	CollectAll      *template.Template
-	CollectOne      *template.Template
-	CollectComplex  *template.Template
-	CollectValues   *template.Template
-	Body            *template.Template
-	Activity        *template.Template
-	AuthorActivity  *template.Template
-	ChangeCounter   *template.Template
-	HeadEntity      *template.Template
+	ReplaceTxtToSvg        func(string) string
+	CollectAll             *template.Template
+	CollectOne             *template.Template
+	CollectComplex         *template.Template
+	CollectValues          *template.Template
+	CollectCompositeFields *template.Template
+	Body                   *template.Template
+	Activity               *template.Template
+	AuthorActivity         *template.Template
+	ChangeCounter          *template.Template
+	HeadEntity             *template.Template
 }
 
 // CreateNewTemplates загружает встроенные шаблоны в БД при запуске
@@ -176,6 +179,8 @@ func (ts *TemplateService) LoadTemplates() EmailTemplates {
 			res.CollectComplex = tmpl.ParsedTemplate
 		case templateCollectValues:
 			res.CollectValues = tmpl.ParsedTemplate
+		case templateCompositeFields:
+			res.CollectCompositeFields = tmpl.ParsedTemplate
 		case templateBody:
 			res.Body = tmpl.ParsedTemplate
 		case templateActivity:

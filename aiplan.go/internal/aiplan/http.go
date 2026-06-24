@@ -116,8 +116,7 @@ type Services struct {
 // При cancel/timeout контекста pgx отправит pg_cancel_backend в Postgres,
 // что не даёт зависшим запросам копиться в пуле.
 func (s *Services) DB(c echo.Context) *gorm.DB {
-	return s.db
-	//return s.db.WithContext(c.Request().Context())
+	return s.db.WithContext(c.Request().Context())
 }
 
 // RawDB возвращает исходный *gorm.DB без привязки к запросу.
@@ -244,6 +243,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 
 	cache.InitUsersCache(db)
+	cache.InitWorkspaceSummaryCache(db)
 
 	var ldapProvider *authprovider.LdapProvider
 	if cfg.LDAPServerURL.URL != nil {
