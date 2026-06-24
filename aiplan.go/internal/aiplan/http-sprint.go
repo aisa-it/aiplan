@@ -197,6 +197,10 @@ func (s *Services) createSprint(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
 	}
 
+	if (req.StartDate == nil) != (req.EndDate == nil) {
+		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
+	}
+
 	sprintReq := sprintDto{
 		req,
 	}
@@ -298,6 +302,10 @@ func (s *Services) updateSprint(c echo.Context) error {
 	fields, err := BindData(c, "", &req)
 	if err != nil {
 		return EError(c, err)
+	}
+
+	if (req.StartDate == nil) != (req.EndDate == nil) {
+		return EErrorDefined(c, apierrors.ErrSprintRequestValidate)
 	}
 
 	for _, field := range fields {
