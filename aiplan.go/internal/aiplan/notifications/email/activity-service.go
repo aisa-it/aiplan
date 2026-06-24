@@ -44,6 +44,7 @@ func InitActivityNotificationService(db *gorm.DB, es *EmailService) *ActivityNot
 	an.RegisterProcessor(NewProjectPipeline())
 	an.RegisterProcessor(NewWorkspacePipeline())
 	an.RegisterProcessor(NewDocPipeline())
+	an.RegisterProcessor(NewSkipActivitiesPipeline())
 	return an
 }
 
@@ -57,4 +58,5 @@ func (es *EmailService) EmailActivity() {
 	es.an.ProcessLayer(types.LayerProject)
 	es.an.ProcessLayer(types.LayerWorkspace)
 	es.an.ProcessLayer(types.LayerDoc)
+	es.an.ProcessLayer(layerSkip)
 }

@@ -147,7 +147,7 @@ func filterVisibleFields(b *ActivityBucket, r Recipient, ctx *EmailContext) ([]F
 	visible := make([]FieldPrerender, 0, len(b.Prepared))
 	parts := make([]string, 0, len(b.Prepared))
 
-	for field, html := range b.Prepared { //todo переписать активиди идс
+	for field, html := range b.Prepared {
 		needActionAuthor := ctx.Plan.AuthorRole == member_role.ActionAuthor &&
 			!isUserInAuthors(html.Authors, r.MemberNotify.GetUser().Email)
 

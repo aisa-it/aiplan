@@ -440,7 +440,7 @@ func GetIssueListData(
 
 				if groupMap[i] != nil {
 					i++
-					return streamCallback(*groupMap[i])
+					return streamCallback(*groupMap[i-1])
 				}
 			}
 			groupMap[group.SortId] = &group

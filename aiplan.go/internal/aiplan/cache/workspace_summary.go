@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -44,6 +45,7 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 	g := errgroup.Group{}
 	g.Go(func() error {
 		var projectsRaw []dao.Project
+		fmt.Println(ctx)
 		if err := wsc.db.WithContext(ctx).Where("workspace_id = ?", workspaceId).Find(&projectsRaw).Error; err != nil {
 			return err
 		}
@@ -53,6 +55,7 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 
 	g.Go(func() error {
 		var sprintsRaw []dao.Sprint
+		fmt.Println(ctx)
 		if err := wsc.db.WithContext(ctx).Where("workspace_id = ?", workspaceId).Find(&sprintsRaw).Error; err != nil {
 			return err
 		}
@@ -62,6 +65,7 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 
 	g.Go(func() error {
 		var formsRaw []dao.Form
+		fmt.Println(ctx)
 		if err := wsc.db.WithContext(ctx).Where("workspace_id = ?", workspaceId).Find(&formsRaw).Error; err != nil {
 			return err
 		}

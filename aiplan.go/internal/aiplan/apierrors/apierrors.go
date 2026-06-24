@@ -301,6 +301,7 @@ var (
 	ErrEmailChangeLimit         = DefinedError{Code: 6015, StatusCode: http.StatusTooManyRequests, Err: "the code was sent less than a minute ago", RuErr: "Запрос нового кода верификации можно делать раз в минуту"}
 	ErrEmailVerify              = DefinedError{Code: 6016, StatusCode: http.StatusBadRequest, Err: "invalid or expired code", RuErr: "Неверный или просроченный код"}
 	ErrSearchFilterNotFound     = DefinedError{Code: 6017, StatusCode: http.StatusNotFound, Err: "search filter not found", RuErr: "Фильтр не найден"}
+	ErrResetPasswordForbidden   = DefinedError{Code: 6018, StatusCode: http.StatusForbidden, Err: "password reset forbidden in this environment", RuErr: "Сброс пароля недоступен в данном окружении"}
 
 	// 7*** - integration errors
 	ErrInvalidEventType      = DefinedError{Code: 7001, StatusCode: http.StatusBadRequest, Err: "invalid event type", RuErr: "Указан неверный тип события"}

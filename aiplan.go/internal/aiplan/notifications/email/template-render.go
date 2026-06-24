@@ -149,6 +149,30 @@ func (t *EmailTemplates) RenderCollectValues(d DigestComplexView) FieldPrerender
 	}
 }
 
+type collectCompositeFields struct {
+	Title     string
+	IsNew     bool
+	IsGone    bool
+	IsUpdate  bool
+	ValuesMap map[string]compositeFields
+
+	FuncCustomText func() string
+}
+
+func (t *EmailTemplates) RenderCompositeFields(cf collectCompositeFields) FieldPrerender {
+	if t.CollectCompositeFields == nil {
+		return FieldPrerender{}
+	}
+	var buf bytes.Buffer
+	if err := t.CollectCompositeFields.Execute(&buf, cf); err != nil {
+		slog.Error("Template execute failed", "template", "CollectCompositeFields", "error", err)
+		return FieldPrerender{}
+	}
+	return FieldPrerender{
+		Value: t.ReplaceTxtToSvg(buf.String()),
+	}
+}
+
 // ----- email elements
 
 type activityBodyCtx struct {
@@ -191,13 +215,13 @@ type headEntityCtx struct {
 	UrlText       string
 }
 
-func (t *EmailTemplates) RenderHead(ddd headEntityCtx) string {
+func (t *EmailTemplates) RenderHead(headCtx headEntityCtx) string {
 	// plain-text поля заголовка экранируем — шаблон рендерится через text/template
-	ddd.WorkspaceName = escapeText(ddd.WorkspaceName)
-	ddd.Identifier = escapeText(ddd.Identifier)
-	ddd.Title = escapeText(ddd.Title)
+	headCtx.WorkspaceName = escapeText(headCtx.WorkspaceName)
+	headCtx.Identifier = escapeText(headCtx.Identifier)
+	headCtx.Title = escapeText(headCtx.Title)
 	var buf bytes.Buffer
-	if err := t.HeadEntity.Execute(&buf, ddd); err != nil {
+	if err := t.HeadEntity.Execute(&buf, headCtx); err != nil {
 		slog.Error("RenderHead", "err", err.Error())
 		return ""
 	}
