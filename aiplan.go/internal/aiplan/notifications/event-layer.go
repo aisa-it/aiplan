@@ -137,14 +137,14 @@ func (s sprintEvent) Preload(tx *gorm.DB, event *dao.ActivityEvent) error {
 		return fmt.Errorf("preloadSprintActivity: %v", err)
 	}
 	var err error
-	if event.NewSprintIssue != nil {
-		event.NewSprintIssue, err = preloadIssue(tx, event.NewSprintIssue.ID)
+	if event.SprintIssuesExtendFields.NewSprintIssue != nil {
+		event.SprintIssuesExtendFields.NewSprintIssue, err = preloadIssue(tx, event.SprintIssuesExtendFields.NewSprintIssue.ID)
 		if err != nil {
 			return err
 		}
 	}
-	if event.OldSprintIssue != nil {
-		event.OldSprintIssue, err = preloadIssue(tx, event.OldSprintIssue.ID)
+	if event.SprintIssuesExtendFields.OldSprintIssue != nil {
+		event.SprintIssuesExtendFields.OldSprintIssue, err = preloadIssue(tx, event.SprintIssuesExtendFields.OldSprintIssue.ID)
 		if err != nil {
 			return err
 		}

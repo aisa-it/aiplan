@@ -560,12 +560,7 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 	}
 
 	var acts []dao.ActivityEvent
-	resp, err := dao.PaginationRequest(
-		offset,
-		limit,
-		query,
-		&acts,
-	)
+	resp, err := dao.PaginationRequest(offset, limit, query, &acts)
 	if err != nil {
 		return EError(c, err)
 	}

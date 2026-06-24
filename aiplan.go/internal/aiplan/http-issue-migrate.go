@@ -1316,7 +1316,6 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				return err
 			}
 		}
-
 	}
 
 	// Comments
@@ -1464,6 +1463,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	{
 		var newLabels []dao.IssueLabel
 		for _, label := range issue.TargetLabels {
+			if label.ID.IsNil() {
+				continue
+			}
 			newLabels = append(newLabels, dao.IssueLabel{
 				Id:          dao.GenUUID(),
 				LabelId:     label.ID,

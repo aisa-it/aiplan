@@ -53,10 +53,10 @@ func sprintIssues(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	switch act.Verb {
 	case actField.VerbAdded:
 		msg.Title = "добавил(-a) задачу в спринт"
-		msg.Body = Stelegramf("[%s](%s)", act.NewSprintIssue.FullIssueName(), act.NewSprintIssue.URL.String())
+		msg.Body = Stelegramf("[%s](%s)", act.SprintIssuesExtendFields.NewSprintIssue.FullIssueName(), act.SprintIssuesExtendFields.NewSprintIssue.URL.String())
 	case actField.VerbRemoved:
 		msg.Title = "убрал(-a) задачу из спринта"
-		msg.Body = Stelegramf("[~%s~](%s)", act.OldSprintIssue.FullIssueName(), act.OldSprintIssue.URL.String())
+		msg.Body = Stelegramf("[~%s~](%s)", act.SprintIssuesExtendFields.OldSprintIssue.FullIssueName(), act.SprintIssuesExtendFields.OldSprintIssue.URL.String())
 	}
 	return msg
 }

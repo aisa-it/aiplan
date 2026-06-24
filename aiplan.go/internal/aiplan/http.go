@@ -116,7 +116,8 @@ type Services struct {
 // При cancel/timeout контекста pgx отправит pg_cancel_backend в Postgres,
 // что не даёт зависшим запросам копиться в пуле.
 func (s *Services) DB(c echo.Context) *gorm.DB {
-	return s.db.WithContext(c.Request().Context())
+	return s.db
+	//return s.db.WithContext(c.Request().Context())
 }
 
 // RawDB возвращает исходный *gorm.DB без привязки к запросу.

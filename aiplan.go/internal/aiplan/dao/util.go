@@ -1032,3 +1032,30 @@ func ScanToMap[T any](query *gorm.DB, getId func(T) uuid.UUID) (map[uuid.UUID]T,
 	}
 	return res, nil
 }
+
+func CleanupActivityData(tx, q *gorm.DB, id uuid.UUID, layers ...types.EntityLayer) error {
+	subQuery := q.Model(&ActivityEvent{}).Select("id")
+
+	if err := tx.Where("activity_event_id IN (?)", subQuery).
+		Unscoped().
+		Delete(&UserAppNotify{}).Error; err != nil {
+		return err
+	}
+
+	if err := q.Unscoped().Delete(&ActivityEvent{}).Error; err != nil {
+		return err
+	}
+
+	if len(layers) > 0 {
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := tx.Where("new_identifier = ? OR old_identifier = ?",
+			id, id).
+			Where("entity_type IN (?)", layers).
+			Model(&ActivityEvent{}).
+			Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
