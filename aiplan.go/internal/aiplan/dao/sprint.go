@@ -120,6 +120,9 @@ func (s *Sprint) SetUrl() {
 }
 
 func (s *Sprint) GetFullName() string {
+	if !s.StartDate.Valid && !s.EndDate.Valid {
+		return s.Name
+	}
 	s.StartDate.Time.Format("02.01")
 
 	return fmt.Sprintf("%s ( %s-%s )", s.Name, s.StartDate.Time.Format("02.01"), s.EndDate.Time.Format("02.01"))
