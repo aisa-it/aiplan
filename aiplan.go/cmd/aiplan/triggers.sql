@@ -646,3 +646,80 @@ CREATE OR REPLACE TRIGGER sync_issue_comments_count
     ON issue_comments
     FOR EACH ROW
     EXECUTE PROCEDURE sync_issue_comments_count();
+
+-- ============================================================================
+-- Уведомление об изменении состава workspace_summary:
+-- отправляет workspace_id в канал workspace_summary_changes
+-- при добавлении/обновлении/удалении проектов, форм и спринтов.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION notify_workspace_summary_changes_projects()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    ws_id uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        ws_id := OLD.workspace_id;
+    ELSE
+        ws_id := NEW.workspace_id;
+    END IF;
+
+    PERFORM pg_notify('workspace_summary_changes', ws_id::text);
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER project_workspace_summary_notify
+    AFTER INSERT OR UPDATE OR DELETE
+    ON projects
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_summary_changes_projects();
+
+CREATE OR REPLACE FUNCTION notify_workspace_summary_changes_forms()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    ws_id uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        ws_id := OLD.workspace_id;
+    ELSE
+        ws_id := NEW.workspace_id;
+    END IF;
+
+    PERFORM pg_notify('workspace_summary_changes', ws_id::text);
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER form_workspace_summary_notify
+    AFTER INSERT OR UPDATE OR DELETE
+    ON forms
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_summary_changes_forms();
+
+CREATE OR REPLACE FUNCTION notify_workspace_summary_changes_sprints()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    ws_id uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        ws_id := OLD.workspace_id;
+    ELSE
+        ws_id := NEW.workspace_id;
+    END IF;
+
+    PERFORM pg_notify('workspace_summary_changes', ws_id::text);
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sprint_workspace_summary_notify
+    AFTER INSERT OR UPDATE OR DELETE
+    ON sprints
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_summary_changes_sprints();
