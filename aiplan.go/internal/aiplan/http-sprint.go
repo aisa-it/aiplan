@@ -812,6 +812,12 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	newSnapshot := tracker.SprintFolderToSnapshot(folder)
+	err = s.snapshotTracker.TrackChanges(types.LayerWorkspace, nil, newSnapshot, workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
 	return c.JSON(http.StatusCreated, folder.ToDTO())
 }
 
@@ -847,6 +853,7 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 		Where("id = ?", sprintFolderId).First(&folder).Error; err != nil {
 		return EError(c, err)
 	}
+	oldSnapshot := tracker.SprintFolderToSnapshot(&folder)
 
 	err := c.Bind(&req)
 	if err != nil {
@@ -864,8 +871,15 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 	folder.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	folder.UpdatedBy = user
 
+	newSnapshot := tracker.SprintFolderToSnapshot(&folder)
+
 	if err := s.DB(c).Updates(&folder).Error; err != nil {
 		return EError(c, err)
+	}
+
+	err = s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.JSON(http.StatusCreated, folder.ToDTO())
@@ -893,13 +907,18 @@ func (s *Services) deleteSprintFolders(c echo.Context) error {
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}
-	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
-	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
+	user := apiCtx.GetUser()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	sprintFolderId := strings.TrimSuffix(c.Param("sprintFolderId"), "/")
+	var oldSnapshot tracker.SprintFolderSnapshot
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var exists bool
-		if err := s.DB(c).Model(&dao.Sprint{}).
+		if err := tx.Model(&dao.Sprint{}).
 			Select("EXISTS(?)",
-				s.DB(c).Model(&dao.Sprint{}).
+				tx.Model(&dao.Sprint{}).
 					Select("1").
 					Where("sprint_folder_id = ?", sprintFolderId),
 			).
@@ -909,14 +928,24 @@ func (s *Services) deleteSprintFolders(c echo.Context) error {
 		if exists {
 			return apierrors.ErrSprintFolderDelete
 		}
+		var sprintFolder dao.SprintFolder
+		if err := tx.Where("workspace_id = ?", workspace.ID).Where("id = ?", sprintFolderId).First(&sprintFolder).Error; err != nil {
+			return err
+		}
 
-		if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
-			Where("id = ?", sprintFolderId).Delete(&dao.SprintFolder{}).Error; err != nil {
+		oldSnapshot = tracker.SprintFolderToSnapshot(&sprintFolder)
+
+		if err := tx.Delete(&sprintFolder).Error; err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
 		return EError(c, err)
+	}
+
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, nil, workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusNoContent)

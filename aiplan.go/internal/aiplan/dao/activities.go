@@ -213,6 +213,8 @@ func (a *ActivityEvent) resolveEntities(resolveNew, resolveOld entityResolver) {
 				"status_description", "status_group", "label_name", "label_color",
 				"status_default", "template_name", "template_template":
 				normalizedTarget = strings.Split(targetField, "_")[0]
+			case "sprint_folder_name":
+				normalizedTarget = actField.SprintFolder.Field.String()
 			}
 
 			if fieldTag != normalizedTarget && fieldTag != targetFieldExt {

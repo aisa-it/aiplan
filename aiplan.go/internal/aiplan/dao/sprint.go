@@ -146,33 +146,6 @@ func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
 	return nil
 }
 
-func CleanupActivityData(tx, q *gorm.DB, id uuid.UUID, layers ...types.EntityLayer) error {
-	subQuery := q.Model(&ActivityEvent{}).Select("id")
-
-	if err := tx.Where("activity_event_id IN (?)", subQuery).
-		Unscoped().
-		Delete(&UserAppNotify{}).Error; err != nil {
-		return err
-	}
-
-	if err := q.Unscoped().Delete(&ActivityEvent{}).Error; err != nil {
-		return err
-	}
-
-	if len(layers) > 0 {
-		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-		if err := tx.Where("new_identifier = ? OR old_identifier = ?",
-			id, id).
-			Where("entity_type IN (?)", layers).
-			Model(&ActivityEvent{}).
-			Updates(cleanId).Error; err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (s *Sprint) BeforeDelete(tx *gorm.DB) error {
 
 	query := tx.Where("entity_type = ?", types.LayerSprint).Where("sprint_id = ?", s.Id)
@@ -294,6 +267,13 @@ type SprintIssuesExtendFields struct {
 	OldSprintIssue *Issue `json:"-" gorm:"-" field:"issue::sprint" extensions:"x-nullable"`
 }
 
+// SprintFolderExtendFields
+// -migration
+type SprintFolderExtendFields struct {
+	NewSprintFolder *SprintFolder `json:"-" gorm:"-" field:"sprint_folder" extensions:"x-nullable"`
+	OldSprintFolder *SprintFolder `json:"-" gorm:"-" field:"sprint_folder" extensions:"x-nullable"`
+}
+
 type SprintWatcher struct {
 	Id        uuid.UUID `gorm:"primaryKey;type:uuid"`
 	CreatedAt time.Time
@@ -323,6 +303,7 @@ type SprintWatcherExtendFields struct {
 type SprintActivityExtendFields struct {
 	SprintWatcherExtendFields
 	SprintIssuesExtendFields
+	SprintFolderExtendFields
 }
 
 type SprintViews struct {
@@ -366,6 +347,28 @@ func (SprintFolder) TableName() string {
 	return "sprint_folders"
 }
 
+func (sf *SprintFolder) BeforeDelete(tx *gorm.DB) error {
+	tx.
+		Where("entity_type = ?", types.LayerWorkspace).
+		Where("new_identifier = ? AND verb = ? AND field = ?", sf.Id, actField.VerbCreated, actField.SprintFolder.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
+
+	query := tx.
+		Where("entity_type = ?", types.LayerWorkspace).
+		Where("new_identifier = ? or old_identifier = ? ", sf.Id, sf.Id)
+
+	if err := CleanupActivityData(tx, query, sf.WorkspaceId, types.LayerWorkspace); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (sf SprintFolder) GetId() uuid.UUID {
+	return sf.Id
+}
+
 func (s *SprintFolder) ToDTO() *dto.SprintFolder {
 	if s == nil {
 		return nil
@@ -377,4 +380,11 @@ func (s *SprintFolder) ToDTO() *dto.SprintFolder {
 			return *i.ToLightDTO()
 		}),
 	}
+}
+
+func (s *SprintFolder) ToLightDTO() *dto.SprintFolder {
+	if s == nil {
+		return nil
+	}
+	return s.ToDTO()
 }
