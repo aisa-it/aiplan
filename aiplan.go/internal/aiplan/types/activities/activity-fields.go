@@ -134,6 +134,7 @@ var (
 	Fields        = FieldMapping{"fields", "fields"}
 	Group         = FieldMapping{"group", "group"}
 	Sprint        = FieldMapping{"sprint", "sprint"}
+	SprintFolder  = FieldMapping{"sprint_folder", "sprint_folder"}
 
 	Member = FieldMapping{"", "member"}
 
