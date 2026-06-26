@@ -360,7 +360,9 @@ func issueCreateFunc(c *entityChange, act dao.ActivityEvent) {
 				builder.WriteString("</table>")
 			}
 		}
-		addField("Автор", issue.Author.GetName())
+		if issue.Author != nil {
+			addField("Автор", issue.Author.GetName())
+		}
 
 		if issue.DescriptionHtml != "<p></p>" {
 			addField("Описание", "<br>"+*htmlReplacer(&issue.DescriptionHtml))
