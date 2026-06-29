@@ -256,6 +256,14 @@ type Mention struct {
 	Label string
 }
 
+type Drawio struct {
+	Src       *url.URL // URL или data:URI изображения (SVG)
+	XML       string   // исходные XML-данные диаграммы drawio
+	Width     int      // ширина изображения
+	Class     string   // CSS класс (по умолчанию "drawio")
+	Draggable bool     // возможность перетаскивания
+}
+
 type HardBreak struct {
 	// Пустая структура для представления переноса строки <br>
 }
