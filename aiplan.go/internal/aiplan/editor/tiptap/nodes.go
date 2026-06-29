@@ -58,6 +58,10 @@ func parseParagraph(node TipTapNode) *edtypes.Paragraph {
 			if hb := parseHardBreak(child); hb != nil {
 				p.Content = append(p.Content, hb)
 			}
+		case "drawio":
+			if d := parseDrawio(child); d != nil {
+				p.Content = append(p.Content, d)
+			}
 		default:
 			slog.Debug("Unknown paragraph child type", "type", child.Type)
 		}
@@ -191,6 +195,32 @@ func parseMention(node TipTapNode) *edtypes.Mention {
 	return &edtypes.Mention{
 		ID:    getAttrString(node.Attrs, "id"),
 		Label: getAttrString(node.Attrs, "label"),
+	}
+}
+
+// parseDrawio преобразует drawio TipTap в edtypes.Drawio.
+func parseDrawio(node TipTapNode) *edtypes.Drawio {
+	if node.Type != "drawio" {
+		return nil
+	}
+
+	src := getAttrString(node.Attrs, "src")
+	if src == "" {
+		return nil
+	}
+
+	imgUrl, err := url.Parse(src)
+	if err != nil {
+		slog.Warn("Failed to parse drawio src URL", "src", src, "err", err)
+		return nil
+	}
+
+	return &edtypes.Drawio{
+		Src:       imgUrl,
+		XML:       getAttrString(node.Attrs, "xml"),
+		Width:     getAttrInt(node.Attrs, "width"),
+		Class:     getAttrString(node.Attrs, "class"),
+		Draggable: getAttrBool(node.Attrs, "draggable"),
 	}
 }
 
