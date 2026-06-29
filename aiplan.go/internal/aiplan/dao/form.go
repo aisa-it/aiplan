@@ -186,9 +186,12 @@ func (form *Form) BeforeSave(tx *gorm.DB) error {
 // Возвращает:
 //   - error: Возвращает ошибку, если при выполнении каких-либо операций произошла ошибка.
 func (form *Form) BeforeDelete(tx *gorm.DB) error {
-
 	query := tx.Where("entity_type = ?", types.LayerForm).Where("form_id = ?", form.ID)
-	if err := CleanupActivityData(tx, query, form.ID, types.LayerWorkspace); err != nil {
+	if err := CleanupActivityData(tx, query, form.ID, types.LayerWorkspace, types.LayerForm); err != nil {
+		return err
+	}
+
+	if err := tx.Where("form_id = ?", form.ID).Delete(&FormAttachment{}).Error; err != nil {
 		return err
 	}
 
