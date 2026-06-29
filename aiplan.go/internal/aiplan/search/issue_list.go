@@ -431,21 +431,27 @@ func GetIssueListData(
 
 		groupMap := make([]*dto.IssuesGroupResponse, len(groupSize))
 		i := 0
-		totalCount, err := fetchIssuesByGroups(db, groupSize, query.Session(&gorm.Session{}), searchParams, func(group dto.IssuesGroupResponse) error {
-			if streamCallback != nil {
-				if i == group.SortId {
-					i++
-					return streamCallback(group)
-				}
+		totalCount, err := fetchIssuesByGroups(
+			db,
+			groupSize,
+			query.Session(&gorm.Session{}),
+			searchParams,
+			projectMember.WorkspaceId,
+			func(group dto.IssuesGroupResponse) error {
+				if streamCallback != nil {
+					if i == group.SortId {
+						i++
+						return streamCallback(group)
+					}
 
-				if groupMap[i] != nil {
-					i++
-					return streamCallback(*groupMap[i-1])
+					if groupMap[i] != nil {
+						i++
+						return streamCallback(*groupMap[i-1])
+					}
 				}
-			}
-			groupMap[group.SortId] = &group
-			return nil
-		})
+				groupMap[group.SortId] = &group
+				return nil
+			})
 		if err != nil {
 			return nil, err
 		}

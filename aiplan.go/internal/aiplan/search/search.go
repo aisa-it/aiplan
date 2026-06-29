@@ -174,11 +174,16 @@ func fetchIssuesByGroups(
 	groupSize []types.SearchGroupSize,
 	groupSelectQuery *gorm.DB,
 	searchParams *types.SearchParams,
+	workspaceId uuid.UUID,
 	iterFunc StreamCallback,
 ) (int, error) {
 	totalCount := 0
 
-	groupsEntity, err := fetchGroupsEntity(db, searchParams.GroupByParam, groupSize)
+	groupsEntity, err := fetchGroupsEntity(
+		db,
+		searchParams.GroupByParam,
+		workspaceId,
+		groupSize)
 	if err != nil {
 		return 0, err
 	}
@@ -275,7 +280,10 @@ func fetchIssuesByGroups(
 	return totalCount, g.Wait()
 }
 
-func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSize) (map[string]any, error) {
+// fetchGroupsEntity загружает сущности для каждой группы (приоритеты, авторы, статусы, метки, исполнители, наблюдатели, проекты).
+// Цикломатическая сложность 20 из-за 7 case-веток в switch. Выделение каждой ветки в отдельную функцию неоправданно,
+// так как они линейны и различаются только типом запроса и DTO.
+func fetchGroupsEntity(db *gorm.DB, groupBy string, workspaceId uuid.UUID, groups []types.SearchGroupSize) (map[string]any, error) {
 	ids := make([]string, 0, len(groups))
 
 	for _, group := range groups {
@@ -302,7 +310,7 @@ func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSi
 		}
 	case "state":
 		var states []dao.State
-		if err := db.Where("states.name || states.color || states.group in (?)", ids).Find(&states).Error; err != nil {
+		if err := db.Where("states.name || states.color || states.group in (?)", ids).Where("workspace_id = ?", workspaceId).Find(&states).Error; err != nil {
 			return nil, err
 		}
 		for _, state := range states {
