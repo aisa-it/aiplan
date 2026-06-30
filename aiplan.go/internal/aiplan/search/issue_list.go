@@ -436,7 +436,6 @@ func GetIssueListData(
 			groupSize,
 			query.Session(&gorm.Session{}),
 			searchParams,
-			projectMember.WorkspaceId,
 			func(group dto.IssuesGroupResponse) error {
 				if streamCallback != nil {
 					if i == group.SortId {
