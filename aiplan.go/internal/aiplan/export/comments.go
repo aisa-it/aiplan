@@ -40,6 +40,8 @@ func (w *pdfWriter) writeComment(comment *dao.IssueComment) error {
 	w.pdf.WriteAligned(0, s, comment.CreatedAt.Format("02.01.2006 15:04"), "R")
 	w.pdf.Ln(5)
 
+	w.writeReplyTo(comment)
+
 	doc, err := editor.ParseDocument(strings.NewReader(comment.CommentHtml.Body))
 	if err != nil {
 		return err
@@ -49,4 +51,36 @@ func (w *pdfWriter) writeComment(comment *dao.IssueComment) error {
 
 	w.pdf.Ln(-1)
 	return nil
+}
+
+func (w *pdfWriter) writeReplyTo(comment *dao.IssueComment) {
+	if !comment.ReplyToCommentId.Valid || comment.OriginalComment == nil {
+		return
+	}
+
+	w.pdf.SetFont("Rubik", "I", 8)
+	w.pdf.SetTextColor(120, 122, 130)
+
+	text := "В ответ на комментарий"
+	if comment.OriginalComment.Actor != nil {
+		text = "В ответ на " + comment.OriginalComment.Actor.GetName()
+	}
+	if snippet := commentSnippet(comment.OriginalComment, 80); snippet != "" {
+		text += ": " + snippet
+	}
+
+	w.write(text)
+	w.pdf.Ln(4)
+
+	w.pdf.SetFont("Rubik", "", 8)
+	w.pdf.SetTextColor(71, 74, 82)
+}
+
+func commentSnippet(comment *dao.IssueComment, maxRunes int) string {
+	text := strings.TrimSpace(comment.CommentStripped)
+	runes := []rune(text)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes]) + "..."
+	}
+	return text
 }
