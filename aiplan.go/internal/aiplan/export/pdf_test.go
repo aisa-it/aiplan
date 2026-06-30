@@ -296,6 +296,206 @@ console.log(x);`},
 			}},
 			outputFile: "testdata/output/test_spoiler.pdf",
 		},
+		{
+			name: "BulletList",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Маркированный список:"},
+				}},
+				editor.List{
+					Numbered: false,
+					TaskList: false,
+					Elements: []editor.ListElement{
+						{Content: []editor.Paragraph{{
+							Content: []any{editor.Text{Content: "Первый пункт"}},
+						}}},
+						{Content: []editor.Paragraph{{
+							Content: []any{editor.Text{Content: "Второй пункт с форматированием"}},
+						}}},
+						{Content: []editor.Paragraph{{
+							Content: []any{editor.Text{Content: "Третий пункт"}},
+						}}},
+					},
+				},
+			}},
+			outputFile: "testdata/output/test_bullet_list.pdf",
+		},
+		{
+			name: "NumberedList",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Нумерованный список:"},
+				}},
+				editor.List{
+					Numbered: true,
+					TaskList: false,
+					Elements: []editor.ListElement{
+						{Content: []editor.Paragraph{{
+							Content: []any{editor.Text{Content: "Первый"}},
+						}}},
+						{Content: []editor.Paragraph{{
+							Content: []any{editor.Text{Content: "Второй"}},
+						}}},
+						{Content: []editor.Paragraph{{
+							Content: []any{editor.Text{Content: "Третий"}},
+						}}},
+					},
+				},
+			}},
+			outputFile: "testdata/output/test_numbered_list.pdf",
+		},
+		{
+			name: "TaskList_Checked",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Чек-лист (смешанный):"},
+				}},
+				editor.List{
+					Numbered: false,
+					TaskList: true,
+					Elements: []editor.ListElement{
+						{Checked: true, Content: []editor.Paragraph{
+							{Content: []any{editor.Text{Content: "Выполненная задача"}}},
+						}},
+						{Checked: false, Content: []editor.Paragraph{
+							{Content: []any{editor.Text{Content: "Невыполненная задача"}}},
+						}},
+						{Checked: true, Content: []editor.Paragraph{
+							{Content: []any{editor.Text{Content: "Ещё одна выполненная"}}},
+						}},
+					},
+				},
+			}},
+			outputFile: "testdata/output/test_tasklist_checked.pdf",
+		},
+		{
+			name: "TaskList_AllUnchecked",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Чек-лист (все невыполнены):"},
+				}},
+				editor.List{
+					TaskList: true,
+					Elements: []editor.ListElement{
+						{Checked: false, Content: []editor.Paragraph{
+							{Content: []any{editor.Text{Content: "Пункт 1"}}},
+						}},
+						{Checked: false, Content: []editor.Paragraph{
+							{Content: []any{editor.Text{Content: "Пункт 2"}}},
+						}},
+						{Checked: false, Content: []editor.Paragraph{
+							{Content: []any{editor.Text{Content: "Пункт 3"}}},
+						}},
+					},
+				},
+			}},
+			outputFile: "testdata/output/test_tasklist_unchecked.pdf",
+		},
+		{
+			name: "Paragraph_Align",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Align: editor.LeftAlign, Content: []any{
+					editor.Text{Content: "Этот параграф выровнен влево (Left)"},
+				}},
+				editor.Paragraph{Align: editor.CenterAlign, Content: []any{
+					editor.Text{Content: "Этот параграф выровнен по центру (Center)"},
+				}},
+				editor.Paragraph{Align: editor.RightAlign, Content: []any{
+					editor.Text{Content: "Этот параграф выровнен вправо (Right)"},
+				}},
+			}},
+			outputFile: "testdata/output/test_paragraph_align.pdf",
+		},
+		{
+			name: "Table_ColSpan",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Таблица с colspan (пока не поддерживается):"},
+				}},
+				editor.Table{
+					Rows: [][]editor.TableCell{
+						{
+							{Header: true, ColSpan: 2, RowSpan: 1, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "Заголовок A"}}},
+							}},
+							{Header: true, ColSpan: 1, RowSpan: 1, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "Заголовок B"}}},
+							}},
+						},
+						{
+							{Header: false, ColSpan: 1, RowSpan: 1, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "A1"}}},
+							}},
+							{Header: false, ColSpan: 2, RowSpan: 1, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "B1"}}},
+							}},
+						},
+					},
+				},
+			}},
+			outputFile: "testdata/output/test_table_colspan.pdf",
+		},
+		{
+			name: "Table_RowSpan",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Таблица с rowspan (пока не поддерживается):"},
+				}},
+				editor.Table{
+					Rows: [][]editor.TableCell{
+						{
+							{Header: true, ColSpan: 1, RowSpan: 2, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "A1"}}},
+							}},
+							{Header: true, ColSpan: 1, RowSpan: 1, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "Заголовок 2"}}},
+							}},
+						},
+						{
+							{Header: false, ColSpan: 1, RowSpan: 1, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "B1"}}},
+							}},
+							{Header: false, ColSpan: 1, RowSpan: 1, Content: []editor.Paragraph{
+								{Content: []any{editor.Text{Content: "B2"}}},
+							}},
+						},
+					},
+				},
+			}},
+			outputFile: "testdata/output/test_table_rowspan.pdf",
+		},
+		{
+			name: "Drawio",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Параграф с drawio-диаграммой ниже:"},
+				}},
+				editor.Paragraph{Content: []any{
+					&editor.Drawio{
+						Src:   &url.URL{Path: "testdata/images/test.png"},
+						Width: 200,
+						XML:   "<mxGraphModel></mxGraphModel>",
+					},
+				}},
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Параграф после drawio"},
+				}},
+			}},
+			outputFile: "testdata/output/test_drawio.pdf",
+		},
+		{
+			name: "Superscript_Subscript",
+			descriptionDoc: editor.Document{Elements: []any{
+				editor.Paragraph{Content: []any{
+					editor.Text{Content: "Обычный текст, "},
+					editor.Text{Content: "верхний индекс", Sup: true},
+					editor.Text{Content: ", "},
+					editor.Text{Content: "нижний индекс", Sub: true},
+					editor.Text{Content: " и снова обычный текст."},
+				}},
+			}},
+			outputFile: "testdata/output/test_sup_sub.pdf",
+		},
 	}
 
 	for _, tt := range tests {

@@ -3482,8 +3482,19 @@ func (s *Services) getIssuePdf(c echo.Context) error {
 
 	c.Response().Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s.pdf", issue.String()))
 
+	var comments []dao.IssueComment
+	if err := s.DB(c).
+		Joins("Actor").
+		Joins("OriginalComment").
+		Joins("OriginalComment.Actor").
+		Where("issue_comments.issue_id = ?", issue.ID).
+		Order("issue_comments.created_at DESC").
+		Find(&comments).Error; err != nil {
+		return EError(c, err)
+	}
+
 	var buf bytes.Buffer
-	if err := export.IssueToFPDF(issue, cfg.WebURL.URL, &buf); err != nil {
+	if err := export.IssueToFPDF(issue, cfg.WebURL.URL, &buf, comments...); err != nil {
 		return EError(c, err)
 	}
 
