@@ -47,8 +47,8 @@ type SprintFolder struct {
 type RequestSprint struct {
 	Name        string             `json:"name,omitempty"`
 	Description types.RedactorHTML `json:"description,omitempty" swaggertype:"string"`
-	StartDate   *types.TargetDate  `json:"start_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
-	EndDate     *types.TargetDate  `json:"end_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	StartDate   *types.TargetDate  `json:"start_date" extensions:"x-nullable" swaggertype:"string"`
+	EndDate     *types.TargetDate  `json:"end_date" extensions:"x-nullable" swaggertype:"string"`
 	Folder      uuid.NullUUID      `json:"sprint_folder_id,omitempty" swaggertype:"string"`
 }
 
