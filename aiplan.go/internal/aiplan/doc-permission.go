@@ -17,6 +17,7 @@ import (
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -54,10 +55,10 @@ func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
 		return true, nil
 	}
 
-	//// Allow workspace admin all
-	//if docContext.WorkspaceMember.Role == AdminRole {
-	//	return true, nil
-	//}
+	// Allow workspace admin all
+	if workspaceMember.Role == types.AdminRole {
+		return true, nil
+	}
 
 	readerSet := utils.SliceToSet(doc.ReaderIDs)
 	editorSet := utils.SliceToSet(doc.EditorsIDs)
