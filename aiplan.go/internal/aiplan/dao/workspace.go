@@ -492,7 +492,7 @@ func (wm *WorkspaceMember) AfterUpdate(tx *gorm.DB) error {
 
 func (wm *WorkspaceMember) BeforeDelete(tx *gorm.DB) error {
 	tx.Where("workspace_id = ?", wm.WorkspaceId).
-		Where("member_id = ?", wm.MemberId).
+		Where("user_id = ?", wm.MemberId).
 		Delete(&UserAppNotify{})
 
 	if err := tx.Exec("delete from project_favorites where user_id = ? and workspace_id = ?",
