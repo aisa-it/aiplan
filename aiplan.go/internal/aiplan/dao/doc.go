@@ -191,18 +191,21 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 		d.CurrentWorkspaceRole = memberRole.(int)
 	} else {
 		d.CurrentWorkspaceRole = 0
-
 	}
 
 	memberId, ok := tx.Get("member_id")
 	if ok {
-		if err := tx.Model(&Doc{}).
+		q := tx.Model(&Doc{}).
 			Joins("LEFT JOIN doc_access_rules dar ON dar.doc_id = docs.id").
 			Select("docs.id").
 			Where("docs.parent_doc_id = ?", d.ID).
-			Where("docs.reader_role <= ? OR docs.editor_role <= ? OR dar.member_id = ? OR docs.created_by_id = ?",
-				d.CurrentWorkspaceRole, d.CurrentWorkspaceRole, memberId, memberId).
-			Group("docs.id").
+			Group("docs.id")
+
+		if d.CurrentWorkspaceRole != types.AdminRole {
+			q = q.Where("docs.reader_role <= ? OR docs.editor_role <= ? OR dar.member_id = ? OR docs.created_by_id = ?",
+				d.CurrentWorkspaceRole, d.CurrentWorkspaceRole, memberId, memberId)
+		}
+		if err := q.
 			Scan(&d.ChildDocs).Error; err != nil {
 			return err
 		}

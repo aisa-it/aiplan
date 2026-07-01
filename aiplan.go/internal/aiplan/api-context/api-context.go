@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -537,11 +538,14 @@ func (a *APIContext) fetchDoc(fetchOptions *DocFetchOptions) {
 		query = query.Set("breadcrumbs", true)
 	}
 
+	if workspaceMember.Role != types.AdminRole {
+		query = query.Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId)
+	}
+
 	var doc dao.Doc
 	if err := query.
 		Where("docs.workspace_id = ?", workspace.ID).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
-			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 		Where("docs.id = ?", docId).
 		First(&doc).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
