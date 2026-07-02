@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
@@ -431,24 +432,33 @@ func GetIssueListData(
 
 		groupMap := make([]*dto.IssuesGroupResponse, len(groupSize))
 		i := 0
+		var streamMu sync.Mutex
 		totalCount, err := fetchIssuesByGroups(
 			db,
 			groupSize,
 			query.Session(&gorm.Session{}),
 			searchParams,
 			func(group dto.IssuesGroupResponse) error {
-				if streamCallback != nil {
-					if i == group.SortId {
-						i++
-						return streamCallback(group)
-					}
-
-					if groupMap[i] != nil {
-						i++
-						return streamCallback(*groupMap[i-1])
-					}
+				if streamCallback == nil {
+					groupMap[group.SortId] = &group
+					return nil
 				}
+
+				// fetchIssuesByGroups вызывает этот callback параллельно из нескольких
+				// горутин (errgroup с лимитом), а streamCallback пишет напрямую в
+				// http.ResponseWriter. Мьютекс сериализует и доступ к groupMap/i,
+				// и сами вызовы streamCallback, иначе конкурентная запись ломает
+				// поток компрессии (gzip middleware).
+				streamMu.Lock()
+				defer streamMu.Unlock()
+
 				groupMap[group.SortId] = &group
+				for i < len(groupMap) && groupMap[i] != nil {
+					if err := streamCallback(*groupMap[i]); err != nil {
+						return err
+					}
+					i++
+				}
 				return nil
 			})
 		if err != nil {
@@ -457,12 +467,6 @@ func GetIssueListData(
 
 		// Для streaming возвращаем nil - данные уже отправлены через callback
 		if streamCallback != nil {
-			for i < len(groupSize) {
-				if groupMap[i] != nil {
-					streamCallback(*groupMap[i])
-				}
-				i++
-			}
 			return nil, nil
 		}
 
