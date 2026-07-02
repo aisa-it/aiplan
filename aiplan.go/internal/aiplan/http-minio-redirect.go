@@ -34,6 +34,10 @@ var inlineSafeContentTypes = map[string]bool{
 	// PDF рендерится в песочнице-вьюере браузера (не как HTML в origin) —
 	// inline-превью допустимо. text/html и image/svg+xml сюда НЕ добавлять.
 	"application/pdf": true,
+	// text/plain браузер всегда рендерит как обычный текст, без парсинга
+	// разметки и исполнения скриптов — safe для inline вне зависимости
+	// от содержимого файла.
+	"text/plain": true,
 }
 
 const (
@@ -123,6 +127,10 @@ func (s *Services) assetsHandler(c echo.Context) error {
 
 	c.Response().Header().Set("ETag", stats.ETag)
 	c.Response().Header().Set("Content-Length", fmt.Sprint(stats.Size))
+	// Запрещаем браузеру угадывать тип контента по содержимому вместо
+	// заявленного Content-Type — иначе список inlineSafeContentTypes можно
+	// обойти MIME-sniffing'ом в старых браузерах.
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 
 	// Небезопасные для inline типы (text/html, svg и пр.) форсим на скачивание,
 	// чтобы исключить stored-XSS через загруженный файл. Имя файла —

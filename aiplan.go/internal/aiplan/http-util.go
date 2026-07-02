@@ -3,9 +3,12 @@ package aiplan
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -14,6 +17,21 @@ import (
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
+
+// resolveContentType определяет MIME-тип загружаемого файла по его расширению.
+// Content-Type из заголовка multipart-части выставляет клиент (браузер/JS) и ему
+// нельзя доверять безусловно — например, для файла с расширением .pdf клиент может
+// прислать "text/plain", из-за чего вложение потом отдаётся как attachment вместо
+// inline-превью. Расширение файла — более стабильный сигнал, поэтому оно в приоритете;
+// клиентский заголовок остаётся fallback'ом для расширений вне стандартной MIME-таблицы.
+func resolveContentType(filename, clientContentType string) string {
+	if ext := filepath.Ext(filename); ext != "" {
+		if ct := mime.TypeByExtension(ext); ct != "" {
+			return strings.TrimSpace(strings.SplitN(ct, ";", 2)[0])
+		}
+	}
+	return clientContentType
+}
 
 func (s *Services) getSwaggerJSON(c echo.Context) error {
 	f, err := os.Open("docs/swagger.json")
@@ -44,7 +62,7 @@ func (s *Services) uploadAssetForm(tx *gorm.DB, file *multipart.FileHeader, dstA
 
 	dstAsset.Name = file.Filename
 	dstAsset.FileSize = int(file.Size)
-	dstAsset.ContentType = file.Header.Get("Content-Type")
+	dstAsset.ContentType = resolveContentType(file.Filename, file.Header.Get("Content-Type"))
 
 	if err := s.storage.SaveReader(
 		assetSrc,

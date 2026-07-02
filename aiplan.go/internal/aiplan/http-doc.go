@@ -1678,12 +1678,13 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 	}
 
 	assetId := dao.GenUUID()
+	contentType := resolveContentType(fileName, asset.Header.Get("Content-Type"))
 
 	if err := s.storage.SaveReader(
 		assetSrc,
 		asset.Size,
 		assetId,
-		asset.Header.Get("Content-Type"),
+		contentType,
 		&filestorage.Metadata{
 			WorkspaceId: workspace.ID.String(),
 			DocId:       doc.ID.String(),
@@ -1709,7 +1710,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		CreatedById: userID,
 		WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 		Name:        fileName,
-		ContentType: asset.Header.Get("Content-Type"),
+		ContentType: contentType,
 		FileSize:    int(asset.Size),
 	}
 
