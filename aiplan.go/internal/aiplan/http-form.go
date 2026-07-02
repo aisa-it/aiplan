@@ -831,12 +831,13 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 	}
 
 	assetId := dao.GenUUID()
+	contentType := resolveContentType(fileName, asset.Header.Get("Content-Type"))
 
 	if err := s.storage.SaveReader(
 		assetSrc,
 		asset.Size,
 		assetId,
-		asset.Header.Get("Content-Type"),
+		contentType,
 		&filestorage.Metadata{
 			WorkspaceId: form.WorkspaceId.String(),
 			FormId:      form.ID.String(),
@@ -865,7 +866,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 		CreatedById: userID,
 		WorkspaceId: uuid.NullUUID{UUID: form.WorkspaceId, Valid: true},
 		Name:        fileName,
-		ContentType: asset.Header.Get("Content-Type"),
+		ContentType: contentType,
 		FileSize:    int(asset.Size),
 	}
 
