@@ -831,7 +831,7 @@ func (s *Services) createFormAttachments(c echo.Context) error {
 	}
 
 	assetId := dao.GenUUID()
-	contentType := resolveContentType(fileName, asset.Header.Get("Content-Type"))
+	contentType := utils.ResolveContentType(fileName, asset.Header.Get("Content-Type"))
 
 	if err := s.storage.SaveReader(
 		assetSrc,

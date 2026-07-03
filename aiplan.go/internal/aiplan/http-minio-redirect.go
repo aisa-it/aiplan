@@ -9,12 +9,14 @@ package aiplan
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
@@ -45,6 +47,7 @@ const (
 SELECT
     f.id,
     f.content_type,
+    f.name,
     (f.workspace_id IS NULL OR wm.role IS NOT NULL)
     AND (
         (f.comment_id IS NULL AND f.issue_id IS NULL AND f.doc_comment_id IS NULL)
@@ -148,6 +151,16 @@ func (s *Services) assetsHandler(c echo.Context) error {
 		return EError(c, err)
 	}
 	defer r.Close()
+
+	if asset.ContentType == "" {
+		slog.Warn("Asset with empty content-type", "assetId", asset.Id)
+		info, err := s.storage.GetFileInfo(asset.Id)
+		if err != nil {
+			slog.Error("Get asset file info", "assetId", asset.Id)
+		} else {
+			asset.ContentType = utils.ResolveContentType(asset.Name, info.ContentType)
+		}
+	}
 
 	return c.Stream(http.StatusOK, asset.ContentType, r)
 }
