@@ -11,6 +11,8 @@ You can easily transfer your work from Jira, as the **AIPlan** implements simple
 
 The AIPLAN is constantly being improved. Your suggestions and bug reports help us to become better. Create support requests. https://t.me/aiplan_faq .
 
+Included in Russian Ministry of Digital Development software registry (entry **№33830**, 18.06.2026).
+
 ## 🌟 Key features
 1. **Task Management**:
    - Transfer all your tasks from Jira in a few clicks.

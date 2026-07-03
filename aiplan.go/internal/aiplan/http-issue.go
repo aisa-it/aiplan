@@ -222,6 +222,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 	issueId, iOk := event.Upload.MetaData["issue_id"]
 	docId, dOk := event.Upload.MetaData["doc_id"]
 	fileName := event.Upload.MetaData["file_name"]
+	fileType := event.Upload.MetaData["fileType"]
 
 	var user dao.User
 	if err := s.RawDB().Where("id = ?", userId).First(&user).Error; err != nil {
@@ -255,6 +256,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 			Name:        fileName,
 			FileSize:    int(event.Upload.Size),
+			ContentType: utils.ResolveContentType(fileName, fileType),
 		}
 
 		if err := s.RawDB().Transaction(func(tx *gorm.DB) error {
