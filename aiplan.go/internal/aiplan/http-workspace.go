@@ -477,7 +477,7 @@ func (s *Services) getWorkspaceSummary(c echo.Context) error {
 
 	// Show sprints only for members and admins
 	if workspaceMember.Role < types.MemberRole && len(workspaceSummary.Sprints) > 0 {
-		workspaceSummary.Sprints = make([]dto.SprintLight, 0)
+		workspaceSummary.Sprints = make([]dto.SprintFolder, 0)
 	}
 
 	if workspaceMember.Role < types.AdminRole && len(workspaceSummary.Projects) > 0 {
