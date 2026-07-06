@@ -81,6 +81,6 @@ type LastWorkspaceResponse struct {
 
 type WorkspaceSummaryResponse struct {
 	Projects []ProjectLight `json:"projects"`
-	Sprints  []SprintLight  `json:"sprints,omitempty"`
+	Sprints  []SprintFolder `json:"sprints,omitempty"`
 	Forms    []FormLight    `json:"forms,omitempty"`
 }

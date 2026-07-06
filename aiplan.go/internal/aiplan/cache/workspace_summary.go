@@ -3,10 +3,13 @@ package cache
 import (
 	"context"
 	"log/slog"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"go.opentelemetry.io/otel"
@@ -38,8 +41,18 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 	defer span.End()
 
 	var projects []dto.ProjectLight
-	var sprints []dto.SprintLight
+	var sprintsRaw []dao.Sprint
+	var foldersRaw []dao.SprintFolder
 	var forms []dto.FormLight
+
+	var sprintStatsRows []struct {
+		SprintId   uuid.UUID
+		AllIssues  int
+		Pending    int
+		InProgress int
+		Completed  int
+		Cancelled  int
+	}
 
 	g := errgroup.Group{}
 	g.Go(func() error {
@@ -51,13 +64,17 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 		return nil
 	})
 
+	// Спринты группируются в папки так же, как в getSprintList (http-sprint.go).
 	g.Go(func() error {
-		var sprintsRaw []dao.Sprint
-		if err := wsc.db.WithContext(ctx).Where("workspace_id = ?", workspaceId).Find(&sprintsRaw).Error; err != nil {
-			return err
-		}
-		sprints = utils.SliceToSlice(&sprintsRaw, func(t *dao.Sprint) dto.SprintLight { return *t.ToLightDTO() })
-		return nil
+		return wsc.db.WithContext(ctx).
+			Joins("SprintFolder").
+			Where("sprints.workspace_id = ?", workspaceId).
+			Order("start_date DESC").
+			Find(&sprintsRaw).Error
+	})
+
+	g.Go(func() error {
+		return wsc.db.WithContext(ctx).Where("workspace_id = ?", workspaceId).Find(&foldersRaw).Error
 	})
 
 	g.Go(func() error {
@@ -69,8 +86,97 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 		return nil
 	})
 
+	// Статистика по спринтам считается одним агрегирующим SQL-запросом (COUNT/SUM CASE по sprint_id),
+	// без загрузки issues в память — по аналогии с business/stats.go:getSprintStats.
+	g.Go(func() error {
+		return wsc.db.WithContext(ctx).
+			Model(&dao.SprintIssue{}).
+			Select(`
+				sprint_issues.sprint_id as sprint_id,
+				COUNT(*) as all_issues,
+				SUM(CASE WHEN s.group != 'cancelled' AND i.start_date IS NULL AND i.completed_at IS NULL THEN 1 ELSE 0 END) as pending,
+				SUM(CASE WHEN s.group != 'cancelled' AND i.start_date IS NOT NULL AND i.completed_at IS NULL THEN 1 ELSE 0 END) as in_progress,
+				SUM(CASE WHEN s.group != 'cancelled' AND i.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed,
+				SUM(CASE WHEN s.group = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+			`).
+			Joins("JOIN issues i ON i.id = sprint_issues.issue_id").
+			Joins("JOIN states s ON s.id = i.state_id").
+			Where("sprint_issues.workspace_id = ?", workspaceId).
+			Group("sprint_issues.sprint_id").
+			Scan(&sprintStatsRows).Error
+	})
+
 	if err := g.Wait(); err != nil {
 		return err
+	}
+
+	// Сборка папок спринтов: проставляем посчитанную в SQL статистику и группируем
+	// спринты по папкам так же, как это делает getSprintList (http-sprint.go).
+	var sprints []dto.SprintFolder
+	{
+		// Статистика считалась одним агрегирующим запросом отдельно от спринтов,
+		// поэтому мёржим её по sprint_id уже здесь, в памяти.
+		statsBySprint := make(map[uuid.UUID]types.SprintStats, len(sprintStatsRows))
+		for _, r := range sprintStatsRows {
+			statsBySprint[r.SprintId] = types.SprintStats{
+				AllIssues:  r.AllIssues,
+				Pending:    r.Pending,
+				InProgress: r.InProgress,
+				Completed:  r.Completed,
+				Cancelled:  r.Cancelled,
+			}
+		}
+		for i := range sprintsRaw {
+			sprintsRaw[i].Stats = statsBySprint[sprintsRaw[i].Id]
+		}
+
+		// Индекс папок по id — сюда будем раскладывать спринты. Храним указатели,
+		// чтобы append ниже мутировал именно объект в карте, а не его копию.
+		folderMap := make(map[uuid.UUID]*dao.SprintFolder, len(foldersRaw))
+		for i := range foldersRaw {
+			folderMap[foldersRaw[i].Id] = &foldersRaw[i]
+		}
+
+		// Раскладываем спринты по папкам; спринты без папки (или с папкой,
+		// которая почему-то не нашлась в folderMap) собираем отдельно.
+		var unassignedSprints []dao.Sprint
+		for i := range sprintsRaw {
+			if sprintsRaw[i].SprintFolderId.Valid {
+				if folder, ok := folderMap[sprintsRaw[i].SprintFolderId.UUID]; ok {
+					folder.Sprints = append(folder.Sprints, sprintsRaw[i])
+				}
+			} else {
+				unassignedSprints = append(unassignedSprints, sprintsRaw[i])
+			}
+		}
+
+		// Итоговый список папок + папка-заглушка (Id: uuid.Nil) для спринтов без папки.
+		result := make([]dao.SprintFolder, 0, len(folderMap)+1)
+		for _, folder := range folderMap {
+			result = append(result, *folder)
+		}
+		if len(unassignedSprints) != 0 {
+			result = append(result, dao.SprintFolder{
+				Id:      uuid.Nil,
+				Sprints: unassignedSprints,
+			})
+		}
+
+		// Именованные папки — по алфавиту, папка-заглушка всегда последней.
+		slices.SortFunc(result, func(a, b dao.SprintFolder) int {
+			if a.Id == uuid.Nil && b.Id != uuid.Nil {
+				return 1
+			}
+			if a.Id != uuid.Nil && b.Id == uuid.Nil {
+				return -1
+			}
+			if a.Id == uuid.Nil && b.Id == uuid.Nil {
+				return 0
+			}
+			return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+		})
+
+		sprints = utils.SliceToSlice(&result, func(t *dao.SprintFolder) dto.SprintFolder { return *t.ToDTO() })
 	}
 
 	wsc.m.Lock()
