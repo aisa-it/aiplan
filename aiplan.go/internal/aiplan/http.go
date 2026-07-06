@@ -456,6 +456,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		HSTSMaxAge:            31536000,
 		HSTSExcludeSubdomains: false,
 		ReferrerPolicy:        "strict-origin-when-cross-origin",
+		Skipper: func(c echo.Context) bool {
+			return c.Path() == "/api/auth/file/:fileName/"
+		},
 	}))
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
