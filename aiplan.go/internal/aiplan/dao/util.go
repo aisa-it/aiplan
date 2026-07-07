@@ -982,7 +982,10 @@ func IsIssueExists(db *gorm.DB, projectId uuid.UUID, idOrSeq string) (bool, erro
 }
 
 func IsSprintExists(db *gorm.DB, workspaceId uuid.UUID, idOrSeq string) (bool, error) {
-	id := uuid.FromStringOrNil(idOrSeq)
+	id, err := uuid.FromString(idOrSeq)
+	if err == nil && id.IsNil() {
+		return false, nil
+	}
 	sprintQuery := db.Session(&gorm.Session{}).Model(&Sprint{}).
 		Where("workspace_id = ?", workspaceId)
 	if !id.IsNil() {
