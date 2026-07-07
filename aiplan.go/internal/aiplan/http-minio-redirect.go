@@ -135,17 +135,6 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	// обойти MIME-sniffing'ом в старых браузерах.
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 
-	// Небезопасные для inline типы (text/html, svg и пр.) форсим на скачивание,
-	// чтобы исключить stored-XSS через загруженный файл. Имя файла —
-	// пользовательский ввод, поэтому percent-кодируем (RFC 5987) во избежание
-	// инъекции в заголовок.
-	disposition := "attachment"
-	if inlineSafeContentTypes[asset.ContentType] {
-		disposition = "inline"
-	}
-	c.Response().Header().Set("Content-Disposition",
-		fmt.Sprintf("%s; filename*=UTF-8''%s", disposition, url.PathEscape(asset.Name)))
-
 	r, err := s.storage.LoadReader(asset.Id)
 	if err != nil {
 		return EError(c, err)
@@ -161,6 +150,17 @@ func (s *Services) assetsHandler(c echo.Context) error {
 			asset.ContentType = utils.ResolveContentType(asset.Name, info.ContentType)
 		}
 	}
+
+	// Небезопасные для inline типы (text/html, svg и пр.) форсим на скачивание,
+	// чтобы исключить stored-XSS через загруженный файл. Имя файла —
+	// пользовательский ввод, поэтому percent-кодируем (RFC 5987) во избежание
+	// инъекции в заголовок.
+	disposition := "attachment"
+	if inlineSafeContentTypes[asset.ContentType] {
+		disposition = "inline"
+	}
+	c.Response().Header().Set("Content-Disposition",
+		fmt.Sprintf("%s; filename*=UTF-8''%s", disposition, url.PathEscape(asset.Name)))
 
 	return c.Stream(http.StatusOK, asset.ContentType, r)
 }
