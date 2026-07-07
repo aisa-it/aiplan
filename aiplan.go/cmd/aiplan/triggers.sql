@@ -723,3 +723,54 @@ CREATE OR REPLACE TRIGGER sprint_workspace_summary_notify
     ON sprints
     FOR EACH ROW
     EXECUTE FUNCTION notify_workspace_summary_changes_sprints();
+
+-- Статистика спринта в workspace_summary считается по sprint_issues/issues/states
+-- (см. cache.WorkspaceSummaryCache.fetch), поэтому кэш нужно инвалидировать и при
+-- изменении состава спринта, и при изменении полей issue, влияющих на бакет статуса.
+CREATE OR REPLACE FUNCTION notify_workspace_summary_changes_sprint_issues()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    ws_id uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        ws_id := OLD.workspace_id;
+    ELSE
+        ws_id := NEW.workspace_id;
+    END IF;
+
+    PERFORM pg_notify('workspace_summary_changes', ws_id::text);
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sprint_issues_workspace_summary_notify
+    AFTER INSERT OR UPDATE OR DELETE
+    ON sprint_issues
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_summary_changes_sprint_issues();
+
+CREATE OR REPLACE FUNCTION notify_workspace_summary_changes_issue_sprint_stats()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF NEW.state_id IS NOT DISTINCT FROM OLD.state_id
+       AND NEW.start_date IS NOT DISTINCT FROM OLD.start_date
+       AND NEW.completed_at IS NOT DISTINCT FROM OLD.completed_at THEN
+        RETURN NULL;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM sprint_issues WHERE issue_id = NEW.id) THEN
+        PERFORM pg_notify('workspace_summary_changes', NEW.workspace_id::text);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER issue_sprint_stats_workspace_summary_notify
+    AFTER UPDATE
+    ON issues
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_summary_changes_issue_sprint_stats();

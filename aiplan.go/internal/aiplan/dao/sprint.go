@@ -245,7 +245,7 @@ type SprintIssue struct {
 	UpdatedAt time.Time
 
 	SprintId    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:sprint_issue_uniq_idx,priority:3"`
-	IssueId     uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:4"`
+	IssueId     uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:4;index:idx_sprint_issues_issue_id"`
 	ProjectId   uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:2"`
 	WorkspaceId uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:1"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
