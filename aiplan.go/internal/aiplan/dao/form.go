@@ -45,6 +45,7 @@ type Form struct {
 	Fields                 types.FormFieldsSlice  `json:"fields" gorm:"type:jsonb"`
 	Active                 bool                   `json:"active" gorm:"-"`
 	NotificationChannels   types.FormAnswerNotify `json:"notification_channels" gorm:"type:jsonb"`
+	Hash                   []byte                 `json:"-" gorm:"->;-:migration"`
 	URL                    *url.URL               `json:"-" gorm:"-" extensions:"x-nullable"`
 	CurrentWorkspaceMember *WorkspaceMember       `json:"current_workspace_member,omitempty" gorm:"-" extensions:"x-nullable"`
 }

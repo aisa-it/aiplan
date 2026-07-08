@@ -46,6 +46,8 @@ type Sprint struct {
 	StartDate sql.NullTime `json:"start_date" gorm:"index"`
 	EndDate   sql.NullTime `json:"end_date" gorm:"index"`
 
+	Hash []byte `json:"-" gorm:"->;-:migration"`
+
 	Issues   []Issue `gorm:"many2many:sprint_issues;joinForeignKey:SprintId;joinReferences:IssueId"`
 	Watchers []User  `gorm:"many2many:sprint_watchers;foreignKey:Id;joinForeignKey:SprintId;references:ID;joinReferences:WatcherId"`
 
@@ -344,6 +346,8 @@ type SprintFolder struct {
 	Sprints []Sprint `gorm:"-"`
 
 	Name string `json:"name"`
+
+	Hash []byte `json:"-" gorm:"->;-:migration"`
 }
 
 func (SprintFolder) TableName() string {

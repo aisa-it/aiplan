@@ -1,7 +1,10 @@
 package cache
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -41,9 +44,11 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 	defer span.End()
 
 	var projects []dto.ProjectLight
+	var projectsRaw []dao.Project
 	var sprintsRaw []dao.Sprint
 	var foldersRaw []dao.SprintFolder
 	var forms []dto.FormLight
+	var formsRaw []dao.Form
 
 	var sprintStatsRows []struct {
 		SprintId   uuid.UUID
@@ -56,7 +61,6 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		var projectsRaw []dao.Project
 		if err := wsc.db.WithContext(ctx).Where("workspace_id = ?", workspaceId).Find(&projectsRaw).Error; err != nil {
 			return err
 		}
@@ -78,7 +82,6 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 	})
 
 	g.Go(func() error {
-		var formsRaw []dao.Form
 		if err := wsc.db.WithContext(ctx).Where("workspace_id = ?", workspaceId).Find(&formsRaw).Error; err != nil {
 			return err
 		}
@@ -179,11 +182,37 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 		sprints = utils.SliceToSlice(&result, func(t *dao.SprintFolder) dto.SprintFolder { return *t.ToDTO() })
 	}
 
+	// Хэш содержимого сводки: склеиваем уже готовые row_hash из БД (projects/sprints/sprint_folders/forms)
+	// плюс статистику по спринтам, которая не хранится в колонке, а считается отдельным агрегирующим запросом
+	// выше. Куски сортируются перед хэшированием, чтобы результат не зависел от порядка строк, вернувшегося
+	// из БД (запросы по projects/forms идут без ORDER BY).
+	chunks := make([][]byte, 0, len(projectsRaw)+len(foldersRaw)+2*len(sprintsRaw)+len(formsRaw))
+	for _, p := range projectsRaw {
+		chunks = append(chunks, p.Hash)
+	}
+	for _, f := range foldersRaw {
+		chunks = append(chunks, f.Hash)
+	}
+	for _, sp := range sprintsRaw {
+		chunks = append(chunks, fmt.Appendf(sp.Hash, "%d_%d_%d_%d_%d",
+			sp.Stats.AllIssues, sp.Stats.Pending, sp.Stats.InProgress, sp.Stats.Completed, sp.Stats.Cancelled))
+	}
+	for _, f := range formsRaw {
+		chunks = append(chunks, f.Hash)
+	}
+	slices.SortFunc(chunks, bytes.Compare)
+
+	h := sha256.New()
+	for _, c := range chunks {
+		h.Write(c)
+	}
+
 	wsc.m.Lock()
 	wsc.c[workspaceId] = dto.WorkspaceSummaryResponse{
 		Projects: projects,
 		Sprints:  sprints,
 		Forms:    forms,
+		Hash:     h.Sum(nil),
 	}
 	wsc.m.Unlock()
 
