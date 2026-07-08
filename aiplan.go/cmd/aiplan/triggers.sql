@@ -13,15 +13,34 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
+-- timestamptz нельзя напрямую привести к immutable-тексту (ни ::text, ни AT TIME ZONE, ни
+-- EXTRACT(EPOCH FROM timestamptz) — все они диспетчеризуются в STABLE-функцию из-за
+-- зависимости от сессионного TimeZone у части полей/зон). Обходной путь: вычесть из даты
+-- константу 'epoch'::timestamptz — вычитание двух timestamptz это чистая арифметика над
+-- уже-абсолютными моментами (timestamptz_mi, без обращения к таймзоне), результат — interval;
+-- EXTRACT(EPOCH FROM interval) — это ДРУГАЯ функция (interval_part, не timestamptz_part),
+-- она не завязана на сессионную таймзону ни для одного поля и потому IMMUTABLE.
+CREATE OR REPLACE FUNCTION immutable_epoch_ms(timestamptz)
+    RETURNS text AS $$
+SELECT (extract(epoch from ($1 - 'epoch'::timestamptz)) * 1000)::bigint::text;
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, logo_id::text, slug, owner_id::text, integration_token, (deleted_at is null)::text)) STORED;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, public::text, identifier, project_lead_id::text, emoji::text, coalesce(cover_image, ''), coalesce(estimate_id, ''), coalesce(rules_script, ''), (deleted_at is null)::text)) STORED;
 
 ALTER TABLE states DROP COLUMN IF EXISTS "hash";
 ALTER TABLE states ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, color, "group", "default"::text, sequence::text, COALESCE(immutable_array_to_string(from_states::text[], ','), ''))) STORED;
 
+ALTER TABLE sprints ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, coalesce(sprint_folder_id::text, ''), coalesce(immutable_epoch_ms(start_date), ''), coalesce(immutable_epoch_ms(end_date), ''), sequence_id::text, (deleted_at is null)::text)) STORED;
+ALTER TABLE sprint_folders ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name)) STORED;
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(title, description, slug, auth_require::text, coalesce(target_project_id::text, ''), coalesce(immutable_epoch_ms(end_date), ''), coalesce(fields::text, ''), coalesce(notification_channels::text, ''))) STORED;
+
 CREATE INDEX IF NOT EXISTS "idx_workspaces_hash" ON "workspaces" USING hash("hash");
 CREATE INDEX IF NOT EXISTS "idx_projects_hash" ON "projects" USING hash("hash");
 CREATE INDEX IF NOT EXISTS "idx_states_hash" ON "states" USING hash("hash");
+CREATE INDEX IF NOT EXISTS "idx_sprints_hash" ON "sprints" USING hash("hash");
+CREATE INDEX IF NOT EXISTS "idx_sprint_folders_hash" ON "sprint_folders" USING hash("hash");
+CREATE INDEX IF NOT EXISTS "idx_forms_hash" ON "forms" USING hash("hash");
 
 -- indexes
 CREATE EXTENSION if not exists pg_trgm;

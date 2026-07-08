@@ -83,4 +83,5 @@ type WorkspaceSummaryResponse struct {
 	Projects []ProjectLight `json:"projects"`
 	Sprints  []SprintFolder `json:"sprints,omitempty"`
 	Forms    []FormLight    `json:"forms,omitempty"`
+	Hash     []byte         `json:"-"`
 }
