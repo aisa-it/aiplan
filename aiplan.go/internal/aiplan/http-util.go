@@ -2,6 +2,7 @@ package aiplan
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -103,10 +104,12 @@ func (s *Services) uploadAvatarForm(tx *gorm.DB, file *multipart.FileHeader, dst
 	return tx.Create(&dstAsset).Error
 }
 
+const fieldUpdateCooldownMs = 500
+
 func hasRecentFieldUpdate(tx *gorm.DB, userId uuid.UUID, fields ...string) bool {
 	err := tx.Model(&dao.ActivityEvent{}).
 		Where("actor_id = ?", userId).
-		Where("created_at > NOW() - INTERVAL '2 seconds'").
+		Where(fmt.Sprintf("created_at > NOW() - INTERVAL '%d milliseconds'", fieldUpdateCooldownMs)).
 		Where("field IN (?)", fields).
 		Take(&dao.ActivityEvent{}).Error
 
