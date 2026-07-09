@@ -192,7 +192,7 @@ var (
 	ErrFormBadRequest         = DefinedError{Code: 3205, StatusCode: http.StatusBadRequest, Err: "bad request", RuErr: "Некорректный запрос"}
 	ErrFormRequestValidate    = DefinedError{Code: 3206, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
 	ErrFormCheckFields        = DefinedError{Code: 3207, StatusCode: http.StatusBadRequest, Err: "fields request error: '%s'", RuErr: "При создании формы задан неподдерживаемый тип поля: '%s"}
-	ErrFormCheckAnswers       = DefinedError{Code: 3208, StatusCode: http.StatusBadRequest, Err: "required field missing or wrong type", RuErr: "При отправке ответа на форму не заполнены обязательные поля или выбран не соответствующий тип значения"}
+	ErrFormCheckAnswers       = DefinedError{Code: 3208, StatusCode: http.StatusBadRequest, Err: "required field missing or wrong type: %s", RuErr: "При отправке ответа на форму не заполнены обязательные поля или выбран не соответствующий тип значения: %s"}
 	ErrFormEmptyAnswers       = DefinedError{Code: 3209, StatusCode: http.StatusBadRequest, Err: "empty answers", RuErr: "Для сохранения формы необходимо заполнить поля с ответами"}
 	ErrFormAnswerNotFound     = DefinedError{Code: 3210, StatusCode: http.StatusNotFound, Err: "answer not found", RuErr: "Ответ не найден"}
 	ErrFormAnswerEnd          = DefinedError{Code: 3211, StatusCode: http.StatusBadRequest, Err: "form is closed", RuErr: "Форма закрыта"}

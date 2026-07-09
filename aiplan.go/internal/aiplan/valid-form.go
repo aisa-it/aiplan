@@ -3,239 +3,189 @@ package aiplan
 
 import (
 	"fmt"
-	"go/types"
-	"regexp"
+	"math"
 	"strings"
+	"time"
 
-	types2 "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/gofrs/uuid"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 )
 
-const (
-	ruleMinMax  = "min_max"
-	ruleLen     = "len_str"
-	ruleOnlyInt = "only_integer"
-	ruleDepends = "depends_on"
-
-	formFieldNumeric     = "numeric"
-	formFieldCheckbox    = "checkbox"
-	formFieldInput       = "input"
-	formFieldTextarea    = "textarea"
-	formFieldColor       = "color"
-	formFieldDate        = "date"
-	formFieldAttachment  = "attachment"
-	formFieldSelect      = "select"
-	formFieldMultiselect = "multiselect"
-)
-
-type FormValidateStruct struct {
-	Name             string
-	CountOpt         int
-	TypeOpt          types.BasicKind
-	Func             validateTypeFunc
-	Pattern          *string
-	FieldTypeSupport []string
+func validateFormEndDate(endDate *types.TargetDate) error {
+	if endDate == nil {
+		return nil
+	}
+	today := time.Now().Truncate(24 * time.Hour).UTC().Add(-time.Millisecond)
+	if !endDate.Time.After(today) {
+		return fmt.Errorf("end_date must be in the future")
+	}
+	return nil
 }
 
-var (
-	formTypeValidator = map[string]FormValidateStruct{
-		ruleMinMax:  {Name: ruleMinMax, CountOpt: 2, TypeOpt: types.Float64, Func: validateTypeMinMax, Pattern: nil, FieldTypeSupport: []string{formFieldNumeric}},
-		ruleLen:     {Name: ruleLen, CountOpt: 2, TypeOpt: types.Float64, Func: validateTypeLenStr, Pattern: nil, FieldTypeSupport: []string{formFieldInput, formFieldTextarea}},
-		ruleOnlyInt: {Name: ruleOnlyInt, CountOpt: 0, Func: validateTypeRegular, Pattern: strPtr("^[-+]?\\d+$"), FieldTypeSupport: []string{formFieldNumeric, formFieldDate}},
-	}
-)
-
-type validateTypeFunc func(val interface{}, opt []interface{}, pattern *string) bool
-type validateFunc func(val interface{}, required bool, custom *types2.ValidationRule) bool
-
-func FormValidator() map[string]validateFunc {
-	validMap := make(map[string]validateFunc)
-	validMap[formFieldNumeric] = validateNumeric
-	validMap[formFieldCheckbox] = validateCheckbox
-	validMap[formFieldInput] = validateString
-	validMap[formFieldTextarea] = validateString
-	validMap[formFieldColor] = validateColor
-	validMap[formFieldDate] = validateTimestamp
-	validMap[formFieldAttachment] = validateUuid
-	validMap[formFieldSelect] = validateSelect
-	validMap[formFieldMultiselect] = validateMultiSelect
-	return validMap
+var typeValueMapping = map[string]string{
+	"numeric":     "numeric",
+	"checkbox":    "bool",
+	"input":       "string",
+	"textarea":    "string",
+	"color":       "string",
+	"date":        "numeric",
+	"attachment":  "uuid",
+	"select":      "select",
+	"multiselect": "multiselect",
 }
 
-func validateCheckbox(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	if val == nil {
-		return !required
-	}
-	_, ok := val.(bool)
-	if !ok {
-		return false
-	}
-	return true
+var fieldRules = map[string]struct {
+	countOpt   int
+	fieldTypes []string
+}{
+	"min_max":      {countOpt: 2, fieldTypes: []string{"numeric", "date"}},
+	"len_str":      {countOpt: 2, fieldTypes: []string{"input", "textarea"}},
+	"only_integer": {countOpt: 0, fieldTypes: []string{"numeric", "date"}},
 }
 
-func validateNumeric(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	skip := val == nil && !required
-	_, ok := val.(float64)
-	if !ok && !skip {
-		return false
-	}
+func validateForm(fields *types.FormFieldsSlice) error {
+	var seenIssueNameField bool
 
-	if custom == nil {
-		return true
-	}
-	return answerValidateRun(val, custom) || skip
-}
-
-func validateString(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	skip := val == nil && !required
-	_, ok := val.(string)
-	if !ok && !skip {
-		return false
-	}
-
-	if custom == nil {
-		return true
-	}
-
-	return answerValidateRun(val, custom) || skip
-}
-
-func validateColor(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	skip := val == nil && !required
-
-	v, ok := val.(string)
-	if !ok && !skip {
-		return false
-	}
-
-	if len(v) == 7 && v[0] == '#' {
-		return true
-	}
-
-	return skip
-}
-
-func validateTimestamp(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	skip := val == nil && !required
-
-	_, ok := val.(float64)
-	if !ok && !skip {
-		return false
-	}
-	return answerValidateRun(val, custom) || skip
-}
-
-func validateSelect(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	skip := val == nil && !required
-
-	return contains(custom.Opt, val) || skip
-}
-
-func validateMultiSelect(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	skip := val == nil && !required
-
-	options, ok := val.([]interface{})
-	if !ok && !skip {
-		return false
-	}
-	for _, option := range options {
-		if !contains(custom.Opt, option) && !skip {
-			return skip
+	for i, field := range *fields {
+		if _, ok := typeValueMapping[field.Type]; !ok {
+			return fmt.Errorf("unknown field type: %s", field.Type)
 		}
-	}
-	return true
-}
 
-func contains(arr []interface{}, val interface{}) bool {
-	for _, item := range arr {
-		if item == val {
-			return true
-		}
-	}
-	return false
-}
-
-func validateTypeLenStr(val interface{}, opt []interface{}, pattern *string) bool {
-	str, ok := val.(string)
-	if !ok {
-		return false
-	}
-	minLen, okMin := opt[0].(float64)
-	maxLen, okMax := opt[1].(float64)
-	if okMin && okMax {
-		if len(str) < int(minLen) || len(str) > int(maxLen) {
-			return false
-		}
-	}
-	return true
-}
-
-func validateTypeMinMax(val interface{}, opt []interface{}, pattern *string) bool {
-	num, ok := val.(float64)
-	if !ok {
-		return false
-	}
-	minN, okMin := opt[0].(float64)
-	maxN, okMax := opt[1].(float64)
-	if okMin && okMax {
-		if num < minN || num > maxN {
-			return false
-		}
-	}
-	return true
-}
-
-func validateTypeRegular(val interface{}, opt []interface{}, pattern *string) bool {
-	if pattern == nil {
-		return false
-	}
-	strVal := fmt.Sprintf("%v", val)
-	re, err := regexp.Compile(*pattern)
-	if err != nil || !re.MatchString(strVal) {
-		return false
-	}
-	return true
-}
-
-func validateUuid(val interface{}, required bool, custom *types2.ValidationRule) bool {
-	_, ok := val.(string)
-	if !ok {
-		return !required
-	}
-
-	strVal := fmt.Sprintf("%v", val)
-	_, err := uuid.FromString(strVal)
-	if err != nil {
-		return false
-	}
-	return true
-}
-
-func strPtr(str string) *string {
-	return &str
-}
-
-func answerValidateRun(val interface{}, custom *types2.ValidationRule) bool {
-	if len(custom.ValidationType) == 0 {
-		return true
-	}
-	validationTypes := strings.Split(custom.ValidationType, " ")
-	var countOpts int
-
-	for _, vType := range validationTypes {
-		if v, ok := formTypeValidator[vType]; ok {
-			if v.CountOpt == 0 {
-				continue
+		if field.IssueNameField {
+			if field.Type != "input" && field.Type != "string" {
+				return fmt.Errorf("issue_name_field only input type")
 			}
-			startEl := countOpts
-			endEl := countOpts + v.CountOpt
-			if valid := v.Func(val, custom.Opt[startEl:endEl], v.Pattern); !valid {
-				return false
+			if seenIssueNameField {
+				return fmt.Errorf("issue_name_field duplicate")
 			}
-			countOpts = endEl
-		} else {
-			return false
+			seenIssueNameField = true
+			(*fields)[i].Required = true
+			(*fields)[i].DependOn = nil
+		}
+
+		(*fields)[i].Val = nil
+
+		if (*fields)[i].Validate == nil {
+			(*fields)[i].Validate = &types.ValidationRule{}
+		}
+
+		if vt, ok := typeValueMapping[field.Type]; ok {
+			(*fields)[i].Validate.ValueType = vt
+		}
+
+		if field.Type == "date" {
+			(*fields)[i].Validate.ValidationType = "only_integer min_max"
+			(*fields)[i].Validate.Opt = []any{float64(math.MinInt64), float64(math.MaxInt64)}
+		}
+
+		if err := validateFieldRules(fields, i); err != nil {
+			return err
+		}
+
+		if err := validateDependOnConfig(fields, i); err != nil {
+			return err
 		}
 	}
-	return true
+
+	return nil
+}
+
+func validateFieldRules(fields *types.FormFieldsSlice, i int) error {
+	vr := (*fields)[i].Validate
+	if vr == nil || vr.ValidationType == "" {
+		return nil
+	}
+
+	tokens := strings.Fields(vr.ValidationType)
+	var consumed int
+
+	for _, token := range tokens {
+		rule, ok := fieldRules[token]
+		if !ok {
+			return fmt.Errorf("unknown validation rule: %s", token)
+		}
+
+		var supported bool
+		for _, ft := range rule.fieldTypes {
+			if ft == (*fields)[i].Type {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			return fmt.Errorf("validation rule %q not supported for field type %q", token, (*fields)[i].Type)
+		}
+
+		if consumed+rule.countOpt > len(vr.Opt) {
+			return fmt.Errorf("validation rule %q requires %d options, got %d", token, rule.countOpt, len(vr.Opt)-consumed)
+		}
+
+		if rule.countOpt > 0 {
+			for j := 0; j < rule.countOpt; j++ {
+				if _, ok := vr.Opt[consumed+j].(float64); !ok {
+					return fmt.Errorf("validation rule %q option must be number", token)
+				}
+			}
+		}
+
+		consumed += rule.countOpt
+	}
+
+	return nil
+}
+
+func validateDependOnConfig(fields *types.FormFieldsSlice, i int) error {
+	field := (*fields)[i]
+	if field.DependOn == nil {
+		return nil
+	}
+
+	if i <= field.DependOn.FieldIndex {
+		return fmt.Errorf("invalid depend_on order: %d must be greater than %d", i, field.DependOn.FieldIndex)
+	}
+
+	parentField := (*fields)[field.DependOn.FieldIndex]
+	switch parentField.Type {
+	case "checkbox":
+		if field.DependOn.OptionIndex != nil {
+			return fmt.Errorf("invalid depend_on config: checkbox must not have option_index")
+		}
+	case "select", "multiselect":
+		if field.DependOn.OptionIndex == nil {
+			return fmt.Errorf("depend_on option index required for select/multiselect")
+		}
+		if parentField.Validate == nil || parentField.Validate.Opt == nil ||
+			*field.DependOn.OptionIndex >= len(parentField.Validate.Opt) {
+			return fmt.Errorf("depend_on option index out of range")
+		}
+	default:
+		return fmt.Errorf("unsupported depend_on field type: %s", parentField.Type)
+	}
+
+	return nil
+}
+
+func validateAnswers(validator *types.FormValidator, fields, answers types.FormFieldsSlice) (types.FormFieldsSlice, []types.FormAnswerError) {
+	reqFields := make([]any, len(answers))
+	for i, f := range answers {
+		reqFields[i] = f.Val
+	}
+
+	fieldResults, vr := validator.Validate(reqFields)
+	if !vr.Valid {
+		return nil, vr.Errors
+	}
+
+	result := make(types.FormFieldsSlice, len(fieldResults))
+	for i, r := range fieldResults {
+		result[i] = types.FormFields{
+			Type:           r.Type,
+			Label:          r.Label,
+			Val:            r.Val,
+			Required:       fields[i].Required,
+			IssueNameField: fields[i].IssueNameField,
+			DependOn:       fields[i].DependOn,
+		}
+	}
+
+	return result, nil
 }
