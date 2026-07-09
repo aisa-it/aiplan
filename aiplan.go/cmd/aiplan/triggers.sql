@@ -13,15 +13,34 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
+-- timestamptz нельзя напрямую привести к immutable-тексту (ни ::text, ни AT TIME ZONE, ни
+-- EXTRACT(EPOCH FROM timestamptz) — все они диспетчеризуются в STABLE-функцию из-за
+-- зависимости от сессионного TimeZone у части полей/зон). Обходной путь: вычесть из даты
+-- константу 'epoch'::timestamptz — вычитание двух timestamptz это чистая арифметика над
+-- уже-абсолютными моментами (timestamptz_mi, без обращения к таймзоне), результат — interval;
+-- EXTRACT(EPOCH FROM interval) — это ДРУГАЯ функция (interval_part, не timestamptz_part),
+-- она не завязана на сессионную таймзону ни для одного поля и потому IMMUTABLE.
+CREATE OR REPLACE FUNCTION immutable_epoch_ms(timestamptz)
+    RETURNS text AS $$
+SELECT (extract(epoch from ($1 - 'epoch'::timestamptz)) * 1000)::bigint::text;
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, logo_id::text, slug, owner_id::text, integration_token, (deleted_at is null)::text)) STORED;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, public::text, identifier, project_lead_id::text, emoji::text, coalesce(cover_image, ''), coalesce(estimate_id, ''), coalesce(rules_script, ''), (deleted_at is null)::text)) STORED;
 
 ALTER TABLE states DROP COLUMN IF EXISTS "hash";
 ALTER TABLE states ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, color, "group", "default"::text, sequence::text, COALESCE(immutable_array_to_string(from_states::text[], ','), ''))) STORED;
 
+ALTER TABLE sprints ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, coalesce(sprint_folder_id::text, ''), coalesce(immutable_epoch_ms(start_date), ''), coalesce(immutable_epoch_ms(end_date), ''), sequence_id::text, (deleted_at is null)::text)) STORED;
+ALTER TABLE sprint_folders ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name)) STORED;
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(title, description, slug, auth_require::text, coalesce(target_project_id::text, ''), coalesce(immutable_epoch_ms(end_date), ''), coalesce(fields::text, ''), coalesce(notification_channels::text, ''))) STORED;
+
 CREATE INDEX IF NOT EXISTS "idx_workspaces_hash" ON "workspaces" USING hash("hash");
 CREATE INDEX IF NOT EXISTS "idx_projects_hash" ON "projects" USING hash("hash");
 CREATE INDEX IF NOT EXISTS "idx_states_hash" ON "states" USING hash("hash");
+CREATE INDEX IF NOT EXISTS "idx_sprints_hash" ON "sprints" USING hash("hash");
+CREATE INDEX IF NOT EXISTS "idx_sprint_folders_hash" ON "sprint_folders" USING hash("hash");
+CREATE INDEX IF NOT EXISTS "idx_forms_hash" ON "forms" USING hash("hash");
 
 -- indexes
 CREATE EXTENSION if not exists pg_trgm;
@@ -723,3 +742,54 @@ CREATE OR REPLACE TRIGGER sprint_workspace_summary_notify
     ON sprints
     FOR EACH ROW
     EXECUTE FUNCTION notify_workspace_summary_changes_sprints();
+
+-- Статистика спринта в workspace_summary считается по sprint_issues/issues/states
+-- (см. cache.WorkspaceSummaryCache.fetch), поэтому кэш нужно инвалидировать и при
+-- изменении состава спринта, и при изменении полей issue, влияющих на бакет статуса.
+CREATE OR REPLACE FUNCTION notify_workspace_summary_changes_sprint_issues()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    ws_id uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        ws_id := OLD.workspace_id;
+    ELSE
+        ws_id := NEW.workspace_id;
+    END IF;
+
+    PERFORM pg_notify('workspace_summary_changes', ws_id::text);
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sprint_issues_workspace_summary_notify
+    AFTER INSERT OR UPDATE OR DELETE
+    ON sprint_issues
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_summary_changes_sprint_issues();
+
+CREATE OR REPLACE FUNCTION notify_workspace_summary_changes_issue_sprint_stats()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    IF NEW.state_id IS NOT DISTINCT FROM OLD.state_id
+       AND NEW.start_date IS NOT DISTINCT FROM OLD.start_date
+       AND NEW.completed_at IS NOT DISTINCT FROM OLD.completed_at THEN
+        RETURN NULL;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM sprint_issues WHERE issue_id = NEW.id) THEN
+        PERFORM pg_notify('workspace_summary_changes', NEW.workspace_id::text);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER issue_sprint_stats_workspace_summary_notify
+    AFTER UPDATE
+    ON issues
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_summary_changes_issue_sprint_stats();

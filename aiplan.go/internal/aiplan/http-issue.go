@@ -222,6 +222,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 	issueId, iOk := event.Upload.MetaData["issue_id"]
 	docId, dOk := event.Upload.MetaData["doc_id"]
 	fileName := event.Upload.MetaData["file_name"]
+	fileType := event.Upload.MetaData["fileType"]
 
 	var user dao.User
 	if err := s.RawDB().Where("id = ?", userId).First(&user).Error; err != nil {
@@ -255,6 +256,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 			Name:        fileName,
 			FileSize:    int(event.Upload.Size),
+			ContentType: utils.ResolveContentType(fileName, fileType),
 		}
 
 		if err := s.RawDB().Transaction(func(tx *gorm.DB) error {
@@ -3482,8 +3484,19 @@ func (s *Services) getIssuePdf(c echo.Context) error {
 
 	c.Response().Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s.pdf", issue.String()))
 
+	var comments []dao.IssueComment
+	if err := s.DB(c).
+		Joins("Actor").
+		Joins("OriginalComment").
+		Joins("OriginalComment.Actor").
+		Where("issue_comments.issue_id = ?", issue.ID).
+		Order("issue_comments.created_at DESC").
+		Find(&comments).Error; err != nil {
+		return EError(c, err)
+	}
+
 	var buf bytes.Buffer
-	if err := export.IssueToFPDF(issue, cfg.WebURL.URL, &buf); err != nil {
+	if err := export.IssueToFPDF(issue, cfg.WebURL.URL, &buf, comments...); err != nil {
 		return EError(c, err)
 	}
 

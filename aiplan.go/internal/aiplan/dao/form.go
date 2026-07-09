@@ -45,6 +45,7 @@ type Form struct {
 	Fields                 types.FormFieldsSlice  `json:"fields" gorm:"type:jsonb"`
 	Active                 bool                   `json:"active" gorm:"-"`
 	NotificationChannels   types.FormAnswerNotify `json:"notification_channels" gorm:"type:jsonb"`
+	Hash                   []byte                 `json:"-" gorm:"->;-:migration"`
 	URL                    *url.URL               `json:"-" gorm:"-" extensions:"x-nullable"`
 	CurrentWorkspaceMember *WorkspaceMember       `json:"current_workspace_member,omitempty" gorm:"-" extensions:"x-nullable"`
 }
@@ -186,9 +187,12 @@ func (form *Form) BeforeSave(tx *gorm.DB) error {
 // Возвращает:
 //   - error: Возвращает ошибку, если при выполнении каких-либо операций произошла ошибка.
 func (form *Form) BeforeDelete(tx *gorm.DB) error {
-
 	query := tx.Where("entity_type = ?", types.LayerForm).Where("form_id = ?", form.ID)
-	if err := CleanupActivityData(tx, query, form.ID, types.LayerWorkspace); err != nil {
+	if err := CleanupActivityData(tx, query, form.ID, types.LayerWorkspace, types.LayerForm); err != nil {
+		return err
+	}
+
+	if err := tx.Where("form_id = ?", form.ID).Delete(&FormAttachment{}).Error; err != nil {
 		return err
 	}
 

@@ -58,7 +58,7 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 			Model(&dao.State{}).
 			Joins("LEFT JOIN issues i on states.id = i.state_id and i.project_id in (?) and i.deleted_at is null", projectQuery).
 			Where("states.project_id in (?)", projectQuery).
-			Select("count(i.state_id) as Count, states.name || states.color || states.group as \"Key\", max(states.name) as state_name, max(states.sequence) as state_seq").
+			Select("count(i.state_id) as Count, states.project_id || states.name || states.color || states.group as \"Key\", max(states.name) as state_name, max(states.sequence) as state_seq").
 			Group(`"Key", states.group`).
 			Order("case when states.group='cancelled' then 5 when states.group='completed' then 4 when states.group='started' then 3 when states.group='unstarted' then 2 when states.group='backlog' then 1 end, state_seq, state_name")
 
@@ -178,7 +178,10 @@ func fetchIssuesByGroups(
 ) (int, error) {
 	totalCount := 0
 
-	groupsEntity, err := fetchGroupsEntity(db, searchParams.GroupByParam, groupSize)
+	groupsEntity, err := fetchGroupsEntity(
+		db,
+		searchParams.GroupByParam,
+		groupSize)
 	if err != nil {
 		return 0, err
 	}
@@ -215,7 +218,7 @@ func fetchIssuesByGroups(
 				}
 				q = q.Where("created_by_id = ?", group.Key)
 			case "state":
-				q = q.Where("state_id in (select id from states where concat(name, color, \"group\") = ?)", group.Key)
+				q = q.Where("state_id in (select id from states where concat(project_id, name, color, \"group\") = ?)", group.Key)
 			case "labels":
 				if !searchParams.Filters.Labels.IsEmpty() && !searchParams.Filters.Labels.Contains(group.Key) {
 					return nil
@@ -275,6 +278,9 @@ func fetchIssuesByGroups(
 	return totalCount, g.Wait()
 }
 
+// fetchGroupsEntity загружает сущности для каждой группы (приоритеты, авторы, статусы, метки, исполнители, наблюдатели, проекты).
+// Цикломатическая сложность 20 из-за 7 case-веток в switch. Выделение каждой ветки в отдельную функцию неоправданно,
+// так как они линейны и различаются только типом запроса и DTO.
 func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSize) (map[string]any, error) {
 	ids := make([]string, 0, len(groups))
 
@@ -302,11 +308,11 @@ func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSi
 		}
 	case "state":
 		var states []dao.State
-		if err := db.Where("states.name || states.color || states.group in (?)", ids).Find(&states).Error; err != nil {
+		if err := db.Where("states.project_id || states.name || states.color || states.group in (?)", ids).Find(&states).Error; err != nil {
 			return nil, err
 		}
 		for _, state := range states {
-			entityMap[state.Name+state.Color+state.Group] = state.ToLightDTO()
+			entityMap[state.ProjectId.String()+state.Name+state.Color+state.Group] = state.ToLightDTO()
 		}
 	case "labels":
 		var labels []dao.Label

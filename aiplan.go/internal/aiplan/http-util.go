@@ -2,6 +2,7 @@ package aiplan
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -44,7 +46,7 @@ func (s *Services) uploadAssetForm(tx *gorm.DB, file *multipart.FileHeader, dstA
 
 	dstAsset.Name = file.Filename
 	dstAsset.FileSize = int(file.Size)
-	dstAsset.ContentType = file.Header.Get("Content-Type")
+	dstAsset.ContentType = utils.ResolveContentType(file.Filename, file.Header.Get("Content-Type"))
 
 	if err := s.storage.SaveReader(
 		assetSrc,
@@ -102,10 +104,12 @@ func (s *Services) uploadAvatarForm(tx *gorm.DB, file *multipart.FileHeader, dst
 	return tx.Create(&dstAsset).Error
 }
 
+const fieldUpdateCooldownMs = 500
+
 func hasRecentFieldUpdate(tx *gorm.DB, userId uuid.UUID, fields ...string) bool {
 	err := tx.Model(&dao.ActivityEvent{}).
 		Where("actor_id = ?", userId).
-		Where("created_at > NOW() - INTERVAL '2 seconds'").
+		Where(fmt.Sprintf("created_at > NOW() - INTERVAL '%d milliseconds'", fieldUpdateCooldownMs)).
 		Where("field IN (?)", fields).
 		Take(&dao.ActivityEvent{}).Error
 

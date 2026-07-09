@@ -9,12 +9,14 @@ package aiplan
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
@@ -34,6 +36,10 @@ var inlineSafeContentTypes = map[string]bool{
 	// PDF рендерится в песочнице-вьюере браузера (не как HTML в origin) —
 	// inline-превью допустимо. text/html и image/svg+xml сюда НЕ добавлять.
 	"application/pdf": true,
+	// text/plain браузер всегда рендерит как обычный текст, без парсинга
+	// разметки и исполнения скриптов — safe для inline вне зависимости
+	// от содержимого файла.
+	"text/plain": true,
 }
 
 const (
@@ -41,6 +47,7 @@ const (
 SELECT
     f.id,
     f.content_type,
+    f.name,
     (f.workspace_id IS NULL OR wm.role IS NOT NULL)
     AND (
         (f.comment_id IS NULL AND f.issue_id IS NULL AND f.doc_comment_id IS NULL)
@@ -123,6 +130,26 @@ func (s *Services) assetsHandler(c echo.Context) error {
 
 	c.Response().Header().Set("ETag", stats.ETag)
 	c.Response().Header().Set("Content-Length", fmt.Sprint(stats.Size))
+	// Запрещаем браузеру угадывать тип контента по содержимому вместо
+	// заявленного Content-Type — иначе список inlineSafeContentTypes можно
+	// обойти MIME-sniffing'ом в старых браузерах.
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+
+	r, err := s.storage.LoadReader(asset.Id)
+	if err != nil {
+		return EError(c, err)
+	}
+	defer r.Close()
+
+	if asset.ContentType == "" {
+		slog.Warn("Asset with empty content-type", "assetId", asset.Id)
+		info, err := s.storage.GetFileInfo(asset.Id)
+		if err != nil {
+			slog.Error("Get asset file info", "assetId", asset.Id)
+		} else {
+			asset.ContentType = utils.ResolveContentType(asset.Name, info.ContentType)
+		}
+	}
 
 	// Небезопасные для inline типы (text/html, svg и пр.) форсим на скачивание,
 	// чтобы исключить stored-XSS через загруженный файл. Имя файла —
@@ -134,12 +161,6 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	}
 	c.Response().Header().Set("Content-Disposition",
 		fmt.Sprintf("%s; filename*=UTF-8''%s", disposition, url.PathEscape(asset.Name)))
-
-	r, err := s.storage.LoadReader(asset.Id)
-	if err != nil {
-		return EError(c, err)
-	}
-	defer r.Close()
 
 	return c.Stream(http.StatusOK, asset.ContentType, r)
 }

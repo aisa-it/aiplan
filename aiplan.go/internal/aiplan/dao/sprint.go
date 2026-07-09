@@ -46,6 +46,8 @@ type Sprint struct {
 	StartDate sql.NullTime `json:"start_date" gorm:"index"`
 	EndDate   sql.NullTime `json:"end_date" gorm:"index"`
 
+	Hash []byte `json:"-" gorm:"->;-:migration"`
+
 	Issues   []Issue `gorm:"many2many:sprint_issues;joinForeignKey:SprintId;joinReferences:IssueId"`
 	Watchers []User  `gorm:"many2many:sprint_watchers;foreignKey:Id;joinForeignKey:SprintId;references:ID;joinReferences:WatcherId"`
 
@@ -245,7 +247,7 @@ type SprintIssue struct {
 	UpdatedAt time.Time
 
 	SprintId    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:sprint_issue_uniq_idx,priority:3"`
-	IssueId     uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:4"`
+	IssueId     uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:4;index:idx_sprint_issues_issue_id"`
 	ProjectId   uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:2"`
 	WorkspaceId uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:1"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
@@ -344,6 +346,8 @@ type SprintFolder struct {
 	Sprints []Sprint `gorm:"-"`
 
 	Name string `json:"name"`
+
+	Hash []byte `json:"-" gorm:"->;-:migration"`
 }
 
 func (SprintFolder) TableName() string {

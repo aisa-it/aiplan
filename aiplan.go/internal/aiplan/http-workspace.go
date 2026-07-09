@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -470,16 +471,15 @@ func (s *Services) getWorkspaceSummary(c echo.Context) error {
 		return c.NoContent(http.StatusNotFound)
 	}
 
-	// Show forms only for admins
-	if workspaceMember.Role != types.AdminRole && len(workspaceSummary.Forms) > 0 {
-		workspaceSummary.Forms = make([]dto.FormLight, 0)
-	}
+	// Роль подмешана в ETag, т.к. ниже по коду один и тот же кэш фильтруется по роли
+	// (Forms/Sprints/Projects) — без этого смена роли участника не сбросила бы старый ETag.
+	etag := fmt.Sprintf("%s-%d", hex.EncodeToString(workspaceSummary.Hash), workspaceMember.Role)
 
-	// Show sprints only for members and admins
-	if workspaceMember.Role < types.MemberRole && len(workspaceSummary.Sprints) > 0 {
-		workspaceSummary.Sprints = make([]dto.SprintLight, 0)
-	}
-
+	// Список приватных проектов для не-админов зависит от персонального членства (project_members),
+	// которое не входит в общий кэш сводки (он один на весь workspace, без разреза по пользователю).
+	// Досчитываем членство заранее и подмешиваем в ETag, иначе добавление/удаление пользователя
+	// из проекта не инвалидировало бы его старый ETag.
+	var membershipsMap map[uuid.UUID]struct{}
 	if workspaceMember.Role < types.AdminRole && len(workspaceSummary.Projects) > 0 {
 		var memberships []dao.ProjectMember
 		if err := s.DB(c).
@@ -489,11 +489,37 @@ func (s *Services) getWorkspaceSummary(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		membershipsMap := make(map[uuid.UUID]struct{})
+		membershipsMap = make(map[uuid.UUID]struct{}, len(memberships))
+		projectIds := make([]string, 0, len(memberships))
 		for _, member := range memberships {
 			membershipsMap[member.ProjectId] = struct{}{}
+			projectIds = append(projectIds, member.ProjectId.String())
 		}
+		slices.Sort(projectIds)
 
+		h := sha256.New()
+		for _, id := range projectIds {
+			h.Write([]byte(id))
+		}
+		etag += "-" + hex.EncodeToString(h.Sum(nil))
+	}
+
+	if c.Request().Header.Get("If-None-Match") == etag {
+		return c.NoContent(http.StatusNotModified)
+	}
+	c.Response().Header().Set("ETag", etag)
+
+	// Show forms only for admins
+	if workspaceMember.Role != types.AdminRole && len(workspaceSummary.Forms) > 0 {
+		workspaceSummary.Forms = make([]dto.FormLight, 0)
+	}
+
+	// Show sprints only for members and admins
+	if workspaceMember.Role < types.MemberRole && len(workspaceSummary.Sprints) > 0 {
+		workspaceSummary.Sprints = make([]dto.SprintFolder, 0)
+	}
+
+	if membershipsMap != nil {
 		filteredProjects := make([]dto.ProjectLight, 0, len(workspaceSummary.Projects))
 		for _, project := range workspaceSummary.Projects {
 			if _, ok := membershipsMap[project.ID]; ok || project.Public {

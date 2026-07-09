@@ -24,6 +24,7 @@ type (
 	IssueLinkMention = edtypes.IssueLinkMention
 	Mention          = edtypes.Mention
 	HardBreak        = edtypes.HardBreak
+	Drawio           = edtypes.Drawio
 )
 
 // Реэкспорт констант

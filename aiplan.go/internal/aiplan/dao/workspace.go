@@ -491,14 +491,9 @@ func (wm *WorkspaceMember) AfterUpdate(tx *gorm.DB) error {
 }
 
 func (wm *WorkspaceMember) BeforeDelete(tx *gorm.DB) error {
-
-	// WorkspaceActivity update create to nil
-	tx.Where("entity_type = ?", types.LayerWorkspace).
-		Where("workspace_id = ? AND new_identifier = ? AND verb = ? AND field = ?", wm.WorkspaceId, wm.MemberId, "created", wm.GetEntityType()).
-		Model(&ActivityEvent{}).Update("new_identifier", nil)
-	//ProjectActivity delete other activity
-	tx.Where("entity_type = ?", types.LayerWorkspace).
-		Where("workspace_id = ? and verb <> ? and (new_identifier = ? or old_identifier = ?)", wm.WorkspaceId, "deleted", wm.MemberId, wm.MemberId).Delete(&ActivityEvent{})
+	tx.Where("workspace_id = ?", wm.WorkspaceId).
+		Where("user_id = ?", wm.MemberId).
+		Delete(&UserAppNotify{})
 
 	if err := tx.Exec("delete from project_favorites where user_id = ? and workspace_id = ?",
 		wm.MemberId, wm.WorkspaceId).Error; err != nil {

@@ -97,17 +97,22 @@ func (s *Services) getRootDocList(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 
-	var docs []dao.Doc
-	if err := s.DB(c).
+	q := s.DB(c).
 		Set("member_role", workspaceMember.Role).
 		Set("member_id", workspaceMember.MemberId).
 		Preload("Author").
 		Where("docs.workspace_id = ?", workspace.ID).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
-			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 		Where("docs.parent_doc_id IS NULL").
 		Order("seq_id ASC").
-		Group("docs.id").
+		Group("docs.id")
+
+	if workspaceMember.Role != types.AdminRole {
+		q = q.Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId)
+	}
+
+	var docs []dao.Doc
+	if err := q.
 		Find(&docs).Error; err != nil {
 		return EError(c, apierrors.ErrGeneric)
 	}
@@ -738,23 +743,34 @@ func (s *Services) deleteDoc(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-type DocMoveAction int
+type docMoveValidator func(s *Services, tx *gorm.DB, doc *dao.Doc, newParent *dao.Doc) error
 
-const (
-	ActionAdd DocMoveAction = iota
-	ActionRemove
-)
-
-type docMove struct {
-	OldSecId  int
-	NewSecId  int
-	Type      DocMoveAction
-	ActionDoc bool
+var moveValidators = []docMoveValidator{
+	validateNoCircular,
+	validateRoleDoc,
 }
 
-type docChanges struct {
-	FromDoc *dao.Doc
-	ToDoc   *dao.Doc
+func validateNoCircular(_ *Services, tx *gorm.DB, doc *dao.Doc, newParent *dao.Doc) error {
+	if newParent == nil {
+		return nil
+	}
+	if slices.Contains(newParent.Breadcrumbs, doc.ID) {
+		return apierrors.ErrDocMoveIntoOwnChild
+	}
+	return nil
+}
+
+func validateRoleDoc(_ *Services, tx *gorm.DB, doc *dao.Doc, newParent *dao.Doc) error {
+	if newParent == nil {
+		return nil
+	}
+	if doc.ReaderRole < newParent.ReaderRole {
+		return apierrors.ErrDocRoleLowerThanParent
+	}
+	if doc.EditorRole < newParent.EditorRole {
+		return apierrors.ErrDocRoleLowerThanParent
+	}
+	return nil
 }
 
 // moveDoc godoc
@@ -774,18 +790,8 @@ type docChanges struct {
 // @Failure 404 {object} apierrors.DefinedError "Ошибка: не найдено"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/doc/{docId}/move/  [post]
-
-// shouldLogMove checks if document move should be logged
-func shouldLogMove(docID uuid.UUID, changes map[uuid.UUID]docMove) bool {
-	if move, exists := changes[docID]; exists {
-		return move.ActionDoc
-	}
-	return false
-}
-
 func (s *Services) moveDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
-	//workspace := apiContext.GetWorkspace()
 	docPtr := apiContext.GetDoc(apicontext.WithDocParent(), apicontext.WithDocWorkspace())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
@@ -793,17 +799,22 @@ func (s *Services) moveDoc(c echo.Context) error {
 	doc := *docPtr
 	user := apiContext.GetUser()
 
-	var groupChanges docChanges
-	changes := make(map[uuid.UUID]docMove)
-
 	var req DocMoveParams
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
+
+	isSortOnly := (!doc.ParentDocID.Valid && !req.ParentId.Valid) ||
+		(doc.ParentDocID.Valid && req.ParentId.Valid && doc.ParentDocID.UUID == req.ParentId.UUID)
+
+	wasParented := doc.ParentDocID.Valid
+
+	var oldParentDoc *dao.Doc
+	var newParentDoc *dao.Doc
 	var allDocs []dao.Doc
+
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
-		var currentGroup, newGroup []dao.Doc
-		var newParent dao.Doc
+		var currentGroup []dao.Doc
 		if err := buildGroupQuery(tx, doc.WorkspaceId, doc.ParentDocID).
 			Preload("ParentDoc").
 			Preload("Workspace").
@@ -811,86 +822,72 @@ func (s *Services) moveDoc(c echo.Context) error {
 			return err
 		}
 
-		sortOnly := (!doc.ParentDocID.Valid && !req.ParentId.Valid) ||
-			(doc.ParentDocID.Valid && req.ParentId.Valid && doc.ParentDocID == req.ParentId)
-
-		if !sortOnly {
-			if d := currentGroup[0].ParentDoc; d != nil {
-				groupChanges.FromDoc = d
-			}
-
-			if req.ParentId.Valid {
-				if err := tx.
-					Where("workspace_id = ?", doc.WorkspaceId).
-					Where("id = ?", req.ParentId).
-					Set("breadcrumbs", true).
-					First(&newParent).Error; err != nil {
-					return err
-				}
-				if slices.Contains(newParent.Breadcrumbs, doc.ID) {
-					return apierrors.ErrDocMoveIntoOwnChild
-				}
-			}
-
-			if err := buildGroupQuery(tx, doc.WorkspaceId, req.ParentId).
-				Preload("ParentDoc").
-				Preload("Workspace").
-				Find(&newGroup).Error; err != nil {
+		if isSortOnly {
+			docMoveRemoveFromGroup(&currentGroup, doc.ID)
+			if err := docMoveInsertIntoGroup(&currentGroup, &doc, req.PreviousId, req.NextId); err != nil {
 				return err
 			}
-			var parent *dao.Doc
-			if len(newGroup) == 0 {
-				if req.ParentId.Valid {
-					if err := tx.
-						Where("workspace_id = ?", doc.WorkspaceId).
-						Where("id = ?", req.ParentId).
-						First(&parent).Error; err != nil {
-						return err
-					}
-				}
-			} else {
-				parent = newGroup[0].ParentDoc
-			}
-
-			groupChanges.ToDoc = parent
-
-			doc.ParentDocID = req.ParentId
-
-			if err := groupChanges.reorderDocs(&currentGroup, ActionRemove, &doc, uuid.NullUUID{}, uuid.NullUUID{}, changes); err != nil {
-				return err
-			}
-
-			if err := groupChanges.reorderDocs(&newGroup, ActionAdd, &doc, req.PreviousId, req.NextId, changes); err != nil {
-				return err
-			}
-
+			docMoveReindexGroup(&currentGroup)
+			allDocs = currentGroup
+			return saveAllDocs(tx, allDocs)
 		}
 
-		allDocs = mergeDocGroups(sortOnly, currentGroup, newGroup)
-		if len(allDocs) == 0 {
-			return nil
+		if len(currentGroup) > 0 {
+			oldParentDoc = currentGroup[0].ParentDoc
 		}
 
-		return tx.Omit(clause.Associations).Save(&allDocs).Error
+		if req.ParentId.Valid {
+			if err := tx.
+				Where("workspace_id = ?", doc.WorkspaceId).
+				Where("id = ?", req.ParentId.UUID).
+				Set("breadcrumbs", true).
+				First(&newParentDoc).Error; err != nil {
+				return err
+			}
+		}
+
+		for _, validate := range moveValidators {
+			if err := validate(s, tx, &doc, newParentDoc); err != nil {
+				return err
+			}
+		}
+
+		var newGroup []dao.Doc
+		if err := buildGroupQuery(tx, doc.WorkspaceId, req.ParentId).
+			Find(&newGroup).Error; err != nil {
+			return err
+		}
+
+		docMoveRemoveFromGroup(&currentGroup, doc.ID)
+
+		doc.ParentDocID = req.ParentId
+
+		if err := docMoveInsertIntoGroup(&newGroup, &doc, req.PreviousId, req.NextId); err != nil {
+			return err
+		}
+
+		docMoveReindexGroup(&currentGroup)
+		docMoveReindexGroup(&newGroup)
+
+		allDocs = docMoveMergeGroups(currentGroup, newGroup)
+		return saveAllDocs(tx, allDocs)
 	}); err != nil {
 		return EError(c, err)
 	}
 
-	var newParentDoc *dao.Doc
-	if req.ParentId.Valid {
-		newParentDoc = &dao.Doc{}
-		if err := s.DB(c).Where("id = ?", req.ParentId.UUID).Select("id", "title").First(newParentDoc).Error; err != nil {
-			if !errors.Is(gorm.ErrRecordNotFound, err) {
-				errStack.GetError(c, err)
-				return c.NoContent(http.StatusOK)
+	if !isSortOnly {
+		var movedDoc dao.Doc
+		if err := s.DB(c).
+			Where("id = ?", doc.ID).
+			Preload("Workspace").
+			First(&movedDoc).Error; err != nil {
+			errStack.GetError(c, err)
+		} else {
+			var trackOldParent *dao.Doc
+			if wasParented {
+				trackOldParent = oldParentDoc
 			}
-			newParentDoc = nil
-		}
-	}
-
-	for _, docTmp := range allDocs {
-		if shouldLogMove(docTmp.ID, changes) {
-			if err := s.snapshotTracker.TrackDocMove(&docTmp, groupChanges.FromDoc, newParentDoc, user); err != nil {
+			if err := s.snapshotTracker.TrackDocMove(&movedDoc, trackOldParent, newParentDoc, user); err != nil {
 				errStack.GetError(c, err)
 			}
 		}
@@ -909,87 +906,57 @@ func buildGroupQuery(db *gorm.DB, workspaceID uuid.UUID, parent uuid.NullUUID) *
 	return query.Order("seq_id ASC")
 }
 
-func mergeDocGroups(sortOnly bool, current, new []dao.Doc) []dao.Doc {
-	if sortOnly {
-		return current
-	}
-	return append(current, new...)
+func docInsertAt(docs *[]dao.Doc, index int, doc dao.Doc) {
+	*docs = append((*docs)[:index], append([]dao.Doc{doc}, (*docs)[index:]...)...)
 }
 
-func (dc *docChanges) reorderDocs(docs *[]dao.Doc, action DocMoveAction, currentDoc *dao.Doc, prevId, nextId uuid.NullUUID, changes map[uuid.UUID]docMove) error {
-	indexMap := make(map[uuid.UUID]int, len(*docs))
-	currentIdx := -1
-
+func docMoveRemoveFromGroup(docs *[]dao.Doc, docID uuid.UUID) {
 	for i, d := range *docs {
-		indexMap[d.ID] = i
-		if d.ID == currentDoc.ID {
-			currentIdx = i
+		if d.ID == docID {
+			*docs = append((*docs)[:i], (*docs)[i+1:]...)
+			return
 		}
 	}
+}
 
-	prevIdx, prevExists := getDocIndex(indexMap, prevId)
-	nextIdx, nextExists := getDocIndex(indexMap, nextId)
+func docMoveInsertIntoGroup(docs *[]dao.Doc, doc *dao.Doc, prevId, nextId uuid.NullUUID) error {
+	indexMap := make(map[uuid.UUID]int, len(*docs))
+	for i, d := range *docs {
+		indexMap[d.ID] = i
+	}
+
+	prevIdx, prevExists := docMoveGetIndex(indexMap, prevId)
+	nextIdx, nextExists := docMoveGetIndex(indexMap, nextId)
 
 	if prevExists && nextExists && prevIdx >= nextIdx {
 		return apierrors.ErrDocOrderBadRequest
 	}
 
-	switch action {
-	case ActionRemove:
-		if currentIdx != -1 {
-			*docs = append((*docs)[:currentIdx], (*docs)[currentIdx+1:]...)
-		}
-	case ActionAdd:
-
-		if currentIdx != -1 {
-			*docs = append((*docs)[:currentIdx], (*docs)[currentIdx+1:]...)
-			delete(indexMap, currentDoc.ID)
-
-			for i, d := range *docs {
-				indexMap[d.ID] = i
-				if d.ID == currentDoc.ID {
-					currentIdx = i
-				}
-			}
-
-			prevIdx, prevExists = getDocIndex(indexMap, prevId)
-			nextIdx, nextExists = getDocIndex(indexMap, nextId)
-		}
-
-		switch {
-		case !prevExists && nextExists:
-			docInsertAt(docs, 0, *currentDoc)
-		case prevExists && !nextExists:
-			*docs = append(*docs, *currentDoc)
-		case prevExists && nextExists:
-			docInsertAt(docs, prevIdx+1, *currentDoc)
-		case !prevId.Valid && !nextId.Valid:
-			docInsertAt(docs, 0, *currentDoc)
-		}
-
-	}
-
-	for i, v := range *docs {
-		actDoc := v.ID == currentDoc.ID
-		if !actDoc && v.SeqId == i {
-			continue
-		}
-
-		tmp := docMove{
-			OldSecId:  v.SeqId,
-			NewSecId:  i,
-			Type:      action,
-			ActionDoc: actDoc,
-		}
-
-		changes[v.ID] = tmp
-		(*docs)[i].SeqId = i
+	switch {
+	case !prevExists && nextExists:
+		docInsertAt(docs, nextIdx, *doc)
+	case prevExists && !nextExists:
+		docInsertAt(docs, prevIdx+1, *doc)
+	case prevExists && nextExists:
+		docInsertAt(docs, prevIdx+1, *doc)
+	case !prevId.Valid && !nextId.Valid:
+		docInsertAt(docs, 0, *doc)
 	}
 
 	return nil
 }
 
-func getDocIndex(m map[uuid.UUID]int, id uuid.NullUUID) (int, bool) {
+func docMoveReindexGroup(docs *[]dao.Doc) {
+	for i := range *docs {
+		(*docs)[i].SeqId = i
+	}
+}
+
+func docMoveMergeGroups(current, newGroup []dao.Doc) []dao.Doc {
+	return append(current, newGroup...)
+}
+
+func docMoveGetIndex(m map[uuid.UUID]int, id uuid.NullUUID) (int, bool) {
 	if !id.Valid {
 		return -1, false
 	}
@@ -997,8 +964,11 @@ func getDocIndex(m map[uuid.UUID]int, id uuid.NullUUID) (int, bool) {
 	return i, ok
 }
 
-func docInsertAt(docs *[]dao.Doc, index int, doc dao.Doc) {
-	*docs = append((*docs)[:index], append([]dao.Doc{doc}, (*docs)[index:]...)...)
+func saveAllDocs(tx *gorm.DB, docs []dao.Doc) error {
+	if len(docs) == 0 {
+		return nil
+	}
+	return tx.Omit(clause.Associations).Save(&docs).Error
 }
 
 // getChildDocList godoc
@@ -1028,18 +998,23 @@ func (s *Services) getChildDocList(c echo.Context) error {
 	}
 	currentDoc := *currentDocPtr
 
-	var docs []dao.Doc
-	if err := s.DB(c).
+	q := s.DB(c).
 		Set("member_id", workspaceMember.MemberId).
 		Set("member_role", workspaceMember.Role).
 		Preload("AccessRules.Member").
 		Preload("Author").
 		Where("docs.workspace_id = ?", workspace.ID).
-		Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
-			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId).
 		Where("docs.parent_doc_id = ?", currentDoc.ID).
 		Order("seq_id ASC").
-		Group("docs.id").
+		Group("docs.id")
+
+	if workspaceMember.Role != types.AdminRole {
+		q = q.Where("docs.reader_role <= ? OR docs.editor_role <= ? OR EXISTS (SELECT 1 FROM doc_access_rules dar WHERE dar.doc_id = docs.id AND dar.member_id = ?) OR docs.created_by_id = ?",
+			workspaceMember.Role, workspaceMember.Role, workspaceMember.MemberId, workspaceMember.MemberId)
+	}
+
+	var docs []dao.Doc
+	if err := q.
 		Find(&docs).
 		Error; err != nil {
 		return EError(c, apierrors.ErrGeneric)
@@ -1703,12 +1678,13 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 	}
 
 	assetId := dao.GenUUID()
+	contentType := utils.ResolveContentType(fileName, asset.Header.Get("Content-Type"))
 
 	if err := s.storage.SaveReader(
 		assetSrc,
 		asset.Size,
 		assetId,
-		asset.Header.Get("Content-Type"),
+		contentType,
 		&filestorage.Metadata{
 			WorkspaceId: workspace.ID.String(),
 			DocId:       doc.ID.String(),
@@ -1734,7 +1710,7 @@ func (s *Services) createDocAttachments(c echo.Context) error {
 		CreatedById: userID,
 		WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 		Name:        fileName,
-		ContentType: asset.Header.Get("Content-Type"),
+		ContentType: contentType,
 		FileSize:    int(asset.Size),
 	}
 
