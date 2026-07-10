@@ -3,6 +3,7 @@ package cache
 import (
 	"crypto/md5"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -57,6 +58,9 @@ func (c *workspaceMembersCache) Load(workspaceId uuid.UUID) (*workspaceMembersEn
 		if ok {
 			members[i].Member = u
 			fmt.Fprintf(h, "%x", u.Hash())
+		}
+		if !ok || u == nil {
+			slog.Warn("USERS CACHE miss member", "id", member.MemberId, "u", u)
 		}
 	}
 	entry.Members = members
