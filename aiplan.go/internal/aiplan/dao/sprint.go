@@ -152,6 +152,9 @@ func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
 }
 
 func (s *Sprint) BeforeDelete(tx *gorm.DB) error {
+	if err := tx.Model(s).Update("sprint_folder_id", nil).Error; err != nil {
+		return err
+	}
 
 	query := tx.Where("entity_type = ?", types.LayerSprint).Where("sprint_id = ?", s.Id)
 	if err := CleanupActivityData(tx, query, s.Id, types.LayerWorkspace, types.LayerIssue); err != nil {
