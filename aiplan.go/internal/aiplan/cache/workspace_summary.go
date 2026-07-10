@@ -97,7 +97,7 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 			Select(`
 				sprint_issues.sprint_id as sprint_id,
 				COUNT(*) as all_issues,
-				SUM(CASE WHEN s.group != 'cancelled' AND i.start_date IS NULL AND i.completed_at IS NULL THEN 1 ELSE 0 END) as pending,
+				SUM(CASE WHEN s.group != 'cancelled' AND i.start_date IS NULL AND i.completed_at IS NULL OR s.group = 'backlog' THEN 1 ELSE 0 END) as pending,
 				SUM(CASE WHEN s.group != 'cancelled' AND i.start_date IS NOT NULL AND i.completed_at IS NULL THEN 1 ELSE 0 END) as in_progress,
 				SUM(CASE WHEN s.group != 'cancelled' AND i.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed,
 				SUM(CASE WHEN s.group = 'cancelled' THEN 1 ELSE 0 END) as cancelled
