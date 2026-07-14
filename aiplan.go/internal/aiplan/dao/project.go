@@ -77,8 +77,8 @@ type Project struct {
 
 	Workspace               *Workspace      `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	ProjectLead             *User           `json:"project_lead_detail" gorm:"foreignKey:ProjectLeadId" extensions:"x-nullable" validate:"-"`
-	CreatedBy               *User           `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy               *User           `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy               *User           `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy               *User           `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 	DefaultAssigneesDetails []ProjectMember `json:"default_assignees_details" gorm:"foreignKey:ProjectId;associationForeignKey:ProjectId;where:IsDefaultAssignee=true"`
 	DefaultWatchersDetails  []ProjectMember `json:"default_watchers_details" gorm:"foreignKey:ProjectId;associationForeignKey:ProjectId;where:IsDefaultWatcher=true"`
 
@@ -486,7 +486,7 @@ type ProjectMember struct {
 	Workspace                       *Workspace            `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Member                          *User                 `json:"member" gorm:"foreignKey:MemberId" extensions:"x-nullable"`
 	Project                         *Project              `json:"project" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	CreatedBy                       *User                 `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	CreatedBy                       *User                 `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // ProjectMemberExtendFields
@@ -655,8 +655,8 @@ type ProjectFavorites struct {
 
 	Workspace *Workspace `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM.
@@ -788,8 +788,8 @@ type Estimate struct {
 	Workspace *Workspace      `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project        `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Points    []EstimatePoint `json:"points" gorm:"foreignKey:estimate_id"`
-	CreatedBy *User           `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User           `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User           `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User           `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы базы данных, соответствующей данному типу модели. Используется для взаимодействия с базой данных через ORM (GORM). Применяется для определения имени таблицы, в которой хранятся данные модели.
@@ -846,8 +846,8 @@ type EstimatePoint struct {
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Estimate  *Estimate  `json:"estimate_detail" gorm:"foreignKey:EstimateId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // ToDTO преобразует объект EstimatePoint в его упрощенную версию (EstimateLight). Используется для возврата только необходимых данных, без необходимости загрузки всех полей.
@@ -923,8 +923,8 @@ type Label struct {
 	// color character varying(255) COLLATE pg_catalog."default" NOT NULL,
 	Color string `json:"color" gorm:"uniqueIndex:label_name_color_unique_idx,priority:3;default:#000000"`
 
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Parent    *Label     `json:"parent_detail,omitempty" gorm:"foreignKey:ParentId" extensions:"x-nullable"`
@@ -1066,8 +1066,8 @@ type State struct {
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 

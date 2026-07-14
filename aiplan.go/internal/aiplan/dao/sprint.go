@@ -260,7 +260,7 @@ type SprintIssue struct {
 	Project   *Project   `gorm:"foreignKey:ProjectId;references:ID"`
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId;references:ID"`
 
-	CreatedBy *User `gorm:"foreignKey:CreatedById"`
+	CreatedBy *User `gorm:"foreignKey:CreatedById;belongsTo"`
 }
 
 func (SprintIssue) TableName() string { return "sprint_issues" }
