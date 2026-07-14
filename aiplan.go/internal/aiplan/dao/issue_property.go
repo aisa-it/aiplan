@@ -27,8 +27,8 @@ type ProjectPropertyTemplate struct {
 
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	CreatedBy *User      `gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `gorm:"foreignKey:UpdatedById;references:ID" extensions:"x-nullable"`
+	CreatedBy *User      `gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 func (ProjectPropertyTemplate) TableName() string { return "project_property_templates" }
@@ -71,8 +71,8 @@ type IssueProperty struct {
 	Project   *Project                 `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue                   `gorm:"foreignKey:IssueId"`
 	Template  *ProjectPropertyTemplate `gorm:"foreignKey:TemplateId"`
-	CreatedBy *User                    `gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User                    `gorm:"foreignKey:UpdatedById;references:ID" extensions:"x-nullable"`
+	CreatedBy *User                    `gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User                    `gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 func (IssueProperty) TableName() string { return "issue_properties" }

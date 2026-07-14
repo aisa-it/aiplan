@@ -29,12 +29,12 @@ type Doc struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.UUID `json:"created_by" gorm:"type:uuid;index"`
-	Author      *User     `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	Author      *User     `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	UpdatedAt time.Time `json:"updated_at"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	Tokens types.TsVector `json:"-" gorm:"index:doc_tokens_gin,type:gin;->:false"`
 
@@ -423,8 +423,8 @@ type DocComment struct {
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Doc       *Doc       `json:"-" gorm:"foreignKey:DocId" extensions:"x-nullable"`
 	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:DocCommentId"`
 
@@ -640,8 +640,8 @@ type DocAttachment struct {
 
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Asset     *FileAsset `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.
@@ -814,7 +814,7 @@ type DocFavorites struct {
 
 	Workspace *Workspace `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Doc       *Doc       `json:"Doc" gorm:"foreignKey:DocId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // Возвращает имя таблицы, соответствующей сущности Doc. Используется для определения имени таблицы при работе с базой данных.

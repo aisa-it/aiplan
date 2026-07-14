@@ -92,7 +92,7 @@ type FileAsset struct {
 	ContentType string `json:"content_type"`
 
 	Workspace *Workspace    `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Author    *User         `json:"-" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	Author    *User         `json:"-" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
 	Comment   *IssueComment `json:"-" gorm:"foreignKey:CommentId;references:Id" extensions:"x-nullable"`
 }
 
