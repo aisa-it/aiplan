@@ -613,14 +613,15 @@ func (Issue) TableName() string { return "issues" }
 func (issue *Issue) AfterFind(tx *gorm.DB) error {
 	_, issueStatus := tx.Get("issueProgress")
 	if issueStatus {
-		if issue.State != nil && issue.State.Group == "cancelled" {
-			issue.IssueProgress.Status = types.Cancelled
-		} else {
-			if issue.StartDate == nil && issue.CompletedAt == nil {
+		if issue.State != nil {
+			switch issue.State.Group {
+			case "cancelled":
+				issue.IssueProgress.Status = types.Cancelled
+			case "backlog", "unstarted":
 				issue.IssueProgress.Status = types.Pending
-			} else if issue.StartDate != nil && issue.CompletedAt == nil {
+			case "started":
 				issue.IssueProgress.Status = types.InProgress
-			} else if issue.CompletedAt != nil {
+			case "completed":
 				issue.IssueProgress.Status = types.Completed
 			}
 
