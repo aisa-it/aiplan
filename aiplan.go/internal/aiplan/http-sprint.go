@@ -10,6 +10,7 @@ import (
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
@@ -99,17 +100,19 @@ func (s *Services) getSprintList(c echo.Context) error {
 
 	var sprints []dao.Sprint
 	if err := s.DB(c).
-		Set("issueProgress", true).
 		Joins("SprintFolder").
-		Preload("Issues.State").
 		Where("sprints.workspace_id = ?", workspace.ID).
 		Order("start_date DESC").
 		Find(&sprints).Error; err != nil {
 		return EError(c, err)
 	}
 
+	statsBySprint, err := business.GetSprintStatsByWorkspace(s.DB(c), workspace.ID)
+	if err != nil {
+		return EError(c, err)
+	}
 	for i := range sprints {
-		sprints[i].UpdateStats()
+		sprints[i].Stats = statsBySprint[sprints[i].Id]
 	}
 
 	var folders []dao.SprintFolder
