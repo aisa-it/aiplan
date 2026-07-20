@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -50,14 +51,7 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 	var forms []dto.FormLight
 	var formsRaw []dao.Form
 
-	var sprintStatsRows []struct {
-		SprintId   uuid.UUID
-		AllIssues  int
-		Pending    int
-		InProgress int
-		Completed  int
-		Cancelled  int
-	}
+	var statsBySprint map[uuid.UUID]types.SprintStats
 
 	g := errgroup.Group{}
 	g.Go(func() error {
@@ -89,24 +83,10 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 		return nil
 	})
 
-	// Статистика по спринтам считается одним агрегирующим SQL-запросом (COUNT/SUM CASE по sprint_id),
-	// без загрузки issues в память — по аналогии с business/stats.go:getSprintStats.
 	g.Go(func() error {
-		return wsc.db.WithContext(ctx).
-			Model(&dao.SprintIssue{}).
-			Select(`
-				sprint_issues.sprint_id as sprint_id,
-				COUNT(*) as all_issues,
-				SUM(CASE WHEN s.group = 'backlog' OR s.group = 'unstarted' THEN 1 ELSE 0 END) as pending,
-				SUM(CASE WHEN s.group = 'started' THEN 1 ELSE 0 END) as in_progress,
-				SUM(CASE WHEN s.group = 'completed' THEN 1 ELSE 0 END) as completed,
-				SUM(CASE WHEN s.group = 'cancelled' THEN 1 ELSE 0 END) as cancelled
-			`).
-			Joins("JOIN issues i ON i.id = sprint_issues.issue_id").
-			Joins("JOIN states s ON s.id = i.state_id").
-			Where("sprint_issues.workspace_id = ?", workspaceId).
-			Group("sprint_issues.sprint_id").
-			Scan(&sprintStatsRows).Error
+		var err error
+		statsBySprint, err = business.GetSprintStatsByWorkspace(wsc.db.WithContext(ctx), workspaceId)
+		return err
 	})
 
 	if err := g.Wait(); err != nil {
@@ -117,18 +97,6 @@ func (wsc *WorkspaceSummaryCache) fetch(rootCtx context.Context, workspaceId uui
 	// спринты по папкам так же, как это делает getSprintList (http-sprint.go).
 	var sprints []dto.SprintFolder
 	{
-		// Статистика считалась одним агрегирующим запросом отдельно от спринтов,
-		// поэтому мёржим её по sprint_id уже здесь, в памяти.
-		statsBySprint := make(map[uuid.UUID]types.SprintStats, len(sprintStatsRows))
-		for _, r := range sprintStatsRows {
-			statsBySprint[r.SprintId] = types.SprintStats{
-				AllIssues:  r.AllIssues,
-				Pending:    r.Pending,
-				InProgress: r.InProgress,
-				Completed:  r.Completed,
-				Cancelled:  r.Cancelled,
-			}
-		}
 		for i := range sprintsRaw {
 			sprintsRaw[i].Stats = statsBySprint[sprintsRaw[i].Id]
 		}
