@@ -817,6 +817,9 @@ func (s *Services) addSprintFolders(c echo.Context) error {
 	}
 
 	if err := s.DB(c).Create(&folder).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return EErrorDefined(c, apierrors.ErrSprintFolderExists)
+		}
 		return EError(c, err)
 	}
 
@@ -882,6 +885,9 @@ func (s *Services) updateSprintFolders(c echo.Context) error {
 	newSnapshot := tracker.SprintFolderToSnapshot(&folder)
 
 	if err := s.DB(c).Updates(&folder).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return EErrorDefined(c, apierrors.ErrSprintFolderExists)
+		}
 		return EError(c, err)
 	}
 
