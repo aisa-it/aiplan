@@ -23,6 +23,7 @@ var (
 		types.LayerWorkspace: workspaceEvent{},
 		types.LayerDoc:       docEvent{},
 		types.LayerForm:      formEvent{},
+		types.LayerRoot:      skipper{},
 	}
 )
 
