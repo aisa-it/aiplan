@@ -340,7 +340,7 @@ type SprintFolder struct {
 	CreatedById uuid.UUID     `gorm:"type:uuid"`
 	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
 
-	WorkspaceId uuid.UUID `gorm:"type:uuid; index:sprint_folders_idx"`
+	WorkspaceId uuid.UUID `gorm:"type:uuid; uniqueIndex:idx_sprint_folder_workspace_name"`
 
 	CreatedBy User
 	UpdatedBy *User
@@ -348,7 +348,7 @@ type SprintFolder struct {
 
 	Sprints []Sprint `gorm:"-"`
 
-	Name string `json:"name"`
+	Name string `json:"name" gorm:"uniqueIndex:idx_sprint_folder_workspace_name"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 }
