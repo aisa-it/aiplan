@@ -626,7 +626,7 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 
-	offset := -1
+	offset := 0
 	limit := 1000
 	searchQuery := ""
 	orderBy := ""
@@ -646,7 +646,7 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		limit = -limit
 	}
 
-	if offset > limit {
+	if offset > limit || offset < 0 {
 		offset = 0
 	}
 
@@ -662,12 +662,13 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 
 		c.Response().Header().Set("ETag", fullHash)
 
+		count := int64(len(cMembers.Members))
 		cMembers.Members = cache.SortWorkspaceMembers(cMembers.Members, offset, limit, orderBy, desc)
 
 		return c.JSON(http.StatusOK, dao.PaginationResponse{
 			Offset: offset,
 			Limit:  limit,
-			Count:  int64(len(cMembers.Members)),
+			Count:  count,
 			Result: cMembers.Members,
 		})
 	}
@@ -713,11 +714,11 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	}
 
 	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
-	res.Result = res.Result.([]dto.WorkspaceMemberLight)[max(offset, 0):min(offset+limit, len(members))]
-
 	if searchQuery == "" {
 		cache.WorkspaceMembersCache.Store(workspace.ID, res.Result.([]dto.WorkspaceMemberLight))
 	}
+
+	res.Result = res.Result.([]dto.WorkspaceMemberLight)[max(offset, 0):min(offset+limit, len(members))]
 
 	return c.JSON(http.StatusOK, res)
 }
