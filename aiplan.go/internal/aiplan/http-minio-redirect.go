@@ -7,20 +7,47 @@
 package aiplan
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
 )
+
+// inlineSafeContentTypes — типы, которые безопасно отдавать браузеру inline
+// (растровые картинки, не исполняющие скрипты). Всё остальное (в т.ч. text/html
+// и image/svg+xml, способный нести JS) отдаётся как attachment, чтобы загруженный
+// файл нельзя было использовать для stored-XSS в origin приложения.
+var inlineSafeContentTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/jpg":  true,
+	"image/gif":  true,
+	"image/webp": true,
+	"image/bmp":  true,
+	// PDF рендерится в песочнице-вьюере браузера (не как HTML в origin) —
+	// inline-превью допустимо. text/html и image/svg+xml сюда НЕ добавлять.
+	"application/pdf": true,
+	// text/plain браузер всегда рендерит как обычный текст, без парсинга
+	// разметки и исполнения скриптов — safe для inline вне зависимости
+	// от содержимого файла.
+	"text/plain": true,
+}
 
 const (
 	selectFileWithPermissionCheck = `
 SELECT
     f.id,
     f.content_type,
+    f.name,
     (f.workspace_id IS NULL OR wm.role IS NOT NULL)
     AND (
         (f.comment_id IS NULL AND f.issue_id IS NULL AND f.doc_comment_id IS NULL)
@@ -65,7 +92,7 @@ LEFT JOIN doc_access_rules dar
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/file/{fileName} [get]
 func (s *Services) assetsHandler(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	name := c.Param("fileName")
 
 	query := selectFileWithPermissionCheck
@@ -79,7 +106,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 		dao.FileAsset
 		Allowed bool
 	}
-	if err := s.db.Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
+	if err := s.DB(c).Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -90,7 +117,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	stats, err := s.storage.GetFileInfo(asset.Id)
 	if err != nil {
 		errResponse := minio.ToErrorResponse(err)
-		if errResponse.Code == "NoSuchKey" {
+		if errResponse.Code == "NoSuchKey" || errors.Is(err, os.ErrNotExist) {
 			return c.NoContent(http.StatusNotFound)
 		}
 		return EError(c, err)
@@ -103,12 +130,37 @@ func (s *Services) assetsHandler(c echo.Context) error {
 
 	c.Response().Header().Set("ETag", stats.ETag)
 	c.Response().Header().Set("Content-Length", fmt.Sprint(stats.Size))
+	// Запрещаем браузеру угадывать тип контента по содержимому вместо
+	// заявленного Content-Type — иначе список inlineSafeContentTypes можно
+	// обойти MIME-sniffing'ом в старых браузерах.
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 
 	r, err := s.storage.LoadReader(asset.Id)
 	if err != nil {
 		return EError(c, err)
 	}
 	defer r.Close()
+
+	if asset.ContentType == "" {
+		slog.Warn("Asset with empty content-type", "assetId", asset.Id)
+		info, err := s.storage.GetFileInfo(asset.Id)
+		if err != nil {
+			slog.Error("Get asset file info", "assetId", asset.Id)
+		} else {
+			asset.ContentType = utils.ResolveContentType(asset.Name, info.ContentType)
+		}
+	}
+
+	// Небезопасные для inline типы (text/html, svg и пр.) форсим на скачивание,
+	// чтобы исключить stored-XSS через загруженный файл. Имя файла —
+	// пользовательский ввод, поэтому percent-кодируем (RFC 5987) во избежание
+	// инъекции в заголовок.
+	disposition := "attachment"
+	if inlineSafeContentTypes[asset.ContentType] {
+		disposition = "inline"
+	}
+	c.Response().Header().Set("Content-Disposition",
+		fmt.Sprintf("%s; filename*=UTF-8''%s", disposition, url.PathEscape(asset.Name)))
 
 	return c.Stream(http.StatusOK, asset.ContentType, r)
 }

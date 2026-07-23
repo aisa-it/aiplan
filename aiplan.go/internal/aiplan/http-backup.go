@@ -10,12 +10,14 @@ package aiplan
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/gob"
 	"log/slog"
 	"net/http"
 	"reflect"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -43,14 +45,14 @@ type WorkspaceBackup struct {
 	ProjectFavorites []dao.ProjectFavorites `importOrder:"4"`
 	ProjectMembers   []dao.ProjectMember    `importOrder:"4"`
 
-	IssueActivities []dao.EntityActivity `importOrder:"5"`
-	IssueAssignees  []dao.IssueAssignee  `importOrder:"5"`
-	IssueWatchers   []dao.IssueWatcher   `importOrder:"5"`
-	IssueBlockers   []dao.IssueBlocker   `importOrder:"5"`
-	IssueComments   []dao.IssueComment   `importOrder:"5"`
-	IssueLabels     []dao.IssueLabel     `importOrder:"5"`
-	IssueLinks      []dao.IssueLink      `importOrder:"5"`
-	IssueProperties []dao.IssueProperty  `importOrder:"5"`
+	IssueActivities []dao.ActivityEvent `importOrder:"5"`
+	IssueAssignees  []dao.IssueAssignee `importOrder:"5"`
+	IssueWatchers   []dao.IssueWatcher  `importOrder:"5"`
+	IssueBlockers   []dao.IssueBlocker  `importOrder:"5"`
+	IssueComments   []dao.IssueComment  `importOrder:"5"`
+	IssueLabels     []dao.IssueLabel    `importOrder:"5"`
+	IssueLinks      []dao.IssueLink     `importOrder:"5"`
+	IssueProperties []dao.IssueProperty `importOrder:"5"`
 
 	Estimates []dao.Estimate `importOrder:"5"`
 }
@@ -91,7 +93,7 @@ func (s *Services) getWorkspaceBackupList(c echo.Context) error {
 	slug := c.Param("workspaceSlug")
 
 	var backups []dao.WorkspaceBackup
-	if err := s.db.Joins("Workspace").Where("slug = ?", slug).Find(&backups).Error; err != nil {
+	if err := s.DB(c).Joins("Workspace").Where("slug = ?", slug).Find(&backups).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusOK, backups)
@@ -115,17 +117,17 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 	// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 	// @Router /api/workspaces/{workspaceSlug}/export [post]
 	slug := c.Param("workspaceSlug")
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspace dao.Workspace
-	if err := s.db.Preload("Owner").
+	if err := s.DB(c).Preload("Owner").
 		Where("slug = ?", slug).
 		First(&workspace).Error; err != nil {
 		return EError(c, err)
 	}
 
 	backup := WorkspaceBackup{
-		CreatedBy: user,
+		CreatedBy: *user,
 		CreatedAt: time.Now(),
 		Workspace: workspace,
 	}
@@ -141,7 +143,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 			continue
 		}
 
-		query := s.db.Where("workspace_id = ?", workspace.ID)
+		query := s.DB(c).Where("workspace_id = ?", workspace.ID)
 
 		// Preload users
 		if vType.Field(i).Name == "WorkspaceMembers" {
@@ -179,7 +181,7 @@ func (s *Services) exportWorkspace(c echo.Context) error {
 		Author:      &backup.CreatedBy,
 		WorkspaceId: workspace.ID,
 	}
-	if err := s.db.Omit(clause.Associations).Create(&backupResp).Error; err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Create(&backupResp).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -224,7 +226,7 @@ func (s *Services) importWorkspaceMinio(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.importWorkspaceBackup(backup); err != nil {
+	if err := s.importWorkspaceBackup(c.Request().Context(), backup); err != nil {
 		return EError(c, err)
 	}
 
@@ -268,16 +270,16 @@ func (s *Services) importWorkspaceFile(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.importWorkspaceBackup(backup); err != nil {
+	if err := s.importWorkspaceBackup(c.Request().Context(), backup); err != nil {
 		return EError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Services) importWorkspaceBackup(backup WorkspaceBackup) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		slog.Debug("Remove old workspace", "id", backup.Workspace.ID)
+func (s *Services) importWorkspaceBackup(ctx context.Context, backup WorkspaceBackup) error {
+	return s.RawDB().Transaction(func(tx *gorm.DB) error {
+		slog.DebugContext(ctx, "Remove old workspace", "id", backup.Workspace.ID)
 		var originalWorkspace dao.Workspace
 		if err := tx.Where("id = ?", backup.Workspace.ID).First(&originalWorkspace).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
@@ -289,7 +291,7 @@ func (s *Services) importWorkspaceBackup(backup WorkspaceBackup) error {
 			}
 		}
 
-		slog.Debug("Create workspace")
+		slog.DebugContext(ctx, "Create workspace")
 		if err := tx.Save(&backup.Workspace).Error; err != nil {
 			return err
 		}
@@ -311,7 +313,7 @@ func (s *Services) importWorkspaceBackup(backup WorkspaceBackup) error {
 				continue
 			}
 
-			slog.Debug("Create workspace entity", "table", vType.Field(i).Name)
+			slog.DebugContext(ctx, "Create workspace entity", "table", vType.Field(i).Name)
 			if err := tx.Save(v.Field(i).Interface()).Error; err != nil {
 				return err
 			}

@@ -52,6 +52,8 @@ func serializeElement(elem any) *TipTapNode {
 		return serializeDateNode(e)
 	case *edtypes.IssueLinkMention:
 		return serializeIssueLinkMention(e)
+	case *edtypes.Drawio:
+		return serializeDrawio(e)
 	default:
 		slog.Debug("Unknown element type for serialization", "type", e)
 		return nil
@@ -99,6 +101,8 @@ func serializeParagraphContent(content any) *TipTapNode {
 		return serializeMention(c)
 	case *edtypes.HardBreak:
 		return serializeHardBreak(c)
+	case *edtypes.Drawio:
+		return serializeDrawio(c)
 	default:
 		slog.Warn("Unknown paragraph content type for serialization", "type", c)
 		return nil
@@ -393,6 +397,33 @@ func serializeMention(m *edtypes.Mention) *TipTapNode {
 func serializeHardBreak(_ *edtypes.HardBreak) *TipTapNode {
 	return &TipTapNode{
 		Type: "hardBreak",
+	}
+}
+
+// serializeDrawio преобразует Drawio в TipTap drawio ноду.
+func serializeDrawio(d *edtypes.Drawio) *TipTapNode {
+	attrs := map[string]any{}
+
+	if d.Src != nil {
+		attrs["src"] = d.Src.String()
+	}
+	if d.XML != "" {
+		attrs["xml"] = d.XML
+	}
+	if d.Width > 0 {
+		attrs["width"] = d.Width
+	}
+	if d.Class != "" {
+		attrs["class"] = d.Class
+	} else {
+		attrs["class"] = "drawio"
+	}
+	attrs["draggable"] = d.Draggable
+	attrs["data-drawio"] = true
+
+	return &TipTapNode{
+		Type:  "drawio",
+		Attrs: attrs,
 	}
 }
 

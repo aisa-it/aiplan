@@ -11,10 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
-	"strings"
 
-	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 	"github.com/gofrs/uuid"
@@ -61,7 +58,7 @@ type GitlabPushEvent struct {
 	TotalCommitsCount int `json:"total_commits_count"`
 }
 
-func NewGitlabIntegration(db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *GitlabIntegration {
+func NewGitlabIntegration(db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, bl *business.Business) *GitlabIntegration {
 	username := "gitlab_integration"
 	i := &GitlabIntegration{
 		Integration: Integration{
@@ -81,7 +78,6 @@ func NewGitlabIntegration(db *gorm.DB, tS *tg.TgService, fs filestorage.FileStor
 			db:              db,
 			telegramService: tS,
 			fileStorage:     fs,
-			tracker:         tr,
 			bl:              bl,
 		},
 	}
@@ -139,6 +135,7 @@ func (gi *GitlabIntegration) GitlabPushEvent(event GitlabPushEvent, workspace da
 			continue
 		}
 		if exist {
+			log.Warn("Duplicated hook call", "user", gi.User, "slug", workspace.Slug, "msg", commit.Message)
 			continue
 		}
 
@@ -152,62 +149,61 @@ func (gi *GitlabIntegration) GitlabPushEvent(event GitlabPushEvent, workspace da
 			}
 		}
 
-		issueReg := regexp.MustCompile(`[A-Z0-9]+-\d+`)
-		foundIssue := strings.Split(issueReg.FindString(commit.Message), "-")
-		if len(foundIssue) != 2 {
-			continue
+		foundIssues := ParseMessage(commit.Message)
+
+		for _, foundIssue := range foundIssues {
+			var issue dao.Issue
+			if err := gi.db.Where("project_id = (?)",
+				gi.db.
+					Select("id").
+					Model(dao.Project{}).
+					Where("workspace_id = ?", workspace.ID).
+					Where("identifier = ?", foundIssue.Project)).
+				Where("sequence_id = ?", foundIssue.Seq).
+				Joins("Workspace").
+				First(&issue).Error; err != nil {
+				log.Error("Find issue from gitlab event", "issueID", foundIssue.String(), "err", err)
+				continue
+			}
+
+			if _, ok := dao.IsProjectMember(gi.db, gi.User.ID, issue.ProjectId); !ok {
+				log.Warn("Not a project member commit issue in commit message", "issue", foundIssue.String(), "user", gi.User)
+				continue
+			}
+
+			userName := user.GetName()
+			if !userFound {
+				userName = commit.Author.Name
+			}
+
+			msg := fmt.Sprintf("<p><strong>%s</strong> упомянул эту задачу в <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">коммите</a> проекта <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">%s</a>:</p><pre><code>%s</code></pre>",
+				userName,
+				commit.URL,
+				event.Project.WebUrl,
+				event.Project.PathWithNamespace,
+				commit.Message,
+			)
+
+			err := gi.bl.CreateIssueComment(issue, *gi.User, msg, uuid.Nil, false, commit.ID)
+			if err != nil {
+				log.Error("Create issue comment from webhook", "err", err)
+				continue
+			}
+
+			// BAK-268
+			/*link := dao.IssueLink{
+			  	Id:          dao.GenID(),
+			  	CreatedById: &gi.User.ID,
+			  	IssueId:     issue.ID.String(),
+			  	ProjectId:   issue.ProjectId,
+			  	WorkspaceId: issue.WorkspaceId,
+			  	Url:         commit.URL,
+			  	Title:       commit.Title,
+			  }
+
+			  if err := gi.db.Create(&link).Error; err != nil {
+			  	log.Error("Create issue link from webhook", "err", err)
+			  }*/
 		}
-
-		var issue dao.Issue
-		if err := gi.db.Where("project_id = (?)",
-			gi.db.
-				Select("id").
-				Model(dao.Project{}).
-				Where("workspace_id = ?", workspace.ID).
-				Where("identifier = ?", foundIssue[0])).
-			Where("sequence_id = ?", foundIssue[1]).
-			Joins("Workspace").
-			First(&issue).Error; err != nil {
-			log.Error("Find issue from gitlab event", "issueID", strings.Join(foundIssue, "-"), "err", err)
-			continue
-		}
-
-		if _, ok := dao.IsProjectMember(gi.db, gi.User.ID, issue.ProjectId); !ok {
-			continue
-		}
-
-		userName := user.GetName()
-		if !userFound {
-			userName = commit.Author.Name
-		}
-
-		msg := fmt.Sprintf("<p><strong>%s</strong> упомянул эту задачу в <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">коммите</a> проекта <a target=\"_blank\" rel=\"nofollow\" href=\"%s\">%s</a>:</p><pre><code>%s</code></pre>",
-			userName,
-			commit.URL,
-			event.Project.WebUrl,
-			event.Project.PathWithNamespace,
-			commit.Message,
-		)
-
-		err := gi.bl.CreateIssueComment(issue, *gi.User, msg, uuid.Nil, false, commit.ID)
-		if err != nil {
-			log.Error("Create issue comment from webhook", "err", err)
-			continue
-		}
-
-		// BAK-268
-		/*link := dao.IssueLink{
-		  	Id:          dao.GenID(),
-		  	CreatedById: &gi.User.ID,
-		  	IssueId:     issue.ID.String(),
-		  	ProjectId:   issue.ProjectId,
-		  	WorkspaceId: issue.WorkspaceId,
-		  	Url:         commit.URL,
-		  	Title:       commit.Title,
-		  }
-
-		  if err := gi.db.Create(&link).Error; err != nil {
-		  	log.Error("Create issue link from webhook", "err", err)
-		  }*/
 	}
 }

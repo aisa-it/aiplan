@@ -111,6 +111,7 @@ var (
 	ErrUserAlreadyExist         = DefinedError{Code: 1008, Err: "user already exist", RuErr: "Пользователь с указанным email уже зарегистрирован в системе"}
 	ErrBlockedUntil             = DefinedError{Code: 1009, StatusCode: http.StatusUnauthorized, Err: "blocked until %s", RuErr: "Учетная запись заблокирована до %s"}
 	ErrNewUserMailFailed        = DefinedError{Code: 1010, Err: "failed to deliver email with password to new user", RuErr: "Не удалось отправить пароль на указанную почту. Проверьте корректность указанного адреса"}
+	ErrRequestTimeout           = DefinedError{Code: 1000, StatusCode: http.StatusRequestTimeout, Err: "request timeout", RuErr: "Время ожидания запроса истекло, повторите позже"}
 
 	// 11** - session errors
 	ErrRefreshTokenRequired = DefinedError{Code: 1101, StatusCode: http.StatusUnauthorized, Err: "refresh token is required", RuErr: "Требуется токен обновления"}
@@ -181,6 +182,8 @@ var (
 	ErrIssueTemplateDuplicatedName       = DefinedError{Code: 3029, StatusCode: http.StatusConflict, Err: "issue template name already exist", RuErr: "Шаблон задачи с таким именем уже существует"}
 	ErrAttachmentIsTooBig                = DefinedError{Code: 3030, StatusCode: http.StatusRequestEntityTooLarge, Err: "attachment size exceed 4GB size", RuErr: "Размер вложения не должен превышать 4ГБ"}
 	ErrProjectDefaultStateRequired       = DefinedError{Code: 3031, StatusCode: http.StatusBadRequest, Err: "project default state is required", RuErr: "В проекте должен быть статус по умолчанию"}
+	ErrProjectArchived                   = DefinedError{Code: 3032, StatusCode: http.StatusLocked, Err: "project archived", RuErr: "Данный проект заархивирован, доступны только операции на чтение"}
+
 	// 32** - form errors
 	ErrFormNotFound           = DefinedError{Code: 3201, StatusCode: http.StatusNotFound, Err: "form not found", RuErr: "Форма не найдена"}
 	ErrFormAnswerForbidden    = DefinedError{Code: 3202, StatusCode: http.StatusForbidden, Err: "access to the form requires authorization", RuErr: "Для доступа к форме необходимо пройти авторизацию"}
@@ -223,6 +226,9 @@ var (
 	ErrSprintRequestValidate   = DefinedError{Code: 3605, StatusCode: http.StatusBadRequest, Err: "validation error", RuErr: "Введены некорректные данные"}
 	ErrInvalidSprintViewProps  = DefinedError{Code: 3606, StatusCode: http.StatusBadRequest, Err: "invalid sprint view properties %s", RuErr: "Указаны некорректные параметры настроек спринта (%s)"}
 	ErrInvalidSprintTimeWindow = DefinedError{Code: 3607, StatusCode: http.StatusBadRequest, Err: "invalid sprint time window", RuErr: "Некорректный период спринта"}
+	ErrSprintFolderDelete      = DefinedError{Code: 3608, StatusCode: http.StatusBadRequest, Err: "cannot delete folder that contains sprints", RuErr: "Нельзя удалить папку, в которой есть добавленные спринты"}
+	ErrSprintFolderExists      = DefinedError{Code: 3609, StatusCode: http.StatusConflict, Err: "a sprint folder with this name already exists", RuErr: "Папка с таким именем уже существует"}
+
 	// 4*** - issue errors
 	ErrIssueNotFound                   = DefinedError{Code: 4001, StatusCode: http.StatusNotFound, Err: "issue not found", RuErr: "Задача не найдена"}
 	ErrDeleteIssueForbidden            = DefinedError{Code: 4002, StatusCode: http.StatusForbidden, Err: "only admin and author can delete issue", RuErr: "У вас недостаточно прав для удаления задачи"}
@@ -295,6 +301,8 @@ var (
 	ErrEmailIsExist             = DefinedError{Code: 6014, StatusCode: http.StatusBadRequest, Err: "email is exist", RuErr: "Пользователь с таким Email уже существует"}
 	ErrEmailChangeLimit         = DefinedError{Code: 6015, StatusCode: http.StatusTooManyRequests, Err: "the code was sent less than a minute ago", RuErr: "Запрос нового кода верификации можно делать раз в минуту"}
 	ErrEmailVerify              = DefinedError{Code: 6016, StatusCode: http.StatusBadRequest, Err: "invalid or expired code", RuErr: "Неверный или просроченный код"}
+	ErrSearchFilterNotFound     = DefinedError{Code: 6017, StatusCode: http.StatusNotFound, Err: "search filter not found", RuErr: "Фильтр не найден"}
+	ErrResetPasswordForbidden   = DefinedError{Code: 6018, StatusCode: http.StatusForbidden, Err: "password reset forbidden in this environment", RuErr: "Сброс пароля недоступен в данном окружении"}
 
 	// 7*** - integration errors
 	ErrInvalidEventType      = DefinedError{Code: 7001, StatusCode: http.StatusBadRequest, Err: "invalid event type", RuErr: "Указан неверный тип события"}

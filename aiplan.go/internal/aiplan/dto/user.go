@@ -9,7 +9,9 @@
 package dto
 
 import (
+	"crypto/md5"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -45,6 +47,39 @@ func (u *UserLight) GetName() string {
 		return fmt.Sprintf("%s %s", u.FirstName, u.LastName)
 	}
 	return u.Email
+}
+
+func (u *UserLight) Hash() []byte {
+	h := md5.New()
+	io.WriteString(h, u.ID.String())
+	if u.Username != nil {
+		io.WriteString(h, *u.Username)
+	}
+	io.WriteString(h, u.Email)
+	io.WriteString(h, u.FirstName)
+	io.WriteString(h, u.LastName)
+	io.WriteString(h, u.Avatar)
+	io.WriteString(h, u.AvatarId.UUID.String())
+	if u.TelegramId != nil {
+		fmt.Fprintf(h, "%d", *u.TelegramId)
+	}
+	if u.StatusEmoji != nil && u.Status != nil {
+		io.WriteString(h, *u.StatusEmoji)
+		io.WriteString(h, *u.Status)
+	}
+	if u.StatusEndDate != nil {
+		io.WriteString(h, u.StatusEndDate.String())
+	}
+	io.WriteString(h, u.CreatedAt.String())
+	fmt.Fprintf(h, "%t", u.IsSuperuser)
+	fmt.Fprintf(h, "%t", u.IsActive)
+	if u.BlockedUntil != nil {
+		io.WriteString(h, u.BlockedUntil.String())
+	}
+	fmt.Fprintf(h, "%t", u.IsOnboarded)
+	fmt.Fprintf(h, "%t", u.IsBot)
+	fmt.Fprintf(h, "%t", u.IsIntegration)
+	return h.Sum(nil)
 }
 
 type User struct {
@@ -83,6 +118,7 @@ type UserNotificationsFull struct {
 	Comment    *IssueCommentLight `json:"comment,omitempty"  extensions:"x-nullable"`
 	Workspace  *WorkspaceLight    `json:"workspace,omitempty"  extensions:"x-nullable"`
 	Issue      *IssueLight        `json:"issue,omitempty"  extensions:"x-nullable"`
+	Doc        *DocLight          `json:"doc,omitempty"  extensions:"x-nullable"`
 	Author     *UserLight         `json:"author,omitempty"  extensions:"x-nullable"`
 	TargetUser *UserLight         `json:"target_user,omitempty"  extensions:"x-nullable"`
 }

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
@@ -44,26 +45,46 @@ func (s *Services) WorkspacePermissionMiddleware(next echo.HandlerFunc) echo.Han
 }
 
 func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
-	workspaceContext, ok := c.(WorkspaceContext)
-	if !ok {
+	apiContext := apicontext.GetContext(c)
+	if apiContext == nil {
 		return false, errors.New("wrong context")
 	}
-	workspaceMember := workspaceContext.WorkspaceMember
 
-	if strings.HasSuffix(c.Path(), "/me/notifications/") && c.Request().Method == http.MethodPost {
-		return true, nil
+	// Lightweight checks without load
+	{
+		if strings.HasSuffix(c.Path(), "/me/notifications/") && c.Request().Method == http.MethodPost {
+			return true, nil
+		}
+
+		// Allow favorites edit
+		if strings.Contains(c.Path(), "/user-favorite-projects/") {
+			return true, nil
+		}
+		if strings.Contains(c.Path(), "/user-favorite-docs/") {
+			return true, nil
+		}
+
+		// Allow doc all (look at doc-permission)
+		if strings.Contains(c.Path(), "/api/auth/workspaces/:workspaceSlug/doc/") {
+			return true, nil
+		}
+
+		switch c.Request().Method {
+		//Safe methods
+		case
+			http.MethodGet,
+			http.MethodOptions,
+			http.MethodHead:
+			return true, nil
+		}
 	}
 
-	if strings.Contains(c.Path(), "/backups/") && workspaceMember.Role != 15 && workspaceContext.Workspace.OwnerId != workspaceContext.User.ID {
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+
+	if strings.Contains(c.Path(), "/backups/") && workspaceMember.Role != 15 && workspace.OwnerId != user.ID {
 		return false, nil
-	}
-
-	// Allow favorites edit
-	if strings.Contains(c.Path(), "/user-favorite-projects/") {
-		return true, nil
-	}
-	if strings.Contains(c.Path(), "/user-favorite-docs/") {
-		return true, nil
 	}
 
 	// Allow admin form
@@ -75,11 +96,6 @@ func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
 		}
 	}
 
-	// Allow doc all (look at doc-permission)
-	if strings.Contains(c.Path(), "/api/auth/workspaces/:workspaceSlug/doc/") {
-		return true, nil
-	}
-
 	// Allow sprint member & admin (look at sprint-permission)
 	if strings.Contains(c.Path(), "/api/auth/workspaces/:workspaceSlug/sprints/:sprintId/issues/search/") {
 		return workspaceMember.Role > types.GuestRole, nil
@@ -89,21 +105,14 @@ func (s *Services) hasWorkspacePermission(c echo.Context) (bool, error) {
 	}
 
 	switch c.Request().Method {
-	//Safe methods
-	case
-		http.MethodGet,
-		http.MethodOptions,
-		http.MethodHead:
-		return true, nil
-
-		// Admin methods
+	// Admin methods
 	case
 		http.MethodPut,
 		http.MethodPost,
 		http.MethodPatch,
 		http.MethodDelete:
 		if workspaceMember.Role == 15 ||
-			workspaceContext.Workspace.OwnerId == workspaceContext.User.ID {
+			workspace.OwnerId == user.ID {
 			return true, nil
 		}
 	}

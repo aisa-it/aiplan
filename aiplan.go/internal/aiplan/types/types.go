@@ -28,6 +28,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type TimeValuer interface {
+	GetTime() time.Time
+}
+
 // TargetDate type
 type TargetDate struct {
 	Time time.Time
@@ -70,7 +74,7 @@ func (d *TargetDate) Scan(value interface{}) error {
 }
 
 func (d TargetDate) String() string {
-	return d.Time.String()
+	return d.Time.Format("2006-01-02T15:04:05Z")
 }
 
 func (td *TargetDate) ToNullTime() sql.NullTime {
@@ -81,6 +85,12 @@ func (td *TargetDate) ToNullTime() sql.NullTime {
 		Time:  td.Time,
 		Valid: true,
 	}
+}
+func (d *TargetDate) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
 }
 
 // TargetDateTimeZ type
@@ -102,11 +112,10 @@ func (d *TargetDateTimeZ) UnmarshalJSON(b []byte) error {
 }
 
 func (d *TargetDateTimeZ) MarshalJSON() ([]byte, error) {
-	str, err := formatDateStr(d.Time.String(), time.RFC3339, nil)
-	if err != nil {
-		return nil, err
+	if d == nil {
+		return []byte("null"), nil
 	}
-	return []byte(`"` + str + `"`), nil
+	return []byte(`"` + d.Time.Format(time.RFC3339) + `"`), nil
 }
 
 func (d *TargetDateTimeZ) Value() (driver.Value, error) {
@@ -127,6 +136,13 @@ func (d *TargetDateTimeZ) Scan(value interface{}) error {
 
 func (d TargetDateTimeZ) String() string {
 	return d.Time.String()
+}
+
+func (d *TargetDateTimeZ) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
 }
 
 // TimeZone type
@@ -151,8 +167,12 @@ func (tz *TimeZone) Scan(value interface{}) error {
 }
 
 func (tz TimeZone) Value() (driver.Value, error) {
+	return tz.String(), nil
+}
+
+func (tz TimeZone) String() string {
 	loc := time.Location(tz)
-	return (&loc).String(), nil
+	return (&loc).String()
 }
 
 func (TimeZone) GormDataType() string {
@@ -741,16 +761,13 @@ func (ns *ProjectMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns ProjectMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
-	if field == nil {
-		return false
-	}
+func (ns ProjectMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
 
-	isIssue := entity == actField.Issue.Field
-	isProject := entity == actField.Project.Field
-	isPrAdmin := entity == actField.Project.Field && role == AdminRole
+	isIssue := entity == LayerIssue
+	isProject := entity == LayerProject
+	isPrAdmin := entity == LayerProject && role == AdminRole
 
-	switch actField.ActivityField(*field) {
+	switch field {
 	case actField.Name.Field:
 		if isIssue {
 			return !ns.DisableName
@@ -970,17 +987,14 @@ func (ns *WorkspaceMemberNS) Scan(value interface{}) error {
 	return nil
 }
 
-func (ns WorkspaceMemberNS) IsNotify(field *string, entity actField.ActivityField, verb string, role int) bool {
-	if field == nil {
-		return false
-	}
+func (ns WorkspaceMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
 
-	isSprint := entity == actField.Sprint.Field
-	isDoc := entity == actField.Doc.Field
-	isWorkspace := entity == actField.Workspace.Field
-	isWorkspaceAdmin := entity == actField.Workspace.Field && role == AdminRole
+	isSprint := entity == LayerSprint
+	isDoc := entity == LayerDoc
+	isWorkspace := entity == LayerWorkspace
+	isWorkspaceAdmin := entity == LayerWorkspace && role == AdminRole
 
-	switch actField.ActivityField(*field) {
+	switch field {
 	case actField.Title.Field:
 		if isDoc {
 			return !ns.DisableDocTitle
@@ -1145,6 +1159,10 @@ func (u JsonURL) MarshalJSON() ([]byte, error) {
 	return []byte("\"" + u.URL.String() + "\""), nil
 }
 
+func (u JsonURL) String() string {
+	return u.URL.String()
+}
+
 func (d *JsonURL) UnmarshalJSON(b []byte) error {
 	rawUrl := string(b)
 	if rawUrl == "null" || rawUrl == "" {
@@ -1212,6 +1230,7 @@ func formatDate(dateStr string) (time.Time, error) {
 		"2006-01-02T15:04:05Z07:00",
 		"2006-01-02 15:04:05",
 		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05 +0000 UTC",
 		"2006-01-02",
 		"02.01.2006 15:04 MST",
 		"02.01.2006 15:04 -0700",
@@ -1229,15 +1248,15 @@ func formatDate(dateStr string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unsuported date format")
 }
 
-// JSON time in unix seconds
+// JSONTime time in unix seconds
 type JSONTime time.Time
 
 func (d *JSONTime) UnmarshalJSON(b []byte) error {
-	ms, err := strconv.ParseInt(string(b), 10, 64)
+	msFloat, err := strconv.ParseFloat(string(b), 64)
 	if err != nil {
 		return err
 	}
-	*d = JSONTime(time.Unix(ms, 0))
+	*d = JSONTime(time.Unix(int64(msFloat), 0))
 	return nil
 }
 
@@ -1283,6 +1302,30 @@ func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.D
 	}
 	return query
 }
+
+type EntityLayer int16
+
+func (e EntityLayer) String() string {
+	switch e {
+	case 0:
+		return "root"
+	case 1:
+		return "workspace"
+	case 2:
+		return "project"
+	case 3:
+		return "issue"
+	case 4:
+		return "doc"
+	case 5:
+		return "form"
+	case 6:
+		return "sprint"
+	}
+	return "unknown"
+}
+
+type NotifyChannel int
 
 type UUIDArray struct {
 	Array []uuid.UUID

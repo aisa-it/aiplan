@@ -39,10 +39,11 @@ func GenValueSchema(propType string, options []string) map[string]any {
 		return map[string]any{"type": []any{"string", "null"}, "enum": enumValues}
 	case "link":
 		return map[string]any{
+			"$schema": "https://json-schema.org/draft/2020-12/schema",
 			"oneOf": []any{
 				map[string]any{
 					"type":                 "object",
-					"required":             []string{"name", "url"},
+					"minProperties":        2,
 					"additionalProperties": false,
 					"properties": map[string]any{
 						"name": map[string]any{"type": "string", "minLength": 1},

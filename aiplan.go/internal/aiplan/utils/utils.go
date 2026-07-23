@@ -14,8 +14,11 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -303,4 +306,37 @@ func GetFirstOrNil[E any](entities ...*E) *E {
 		}
 	}
 	return nil
+}
+
+func MaskString(s string) string {
+	runes := []rune(s)
+	length := len(runes)
+
+	if length == 0 {
+		return ""
+	}
+
+	if length < 6 {
+		return string(runes[0]) + strings.Repeat("*", length-1)
+	}
+
+	firstTwo := string(runes[:2])
+	lastTwo := string(runes[length-2:])
+
+	return firstTwo + "***" + lastTwo
+}
+
+// resolveContentType определяет MIME-тип загружаемого файла по его расширению.
+// Content-Type из заголовка multipart-части выставляет клиент (браузер/JS) и ему
+// нельзя доверять безусловно — например, для файла с расширением .pdf клиент может
+// прислать "text/plain", из-за чего вложение потом отдаётся как attachment вместо
+// inline-превью. Расширение файла — более стабильный сигнал, поэтому оно в приоритете;
+// клиентский заголовок остаётся fallback'ом для расширений вне стандартной MIME-таблицы.
+func ResolveContentType(filename, clientContentType string) string {
+	if ext := filepath.Ext(filename); ext != "" {
+		if ct := mime.TypeByExtension(ext); ct != "" {
+			return strings.TrimSpace(strings.SplitN(ct, ";", 2)[0])
+		}
+	}
+	return clientContentType
 }

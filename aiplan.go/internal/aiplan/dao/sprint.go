@@ -12,7 +12,6 @@ import (
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -30,12 +29,14 @@ type Sprint struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.UUID `gorm:"type:uuid"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
-	WorkspaceId uuid.UUID     `gorm:"type:uuid; uniqueIndex:sprint_uniq_idx,priority:1,where:deleted_at is NULL"`
+	UpdatedById    uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
+	WorkspaceId    uuid.UUID     `gorm:"type:uuid; uniqueIndex:sprint_uniq_idx,priority:1,where:deleted_at is NULL"`
+	SprintFolderId uuid.NullUUID `gorm:"type:uuid"`
 
-	CreatedBy User
-	UpdatedBy *User
-	Workspace *Workspace
+	CreatedBy    User
+	UpdatedBy    *User
+	Workspace    *Workspace    `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	SprintFolder *SprintFolder `json:"sprint_folder_detail" gorm:"foreignKey:SprintFolderId" extensions:"x-nullable"`
 
 	Name        string             `json:"name"`
 	NameTokens  types.TsVector     `gorm:"index:sprint_name_tokens,type:gin"`
@@ -44,6 +45,8 @@ type Sprint struct {
 
 	StartDate sql.NullTime `json:"start_date" gorm:"index"`
 	EndDate   sql.NullTime `json:"end_date" gorm:"index"`
+
+	Hash []byte `json:"-" gorm:"->;-:migration"`
 
 	Issues   []Issue `gorm:"many2many:sprint_issues;joinForeignKey:SprintId;joinReferences:IssueId"`
 	Watchers []User  `gorm:"many2many:sprint_watchers;foreignKey:Id;joinForeignKey:SprintId;references:ID;joinReferences:WatcherId"`
@@ -80,8 +83,8 @@ func (s Sprint) GetString() string {
 }
 
 // GetEntityType Возвращает тип сущности спринта (sprint). Используется для определения типа данных при работе с активностями.
-func (s Sprint) GetEntityType() string {
-	return actField.Sprint.Field.String()
+func (s Sprint) GetEntityType() actField.ActivityField {
+	return actField.Sprint.Field
 }
 
 func (s Sprint) GetWorkspaceId() uuid.UUID {
@@ -119,6 +122,9 @@ func (s *Sprint) SetUrl() {
 }
 
 func (s *Sprint) GetFullName() string {
+	if !s.StartDate.Valid && !s.EndDate.Valid {
+		return s.Name
+	}
 	s.StartDate.Time.Format("02.01")
 
 	return fmt.Sprintf("%s ( %s-%s )", s.Name, s.StartDate.Time.Format("02.01"), s.EndDate.Time.Format("02.01"))
@@ -145,29 +151,17 @@ func (s *Sprint) BeforeCreate(tx *gorm.DB) (err error) {
 	return nil
 }
 
-func (s *Sprint) BeforeDelete(tx *gorm.DB) (err error) {
-	if err := tx.
-		Where("sprint_activity_id in (?)", tx.Select("id").Where("sprint_id = ?", s.Id).
-			Model(&SprintActivity{})).
-		Unscoped().Delete(&UserNotifications{}).Error; err != nil {
+func (s *Sprint) BeforeDelete(tx *gorm.DB) error {
+	if err := tx.Model(s).Update("sprint_folder_id", nil).Error; err != nil {
 		return err
 	}
 
-	cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-	tx.Where("(new_identifier = ? OR old_identifier =?) AND field = ?", s.Id, s.Id, s.GetEntityType()).
-		Model(&WorkspaceActivity{}).
-		Updates(cleanId)
-
-	tx.Where("new_identifier = ? OR old_identifier =?", s.Id, s.Id).
-		Model(&IssueActivity{}).
-		Updates(cleanId)
+	query := tx.Where("entity_type = ?", types.LayerSprint).Where("sprint_id = ?", s.Id)
+	if err := CleanupActivityData(tx, query, s.Id, types.LayerWorkspace, types.LayerIssue); err != nil {
+		return err
+	}
 
 	if err := tx.Where("sprint_id = ?", s.Id).Delete(&SprintViews{}).Error; err != nil {
-		return err
-	}
-
-	if err := tx.Where("workspace_id = ?", s.WorkspaceId).
-		Where("sprint_id = ?", s.Id).Unscoped().Delete(&SprintActivity{}).Error; err != nil {
 		return err
 	}
 
@@ -192,6 +186,22 @@ func (s *Sprint) GetIssuesIDs() []uuid.UUID {
 	return ids
 }
 
+func (s *Sprint) UpdateStats() {
+	s.Stats.AllIssues = len(s.Issues)
+	for _, issue := range s.Issues {
+		switch issue.IssueProgress.Status {
+		case types.InProgress:
+			s.Stats.InProgress++
+		case types.Pending:
+			s.Stats.Pending++
+		case types.Cancelled:
+			s.Stats.Cancelled++
+		case types.Completed:
+			s.Stats.Completed++
+		}
+	}
+}
+
 func (s *Sprint) ToLightDTO() *dto.SprintLight {
 	if s == nil {
 		return nil
@@ -200,11 +210,12 @@ func (s *Sprint) ToLightDTO() *dto.SprintLight {
 	s.SetUrl()
 
 	return &dto.SprintLight{
-		Id:          s.Id,
-		Name:        s.Name,
-		SequenceId:  s.SequenceId,
-		Description: s.Description,
-		Url:         types.JsonURL{URL: s.URL},
+		Id:           s.Id,
+		Name:         s.Name,
+		SequenceId:   s.SequenceId,
+		Description:  s.Description,
+		Url:          types.JsonURL{URL: s.URL},
+		SprintFolder: s.SprintFolder.ToDTO(),
 		//ShortUrl:   types.JsonURL{},
 		StartDate: utils.SqlNullTimeToPointerTime(s.StartDate),
 		EndDate:   utils.SqlNullTimeToPointerTime(s.EndDate),
@@ -239,7 +250,7 @@ type SprintIssue struct {
 	UpdatedAt time.Time
 
 	SprintId    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:sprint_issue_uniq_idx,priority:3"`
-	IssueId     uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:4"`
+	IssueId     uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:4;index:idx_sprint_issues_issue_id"`
 	ProjectId   uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:2"`
 	WorkspaceId uuid.UUID `gorm:"type:uuid;uniqueIndex:sprint_issue_uniq_idx,priority:1"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
@@ -262,6 +273,13 @@ func (SprintIssue) TableName() string { return "sprint_issues" }
 type SprintIssuesExtendFields struct {
 	NewSprintIssue *Issue `json:"-" gorm:"-" field:"issue::sprint" extensions:"x-nullable"`
 	OldSprintIssue *Issue `json:"-" gorm:"-" field:"issue::sprint" extensions:"x-nullable"`
+}
+
+// SprintFolderExtendFields
+// -migration
+type SprintFolderExtendFields struct {
+	NewSprintFolder *SprintFolder `json:"-" gorm:"-" field:"sprint_folder" extensions:"x-nullable"`
+	OldSprintFolder *SprintFolder `json:"-" gorm:"-" field:"sprint_folder" extensions:"x-nullable"`
 }
 
 type SprintWatcher struct {
@@ -288,129 +306,12 @@ type SprintWatcherExtendFields struct {
 	OldSprintWatcher *User `json:"-" gorm:"-" field:"watchers::sprint" extensions:"x-nullable"`
 }
 
-type SprintActivity struct {
-	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time `json:"created_at" gorm:"index:sprint_activities_sprint_index,sort:desc,priority:2;index:sprint_activities_actor_index,sort:desc,priority:2;index:sprint_activities_mail_index,where:notified = false"`
-	// verb character varying IS_NULL:NO
-	Verb string `json:"verb"`
-	// field character varying IS_NULL:YES
-	Field *string `json:"field,omitempty" extensions:"x-nullable"`
-	// old_value text IS_NULL:YES
-	OldValue *string `json:"old_value" extensions:"x-nullable"`
-	// new_value text IS_NULL:YES
-	NewValue string `json:"new_value" `
-	// comment text IS_NULL:NO
-	Comment string `json:"comment"`
-	// sprint_id uuid IS_NULL:YES
-	SprintId uuid.UUID `json:"sprint_id" gorm:"type:uuid;index:sprint_activities_sprint_index,priority:1" extensions:"x-nullable"`
-	// workspace_id uuid IS_NULL:NO
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
-	// actor_id uuid IS_NULL:YES
-	ActorId uuid.NullUUID `json:"actor,omitempty" gorm:"type:uuid;index:project_activities_actor_index,priority:1" extensions:"x-nullable"`
-
-	// new_identifier uuid IS_NULL:YES
-	NewIdentifier uuid.NullUUID `json:"new_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	// old_identifier uuid IS_NULL:YES
-	OldIdentifier uuid.NullUUID `json:"old_identifier" gorm:"type:uuid" extensions:"x-nullable"`
-	Notified      bool          `json:"-" gorm:"default:false"`
-	TelegramMsgId pq.Int64Array `json:"-" gorm:"column:telegram_msg_ids;index;type:integer[]"`
-
-	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	Sprint    *Sprint    `json:"sprint_detail" gorm:"foreignKey:SprintId" extensions:"x-nullable"`
-
-	UnionCustomFields string `json:"-" gorm:"-"`
-	SprintActivityExtendFields
-	ActivitySender
-}
-
 // SprintActivityExtendFields
 // -migration
 type SprintActivityExtendFields struct {
 	SprintWatcherExtendFields
 	SprintIssuesExtendFields
-}
-
-func (SprintActivity) TableName() string { return "sprint_activities" }
-
-func (sa SprintActivity) GetCustomFields() string {
-	return sa.UnionCustomFields
-}
-
-func (SprintActivity) GetFields() []string {
-	return []string{"id", "created_at", "verb", "field", "old_value", "new_value", "comment", "sprint_id", "workspace_id", "actor_id", "new_identifier", "old_identifier", "notified", "telegram_msg_ids"}
-}
-
-func (SprintActivity) GetEntity() string {
-	return "sprint"
-}
-
-func (activity *SprintActivity) AfterFind(tx *gorm.DB) error {
-	return EntityActivityAfterFind(activity, tx)
-}
-
-func (activity *SprintActivity) BeforeDelete(tx *gorm.DB) error {
-	return tx.Where("sprint_activity_id = ?", activity.Id).Unscoped().Delete(&UserNotifications{}).Error
-}
-
-func (sa SprintActivity) GetUrl() *string {
-	//if pa.Project.URL != nil {
-	//	urlStr := pa.Project.URL.String()
-	//	return &urlStr
-	//}
-	return nil
-}
-
-func (sa SprintActivity) SkipPreload() bool {
-	if sa.Field == nil {
-		return true
-	}
-
-	if !sa.NewIdentifier.Valid && !sa.OldIdentifier.Valid {
-		return true
-	}
-	return false
-}
-
-func (sa SprintActivity) GetField() string {
-	return pointerToStr(sa.Field)
-}
-
-func (sa SprintActivity) GetVerb() string {
-	return sa.Verb
-}
-
-func (sa SprintActivity) GetNewIdentifier() uuid.NullUUID {
-	return sa.NewIdentifier
-}
-
-func (sa SprintActivity) GetOldIdentifier() uuid.NullUUID {
-	return sa.OldIdentifier
-}
-
-func (sa SprintActivity) GetId() uuid.UUID {
-	return sa.Id
-}
-
-func (activity *SprintActivity) ToLightDTO() *dto.EntityActivityLight {
-	if activity == nil {
-		return nil
-	}
-
-	return &dto.EntityActivityLight{
-		Id:         activity.Id,
-		CreatedAt:  activity.CreatedAt,
-		Verb:       activity.Verb,
-		Field:      activity.Field,
-		OldValue:   activity.OldValue,
-		NewValue:   activity.NewValue,
-		EntityType: "sprint",
-
-		NewEntity: GetActionEntity(*activity, "New"),
-		OldEntity: GetActionEntity(*activity, "Old"),
-
-		EntityUrl: activity.GetUrl(),
-	}
+	SprintFolderExtendFields
 }
 
 type SprintViews struct {
@@ -429,4 +330,71 @@ type SprintViews struct {
 
 func (SprintViews) TableName() string {
 	return "sprint_views"
+}
+
+type SprintFolder struct {
+	Id        uuid.UUID `gorm:"primaryKey;type:uuid"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	CreatedById uuid.UUID     `gorm:"type:uuid"`
+	UpdatedById uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
+
+	WorkspaceId uuid.UUID `gorm:"type:uuid; uniqueIndex:idx_sprint_folder_workspace_name"`
+
+	CreatedBy User
+	UpdatedBy *User
+	Workspace *Workspace
+
+	Sprints []Sprint `gorm:"-"`
+
+	Name string `json:"name" gorm:"uniqueIndex:idx_sprint_folder_workspace_name"`
+
+	Hash []byte `json:"-" gorm:"->;-:migration"`
+}
+
+func (SprintFolder) TableName() string {
+	return "sprint_folders"
+}
+
+func (sf *SprintFolder) BeforeDelete(tx *gorm.DB) error {
+	tx.
+		Where("entity_type = ?", types.LayerWorkspace).
+		Where("new_identifier = ? AND verb = ? AND field = ?", sf.Id, actField.VerbCreated, actField.SprintFolder.Field.String()).
+		Model(&ActivityEvent{}).
+		Update("new_identifier", nil)
+
+	query := tx.
+		Where("entity_type = ?", types.LayerWorkspace).
+		Where("new_identifier = ? or old_identifier = ? ", sf.Id, sf.Id)
+
+	if err := CleanupActivityData(tx, query, sf.WorkspaceId, types.LayerWorkspace); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (sf SprintFolder) GetId() uuid.UUID {
+	return sf.Id
+}
+
+func (s *SprintFolder) ToDTO() *dto.SprintFolder {
+	if s == nil {
+		return nil
+	}
+	return &dto.SprintFolder{
+		Id:   s.Id,
+		Name: s.Name,
+		Sprints: utils.SliceToSlice(&s.Sprints, func(i *Sprint) dto.SprintLight {
+			return *i.ToLightDTO()
+		}),
+	}
+}
+
+func (s *SprintFolder) ToLightDTO() *dto.SprintFolder {
+	if s == nil {
+		return nil
+	}
+	return s.ToDTO()
 }

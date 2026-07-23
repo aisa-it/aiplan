@@ -1,14 +1,11 @@
 package business
 
 import (
-	"log/slog"
-	"strings"
-
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -19,12 +16,7 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 	if !user.IsSuperuser && user.ID != workspace.OwnerId {
 		return apierrors.ErrDeleteWorkspaceForbidden
 	}
-
-	err := tracker.TrackActivity[dao.Workspace, dao.RootActivity](b.tracker, activities.EntityDeleteActivity, nil, nil, *workspace, user)
-	if err != nil {
-		errStack.GetError(nil, err)
-		return err
-	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
 
 	{
 		// delete DeferredNotifications & activities
@@ -35,45 +27,20 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 			return err
 		}
 
-		activityTables := []dao.UnionableTable{
-			&dao.WorkspaceActivity{},
-			&dao.DocActivity{},
-			&dao.FormActivity{},
-			&dao.ProjectActivity{},
-			&dao.IssueActivity{},
+		if err := b.db.Where("workspace_id = ?", workspace.ID).
+			Unscoped().Delete(&dao.UserAppNotify{}).Error; err != nil {
+			return err
 		}
-
-		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
-			tn := strings.Split((*a).TableName(), "_")
-			return tn[0] + "_activity_id"
-		})
-
-		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
-
-		var queries []interface{}
-
-		for _, model := range activityTables {
-			queries = append(queries, b.db.Select("id").
-				Where("workspace_id = ?", workspace.ID).
-				Model(&model))
-		}
-
-		if err := b.db.Where(queryString, queries...).
-			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
+		if err := b.db.
+			Where("workspace_id = ?", workspace.ID).
+			Unscoped().Delete(&dao.ActivityEvent{}).Error; err != nil {
 			return err
 		}
 
-		for _, model := range activityTables {
-			if err := b.db.
-				Where("workspace_id = ?", workspace.ID).
-				Unscoped().
-				Delete(model).Error; err != nil {
-				return err
-			}
-		}
-
 		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-		if err := b.db.Model(&dao.RootActivity{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
+		if err := b.db.
+			Where("entity_type = ?", types.LayerRoot).
+			Model(&dao.ActivityEvent{}).Where("new_identifier = ? OR old_identifier = ?", workspace.ID, workspace.ID).Updates(cleanId).Error; err != nil {
 			return err
 		}
 	}
@@ -93,12 +60,18 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 		return err
 	}
 
-	// Start hard deleting in foreground
-	go func(workspace dao.Workspace) {
-		if err := b.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
-			slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
-		}
-	}(*workspace)
+	/*// Start hard deleting in foreground
+	  go func(workspace dao.Workspace) {
+	  	if err := b.db.Unscoped().Omit(clause.Associations).Delete(&workspace).Error; err != nil {
+	  		slog.Error("Hard delete workspace", "workspaceId", workspace.ID, "err", err)
+	  	}
+	  }(*workspace)
+	*/
+
+	err := b.st.TrackChanges(types.LayerRoot, oldSnapshot, nil, workspace, user)
+	if err != nil {
+		errStack.GetError(nil, err)
+	}
 
 	return nil
 }
@@ -142,21 +115,14 @@ func (b *Business) DeleteWorkspaceMember(actor *dao.WorkspaceMember, requestedMe
 		}
 	}
 
-	data := map[string]interface{}{
-		"updateScopeId": requestedMember.MemberId,
-	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(requestedMember.Workspace, tracker.WithWorkspaceMembers([]dao.WorkspaceMember{*requestedMember}, func(m dao.WorkspaceMember) string { return m.Member.Email }))
+	newSnapshot := tracker.WorkspaceToSnapshot(requestedMember.Workspace)
 
-	if err := b.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](
-			b.tracker, activities.EntityRemoveActivity, data, nil, *requestedMember, actor.Member)
-		if err != nil {
-			return err
-		}
-
-		return tx.Delete(requestedMember).Error
-	}); err != nil {
+	if err := b.db.Delete(requestedMember).Error; err != nil {
 		return err
 	}
-
+	if err := b.st.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, requestedMember.Workspace, actor.Member); err != nil {
+		errStack.GetError(nil, err)
+	}
 	return nil
 }

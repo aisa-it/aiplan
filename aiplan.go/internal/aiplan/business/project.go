@@ -2,10 +2,6 @@ package business
 
 import (
 	"log/slog"
-	"strings"
-
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -21,11 +17,7 @@ func (b *Business) DeleteProject(user *dao.User, project *dao.Project, workspace
 		return apierrors.ErrDeleteProjectForbidden
 	}
 
-	err := tracker.TrackActivity[dao.Project, dao.WorkspaceActivity](b.tracker, activities.EntityDeleteActivity, nil, nil, *project, user)
-	if err != nil {
-		errStack.GetError(nil, err)
-		return err
-	}
+	oldSnapshot := tracker.ProjectToSnapshot(project)
 
 	// Soft-delete project
 	{
@@ -37,42 +29,11 @@ func (b *Business) DeleteProject(user *dao.User, project *dao.Project, workspace
 			return err
 		}
 
-		activityTables := []dao.UnionableTable{
-			&dao.ProjectActivity{},
-			&dao.IssueActivity{},
-		}
+		query := b.db.
+			Where("entity_type IN (?)", []types.EntityLayer{types.LayerProject, types.LayerIssue}).
+			Where("project_id = ?", project.ID)
 
-		q := utils.SliceToSlice(&activityTables, func(a *dao.UnionableTable) string {
-			tn := strings.Split((*a).TableName(), "_")
-			return tn[0] + "_activity_id"
-		})
-
-		queryString := strings.Join(q, " IN (?) OR ") + " IN (?)"
-
-		var queries []interface{}
-
-		for _, model := range activityTables {
-			queries = append(queries, b.db.Select("id").
-				Where("project_id = ?", project.ID).
-				Model(&model))
-		}
-
-		if err := b.db.Where(queryString, queries...).
-			Unscoped().Delete(&dao.UserNotifications{}).Error; err != nil {
-			return err
-		}
-
-		for _, model := range activityTables {
-			if err := b.db.
-				Where("project_id = ?", project.ID).
-				Unscoped().
-				Delete(model).Error; err != nil {
-				return err
-			}
-		}
-
-		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
-		if err := b.db.Model(&dao.WorkspaceActivity{}).Where("new_identifier = ? OR old_identifier = ?", project.ID, project.ID).Updates(cleanId).Error; err != nil {
+		if err := dao.CleanupActivityData(b.db, query, project.ID, types.LayerWorkspace); err != nil {
 			return err
 		}
 
@@ -92,6 +53,11 @@ func (b *Business) DeleteProject(user *dao.User, project *dao.Project, workspace
 			slog.Error("Hard delete project", "projectId", project.ID, "err", err)
 		}
 	}(*project)
+
+	err := b.st.TrackChanges(types.LayerWorkspace, oldSnapshot, nil, project.Workspace, user)
+	if err != nil {
+		errStack.GetError(nil, err)
+	}
 
 	return nil
 }
@@ -188,21 +154,15 @@ func (b *Business) DeleteProjectMember(actor *dao.ProjectMember, requestedMember
 		return err
 	}
 
-	data := map[string]interface{}{
-		"updateScopeId": requestedMember.MemberId,
-	}
+	oldSnapshot := tracker.ProjectToSnapshot(project, tracker.WithProjectMembers([]dao.ProjectMember{*requestedMember}, func(m dao.ProjectMember) string { return m.Member.Email }))
+	newSnapshot := tracker.ProjectToSnapshot(project)
 
-	if err := b.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](b.tracker, activities.EntityRemoveActivity, data, nil, *requestedMember, actor.Member)
-		if err != nil {
-			errStack.GetError(nil, err)
-			return err
-		}
-
-		return b.db.Delete(&requestedMember).Error
-	}); err != nil {
+	if err := b.db.Delete(&requestedMember).Error; err != nil {
 		return err
 	}
 
+	if err := b.st.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, project, actor.Member); err != nil {
+		errStack.GetError(nil, err)
+	}
 	return nil
 }

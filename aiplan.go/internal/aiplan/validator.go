@@ -130,7 +130,7 @@ func statusEmojiValidator(fl validator.FieldLevel) bool {
 	return ok
 }
 
-// Validate
+// ValidateAndSet
 func isValidLatinCyrillicDigitWithSymbol(str string) bool {
 	pt := `^[A-Za-zА-Яа-яёЁ0-9 ._\/\-\\!#\$%&'\"\(\)\*\+,\-.:;№<=>?@\[\\\]\^_\{\|\}~]+$`
 	re := regexp.MustCompile(pt)

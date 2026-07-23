@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/gofrs/uuid"
 )
 
 type Config struct {
@@ -69,7 +70,8 @@ type Config struct {
 	SwaggerEnable bool `env:"SWAGGER"`
 	NYEnable      bool `env:"NY_ENABLE"`
 
-	CaptchaDisabled bool `env:"CAPTCHA_DISABLED"`
+	CaptchaDisabled bool   `env:"CAPTCHA_DISABLED"`
+	CaptchaSecret   string `env:"CAPTCHA_SECRET"`
 
 	ExternalLimiter types.JsonURL `env:"EXTERNAL_LIMITER_URL"`
 	ExternalMemDB   types.JsonURL `env:"EXTERNAL_MEMDB"`
@@ -93,6 +95,10 @@ type Config struct {
 	LDAPForce        bool          `env:"LDAP_FORCE"`
 
 	MCPEnabled bool `env:"MCP_ENABLED"`
+
+	OTELEndpoint   string  `env:"OTEL_ENDPOINT"`
+	OTELToken      string  `env:"OTEL_TOKEN"`
+	OTELSampleRate float64 `env:"OTEL_SAMPLE_RATE"`
 }
 
 // ReadConfig загружает конфигурацию приложения из переменных окружения и выполняет валидацию. Возвращает структуру Config с загруженными параметрами. Если WebURL не задан, приложение завершает работу с ошибкой.  Обязательные переменные валидируются, типы данных преобразуются из строк, а секретные значения маскируются в логах.  Также обрабатываются ошибки при парсинге URL и предоставляются значения по умолчанию для некоторых параметров. Ограничение значений для некоторых параметров (например, NotificationsSleep, EmailWorkers) также выполняется в этой функции.  Возвращает указатель на структуру Config, заполненную данными из переменных окружения и обработанную в соответствии с заданными правилами.
@@ -119,6 +125,14 @@ func ReadConfig(configPath string) *Config {
 	}
 	if config.LDAPServerURL.URL != nil && config.LDAPFilter == "" {
 		config.LDAPFilter = "(&(uniqueIdentifier={email}))"
+	}
+
+	if config.OTELSampleRate == 0 {
+		config.OTELSampleRate = 0.1
+	}
+
+	if config.CaptchaSecret == "" && !config.CaptchaDisabled {
+		config.CaptchaSecret = uuid.Must(uuid.NewV4()).String()
 	}
 
 	return config
@@ -170,6 +184,8 @@ func envConfig(key string, s any) {
 			v.Field(i).SetInt(int64(GetIntEnv(fEnvTag)))
 		case bool:
 			v.Field(i).SetBool(GetBoolEnv(fEnvTag))
+		case float64:
+			v.Field(i).SetFloat(GetFloatEnv(fEnvTag))
 		case types.JsonURL:
 			v.Field(i).Set(reflect.ValueOf(GetURLEnv(fEnvTag)))
 		}

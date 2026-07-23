@@ -18,6 +18,7 @@ import (
 	"time"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -85,7 +86,7 @@ func (s *Services) AddIssueMigrationServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/issues/migrate [post]
 func (s *Services) migrateIssues(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	targetProjectId := ""
 	srcIssueId := ""
@@ -115,7 +116,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 	var targetProject, srcProject dao.Project
 
-	if err := s.db.Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"errors": []ErrClause{
@@ -130,7 +131,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	var srcIssue dao.Issue
-	if err := s.db.Where("id = ?", srcIssueId).
+	if err := s.DB(c).Where("id = ?", srcIssueId).
 		Preload(clause.Associations).
 		First(&srcIssue).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -149,7 +150,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 
 		if v, ok := param.StateId.GetValue(); ok && v != nil {
 			var state dao.State
-			if err := s.db.Where("workspace_id = ?", srcIssue.WorkspaceId).
+			if err := s.DB(c).Where("workspace_id = ?", srcIssue.WorkspaceId).
 				Where("project_id = ?", targetProject.ID).
 				Where("id = ?", *v).
 				First(&state).Error; err != nil {
@@ -224,9 +225,20 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		createEntities = false
 	}
 
+	var projectMember dao.ProjectMember
+
+	if err := s.DB(c).Where("project_id = ?", srcProject.ID).
+		Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+		return EError(c, err)
+	}
+
 	var srcIssues []dao.Issue
 	if linkedIssues {
-		srcIssues = dao.GetIssueFamily(srcIssue, s.db)
+		compareAuthorId := uuid.NullUUID{}
+		if projectMember.Role != types.AdminRole {
+			compareAuthorId = uuid.NullUUID{UUID: user.ID, Valid: true}
+		}
+		srcIssues = dao.GetIssueFamily(srcIssue, s.db, compareAuthorId)
 	} else {
 		srcIssues = []dao.Issue{srcIssue}
 	}
@@ -290,7 +302,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 
 		var comments []dao.IssueComment
-		if err := s.db.Where("issue_id in ?", familyIds).Find(&comments).Error; err != nil {
+		if err := s.DB(c).Where("issue_id in ?", familyIds).Find(&comments).Error; err != nil {
 			return EError(c, err)
 		}
 		for _, comment := range comments {
@@ -321,7 +333,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if len(labelIds) > 0 {
 			var labels []dao.Label
 			if err := tx.
@@ -397,15 +409,15 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	}
 
 	// Create issues
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		for _, issue := range preparedIssues {
 			if deleteSrc {
-				if err := migrateIssueMove(issue, user, tx, idsMap, !linkedIssues); err != nil {
+				if err := migrateIssueMove(issue, *user, tx, idsMap, !linkedIssues); err != nil {
 					return err
 				}
 			} else {
-				if err := migrateIssueCopy(issue, user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
+				if err := migrateIssueCopy(issue, *user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
 					return err
 				}
 			}
@@ -519,45 +531,47 @@ func (s *Services) migrateIssues(c echo.Context) error {
 	if deleteSrc {
 		newId = srcIssue.ID
 		for _, issue := range srcIssues {
-			requestMap := make(map[string]interface{})
-			currentMap := make(map[string]interface{})
-
-			requestMap["parent_key"] = "project_id"
-			requestMap["old_entity"] = "project"
-			requestMap["new_entity"] = "project"
-			requestMap["old_title"] = issue.Name
-
-			requestMap["project_id"] = targetProject.ID
-			currentMap["project_id"] = srcProject.ID
-			requestMap["parent_title"] = targetProject.Identifier
-			currentMap["parent_title"] = srcProject.Identifier
-
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerIssue, activities.VerbMove, &issue, user,
+				tracker.WithField(activities.Project.Field),
+				tracker.WithOldVal(srcProject.Identifier),
+				tracker.WithNewVal(targetProject.Identifier),
+				tracker.WithOldID(srcProject.ID),
+				tracker.WithNewID(targetProject.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbAdded, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
+
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			delIssue := issue
-			delIssue.Project = &srcProject
-			delIssue.ProjectId = srcProject.ID
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbRemoved, &srcProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithOldVal(issue.Name),
+				tracker.WithOldID(issue.ID),
+			)
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 		}
 	} else {
 		var newIssues []dao.Issue
-		s.db.Joins("Project").Where("issues.id in (?)", newFamilyIds).Find(&newIssues)
+		s.DB(c).Joins("Project").Where("issues.id in (?)", newFamilyIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			data := map[string]interface{}{"custom_verb": "copied"}
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, data, nil, issue, &user)
+			err := s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbCopied, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -588,7 +602,7 @@ func (s *Services) migrateIssues(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/issues/migrate/byLabel [post]
 func (s *Services) migrateIssuesByLabel(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	targetProjectId := ""
 	srcLabelId := ""
@@ -611,7 +625,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	stateMap := make(map[uuid.UUID]dao.State)
 
 	var targetProject, srcProject dao.Project
-	if err := s.db.Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"errors": []ErrClause{
@@ -626,7 +640,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	var srcLabel dao.Label
-	if err := s.db.Where("id = ?", srcLabelId).
+	if err := s.DB(c).Where("id = ?", srcLabelId).
 		Preload(clause.Associations).
 		First(&srcLabel).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -645,18 +659,30 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	srcProject = *srcLabel.Project
 
 	var srcIssues []dao.Issue
-	if err := s.db.Preload(clause.Associations).Where("id in (?)", s.db.Select("issue_id").Where("label_id = ?", srcLabel.ID).Model(&dao.IssueLabel{})).
+	if err := s.DB(c).Preload(clause.Associations).Where("id in (?)", s.DB(c).Select("issue_id").Where("label_id = ?", srcLabel.ID).Model(&dao.IssueLabel{})).
 		Where("project_id = ?", srcLabel.ProjectId).
 		Find(&srcIssues).Error; err != nil {
 		return EError(c, err)
 	}
 
+	var projectMember dao.ProjectMember
+
+	if err := s.DB(c).Where("project_id = ?", srcProject.ID).
+		Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+		return EError(c, err)
+	}
+
 	if linkedIssues {
 		srcIssueMap := make(map[uuid.UUID]dao.Issue)
+		compereAuthorId := uuid.NullUUID{}
+		if projectMember.Role != types.AdminRole {
+			compereAuthorId = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+		}
 		for i, srcIssue := range srcIssues {
 			srcIssues[i].FetchLinkedIssues(s.db)
 			srcIssueMap[srcIssue.ID] = srcIssue
-			for _, issue := range dao.GetIssueFamily(srcIssue, s.db) {
+			for _, issue := range dao.GetIssueFamily(srcIssue, s.db, compereAuthorId) {
 				srcIssueMap[issue.ID] = issue
 			}
 		}
@@ -724,7 +750,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		}
 
 		var comments []dao.IssueComment
-		if err := s.db.Where("issue_id in ?", targetIds).Find(&comments).Error; err != nil {
+		if err := s.DB(c).Where("issue_id in ?", targetIds).Find(&comments).Error; err != nil {
 			return EError(c, err)
 		}
 		for _, comment := range comments {
@@ -755,7 +781,7 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if len(labelIds) > 0 {
 			var labels []dao.Label
 			if err := tx.
@@ -831,15 +857,15 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 	}
 
 	// Create issues
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
 		for _, issue := range preparedIssues {
 			if deleteSrc {
-				if err := migrateIssueMove(issue, user, tx, idsMap, !linkedIssues); err != nil {
+				if err := migrateIssueMove(issue, *user, tx, idsMap, !linkedIssues); err != nil {
 					return err
 				}
 			} else {
-				if err := migrateIssueCopy(issue, user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
+				if err := migrateIssueCopy(issue, *user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
 					return err
 				}
 			}
@@ -953,44 +979,45 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 
 	if deleteSrc {
 		for _, issue := range srcIssues {
-			requestMap := make(map[string]interface{})
-			currentMap := make(map[string]interface{})
-
-			requestMap["parent_key"] = "project_id"
-			requestMap["old_entity"] = "project"
-			requestMap["new_entity"] = "project"
-			requestMap["old_title"] = issue.Name
-
-			requestMap["project_id"] = targetProject.ID
-			currentMap["project_id"] = srcProject.ID
-			requestMap["parent_title"] = targetProject.Identifier
-			currentMap["parent_title"] = srcProject.Identifier
-
-			err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, activities.EntityMoveActivity, requestMap, currentMap, issue, &user)
+			err := s.snapshotTracker.TrackVerb(types.LayerIssue, activities.VerbMove, &issue, user,
+				tracker.WithField(activities.Project.Field),
+				tracker.WithOldVal(srcProject.Identifier),
+				tracker.WithOldID(srcProject.ID),
+				tracker.WithNewVal(targetProject.Identifier),
+				tracker.WithNewID(targetProject.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, nil, nil, issue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbAdded, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 
-			delIssue := issue
-			delIssue.Project = &srcProject
-			delIssue.ProjectId = srcProject.ID
-
-			err = tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityRemoveActivity, requestMap, nil, delIssue, &user)
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbRemoved, &srcProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithOldVal(issue.Name),
+				tracker.WithOldID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 		}
 	} else {
 		var newIssues []dao.Issue
-		s.db.Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
+		s.DB(c).Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
 
 		for _, issue := range newIssues {
-			err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, activities.EntityCreateActivity, nil, nil, issue, &user)
+			err := s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbCopied, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
@@ -1110,7 +1137,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 	// Check state
 	{
 		if migrateWithNewState == false {
-			if err := s.db.Where("project_id = ?", targetProject.ID).
+			if err := s.RawDB().Where("project_id = ?", targetProject.ID).
 				Where("name = ?", srcIssue.State.Name).
 				Where("\"group\" = ?", srcIssue.State.Group).
 				Where("color = ?", srcIssue.State.Color).
@@ -1144,7 +1171,7 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 		for _, label := range *srcIssue.Labels {
 			var targetLabel dao.Label
-			if err := s.db.Where("name = ?", label.Name).
+			if err := s.RawDB().Where("name = ?", label.Name).
 				Where("color = ?", label.Color).
 				Where("project_id = ?", targetProject.ID).
 				First(&targetLabel).Error; err != nil {
@@ -1289,7 +1316,6 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 				return err
 			}
 		}
-
 	}
 
 	// Comments
@@ -1321,7 +1347,7 @@ func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 
 	// Activities
 	{
-		if err := tx.Model(&dao.IssueActivity{}).
+		if err := tx.Model(&dao.ActivityEvent{}).
 			Where("issue_id = ?", srcIssue.ID).
 			Update("project_id", issue.TargetProject.ID).Error; err != nil {
 			return err
@@ -1437,6 +1463,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	{
 		var newLabels []dao.IssueLabel
 		for _, label := range issue.TargetLabels {
+			if label.ID.IsNil() {
+				continue
+			}
 			newLabels = append(newLabels, dao.IssueLabel{
 				Id:          dao.GenUUID(),
 				LabelId:     label.ID,
@@ -1613,10 +1642,11 @@ func stateRelation(tx *gorm.DB, srcProject, targetProject uuid.UUID) (error, map
 
 func stateActivityUpdate(tx *gorm.DB, ids []uuid.UUID, srcProjectId, targetProjectId uuid.UUID) error {
 	{
-		var activityState []dao.EntityActivity
+		var activityState []dao.ActivityEvent
 		if err := tx.
+			Where("entity_type = ?", types.LayerIssue).
 			Where("issue_id IN ?", ids).
-			Where("field = ?", "state").
+			Where("field = ?", activities.Status.Field.String()).
 			Find(&activityState).Error; err != nil {
 			return err
 		}
