@@ -21,15 +21,16 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
-	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/altcha-org/altcha-lib-go"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
@@ -37,23 +38,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 )
-
-type Authentication struct {
-	db              *gorm.DB
-	secret          []byte
-	memDB           *mem.AIPlanMemAPI
-	telegramService *tg.TgService
-	emailService    *notifications.EmailService
-	ldapProvider    *authprovider.LdapProvider
-}
-
-type AuthContext struct {
-	echo.Context
-	User         *dao.User
-	AccessToken  *Token
-	RefreshToken *Token
-	TokenAuth    bool
-}
 
 type AuthConfig struct {
 	Secret      []byte
@@ -63,9 +47,14 @@ type AuthConfig struct {
 	TokensCache *tokenscache.TokensCache
 }
 
-func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
+func (s *Services) AuthMiddleware(secret []byte, skipper middleware.Skipper) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			ctx, span := otel.
+				Tracer("aiplan").
+				Start(c.Request().Context(), "auth")
+			defer span.End()
+
 			if c.Request().Method == "OPTIONS" {
 				return c.NoContent(http.StatusOK)
 			}
@@ -77,12 +66,12 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			if config.Skipper != nil && config.Skipper(c) {
+			if skipper != nil && skipper(c) {
 				return next(c)
 			}
 
-			var refreshToken *Token
-			var accessToken *Token
+			var refreshToken *token.Token
+			var accessToken *token.Token
 
 			schema, tokenString, ok := strings.Cut(c.Request().Header.Get("Sec-WebSocket-Protocol"), ",")
 			if !ok {
@@ -91,13 +80,13 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 					// Cookie token
 					schema = "Cookies"
 					if accessCookie, err := c.Cookie("access_token"); err == nil || accessCookie != nil {
-						accessToken = new(Token)
+						accessToken = new(token.Token)
 						accessToken.SignedString = accessCookie.Value
 						accessToken.Type = "access"
 					}
 
 					if refreshCookie, err := c.Cookie("refresh_token"); err == nil || refreshCookie != nil {
-						refreshToken = new(Token)
+						refreshToken = new(token.Token)
 						refreshToken.SignedString = refreshCookie.Value
 						refreshToken.Type = "refresh"
 					}
@@ -110,7 +99,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 			schema = strings.TrimSpace(schema)
 
 			if schema != "Cookies" {
-				accessToken = new(Token)
+				accessToken = new(token.Token)
 				accessToken.SignedString = strings.TrimSpace(tokenString)
 				accessToken.Type = schema
 			}
@@ -118,19 +107,30 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 			// Token auth
 			if schema == "Basic" || schema == "Bearer" {
 				var user dao.User
-				if err := config.DB.
+				if err := s.db.WithContext(ctx).
 					Joins("LastWorkspace").
 					Where("users.auth_token = ?", accessToken.SignedString).
 					First(&user).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
 						return EErrorDefined(c, apierrors.ErrFailedLogin)
 					}
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "user lookup failed")
+					return EError(c, err)
 				}
-				if err := dao.UpdateUserLastActivityTime(config.DB, &user); err != nil {
+				if err := dao.UpdateUserLastActivityTime(s.DB(c), &user); err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "user last activity update failed")
 					EError(c, err)
 				}
 				c.Set("user", &user)
-				return next(AuthContext{c, &user, accessToken, nil, true})
+				apicontext.SetContext(c, s.db.WithContext(ctx), &apicontext.UserMeta{
+					User:         &user,
+					AccessToken:  accessToken,
+					RefreshToken: nil,
+					TokenAuth:    true,
+				})
+				return next(c)
 			}
 
 			var err error
@@ -138,7 +138,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 					return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 				}
-				return config.Secret, nil
+				return secret, nil
 			}
 
 			var accessError error
@@ -158,7 +158,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 
 			// Prolong if expired
 			if errors.Is(accessError, jwt.ErrTokenExpired) || accessToken == nil {
-				accessToken, user, err = config.tokenProlong(c, refreshToken)
+				accessToken, user, err = s.tokenProlong(c, refreshToken)
 				if accessToken == nil || user == nil {
 					return err
 				}
@@ -166,11 +166,15 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				if accessToken.JWT != nil && !accessToken.JWT.Valid {
 					return EErrorDefined(c, apierrors.ErrTokenInvalid)
 				}
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "access token issue failed")
 				return EError(c, err)
 			} else {
 				// Check if token not blacklisted
-				blacklisted, err := config.MemDB.IsTokenBlacklisted(accessToken.JWT.Signature)
+				blacklisted, err := s.memDB.IsTokenBlacklisted(accessToken.JWT.Signature)
 				if err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "token blacklist failed")
 					return EError(c, err)
 				}
 
@@ -186,7 +190,7 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				user.ID = uuid.Must(uuid.FromString(claims["user_id"].(string)))
 
 				// Fetch user
-				if err := config.DB.
+				if err := s.db.WithContext(ctx).
 					Joins("LastWorkspace").
 					Joins("AvatarAsset").
 					First(user).Error; err != nil {
@@ -200,9 +204,11 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				}
 
 				var reseted sql.NullBool
-				if err := config.DB.Model(&dao.SessionsReset{}).
+				if err := s.db.WithContext(ctx).Model(&dao.SessionsReset{}).
 					Select("? < max(reseted_at)", time.Unix(int64(issued), 0)).
 					Where("user_id = ?", user.ID).Find(&reseted).Error; err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "get session reset status failed")
 					return EError(c, err)
 				}
 
@@ -220,38 +226,47 @@ func AuthMiddleware(config AuthConfig) echo.MiddlewareFunc {
 				tm := time.Now()
 				user.LastLogoutTime = &tm
 				user.LastLogoutIp = c.RealIP()
-				if err := config.DB.Model(user).Select("LastLogoutTime", "LastLogoutIp").Updates(user).Error; err != nil {
+				if err := s.db.WithContext(ctx).Model(user).Select("LastLogoutTime", "LastLogoutIp").Updates(user).Error; err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "update user last login info failed")
 					return EError(c, err)
 				}
 
 				//Reset all user sessions
-				if err := dao.ResetUserSessions(config.DB, user); err != nil {
+				if err := dao.ResetUserSessions(s.db.WithContext(ctx), user); err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, "reset user sessions failed")
 					return EError(c, err)
 				}
 
 				return EErrorDefined(c, apierrors.ErrSessionReset)
 			}
 
-			if err := dao.UpdateUserLastActivityTime(config.DB, user); err != nil {
+			if err := dao.UpdateUserLastActivityTime(s.db.WithContext(ctx), user); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "update user last activity failed")
 				EError(c, err)
 			}
 
 			user.Email = strings.ToLower(user.Email)
 
 			c.Set("user", user)
+			apicontext.SetContext(c, s.db.WithContext(ctx), &apicontext.UserMeta{
+				User:         user,
+				AccessToken:  accessToken,
+				RefreshToken: refreshToken,
+				TokenAuth:    false,
+			})
 
-			return next(AuthContext{c, user, accessToken, refreshToken, false})
+			return next(c)
 		}
 	}
 }
 
-func AddAuthenticationServices(db *gorm.DB, g *echo.Echo, secret []byte, memDB *mem.AIPlanMemAPI, telegramService *tg.TgService, emailService *notifications.EmailService, ldapProvider *authprovider.LdapProvider) *Authentication {
-	ret := &Authentication{db, secret, memDB, telegramService, emailService, ldapProvider}
+func (s *Services) AddAuthenticationServices(g *echo.Group, secret []byte) {
+	g.POST("sign-in/", s.emailLogin)
 
-	g.POST("api/sign-in/", ret.emailLogin)
-
-	g.GET("api/captcha/", ret.requestCaptcha)
-	return ret
+	g.GET("captcha/", s.requestCaptcha)
 }
 
 type LoginRequest struct {
@@ -273,7 +288,7 @@ type LoginRequest struct {
 // @Failure 401 {object} apierrors.DefinedError "Неудачный вход в систему"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/sign-in [post]
-func (a *Authentication) emailLogin(c echo.Context) error {
+func (s *Services) emailLogin(c echo.Context) error {
 	var req LoginRequest
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
@@ -297,10 +312,10 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	}
 
 	var user dao.User
-	if err := a.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			if a.ldapProvider != nil && a.ldapProvider.AuthUser(req.Email, req.Password) {
-				slog.Info("Create new user from LDAP", "email", req.Email)
+			if s.authProvider != nil && s.authProvider.AuthUser(req.Email, req.Password) {
+				slog.InfoContext(c.Request().Context(), "Create new user from LDAP", "email", req.Email)
 
 				user = dao.User{
 					ID:           dao.GenUUID(),
@@ -312,7 +327,7 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 					AuthProvider: "ldap",
 				}
 
-				if err := a.db.Create(&user).Error; err != nil {
+				if err := s.DB(c).Create(&user).Error; err != nil {
 					return EError(c, err)
 				}
 			} else {
@@ -323,26 +338,24 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 		}
 	}
 
-	if !cfg.LDAPForce {
-		if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
-			return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
-		}
+	if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
+		return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
+	}
 
-		if !user.IsActive {
-			return EErrorDefined(c, apierrors.ErrLoginTriesExceed)
-		}
+	if !user.IsActive {
+		return EErrorDefined(c, apierrors.ErrLoginTriesExceed)
+	}
 
-		if user.IsIntegration {
-			return EErrorDefined(c, apierrors.ErrIntegrationLogin)
-		}
+	if user.IsIntegration {
+		return EErrorDefined(c, apierrors.ErrIntegrationLogin)
 	}
 
 	sucessfullLogin := false
-	if a.ldapProvider != nil {
-		if a.ldapProvider.AuthUser(req.Email, req.Password) {
+	if s.authProvider != nil {
+		if s.authProvider.AuthUser(req.Email, req.Password) {
 			// If LDAP auth success - update user password to LDAP password
 			if user.AuthProvider != "ldap" {
-				if err := a.db.Model(&user).Updates(map[string]any{
+				if err := s.DB(c).Model(&user).Updates(map[string]any{
 					"password":      dao.GenPasswordHash(req.Password),
 					"auth_provider": "ldap",
 				}).Error; err != nil {
@@ -358,27 +371,23 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	}
 
 	if !sucessfullLogin {
-		if cfg.LDAPForce {
-			return EErrorDefined(c, apierrors.ErrFailedLogin)
-		}
-
 		user.LoginAttempts++
 		time.Sleep(time.Second * time.Duration(user.LoginAttempts))
 
 		// block after 5 fails
 		if user.LoginAttempts >= 5 {
-			slog.Info("Block user for more than 5 failed attempts", "user", user.String())
+			slog.InfoContext(c.Request().Context(), "Block user for more than 5 failed attempts", "user", user.String())
 			user.BlockedUntil = sql.NullTime{Valid: true, Time: time.Now().Add(time.Minute * 20)}
 			user.LoginAttempts = 0
 		}
 
-		if err := a.db.Model(&user).Select("LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
+		if err := s.DB(c).Model(&user).Select("LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
 			return EError(c, err)
 		}
 
 		if user.BlockedUntil.Valid && user.BlockedUntil.Time.After(time.Now()) {
-			a.telegramService.UserBlockedUntil(user, user.BlockedUntil.Time)
-			a.emailService.UserBlockedUntil(user, user.BlockedUntil.Time)
+			s.notificationsService.Tg.UserBlockedUntil(user, user.BlockedUntil.Time)
+			s.emailService.UserBlockedUntil(user, user.BlockedUntil.Time)
 			return EErrorDefined(c, apierrors.ErrBlockedUntil.WithFormattedMessage(user.BlockedUntil.Time.Format("02.01.2006 15:04")))
 		}
 
@@ -395,7 +404,7 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	user.TokenUpdatedAt = &tm
 	user.LoginAttempts = 0
 	user.BlockedUntil = sql.NullTime{}
-	if err := a.db.Model(&user).Select("LastActive", "LastLoginTime", "LastLoginIp", "LastLoginUagent", "TokenUpdatedAt", "LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("LastActive", "LastLoginTime", "LastLoginIp", "LastLoginUagent", "TokenUpdatedAt", "LoginAttempts", "BlockedUntil").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -413,21 +422,21 @@ func (a *Authentication) emailLogin(c echo.Context) error {
 	})
 }
 
-func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.User, error) {
-	if token == nil {
+func (s *Services) tokenProlong(c echo.Context, tkn *token.Token) (*token.Token, *dao.User, error) {
+	if tkn == nil {
 		return nil, nil, EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	}
 
-	if cachedTokens := a.TokensCache.GetTokens(token.SignedString); cachedTokens != nil {
-		accessToken := &Token{SignedString: cachedTokens.AccessToken}
-		refreshToken := &Token{SignedString: cachedTokens.RefreshToken}
+	if cachedTokens := s.tokensCache.GetTokens(tkn.SignedString); cachedTokens != nil {
+		accessToken := &token.Token{SignedString: cachedTokens.AccessToken}
+		refreshToken := &token.Token{SignedString: cachedTokens.RefreshToken}
 		setAuthCookies(c, accessToken, refreshToken)
 		return accessToken, cachedTokens.User, nil
 	}
 
 	// Check if token not blacklisted
 	{
-		blacklisted, err := a.MemDB.IsTokenBlacklisted(token.JWT.Signature)
+		blacklisted, err := s.memDB.IsTokenBlacklisted(tkn.JWT.Signature)
 		if err != nil {
 			EError(c, err)
 			return nil, nil, EErrorDefined(c, apierrors.ErrTokenExpired)
@@ -439,17 +448,17 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	}
 
 	// Blacklist old refresh token
-	if err := a.MemDB.BlacklistToken(token.JWT.Signature); err != nil {
+	if err := s.memDB.BlacklistToken(tkn.JWT.Signature); err != nil {
 		return nil, nil, EError(c, err)
 	}
 
-	claims, ok := token.JWT.Claims.(jwt.MapClaims)
-	if !ok || !token.JWT.Valid {
+	claims, ok := tkn.JWT.Claims.(jwt.MapClaims)
+	if !ok || !tkn.JWT.Valid {
 		return nil, nil, EErrorDefined(c, apierrors.ErrTokenInvalid)
 	}
 
 	var user dao.User
-	if err := a.DB.
+	if err := s.DB(c).
 		Joins("LastWorkspace").
 		Joins("AvatarAsset").
 		Where("users.id = ?", claims["user_id"].(string)).
@@ -464,7 +473,7 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 	}
 
 	var reseted sql.NullBool
-	if err := a.DB.Model(&dao.SessionsReset{}).
+	if err := s.DB(c).Model(&dao.SessionsReset{}).
 		Select("? < max(reseted_at)", time.Unix(int64(issued), 0)).
 		Where("user_id = ?", user.ID).Find(&reseted).Error; err != nil {
 		return nil, nil, EError(c, err)
@@ -481,7 +490,7 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 
 	setAuthCookies(c, accessToken, refreshToken)
 
-	a.TokensCache.StoreTokens(token.SignedString, accessToken.SignedString, refreshToken.SignedString, &user)
+	s.tokensCache.StoreTokens(tkn.SignedString, accessToken.SignedString, refreshToken.SignedString, &user)
 
 	return accessToken, &user, nil
 }
@@ -496,10 +505,10 @@ func (a *AuthConfig) tokenProlong(c echo.Context, token *Token) (*Token, *dao.Us
 // @Success 200 {object} altcha.Challenge "Капча успешно создана"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/captcha [get]
-func (a *Authentication) requestCaptcha(c echo.Context) error {
+func (s *Services) requestCaptcha(c echo.Context) error {
 	expires := time.Now().Add(AltchaExpires)
 	challenge, err := altcha.CreateChallenge(altcha.ChallengeOptions{
-		HMACKey:   AltchaHMACKey,
+		HMACKey:   cfg.CaptchaSecret,
 		MaxNumber: 10000,
 		Expires:   &expires,
 		Params:    url.Values{},

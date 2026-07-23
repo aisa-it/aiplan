@@ -54,12 +54,15 @@ func (b *Business) CreateDocComment(doc dao.Doc, user dao.User, text string, rep
 		return err
 	}
 
-	data := make(map[string]interface{})
+	trackOpts := []tracker.TrackOption{
+		tracker.WithNewVal(comment.CommentHtml.String()),
+		tracker.WithNewID(comment.Id),
+	}
 	if fromTg && user.TelegramId != nil {
-		data["tg_sender"] = *user.TelegramId
+		trackOpts = append(trackOpts, tracker.WithTgSender(*user.TelegramId))
 	}
 
-	err := tracker.TrackActivity[dao.DocComment, dao.DocActivity](b.tracker, activities.EntityCreateActivity, data, nil, comment, &user)
+	err := b.st.TrackVerb(types.LayerDoc, activities.VerbCreated, &doc, &user, trackOpts...)
 	if err != nil {
 		errStack.GetError(nil, err)
 	}

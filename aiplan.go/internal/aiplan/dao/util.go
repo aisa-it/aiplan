@@ -24,8 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
-
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"github.com/sethvargo/go-password/password"
@@ -78,8 +76,15 @@ func PaginationRequest(offset int, limit int, query *gorm.DB, target any) (res P
 	}
 
 	// Data query
-	if err := query.Offset(offset).Limit(limit).Find(target).Error; err != nil {
-		return res, err
+	if acts, ok := target.(*[]ActivityEvent); ok {
+		// Активности грузим батчем, без per-row хука AfterFind (анти-N+1).
+		if err := LoadActivitiesBatched(query.Offset(offset).Limit(limit), acts); err != nil {
+			return res, err
+		}
+	} else {
+		if err := query.Offset(offset).Limit(limit).Find(target).Error; err != nil {
+			return res, err
+		}
 	}
 
 	res.Result = target
@@ -89,7 +94,21 @@ func PaginationRequest(offset int, limit int, query *gorm.DB, target any) (res P
 	return res, nil
 }
 
-func GetIssueFamily(issue Issue, db *gorm.DB) (family []Issue) {
+// LoadActivitiesBatched грузит активности по готовому query без хука AfterFind и
+// подгружает New*/Old*-сущности батчем (анти-N+1). Сущности тянутся через чистую
+// сессию, чтобы не наследовать накопленные условия/Joins.
+func LoadActivitiesBatched(query *gorm.DB, dest *[]ActivityEvent) error {
+	if err := query.Session(&gorm.Session{SkipHooks: true}).Find(dest).Error; err != nil {
+		return err
+	}
+	ptrs := make([]*ActivityEvent, len(*dest))
+	for i := range *dest {
+		ptrs[i] = &(*dest)[i]
+	}
+	return BatchPreloadActivityEntities(query.Session(&gorm.Session{NewDB: true}), ptrs)
+}
+
+func GetIssueFamily(issue Issue, db *gorm.DB, authorId uuid.NullUUID) (family []Issue) {
 	var getChildren func(issueId uuid.UUID) []Issue
 
 	getChildren = func(issueId uuid.UUID) []Issue {
@@ -105,12 +124,32 @@ func GetIssueFamily(issue Issue, db *gorm.DB) (family []Issue) {
 	} else {
 		family = append(getChildren(issue.ID), issue)
 	}
+	skipIssueId := make(map[uuid.UUID]struct{})
+
+	if authorId.Valid {
+		filteredFamily := make([]Issue, 0, len(family))
+		for _, item := range family {
+			if item.CreatedById == authorId.UUID {
+				filteredFamily = append(filteredFamily, item)
+			} else {
+				skipIssueId[item.ID] = struct{}{}
+			}
+		}
+		family = filteredFamily
+	}
+
 	slices.SortFunc(family, func(a Issue, b Issue) int {
 		return a.SequenceId - b.SequenceId
 	})
 
 	for i := range family {
 		family[i].FetchLinkedIssues(db)
+		if len(skipIssueId) > 0 {
+			if _, ok := skipIssueId[family[i].ParentId.UUID]; ok {
+				family[i].ParentId = uuid.NullUUID{}
+				family[i].Parent = nil
+			}
+		}
 	}
 	return
 }
@@ -270,52 +309,6 @@ func GetIssuesLink(id1 uuid.UUID, id2 uuid.UUID) LinkedIssues {
 	return link
 }
 
-func BuildUnionSubquery(tx *gorm.DB, alias string, tab UnionableTable, tables ...UnionableTable) *gorm.DB {
-	var union []string
-	var args []interface{}
-
-	for _, table := range tables {
-		var selectFields []string
-		fieldSet := utils.SliceToSet(table.GetFields())
-		for _, field := range tab.GetFields() {
-			f := strings.Split(field, "::")
-			var t string
-			if len(f) > 1 {
-				field = f[0]
-				t = "::" + f[1]
-			}
-
-			if utils.CheckInSet(fieldSet, field) {
-				selectFields = append(selectFields, field+t)
-			} else {
-				selectFields = append(selectFields, fmt.Sprintf("NULL%s AS %s", t, field))
-			}
-		}
-
-		selectFields = AddCustomFields(table, selectFields)
-
-		q := tx.Session(&gorm.Session{DryRun: true}).
-			Select(selectFields).
-			Model(table).
-			Find(nil).Statement
-
-		union = append(union, "("+q.SQL.String()+")")
-		args = append(args, q.Vars...)
-	}
-
-	unionSQL := strings.Join(union, " UNION ALL ")
-
-	return tx.Table("(?) AS "+alias, gorm.Expr(unionSQL, args...)).Model(tab)
-}
-
-func SliceToSet(sl []string) map[string]interface{} {
-	res := make(map[string]interface{})
-	for _, s := range sl {
-		res[s] = struct{}{}
-	}
-	return res
-}
-
 func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMember, tx *gorm.DB) error {
 	// Change workspace owner on demand
 	if requestedMember.Workspace.OwnerId == requestedMember.MemberId {
@@ -370,13 +363,6 @@ func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMem
 	}
 
 	return tx.Omit(clause.Associations).Delete(requestedMember).Error
-}
-
-func pointerToStr(str *string) string {
-	if str == nil {
-		return ""
-	}
-	return *str
 }
 
 func GetFileAssetFromDescription(query *gorm.DB, description *string) ([]FileAsset, error) {
@@ -924,5 +910,155 @@ func VacuumFull(db *gorm.DB) error {
 	}
 
 	slog.Info("VACUUM FULL completed successfully")
+	return nil
+}
+
+func Exists(db *gorm.DB, query *gorm.DB) (bool, error) {
+	var exists bool
+	if err := db.
+		Raw("SELECT EXISTS(?)", query).
+		Find(&exists).Error; err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func IsWorkspaceExists(db *gorm.DB, user *User, slugOrId string) (bool, error) {
+	id := uuid.FromStringOrNil(slugOrId)
+	workspaceQuery := db.Session(&gorm.Session{}).Model(&Workspace{})
+
+	if !id.IsNil() {
+		workspaceQuery = workspaceQuery.Where("id = ?", id)
+	} else {
+		workspaceQuery = workspaceQuery.Where("slug = ?", slugOrId)
+	}
+
+	if user == nil {
+		return Exists(db, workspaceQuery.Select("1"))
+	}
+
+	return Exists(db, db.Select("1").
+		Where("member_id = ?", user.ID).
+		Where("workspace_id in (?)", workspaceQuery.Select("id")).
+		Model(&WorkspaceMember{}))
+}
+
+func IsProjectExists(db *gorm.DB, user *User, workspaceId uuid.UUID, idOrIdent string) (bool, error) {
+	id := uuid.FromStringOrNil(idOrIdent)
+	projectQuery := db.Session(&gorm.Session{}).Model(&Project{}).
+		Where("workspace_id = ?", workspaceId)
+
+	// Search by id or identifier
+	if !id.IsNil() {
+		projectQuery = projectQuery.Where("projects.id = ?", id)
+	} else {
+		projectQuery = projectQuery.Where("projects.identifier = ?", idOrIdent)
+	}
+
+	if user == nil {
+		return Exists(db, projectQuery.Select("1"))
+	}
+
+	return Exists(db, db.Select("1").
+		Where("member_id = ?", user.ID).
+		Where("project_id in (?)", projectQuery.Select("id")).
+		Model(&ProjectMember{}))
+}
+
+func IsIssueExists(db *gorm.DB, projectId uuid.UUID, idOrSeq string) (bool, error) {
+	id := uuid.FromStringOrNil(idOrSeq)
+	issueQuery := db.Session(&gorm.Session{}).Model(&Issue{}).
+		Where("project_id = ?", projectId)
+
+	// Search by id or identifier
+	if !id.IsNil() {
+		issueQuery = issueQuery.Where("issues.id = ?", id)
+	} else {
+		issueQuery = issueQuery.Where("issues.sequence_id = ?", idOrSeq)
+	}
+
+	return Exists(db, issueQuery.Select("1"))
+}
+
+func IsSprintExists(db *gorm.DB, workspaceId uuid.UUID, idOrSeq string) (bool, error) {
+	id, err := uuid.FromString(idOrSeq)
+	if err == nil && id.IsNil() {
+		return false, nil
+	}
+	sprintQuery := db.Session(&gorm.Session{}).Model(&Sprint{}).
+		Where("workspace_id = ?", workspaceId)
+	if !id.IsNil() {
+		sprintQuery = sprintQuery.Where("sprints.id = ?", id)
+	} else {
+		sprintQuery = sprintQuery.Where("sprints.sequence_id = ?", idOrSeq)
+	}
+	return Exists(db, sprintQuery.Select("1"))
+}
+
+func IsSearchFilterExists(db *gorm.DB, filterId string) (bool, error) {
+	id := uuid.FromStringOrNil(filterId)
+	if id.IsNil() {
+		return false, nil
+	}
+	return Exists(db, db.Session(&gorm.Session{}).Model(&SearchFilter{}).Where("id = ?", id).Select("1"))
+}
+
+func IsReleaseNoteExists(db *gorm.DB, idOrTag string) (bool, error) {
+	query := db.Session(&gorm.Session{}).Model(&ReleaseNote{})
+	if id, err := uuid.FromString(idOrTag); err == nil {
+		query = query.Where("id = ?", id)
+	} else {
+		query = query.Where("tag_name = ?", idOrTag)
+	}
+	return Exists(db, query.Select("1"))
+}
+
+func IsFormExists(db *gorm.DB, slug string) (bool, error) {
+	return Exists(db, db.Session(&gorm.Session{}).Model(&Form{}).Where("slug = ?", slug).Select("1"))
+}
+
+func ScanToMap[T any](query *gorm.DB, getId func(T) uuid.UUID) (map[uuid.UUID]T, error) {
+	rows, err := query.Rows()
+	if err != nil {
+		return nil, err
+	}
+
+	res := make(map[uuid.UUID]T)
+	for rows.Next() {
+		var entity T
+		if err := query.ScanRows(rows, &entity); err != nil {
+			return nil, err
+		}
+
+		res[getId(entity)] = entity
+	}
+	return res, nil
+}
+
+func CleanupActivityData(tx, q *gorm.DB, id uuid.UUID, layers ...types.EntityLayer) error {
+	subQuery := q.Model(&ActivityEvent{}).Select("id")
+
+	if err := tx.Where("activity_event_id IN (?)", subQuery).
+		Unscoped().
+		Delete(&UserAppNotify{}).Error; err != nil {
+		return err
+	}
+
+	if err := q.Unscoped().Delete(&ActivityEvent{}).Error; err != nil {
+		return err
+	}
+
+	if len(layers) > 0 {
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := tx.Where("new_identifier = ? OR old_identifier = ?",
+			id, id).
+			Where("entity_type IN (?)", layers).
+			Model(&ActivityEvent{}).
+			Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

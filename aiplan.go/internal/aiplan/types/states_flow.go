@@ -25,10 +25,12 @@ type FlowNode struct {
 }
 
 type FlowEdge struct {
-	Id       string    `json:"id"`
-	Source   uuid.UUID `json:"source"`
-	Target   uuid.UUID `json:"target"`
-	Animated bool      `json:"animated"`
+	Id           string    `json:"id"`
+	Source       uuid.UUID `json:"source"`
+	Target       uuid.UUID `json:"target"`
+	SourceHandle string    `json:"source_handle"`
+	TargetHandle string    `json:"target_handle"`
+	Animated     bool      `json:"animated"`
 }
 
 func (fn StatesFlowGraph) Value() (driver.Value, error) {

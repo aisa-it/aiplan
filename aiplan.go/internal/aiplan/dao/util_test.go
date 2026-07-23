@@ -191,7 +191,7 @@ func TestGetIssueFamily(t *testing.T) {
 	}
 
 	t.Logf("Middle issue test")
-	if family := GetIssueFamily(issues[2], db); len(family) > 0 {
+	if family := GetIssueFamily(issues[2], db, uuid.NullUUID{}); len(family) > 0 {
 		familyStr := ""
 		for _, member := range family {
 			familyStr += member.Name + " "
@@ -202,7 +202,7 @@ func TestGetIssueFamily(t *testing.T) {
 	}
 
 	t.Logf("Root issue test")
-	if family := GetIssueFamily(issues[0], db); len(family) > 0 {
+	if family := GetIssueFamily(issues[0], db, uuid.NullUUID{}); len(family) > 0 {
 		familyStr := ""
 		for _, member := range family {
 			familyStr += member.Name + " "
@@ -213,7 +213,7 @@ func TestGetIssueFamily(t *testing.T) {
 	}
 
 	t.Logf("Last issue test")
-	if family := GetIssueFamily(issues[5], db); len(family) > 0 {
+	if family := GetIssueFamily(issues[5], db, uuid.NullUUID{}); len(family) > 0 {
 		familyStr := ""
 		for _, member := range family {
 			familyStr += member.Name + " "
@@ -224,7 +224,7 @@ func TestGetIssueFamily(t *testing.T) {
 	}
 
 	t.Logf("Orphan test")
-	if family := GetIssueFamily(issues[6], db); len(family) > 1 {
+	if family := GetIssueFamily(issues[6], db, uuid.NullUUID{}); len(family) > 1 {
 		t.Errorf("Issue #6 has family: %v", family)
 	} else {
 		t.Logf("Issue #6 family: %s", family[0].Name)

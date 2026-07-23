@@ -12,6 +12,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/flate"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -27,13 +28,15 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/export"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 
@@ -47,7 +50,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -59,17 +61,13 @@ const (
 	descriptionLockTime = time.Minute * 15
 )
 
-type IssueContext struct {
-	ProjectContext
-	Issue dao.Issue
-}
-
 // AddIssueServices - добавление сервисов задач
 func (s *Services) AddIssueServices(g *echo.Group) {
 	issueGroup := g.Group("workspaces/:workspaceSlug/projects/:projectId/issues/:issueIdOrSeq",
 		s.WorkspaceMiddleware,
 		s.LastVisitedWorkspaceMiddleware,
 		s.ProjectMiddleware,
+		s.ProjectArchivedMiddleware,
 		s.FindIssueByIdOrSeqMiddleware,
 		s.IssuePermissionMiddleware,
 	)
@@ -217,24 +215,25 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 	assetName, err := uuid.FromString(strings.Split(event.Upload.ID, "+")[0])
 	if err != nil {
-		slog.Error("Parse uploaded file id", "id", event.Upload.ID, "err", err)
+		slog.ErrorContext(event.Context, "Parse uploaded file id", "id", event.Upload.ID, "err", err)
 		return
 	}
 	userId := event.Upload.MetaData["user_id"]
 	issueId, iOk := event.Upload.MetaData["issue_id"]
 	docId, dOk := event.Upload.MetaData["doc_id"]
 	fileName := event.Upload.MetaData["file_name"]
+	fileType := event.Upload.MetaData["fileType"]
 
 	var user dao.User
-	if err := s.db.Where("id = ?", userId).First(&user).Error; err != nil {
-		slog.Error("Find new attachment user", "err", err)
+	if err := s.RawDB().Where("id = ?", userId).First(&user).Error; err != nil {
+		slog.ErrorContext(event.Context, "Find new attachment user", "err", err)
 		return
 	}
 
 	if iOk {
 		var issue dao.Issue
-		if err := s.db.Select("issues.id", "issues.workspace_id", "issues.project_id").Joins("Project").Where("issues.id = ?", issueId).First(&issue).Error; err != nil {
-			slog.Error("Find issue for attachment", "issueId", issueId, "err", err)
+		if err := s.RawDB().Select("issues.id", "issues.workspace_id", "issues.project_id").Joins("Project").Where("issues.id = ?", issueId).First(&issue).Error; err != nil {
+			slog.ErrorContext(event.Context, "Find issue for attachment", "issueId", issueId, "err", err)
 			return
 		}
 
@@ -257,9 +256,10 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			WorkspaceId: uuid.NullUUID{UUID: issue.WorkspaceId, Valid: true},
 			Name:        fileName,
 			FileSize:    int(event.Upload.Size),
+			ContentType: utils.ResolveContentType(fileName, fileType),
 		}
 
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.RawDB().Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(&fa).Error; err != nil {
 				return err
 			}
@@ -269,26 +269,20 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			}
 			return nil
 		}); err != nil {
-			slog.Error("Save attachment info to db", "err", err)
+			slog.ErrorContext(event.Context, "Save attachment info to db", "err", err)
 			return
 		}
-		//TODO check it
-		data := map[string]interface{}{
-			"attachment_activity_val": fileName,
+		issueAttachment.Asset = &fa
+		newSnapshot := tracker.AttachmentToSnapshot(&issueAttachment)
+		err = s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, &issue, &user)
+		if err != nil {
+			slog.Error("Error create activities issue attachment", "err", err)
 		}
-
-		if err := tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, data, nil, issueAttachment, &user); err != nil {
-			errStack.GetError(nil, errStack.TrackErrorStack(fmt.Errorf("track new issue attachment activity")))
-		}
-
-		//if err := s.tracker.TrackActivity(tracker.ATTACHMENT_CREATED_ACTIVITY, nil, map[string]interface{}{"id": issueAttachment.Id}, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, issue.Project, user); err != nil {
-		//	slog.Error("Track new attachment activity", "err", err)
-		//}
 
 	} else if dOk {
 		var doc dao.Doc
-		if err := s.db.Select("docs.id", "docs.workspace_id").Joins("Workspace").Where("docs.id = ?", docId).First(&doc).Error; err != nil {
-			slog.Error("Find doc for attachment", "docId", docId, "err", err)
+		if err := s.RawDB().Select("docs.id", "docs.workspace_id").Joins("Workspace").Where("docs.id = ?", docId).First(&doc).Error; err != nil {
+			slog.ErrorContext(event.Context, "Find doc for attachment", "docId", docId, "err", err)
 			return
 		}
 
@@ -312,7 +306,7 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			FileSize:    int(event.Upload.Size),
 		}
 
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.RawDB().Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(&fa).Error; err != nil {
 				return err
 			}
@@ -322,14 +316,15 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 			}
 			return nil
 		}); err != nil {
-			slog.Error("Save attachment info to db", "err", err)
+			slog.ErrorContext(event.Context, "Save attachment info to db", "err", err)
 			return
 		}
-		data := map[string]interface{}{
-			"attachment_activity_val": fileName,
-		}
-		if err := tracker.TrackActivity[dao.DocAttachment, dao.DocActivity](s.tracker, actField.EntityCreateActivity, data, nil, docAttachment, &user); err != nil {
-			errStack.GetError(nil, errStack.TrackErrorStack(fmt.Errorf("track new doc attachment activity")))
+
+		docAttachment.Asset = &fa
+		newSnapshot := tracker.AttachmentToSnapshot(&docAttachment)
+		err = s.snapshotTracker.TrackChanges(types.LayerDoc, nil, newSnapshot, &doc, &user)
+		if err != nil {
+			slog.Error("Error create activities doc attachment", "err", err)
 		}
 	}
 }
@@ -338,63 +333,21 @@ func (s *Services) attachmentsPostUploadHook(event tusd.HookEvent) {
 
 func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		project := c.(ProjectContext).Project
-		issueIdOrSeq := c.Param("issueIdOrSeq")
-
-		if issueIdOrSeq == "" {
-			return EErrorDefined(c, apierrors.ErrIssueNotFound)
+		apiContext := apicontext.GetContext(c)
+		project := apiContext.GetProject()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
 		}
 
-		query := s.db.
-			Joins("Parent").
-			//Joins("Workspace").
-			Joins("State").
-			//Joins("Project").
-			Preload("Sprints").
-			Preload("Assignees").
-			Preload("Watchers").
-			Preload("Labels").
-			Preload("Links").
-			Joins("Author").
-			Preload("Links.CreatedBy").
-			Preload("Labels.Workspace").
-			Preload("Labels.Project").
-			Where("issues.project_id = ?", project.ID)
-
-		var issue dao.Issue
-		issue.Project = &project
-		issue.Workspace = project.Workspace
-		issue.FullLoad = true
-		if _, err := uuid.FromString(issueIdOrSeq); err == nil {
-			// uuid id of issue
-			if err := query.
-				Where("issues.id = ?", issueIdOrSeq).
-				First(&issue).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
-					return EErrorDefined(c, apierrors.ErrIssueNotFound)
-				}
-				return EError(c, err)
-			}
-		} else if sequenceId, err := strconv.Atoi(issueIdOrSeq); err == nil {
-			// sequence id of issue
-			if err := query.
-				Where("issues.sequence_id = ?", sequenceId).
-				First(&issue).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
-					return EErrorDefined(c, apierrors.ErrIssueNotFound)
-				}
-				return EError(c, err)
-			}
-		} else {
-			return EErrorDefined(c, apierrors.ErrIssueNotFound)
-		}
-
-		// Fetch Author details
-		if err := issue.Author.AfterFind(s.db); err != nil {
+		exists, err := dao.IsIssueExists(s.DB(c), project.ID, c.Param("issueIdOrSeq"))
+		if err != nil {
 			return EError(c, err)
 		}
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrIssueNotFound)
+		}
 
-		return next(IssueContext{c.(ProjectContext), issue})
+		return next(c)
 	}
 }
 
@@ -427,20 +380,24 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 // @Router /api/auth/issues/search [post]
 func (s *Services) getIssueList(c echo.Context) error {
 	globalSearch := false
-	var user dao.User
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
 	var projectMember dao.ProjectMember
 	var sprint *dao.Sprint
-	if context, ok := c.(ProjectContext); ok {
-		projectMember = context.ProjectMember
-		user = *context.User
-	}
-	if context, ok := c.(AuthContext); ok {
-		user = *context.User
+
+	if c.Param("projectId") != "" {
+		pm := apiContext.GetProjectMember()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
+		projectMember = *pm
+	} else if c.Param("sprintId") != "" {
+		sprint = apiContext.GetSprint(apicontext.WithSprintIssues())
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
 		globalSearch = true
-	}
-	if context, ok := c.(SprintContext); ok {
-		user = *context.User
-		sprint = &context.Sprint
+	} else {
 		globalSearch = true
 	}
 
@@ -470,7 +427,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrLimitTooHigh)
 	}
 
-	result, err := search.GetIssueListData(s.db, user, projectMember, sprint, globalSearch, searchParams, streamCallback)
+	result, err := search.GetIssueListData(s.DB(c), *user, projectMember, sprint, globalSearch, searchParams, streamCallback)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
 			return EErrorDefined(c, definedErr)
@@ -510,7 +467,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/issues/search/export/ [post]
 func (s *Services) exportIssueList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	searchParams, err := types.ParseSearchParams(c)
 	if err != nil {
@@ -520,7 +477,7 @@ func (s *Services) exportIssueList(c echo.Context) error {
 	searchParams.Offset = 0
 	searchParams.Limit = 1_000_000
 
-	result, err := search.GetIssueListData(s.db, *user, dao.ProjectMember{}, nil, true, searchParams, nil)
+	result, err := search.GetIssueListData(s.DB(c), *user, dao.ProjectMember{}, nil, true, searchParams, nil)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
 			return EErrorDefined(c, definedErr)
@@ -553,11 +510,7 @@ func (s *Services) exportIssueList(c echo.Context) error {
 				return EError(c, err)
 			}
 
-			for _, item := range group.Issues {
-				issue, ok := item.(*dto.IssueWithCount)
-				if !ok {
-					continue
-				}
+			for _, issue := range group.Issues {
 				if err := w.Write(issueToCSVRow(issue)); err != nil {
 					return EError(c, err)
 				}
@@ -623,7 +576,11 @@ func (s *Services) exportIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq} [get]
 func (s *Services) getIssue(c echo.Context) error {
-	issue := c.(IssueContext).Issue
+	apiContext := apicontext.GetContext(c)
+	issue := apiContext.GetIssue(apicontext.WithAll())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, issue.ToDTO())
 }
 
@@ -647,13 +604,17 @@ func (s *Services) getIssue(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq} [patch]
 func (s *Services) updateIssue(c echo.Context) error {
-	user := *c.(IssueContext).User
-	issue := c.(IssueContext).Issue
-	projectMember := c.(IssueContext).ProjectMember
-	project := c.(IssueContext).Project
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	projectMember := apiCtx.GetProjectMember()
+	issue := apiCtx.GetIssue(apicontext.WithAll())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
-	oldIssue := issue
-	issueMapOld := StructToJSONMap(issue)
+	oldIssue := *issue
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
 	var data map[string]interface{}
 	form, _ := c.MultipartForm()
@@ -683,9 +644,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 			delete(data, "description_html")
 		} else {
 			var locked bool
-			if err := s.db.Model(&dao.IssueDescriptionLock{}).
+			if err := s.DB(c).Model(&dao.IssueDescriptionLock{}).
 				Select("EXISTS(?)",
-					s.db.Model(&dao.IssueDescriptionLock{}).
+					s.DB(c).Model(&dao.IssueDescriptionLock{}).
 						Select("1").
 						Where("issue_id = ?", issue.ID).
 						Where("user_id <> ?", user.ID).
@@ -704,13 +665,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var targetDateOk bool
 	var targetDate *string
 	if val, ok := data["target_date"]; ok {
-		if issue.TargetDate != nil {
-			if date, err := utils.FormatDateStr(issue.TargetDate.String(), "2006-01-02T15:04:05Z07:00", nil); err != nil {
-				return EErrorDefined(c, apierrors.ErrGeneric)
-			} else {
-				issueMapOld["target_date_activity_val"] = date
-			}
-		}
 		if val != nil {
 			date, err := utils.FormatDateStr(val.(string), "2006-01-02T15:04:05Z07:00", nil)
 			if err != nil {
@@ -746,7 +700,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 			if !(oldIssue.ParentId.Valid && oldIssue.ParentId.UUID == parentUUID) {
 				var ancestorIDs []uuid.UUID
-				err = s.db.Raw(`
+				err = s.DB(c).Raw(`
                 WITH RECURSIVE ancestor_chain AS (
                     SELECT id, parent_id FROM issues WHERE id = ?
                     UNION ALL
@@ -765,6 +719,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 				}
 			}
 
+			data["parent"] = parentUUID
 		} else {
 			if issue.Parent != nil {
 				unpinTask = issue.Parent.CreatedById == user.ID && len(data) == 4
@@ -775,7 +730,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var rulesLog []dao.RulesLog
 	defer func() {
 		if err := rules.AddLog(s.db, rulesLog); err != nil {
-			slog.Error("Create rules log", "err", err)
+			slog.ErrorContext(c.Request().Context(), "Create rules log", "err", err)
 		}
 	}()
 
@@ -788,42 +743,45 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if err != nil {
 			return EError(c, err)
 		}
+
 		data["state_id"] = stateUUID
 
-		if err := s.db.Where("id = ?", stateUUID).
+		if err := s.DB(c).Where("id = ?", stateUUID).
 			Where("project_id = ?", issue.ProjectId).
 			First(&newState).Error; err != nil {
 			return EError(c, err)
 		}
 
-		issueMapOld[actField.Status.Field.WithActivityValStr()] = issue.State.Name
-		data[actField.Status.Field.WithActivityValStr()] = newState.Name
+		issue.State = &newState
+
 		if newState.Group == "started" && issue.State.Group != "started" {
-			data["start_date"] = &types.TargetDate{Time: time.Now()}
+			data["start_date"] = &types.TargetDateTimeZ{Time: time.Now()}
 		}
 
 		if issue.State.Group == "started" && (newState.Group == "backlog" || newState.Group == "unstarted") {
 			data["start_date"] = nil
 		}
 
-		if newState.Group == "completed" && issue.State.Group != "completed" {
-			data["completed_at"] = &types.TargetDate{Time: time.Now()}
+		if (newState.Group == "completed" || newState.Group == "cancelled") &&
+			issue.State.Group != "completed" && issue.State.Group != "cancelled" {
+			data["completed_at"] = &types.TargetDateTimeZ{Time: time.Now()}
 		} else if newState.Group != "completed" {
 			if newState.Group == "started" {
-				data["start_date"] = &types.TargetDate{Time: time.Now()}
+				data["start_date"] = &types.TargetDateTimeZ{Time: time.Now()}
 			}
 			// Reset completed at date on open status
 			data["completed_at"] = nil
 		} else {
+			issue.CompletedAt = &types.TargetDateTimeZ{Time: time.Now()}
 			data["completed_at"] = issue.CompletedAt
 		}
 
 		if projectMember.Role != types.AdminRole {
-			res, msg, err := rules.BeforeStatusChange(user, oldIssue, newState)
+			res, msg, err := rules.BeforeStatusChange(*user, oldIssue, newState)
 
-			rules.AppendMsg(issue, user, msg, &rulesLog)
-			rules.AppendError(issue, user, err, &rulesLog)
-			rules.ResultToLog(issue, user, res, err, &rulesLog)
+			rules.AppendMsg(*issue, *user, msg, &rulesLog)
+			rules.AppendError(*issue, *user, err, &rulesLog)
+			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
 
 			if !res.ClientResult {
 				return EError(c, err.ClientError())
@@ -881,8 +839,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 	var allProjectMembers []dao.User
 	var allProjectLabels []dao.Label
 	if watchersOk || assigneesOk {
-		if err := s.db.
-			Where("id in (?)", s.db.Model(&dao.ProjectMember{}).
+		if err := s.DB(c).
+			Where("id in (?)", s.DB(c).Model(&dao.ProjectMember{}).
 				Select("member_id").
 				Where("project_id = ?", project.ID)).
 			Find(&allProjectMembers).Error; err != nil {
@@ -891,10 +849,9 @@ func (s *Services) updateIssue(c echo.Context) error {
 	}
 
 	if labelsOk {
-		if err := s.db.Where("project_id = ?", project.ID).Find(&allProjectLabels).Error; err != nil {
+		if err := s.DB(c).Where("project_id = ?", project.ID).Find(&allProjectLabels).Error; err != nil {
 			return EError(c, err)
 		}
-		data[actField.Label.Field.WithGetFieldStr()] = "labels"
 	}
 
 	// Reset sort order
@@ -902,7 +859,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		data["sort_order"] = 0
 	} else if parentOk && parent != nil {
 		var sortOrder int
-		if err := s.db.Select("coalesce(max(sort_order), 0)").Model(&dao.Issue{}).Where("parent_id = ?", parent).Find(&sortOrder).Error; err != nil {
+		if err := s.DB(c).Select("coalesce(max(sort_order), 0)").Model(&dao.Issue{}).Where("parent_id = ?", parent).Find(&sortOrder).Error; err != nil {
 			return EError(c, err)
 		}
 		data["sort_order"] = sortOrder + 1
@@ -912,11 +869,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 	{
 		if assigneesOk && projectMember.Role != types.AdminRole {
 			assigneesUser := dao.GetUserFromProjectMember(allProjectMembers, assignees)
-			res, msg, err := rules.BeforeAssigneesChange(user, oldIssue, assigneesUser)
+			res, msg, err := rules.BeforeAssigneesChange(*user, oldIssue, assigneesUser)
 
-			rules.AppendMsg(issue, user, msg, &rulesLog)
-			rules.AppendError(issue, user, err, &rulesLog)
-			rules.ResultToLog(issue, user, res, err, &rulesLog)
+			rules.AppendMsg(*issue, *user, msg, &rulesLog)
+			rules.AppendError(*issue, *user, err, &rulesLog)
+			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
 
 			if !res.ClientResult {
 				return EError(c, err.ClientError())
@@ -925,11 +882,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 		if watchersOk && projectMember.Role != types.AdminRole {
 			watchersUser := dao.GetUserFromProjectMember(allProjectMembers, watchers)
-			res, msg, err := rules.BeforeWatchersChange(user, oldIssue, watchersUser)
+			res, msg, err := rules.BeforeWatchersChange(*user, oldIssue, watchersUser)
 
-			rules.AppendMsg(issue, user, msg, &rulesLog)
-			rules.AppendError(issue, user, err, &rulesLog)
-			rules.ResultToLog(issue, user, res, err, &rulesLog)
+			rules.AppendMsg(*issue, *user, msg, &rulesLog)
+			rules.AppendError(*issue, *user, err, &rulesLog)
+			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
 
 			if !res.ClientResult {
 				return EError(c, err.ClientError())
@@ -945,11 +902,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 					}
 				}
 			}
-			res, msg, err := rules.BeforeLabelsChange(user, oldIssue, currentLabels)
+			res, msg, err := rules.BeforeLabelsChange(*user, oldIssue, currentLabels)
 
-			rules.AppendMsg(issue, user, msg, &rulesLog)
-			rules.AppendError(issue, user, err, &rulesLog)
-			rules.ResultToLog(issue, user, res, err, &rulesLog)
+			rules.AppendMsg(*issue, *user, msg, &rulesLog)
+			rules.AppendError(*issue, *user, err, &rulesLog)
+			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
 
 			if !res.ClientResult {
 				return EError(c, err.ClientError())
@@ -960,7 +917,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID || unpinTask
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		// Upload new files
 		if form != nil {
 			// Save issue attachments to
@@ -989,7 +946,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		dataField := utils.MapToSlice(data, func(k string, v interface{}) string { return actField.ReqFieldMapping(k) })
-		if hasRecentFieldUpdate[dao.IssueActivity](tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
+		if hasRecentFieldUpdate(tx.Where("issue_id = ?", issue.ID), user.ID, dataField...) {
 			return apierrors.ErrUpdateTooFrequent
 		}
 
@@ -1165,7 +1122,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 				}
 				notifyUserIds = append(notifyUserIds, issue.Author.ID)
 
-				err := notifications.CreateDeadlineNotification(tx, &issue, targetDate, notifyUserIds)
+				err := notifications.CreateDeadlineNotification(tx, issue, targetDate, notifyUserIds)
 				if err != nil {
 					return err
 				}
@@ -1181,16 +1138,16 @@ func (s *Services) updateIssue(c echo.Context) error {
 
 		var err error
 		if updateAll {
-			err = tx.Model(&issue).Select(issue.FieldsAllowedForUpdate()).Updates(data).Error
+			err = tx.Model(issue).Select(issue.FieldsAllowedForUpdate()).Updates(data).Error
 		} else {
-			err = tx.Model(&issue).Select(issue.FieldsAllowedForAllUpdate()).Updates(data).Error
+			err = tx.Model(issue).Select(issue.FieldsAllowedForAllUpdate()).Updates(data).Error
 		}
 
-		if err := tx.Where("issue_id = ?", issue.ID).Delete(&dao.IssueDescriptionLock{}).Error; err != nil && err != gorm.ErrRecordNotFound {
+		if err = tx.Where("issue_id = ?", issue.ID).Delete(&dao.IssueDescriptionLock{}).Error; err != nil && err != gorm.ErrRecordNotFound {
 			return err
 		}
 
-		return err
+		return nil
 	}); err != nil {
 		if err.Error() == "forbidden" {
 			return EErrorDefined(c, apierrors.ErrIssueUpdateForbidden)
@@ -1198,19 +1155,19 @@ func (s *Services) updateIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, data, issueMapOld, issue, &user)
-	if err != nil {
-		errStack.GetError(c, err)
+	updatedIssue := apiCtx.CleanIssue().GetIssue(apicontext.WithAll())
+
+	newSnapshot := tracker.IssueToSnapshot(*updatedIssue)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		return EError(c, err)
 	}
-
-	//s.tracker.TrackActivity(tracker.ISSUE_UPDATED_ACTIVITY, data, issueMapOld, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, &project, user)
-
 	if statusChange {
-		res, msg, err := rules.AfterStatusChange(user, oldIssue, newState)
+		res, msg, err := rules.AfterStatusChange(*user, oldIssue, newState)
 
-		rules.AppendMsg(issue, user, msg, &rulesLog)
-		rules.AppendError(issue, user, err, &rulesLog)
-		rules.ResultToLog(issue, user, res, err, &rulesLog)
+		rules.AppendMsg(*issue, *user, msg, &rulesLog)
+		rules.AppendError(*issue, *user, err, &rulesLog)
+		rules.ResultToLog(*issue, *user, res, err, &rulesLog)
 
 		if !res.ClientResult {
 			return EError(c, err.ClientError())
@@ -1238,35 +1195,31 @@ func (s *Services) updateIssue(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq} [delete]
 func (s *Services) deleteIssue(c echo.Context) error {
-	user := *c.(IssueContext).User
-	projectMember := c.(IssueContext).ProjectMember
-	issue := c.(IssueContext).Issue
-	project := c.(IssueContext).Project
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	issue := apiContext.GetIssue(apicontext.WithAll())
+	if apiContext.Error() != nil || issue == nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	//currentInst := StructToJSONMap(issue)
 	isAdmin := projectMember.Role == types.AdminRole
 
 	if !isAdmin && (issue.CreatedById != user.ID || !project.IssueDeletionAllowed) {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
-	//if err := s.tracker.TrackActivity(tracker.ISSUE_DELETED_ACTIVITY, nil, currentInst, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
-
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-
-		err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, issue, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-
-		return s.db.Delete(&issue).Error
-	}); err != nil {
+	if err := s.DB(c).Delete(&issue).Error; err != nil {
 		if err.Error() == "forbidden" {
 			return EErrorDefined(c, apierrors.ErrDocUpdateForbidden)
 		}
 		return EError(c, err)
+	}
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, nil, project, user); err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -1283,21 +1236,25 @@ func (s *Services) deleteIssue(c echo.Context) error {
 // @Param workspaceSlug path string true "Slug рабочего пространства"
 // @Param projectId path string true "ID проекта"
 // @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
-// @Success 200 {object} map[string]dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
+// @Success 200 {array} dto.StateLight "Словарь доступных статусов, где ключ — ID статуса"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/available-states [get]
 func (s *Services) getAvailableStates(c echo.Context) error {
-	issue := c.(IssueContext).Issue
-	projectMember := c.(IssueContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	projectMember := apiContext.GetProjectMember()
+	issue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
-	query := s.db.Where("project_id = ?", projectMember.ProjectId).Order("sequence")
+	query := s.DB(c).Where("project_id = ?", projectMember.ProjectId).Order("sequence")
 
 	if projectMember.Role != types.AdminRole {
-		query = query.Where(s.db.Where("array_length(from_states, 1) IS NULL"). // States that allow transition from all states
-											Or("? = any(from_states)", issue.StateId), // States that has current state as allowed previous
+		query = query.Where(s.DB(c).Where("array_length(from_states, 1) IS NULL"). // States that allow transition from all states
+												Or("? = any(from_states)", issue.StateId), // States that has current state as allowed previous
 		)
 	}
 
@@ -1306,7 +1263,7 @@ func (s *Services) getAvailableStates(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, utils.SliceToMap(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 // ############# Sub-issues methods ###################
@@ -1329,8 +1286,13 @@ func (s *Services) getAvailableStates(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/sub-issues [get]
 func (s *Services) getSubIssueList(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	issue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	issueId := issue.ID
 
 	manualSort := false
 
@@ -1338,7 +1300,7 @@ func (s *Services) getSubIssueList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Where(&dao.Issue{ParentId: uuid.NullUUID{UUID: issueId, Valid: true}, ProjectId: project.ID}).
 		Joins("State").
 		Joins("Project").
@@ -1393,9 +1355,14 @@ func (s *Services) getSubIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/sub-issues [post]
 func (s *Services) addSubIssueList(c echo.Context) error {
-	project := c.(IssueContext).Project
-	parentIssue := c.(IssueContext).Issue
-	user := c.(IssueContext).User
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
+	parentIssue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var req SubIssuesIds
 	if err := c.Bind(&req); err != nil {
@@ -1417,13 +1384,13 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 		}
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Preload("Project").
 		Where("project_id = ?", project.ID).
 		Where("parent_id is null").
 		Where("id in ?", subIssueIDs)
 
-	if project.CurrentUserMembership.Role < types.AdminRole {
+	if projectMember.Role < types.AdminRole {
 		query = query.Where("created_by_id = ?", user.ID)
 	}
 
@@ -1434,15 +1401,14 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	}
 
 	var maxSortOrder int
-	if err := s.db.Select("coalesce(max(sort_order), 0)").Where("parent_id = ?", parentIssue.ID).Model(&dao.Issue{}).Find(&maxSortOrder).Error; err != nil {
+	if err := s.DB(c).Select("coalesce(max(sort_order), 0)").Where("parent_id = ?", parentIssue.ID).Model(&dao.Issue{}).Find(&maxSortOrder).Error; err != nil {
 		return EError(c, err)
 	}
 
 	// Save old data for activity tracking
-	oldSubIssuesData := make([]map[string]interface{}, len(subIssues))
+	oldSubIssuesData := make([]tracker.IssueSnapshot, len(subIssues))
 	for i, issue := range subIssues {
-		oldSubIssuesData[i] = StructToJSONMap(issue)
-		oldSubIssuesData[i]["parent"] = uuid.NullUUID{}
+		oldSubIssuesData[i] = tracker.IssueToSnapshot(issue)
 	}
 
 	id, err := uuid.FromString(parentIssue.ID.String())
@@ -1452,7 +1418,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	parentId := uuid.NullUUID{UUID: id, Valid: true}
 
 	for i := range subIssues {
-		if project.CurrentUserMembership.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
+		if projectMember.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
 			return EErrorDefined(c, apierrors.ErrPermissionParentIssue)
 		}
 		subIssues[i].ParentId = parentId
@@ -1460,35 +1426,25 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 		subIssues[i].SortOrder = i + maxSortOrder + 1
 	}
 
-	if err := s.db.Save(&subIssues).Error; err != nil {
+	if err := s.DB(c).Save(&subIssues).Error; err != nil {
 		return EError(c, err)
 	}
 
 	// Save new data for activity tracking
-	newSubIssuesData := make([]map[string]interface{}, len(subIssues))
-	for i := range subIssues {
-		newSubIssuesData[i] = make(map[string]interface{})
-		newSubIssuesData[i]["parent"] = parentId.UUID
-	}
+	//newSubIssuesData := make([]map[string]interface{}, len(subIssues))
+	//for i := range subIssues {
+	//	newSubIssuesData[i] = make(map[string]interface{})
+	//	newSubIssuesData[i]["parent"] = parentId.UUID
+	//}
 
-	// Activity tracking
-	for i := range subIssues {
-		err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newSubIssuesData[i], oldSubIssuesData[i], subIssues[i], user)
-		if err != nil {
+	//// Activity tracking
+	for i, subIssue := range subIssues {
+		subIssue.Parent = parentIssue
+		newSnapshot := tracker.IssueToSnapshot(subIssue)
+
+		if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSubIssuesData[i], newSnapshot, subIssue, user); err != nil {
 			errStack.GetError(c, err)
 		}
-
-		//if err := s.tracker.TrackActivity(
-		//	tracker.ISSUE_UPDATED_ACTIVITY,
-		//	newSubIssuesData[i],
-		//	oldSubIssuesData[i],
-		//	subIssues[i].ID.String(),
-		//	tracker.ENTITY_TYPE_ISSUE,
-		//	&project,
-		//	*user,
-		//); err != nil {
-		//	return EError(c, err)
-		//}
 	}
 
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
@@ -1513,12 +1469,16 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/sub-issues/{subIssueId}/up [post]
 func (s *Services) moveSubIssueUp(c echo.Context) error {
-	project := c.(IssueContext).Project
-	parentIssue := c.(IssueContext).Issue
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	parentIssue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	subIssueId := c.Param("subIssueId")
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var subIssue dao.Issue
 		if err := tx.Model(&subIssue).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "sort_order"}}}).
@@ -1567,12 +1527,16 @@ func (s *Services) moveSubIssueUp(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/sub-issues/{subIssueId}/down [post]
 func (s *Services) moveSubIssueDown(c echo.Context) error {
-	project := c.(IssueContext).Project
-	parentIssue := c.(IssueContext).Issue
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	parentIssue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	subIssueId := c.Param("subIssueId")
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var subIssue dao.Issue
 		if err := tx.Model(&subIssue).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "sort_order"}}}).
@@ -1582,7 +1546,7 @@ func (s *Services) moveSubIssueDown(c echo.Context) error {
 			Where("parent_id = ?", parentIssue.ID).
 			Update("sort_order",
 				gorm.Expr("LEAST(sort_order + 1, (?))",
-					s.db.Select("max(sort_order) + 1").
+					s.DB(c).Select("max(sort_order) + 1").
 						Where("workspace_id = ?", project.WorkspaceId).
 						Where("project_id = ?", project.ID).
 						Where("parent_id = ?", parentIssue.ID).
@@ -1751,8 +1715,12 @@ const (
 )
 
 func (s *Services) availableIssues(c echo.Context, issuesType int) error {
-	currentIssue := c.(IssueContext).Issue
-	member := c.(IssueContext).ProjectMember
+	apiContext := apicontext.GetContext(c)
+	member := apiContext.GetProjectMember()
+	currentIssue := apiContext.GetIssue(apicontext.WithAuthor())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	offset := 0
 	limit := 100
@@ -1775,7 +1743,7 @@ func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 		limit = 100
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Preload("Workspace").
 		Preload("Watchers").
 		Preload("Assignees").
@@ -1822,7 +1790,7 @@ func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 			query = query.Where("issues.id NOT IN (?)", blockedIssueIDs)
 		}
 		query = query.Where("issues.id NOT IN (?)",
-			s.db.
+			s.DB(c).
 				Select("block_id").
 				Where("blocked_by_id = ?", currentIssue.ID).
 				Where("project_id = ?", currentIssue.ProjectId).
@@ -1837,14 +1805,14 @@ func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 			query = query.Where("issues.id NOT IN (?)", blockingIssueIDs)
 		}
 		query = query.Where("issues.id NOT IN (?)",
-			s.db.
+			s.DB(c).
 				Select("blocked_by_id").
 				Where("block_id = ?", currentIssue.ID).
 				Where("project_id = ?", currentIssue.ProjectId).
 				Model(&dao.IssueBlocker{}),
 		)
 	case SearchLinkedIssues:
-		if member.Role == types.GuestRole || (member.Role == types.MemberRole && currentIssue.Author.ID != c.(IssueContext).User.ID) {
+		if member.Role == types.GuestRole || (member.Role == types.MemberRole && currentIssue.Author.ID != apiContext.GetUser().ID) {
 			query = query.Where("1 = 0")
 		}
 	default:
@@ -1967,11 +1935,16 @@ func (s *Services) getBlockingIssueIDs(tx *gorm.DB, issueID uuid.UUID) ([]string
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-links [get]
 func (s *Services) getIssueLinkList(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	issue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	issueId := issue.ID
 
 	var links []dao.IssueLink
-	if err := s.db.
+	if err := s.DB(c).
 		Where("project_id = ?", project.ID).Where("issue_id = ?", issueId).Order("created_at").Find(&links).Error; err != nil {
 		return EError(c, err)
 	}
@@ -2000,9 +1973,13 @@ func (s *Services) getIssueLinkList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-links [post]
 func (s *Services) createIssueLink(c echo.Context) error {
-	user := *c.(IssueContext).User
-	project := c.(IssueContext).Project
-	issue := c.(IssueContext).Issue
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	issue := apiContext.GetIssue(apicontext.WithLinks())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 
 	var req IssueLinkRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
@@ -2012,6 +1989,8 @@ func (s *Services) createIssueLink(c echo.Context) error {
 	if req.Url == "" || req.Title == "" {
 		return EErrorDefined(c, apierrors.ErrURLAndTitleRequired)
 	}
+
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	link := dao.IssueLink{
@@ -2025,16 +2004,18 @@ func (s *Services) createIssueLink(c echo.Context) error {
 		WorkspaceId: project.WorkspaceId,
 	}
 
-	if err := s.db.Create(&link).Error; err != nil {
+	if err := s.DB(c).Create(&link).Error; err != nil {
 		return EError(c, err)
 	}
 
-	//if err := s.tracker.TrackActivity(tracker.LINK_CREATED_ACTIVITY, StructToJSONMap(link), nil, issueId, tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
+	// Reload issue with updated links
+	if err := s.DB(c).Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+		return EError(c, err)
+	}
 
-	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, nil, nil, link, &user)
-	if err != nil {
+	newSnapshot := tracker.IssueToSnapshot(*issue)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -2061,18 +2042,24 @@ func (s *Services) createIssueLink(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-links/{linkId} [patch]
 func (s *Services) updateIssueLink(c echo.Context) error {
-	user := *c.(IssueContext).User
-	//project := c.(IssueContext).Project
-	//issueId := c.(IssueContext).Issue.ID.String()
+
+	user := apicontext.GetContext(c).GetUser()
+	//issue := apicontext.GetContext(c).GetIssue(apicontext.WithLinks())
 
 	linkId := c.Param("linkId")
 
 	var oldLink dao.IssueLink
-	if err := s.db.Where("id = ?", linkId).First(&oldLink).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", linkId).First(&oldLink).Error; err != nil {
 		return EError(c, err)
 	}
 
-	oldMap := StructToJSONMap(oldLink)
+	var issue dao.Issue
+	if err := s.db.Where("id = ?", oldLink.IssueId).First(&issue).Error; err != nil {
+		return EError(c, err)
+	}
+
+	oldSnapshot := tracker.LinkToSnapshot(&oldLink)
+
 	var newLink IssueLinkRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&newLink); err != nil {
 		return EError(c, err)
@@ -2092,24 +2079,23 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 	oldLink.Url = newLink.Url
 
 	{ //rateLimit
-		dataField := utils.MapToSlice(oldMap, func(k string, v interface{}) string { return fmt.Sprintf("link_%s", actField.ReqFieldMapping(k)) })
-		if hasRecentFieldUpdate[dao.IssueActivity](s.db.Where("issue_id = ?", oldLink.IssueId), user.ID, dataField...) {
+		if hasRecentFieldUpdate(s.DB(c).Where("issue_id = ?", oldLink.IssueId), user.ID, "link_url", "link_title") {
 			return EErrorDefined(c, apierrors.ErrUpdateTooFrequent)
 		}
 	}
 
-	if err := s.db.Omit(clause.Associations).Save(&oldLink).Error; err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Save(&oldLink).Error; err != nil {
 		return EError(c, err)
 	}
-	newMap := StructToJSONMap(oldLink)
-	newMap["updateScopeId"] = oldLink.Id
 
-	oldMap["updateScope"] = "link"
-	oldMap["updateScopeId"] = oldLink.Id
-
-	err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, oldLink, &user)
-	if err != nil {
+	if err := s.db.Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
 		errStack.GetError(c, err)
+	}
+
+	newSnapshot := tracker.LinkToSnapshot(&oldLink)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, oldLink.ToLightDTO())
@@ -2134,28 +2120,38 @@ func (s *Services) updateIssueLink(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-links/{linkId} [delete]
 func (s *Services) deleteIssueLink(c echo.Context) error {
-	user := *c.(IssueContext).User
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
+	issueId := issue.ID
 	linkId := c.Param("linkId")
 
 	var link dao.IssueLink
 
-	if err := s.db.Where("project_id = ?", project.ID).
+	if err := s.DB(c).Where("project_id = ?", project.ID).
 		Where("issue_id = ?", issueId).
 		Where("issue_links.id = ?", linkId).First(&link).Error; err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.IssueLink, dao.IssueActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, link, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
-		return s.db.Delete(&link).Error
-	}); err != nil {
+	if err := s.DB(c).Delete(&link).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if err := s.DB(c).Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(*issue)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
 		return EError(c, err)
 	}
 
@@ -2182,20 +2178,26 @@ func (s *Services) deleteIssueLink(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/history [get]
 func (s *Services) getIssueHistoryList(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	issueId := issue.ID
 
-	var issueActivities []dao.EntityActivity
-	if err := s.db.Preload(clause.Associations).
+	var issueActivities []dao.ActivityEvent
+	if err := dao.LoadActivitiesBatched(s.DB(c).Preload(clause.Associations).
 		Where("issue_id = ?", issueId).
 		Where("project_id = ?", project.ID).
-		Where("field != ?", "comment").
-		Order("created_at DESC").Find(&issueActivities).Error; err != nil {
+		Where("entity_type = ?", types.LayerIssue).
+		Where("field != ?", actField.Comment.Field.String()).
+		Order("created_at DESC"), &issueActivities); err != nil {
 		return EError(c, err)
 	}
 
 	var issueComments []dao.IssueComment
-	if err := s.db.Where("issue_id = ?", issueId).
+	if err := s.DB(c).Where("issue_id = ?", issueId).
 		Where("project_id = ?", project.ID).
 		Order("created_at DESC").Preload(clause.Associations).Find(&issueComments).Error; err != nil {
 		return EError(c, err)
@@ -2203,7 +2205,7 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 
 	result := make([]interface{}, 0)
 	for _, activity := range issueActivities {
-		result = append(result, *activity.ToFullDTO())
+		result = append(result, *activity.ToDTO())
 	}
 	for _, comment := range issueComments {
 		result = append(result, *comment.ToDTO())
@@ -2211,13 +2213,13 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 
 	sort.Slice(result, func(i, j int) bool {
 		var iTime, jTime time.Time
-		if c, ok := result[i].(dto.EntityActivityFull); ok {
+		if c, ok := result[i].(dto.ActivityEventFull); ok {
 			iTime = c.CreatedAt
 		} else {
 			iTime = result[i].(dto.IssueComment).CreatedAt
 		}
 
-		if c, ok := result[j].(dto.EntityActivityFull); ok {
+		if c, ok := result[j].(dto.ActivityEventFull); ok {
 			jTime = c.CreatedAt
 		} else {
 			jTime = result[j].(dto.IssueComment).CreatedAt
@@ -2251,8 +2253,13 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments [get]
 func (s *Services) getIssueCommentList(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	issue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	issueId := issue.ID
 
 	offset := 0
 	limit := 100
@@ -2264,7 +2271,7 @@ func (s *Services) getIssueCommentList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
@@ -2322,11 +2329,15 @@ func (s *Services) getIssueCommentList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments [post]
 func (s *Services) createIssueComment(c echo.Context) error {
-	user := *c.(IssueContext).User
-	project := c.(IssueContext).Project
-	issue := c.(IssueContext).Issue
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	issue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	user := apiContext.GetUser()
 	var lastCommentTime time.Time
-	if err := s.db.Select("created_at").
+	if err := s.DB(c).Select("created_at").
 		Where("workspace_id = ?", issue.WorkspaceId).
 		Where("actor_id = ?", user.ID).
 		Order("created_at desc").
@@ -2367,15 +2378,15 @@ func (s *Services) createIssueComment(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		comment.Id = dao.GenUUID()
 		comment.ProjectId = project.ID
-		comment.Project = &project
+		comment.Project = project
 		comment.IssueId = issue.ID
 		comment.WorkspaceId = project.WorkspaceId
 		comment.Workspace = issue.Workspace
 		comment.ActorId = userID
-		comment.Issue = &issue
+		comment.Issue = issue
 		comment.CommentStripped = types.RemoveInvisibleChars(comment.CommentStripped)
 
 		if err := tx.Omit(clause.Associations).Create(&comment).Error; err != nil {
@@ -2383,7 +2394,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		}
 
 		issue.UpdatedAt = time.Now()
-		if err := tx.Select("updated_at").Updates(&issue).Error; err != nil {
+		if err := tx.Select("updated_at").Updates(issue).Error; err != nil {
 			return err
 		}
 
@@ -2452,7 +2463,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		comment.Actor = &user
+		comment.Actor = user
 		for _, u := range users {
 			if authorOriginalComment != nil && !replyNotMember {
 				if u.ID == authorOriginalComment.ID {
@@ -2470,11 +2481,9 @@ func (s *Services) createIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//if err := s.tracker.TrackActivity(tracker.COMMENT_CREATED_ACTIVITY, StructToJSONMap(comment), nil, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
+	newSnapshot := tracker.CommentToSnapshot(&comment)
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
 
-	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, nil, nil, comment, &user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2500,11 +2509,16 @@ func (s *Services) createIssueComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId} [get]
 func (s *Services) getIssueComment(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	issue := apiContext.GetIssue()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	issueId := issue.ID
 	commentId := c.Param("commentId")
 
-	query := s.db.
+	query := s.DB(c).
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
@@ -2545,8 +2559,13 @@ func (s *Services) getIssueComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId}/history [get]
 func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	issueId := issue.ID
 	commentId := c.Param("commentId")
 
 	offset := -1
@@ -2558,13 +2577,14 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var comments []dao.IssueActivity
-	queryHistory := s.db.
+	var comments []dao.ActivityEvent
+	queryHistory := s.DB(c).
 		Joins("Actor").
-		Where("issue_activities.project_id = ?", project.ID).
-		Where("issue_activities.issue_id = ?", issueId).
-		Where("issue_activities.new_identifier = ? ", commentId).
-		Order("issue_activities.created_at DESC")
+		Where("activity_events.project_id = ?", project.ID).
+		Where("activity_events.issue_id = ?", issueId).
+		Where("activity_events.new_identifier = ? ", commentId).
+		Where("entity_type = ?", types.LayerIssue).
+		Order("activity_events.created_at DESC")
 
 	resp, err := dao.PaginationRequest(
 		offset,
@@ -2576,8 +2596,8 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	commentHistory := utils.SliceToSlice(resp.Result.(*[]dao.IssueActivity),
-		func(i *dao.IssueActivity) dto.CommentHistory {
+	commentHistory := utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent),
+		func(i *dao.ActivityEvent) dto.CommentHistory {
 
 			var commentUUId uuid.NullUUID
 			if i.NewIssueComment != nil {
@@ -2590,14 +2610,14 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 			commentHistory := dto.CommentHistory{
 				CommentHtml:     comment,
 				CommentStripped: comment.StripTags(),
-				UpdatedById:     i.ActorId.UUID,
+				UpdatedById:     i.ActorID,
 				ActorUpdate:     i.Actor.ToLightDTO(),
 				CommentId:       commentUUId,
 				CreatedAt:       i.CreatedAt,
 				Attachments:     nil,
 			}
 
-			query := s.db.Where("workspace_id = ?", i.WorkspaceId).
+			query := s.DB(c).Where("workspace_id = ?", i.WorkspaceID).
 				Where("comment_id = ?", i.NewIssueComment.Id)
 
 			currentFiles, _ := dao.GetFileAssetFromDescription(query, &comment.Body)
@@ -2631,13 +2651,17 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId} [patch]
 func (s *Services) updateIssueComment(c echo.Context) error {
-	user := *c.(IssueContext).User
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 	commentId := c.Param("commentId")
-
+	var oldSnapshot, newSnapshot tracker.CommentSnapshot
 	var comment dao.IssueComment
 	var commentOld dao.IssueComment
-	if err := s.db.
+	if err := s.DB(c).
 		Where("id = ?", commentId).Preload(clause.Associations).Preload("Issue.Workspace").Find(&commentOld).Error; err != nil {
 		return EError(c, err)
 	}
@@ -2645,8 +2669,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
-
-	oldMap := StructToJSONMap(commentOld)
+	oldSnapshot = tracker.CommentToSnapshot(&commentOld)
 
 	form, _ := c.MultipartForm()
 
@@ -2679,7 +2702,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		commentOld.Attachments = comment.Attachments
 		commentOld.CommentHtml = comment.CommentHtml
 		commentOld.CommentStripped = comment.CommentStripped
@@ -2689,6 +2712,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		if err := tx.Omit(clause.Associations).Save(&commentOld).Error; err != nil {
 			return err
 		}
+		newSnapshot = tracker.CommentToSnapshot(&commentOld)
 
 		if form != nil {
 			// Save issue attachments to
@@ -2749,7 +2773,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 				comment.Id = commentUUID
 				comment.IssueId = issue.ID
 				comment.WorkspaceId = issue.WorkspaceId
-				comment.Issue = &issue
+				comment.Issue = issue
 				if notify, countNotify, err := notifications.CreateUserNotificationAddComment(tx, authorOriginalComment.ID, comment); err == nil {
 					s.notificationsService.Ws.Send(authorOriginalComment.ID, notify.ID, comment, countNotify)
 				}
@@ -2760,7 +2784,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		commentOld.Actor = &user
+		commentOld.Actor = user
 		for _, u := range users {
 			if authorOriginalComment != nil && !replyNotMember {
 				if u.ID == authorOriginalComment.ID {
@@ -2777,17 +2801,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	newMap := StructToJSONMap(commentOld)
-	newMap["updateScopeId"] = commentOld.Id
-	newMap["field_log"] = actField.Comment.Field
-
-	oldMap["updateScope"] = "comment"
-	oldMap["updateScopeId"] = commentOld.Id
-	//if err := s.tracker.TrackActivity(tracker.COMMENT_UPDATED_ACTIVITY, newMap, oldMap, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, commentOld.Project, user); err != nil {
-	//	return EError(c, err)
-	//}
-
-	err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newMap, oldMap, commentOld, &user)
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
@@ -2814,14 +2828,19 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId} [delete]
 func (s *Services) deleteIssueComment(c echo.Context) error {
-	user := *c.(IssueContext).User
-	project := c.(IssueContext).Project
-	projectMember := c.(IssueContext).ProjectMember
-	issueId := c.(IssueContext).Issue.ID
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	projectMember := apiCtx.GetProjectMember()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
+	issueId := issue.ID
 	commentId := c.Param("commentId")
 
 	var comment dao.IssueComment
-	if err := s.db.Where("project_id = ?", project.ID).
+	if err := s.DB(c).Where("project_id = ?", project.ID).
 		Where("issue_id = ?", issueId).
 		Where("id = ?", commentId).
 		Preload("Attachments").
@@ -2829,25 +2848,21 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	oldSnapshot := tracker.CommentToSnapshot(&comment)
+
 	if projectMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.IssueComment, dao.IssueActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, comment, &user)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-
-		return s.db.Delete(&comment).Error
-	}); err != nil {
+	if err := s.db.Delete(&comment).Error; err != nil {
 		return EError(c, err)
 	}
 
-	//if err := s.tracker.TrackActivity(tracker.COMMENT_DELETED_ACTIVITY, nil, nil, issueId, tracker.ENTITY_TYPE_ISSUE, &project, user); err != nil {
-	//	return EError(c, err)
-	//}
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, nil, issue, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
 	return c.NoContent(http.StatusOK)
 }
 
@@ -2873,7 +2888,7 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId}/reactions [post]
 func (s *Services) addCommentReaction(c echo.Context) error {
-	user := *c.(IssueContext).User
+	user := apicontext.GetContext(c).GetUser()
 	commentId := c.Param("commentId")
 
 	var reactionRequest ReactionRequest
@@ -2888,7 +2903,7 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 
 	// Проверяем, есть ли уже такая реакция от пользователя
 	var existingReaction dao.CommentReaction
-	err := s.db.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, commentId, reactionRequest.Reaction).First(&existingReaction).Error
+	err := s.DB(c).Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, commentId, reactionRequest.Reaction).First(&existingReaction).Error
 	if err == nil {
 		return c.JSON(http.StatusOK, existingReaction)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -2905,7 +2920,7 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 		Reaction:  reactionRequest.Reaction,
 	}
 
-	if err := s.db.Create(&reaction).Error; err != nil {
+	if err := s.DB(c).Create(&reaction).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -2932,11 +2947,11 @@ func (s *Services) addCommentReaction(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/comments/{commentId}/reactions/{reaction} [delete]
 func (s *Services) removeCommentReaction(c echo.Context) error {
-	user := *c.(IssueContext).User
+	user := apicontext.GetContext(c).GetUser()
 	commentId := c.Param("commentId")
 	reactionStr := strings.TrimSuffix(c.Param("reaction"), "/")
 
-	if err := s.db.Where("user_id = ? AND comment_id = ? AND reaction = ?",
+	if err := s.DB(c).Where("user_id = ? AND comment_id = ? AND reaction = ?",
 		user.ID, commentId, reactionStr).Delete(&dao.CommentReaction{}).Error; err != nil {
 		return EError(c, err)
 	}
@@ -2960,15 +2975,21 @@ func (s *Services) removeCommentReaction(c echo.Context) error {
 // @Param offset query int false "Смещение для пагинации" default(0)
 // @Param limit query int false "Лимит записей" default(100)
 // @Param field query string false "Поле активности для фильтрации (например: state)"
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список активностей с пагинацией"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список активностей с пагинацией"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/activities [get]
 func (s *Services) getIssueActivityList(c echo.Context) error {
-	projectId := c.(IssueContext).Project.ID
-	issueId := c.(IssueContext).Issue.ID
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	curIssue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	projectId := project.ID
+	issueId := curIssue.ID
 
 	offset := 0
 	limit := 100
@@ -2982,56 +3003,55 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	unionTable := dao.BuildUnionSubquery(s.db, "ia", dao.FullActivity{}, issue)
-
-	query := unionTable.
+	query := s.db.
 		Joins("Issue").
 		Joins("Actor").
 		Joins("Project").
 		Joins("Workspace").
-		Where("ia.project_id = ?", projectId).
-		Where("ia.issue_id = ?", issueId).
-		Order("ia.created_at DESC")
+		Where("activity_events.project_id = ?", projectId).
+		Where("activity_events.issue_id = ?", issueId).
+		Where("activity_events.entity_type = ?", types.LayerIssue).
+		Order("activity_events.created_at DESC")
+
+	if field == "state" {
+		query = query.Select("activity_events.*, round(extract('epoch' from activity_events.created_at - (LAG(activity_events.created_at, 1, \"Issue\".created_at) over (order by activity_events.created_at))) * 1000) as state_lag")
+	} else {
+		// Для остальных случаев state_lag будет NULL
+		query = query.Select("activity_events.*, NULL as state_lag")
+	}
 
 	if field != "" {
-		query = query.Where("ia.field = ?", actField.Status.Field.String())
-		if field == "state" {
-			query = query.Select("ia.*, round(extract('epoch' from ia.created_at - (LAG(ia.created_at, 1, \"Issue\".created_at) over (order by ia.created_at))) * 1000) as state_lag")
-
-		} else {
-			query = query.Select("ia.*")
-		}
+		query = query.Where("activity_events.field = ?", actField.Status.Field.String())
 	} else {
-		query = query.Where("ia.field <> ?", actField.Status.Field.String())
+		query = query.Where("activity_events.field <> ?", actField.Status.Field.String())
 	}
 
-	type fullActivityWithLag struct {
-		dao.FullActivity
-		StateLag int `json:"state_lag,omitempty" gorm:"state_lag"`
+	type events struct {
+		dao.ActivityEvent
+		StateLag *int `json:"state_lag,omitempty" gorm:"state_lag"`
 	}
 
-	toDto := func(fa *fullActivityWithLag) *dto.EntityActivityFull {
+	toDto := func(fa *events) *dto.ActivityEventFull {
 		if fa == nil {
 			return nil
 		}
 
 		res := fa.ToDTO()
-		res.StateLag = fa.StateLag
+		if fa.StateLag != nil {
+			res.StateLag = *fa.StateLag
+
+		}
 		return res
 	}
 
-	var activities []fullActivityWithLag
-	res, err := dao.PaginationRequest(offset, limit, query, &activities)
+	var activities2 []events
+
+	res, err := dao.PaginationRequest(offset, limit, query, &activities2)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	res.Result = utils.SliceToSlice(res.Result.(*[]fullActivityWithLag), func(ea *fullActivityWithLag) dto.EntityActivityFull { return *toDto(ea) })
-
-	//res.
-	//return c.JSON(http.StatusOK, res)
+	res.Result = utils.SliceToSlice(res.Result.(*[]events), func(ea *events) dto.ActivityEventFull { return *toDto(ea) })
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"offset":     res.Offset,
@@ -3040,14 +3060,6 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		"activities": res.Result,
 	})
 }
-
-//func findActivities[T any](query *gorm.DB, offset, limit int) ([]T, error) {
-//	var activities []T
-//	if err := query.Offset(offset).Limit(limit).Find(&activities).Error; err != nil {
-//		return nil, err
-//	}
-//	return activities, nil
-//}
 
 // ############# Issue attachments methods ###################
 
@@ -3069,11 +3081,16 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-attachments [get]
 func (s *Services) getIssueAttachmentList(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	issueId := issue.ID
 
 	var attachments []dao.IssueAttachment
-	if err := s.db.
+	if err := s.DB(c).
 		Joins("Asset").
 		Where("issue_attachments.project_id = ?", project.ID).
 		Where("issue_attachments.issue_id = ?", issueId).
@@ -3106,9 +3123,13 @@ func (s *Services) getIssueAttachmentList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-attachments [post]
 func (s *Services) createIssueAttachments(c echo.Context) error {
-	user := *c.(IssueContext).User
-	project := c.(IssueContext).Project
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
 	if !limiter.Limiter.CanAddAttachment(project.WorkspaceId) {
 		return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
@@ -3171,13 +3192,13 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		FileSize:    int(asset.Size),
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
-		if err := s.db.Create(&issueAttachment.Asset).Error; err != nil {
+		if err := tx.Create(&issueAttachment.Asset).Error; err != nil {
 			return err
 		}
 
-		if err := s.db.Create(&issueAttachment).Error; err != nil {
+		if err := tx.Create(&issueAttachment).Error; err != nil {
 			return err
 		}
 		return nil
@@ -3185,14 +3206,11 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//if err := s.tracker.TrackActivity(tracker.ATTACHMENT_CREATED_ACTIVITY, nil, map[string]interface{}{"id": issueAttachment.Id}, issue.ID.String(), tracker.ENTITY_TYPE_ISSUE, issue.Project, user); err != nil {
-	//	return EError(c, err)
-	//}
-	err = tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, actField.EntityCreateActivity, nil, nil, issueAttachment, &user)
+	newSnapshot := tracker.AttachmentToSnapshot(&issueAttachment)
+	err = s.snapshotTracker.TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.JSON(http.StatusCreated, issueAttachment.ToLightDTO())
 }
 
@@ -3214,11 +3232,16 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-attachments/all/ [get]
 func (s *Services) downloadIssueAttachments(c echo.Context) error {
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	issueId := issue.ID
 
 	var attachments []dao.IssueAttachment
-	if err := s.db.
+	if err := s.DB(c).
 		Joins("Asset").
 		Where("issue_attachments.project_id = ?", project.ID).
 		Where("issue_attachments.issue_id = ?", issueId).
@@ -3237,7 +3260,7 @@ func (s *Services) downloadIssueAttachments(c echo.Context) error {
 	}
 
 	c.Response().Header().Set(echo.HeaderContentType, "application/zip")
-	c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf("attachment; filename=\"%s_attachments.zip\"", c.(IssueContext).Issue.GetString()))
+	c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf("attachment; filename=\"%s_attachments.zip\"", issue.GetString()))
 	c.Response().WriteHeader(http.StatusOK)
 
 	w := zip.NewWriter(c.Response())
@@ -3289,37 +3312,40 @@ func (s *Services) downloadIssueAttachments(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/issue-attachments/{attachmentId} [delete]
 func (s *Services) deleteIssueAttachment(c echo.Context) error {
-	user := *c.(IssueContext).User
-	project := c.(IssueContext).Project
-	issueId := c.(IssueContext).Issue.ID
+	apiCtx := apicontext.GetContext(c)
+	project := apiCtx.GetProject()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 	attachmentId := c.Param("attachmentId")
 
 	var attachment dao.IssueAttachment
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Project").
 		Preload("Asset").
 		Where("project_id = ?", project.ID).
-		Where("issue_id = ?", issueId).
+		Where("issue_id = ?", issue.ID).
 		Where("issue_attachments.id = ?", attachmentId).
 		Find(&attachment).Error; err != nil {
 		return EError(c, err)
 	}
+	oldSnapshot := tracker.AttachmentToSnapshot(&attachment)
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.IssueAttachment, dao.IssueActivity](s.tracker, actField.EntityDeleteActivity, nil, nil, attachment, &user)
-		if err != nil {
-			errStack.GetError(c, err)
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
 			return err
 		}
-
-		if err := s.db.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
-			return err
-		}
-		return s.db.Omit(clause.Associations).Delete(attachment.Asset).Error
+		return tx.Omit(clause.Associations).Delete(attachment.Asset).Error
 	}); err != nil {
 		return EError(c, err)
 	}
 
+	err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, nil, issue, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
 	return c.NoContent(http.StatusOK)
 }
 
@@ -3341,10 +3367,14 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/linked-issues [get]
 func (s *Services) getIssueLinkedIssueList(c echo.Context) error {
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue(apicontext.WithLinkedIssues())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
 	var issues []dao.Issue
-	if err := s.db.Where("project_id = ?", issue.ProjectId).
+	if err := s.DB(c).Where("project_id = ?", issue.ProjectId).
 		Preload(clause.Associations).
 		Where("id in (?)", issue.LinkedIssuesIDs).
 		Order("sequence_id").Find(&issues).Error; err != nil {
@@ -3375,40 +3405,23 @@ func (s *Services) getIssueLinkedIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/linked-issues [post]
 func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
-	issue := c.(IssueContext).Issue
-	//project := c.(IssueContext).Project
-	user := c.(IssueContext).User
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue(apicontext.WithLinkedIssues())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
 	var param LinkedIssuesIds
 	if err := c.Bind(&param); err != nil {
 		return EError(c, err)
 	}
 
-	oldIssue := StructToJSONMap(issue)
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
 	var issues []dao.Issue
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		// Clean all links with this issue
-		var linkedIssues []dao.LinkedIssues
-		var oldIDs []interface{}
-		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Find(&linkedIssues).Error; err != nil {
-			return err
-		}
-
-		for _, v := range linkedIssues {
-			if v.Id1 != issue.ID {
-				oldIDs = append(oldIDs, v.Id1)
-			}
-			if v.Id2 != issue.ID {
-				oldIDs = append(oldIDs, v.Id2)
-			}
-		}
-
-		newIDs := make([]interface{}, len(param.IssueIDs))
-		for i, v := range param.IssueIDs {
-			newIDs[i] = v
-		}
-
 		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Delete(&dao.LinkedIssues{}).Error; err != nil {
 			return err
 		}
@@ -3426,16 +3439,16 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 		if err := tx.Where("id in (?)", issue.LinkedIssuesIDs).Find(&issues).Error; err != nil {
 			return err
 		}
+		issue.LinkedIssues = issues
 
 		return nil
 	}); err != nil {
 		return EError(c, err)
 	}
 
-	newIssue := StructToJSONMap(issue)
+	newSnapshot := tracker.IssueToSnapshot(*issue)
 
-	err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](s.tracker, actField.EntityUpdatedActivity, newIssue, oldIssue, issue, user)
-	if err != nil {
+	if err := s.snapshotTracker.TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -3463,12 +3476,27 @@ func (s *Services) addIssueLinkedIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/pdf [get]
 func (s *Services) getIssuePdf(c echo.Context) error {
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue(apicontext.WithAll())
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
 	c.Response().Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s.pdf", issue.String()))
 
+	var comments []dao.IssueComment
+	if err := s.DB(c).
+		Joins("Actor").
+		Joins("OriginalComment").
+		Joins("OriginalComment.Actor").
+		Where("issue_comments.issue_id = ?", issue.ID).
+		Order("issue_comments.created_at DESC").
+		Find(&comments).Error; err != nil {
+		return EError(c, err)
+	}
+
 	var buf bytes.Buffer
-	if err := export.IssueToFPDF(&issue, cfg.WebURL.URL, &buf); err != nil {
+	if err := export.IssueToFPDF(issue, cfg.WebURL.URL, &buf, comments...); err != nil {
 		return EError(c, err)
 	}
 
@@ -3493,10 +3521,14 @@ func (s *Services) getIssuePdf(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/description-lock [post]
 func (s *Services) issueDescriptionLock(c echo.Context) error {
-	user := c.(IssueContext).User
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.DB(c).Transaction(func(tx *gorm.DB) error {
 		// Remove old locks for this issue
 		if err := tx.Where("issue_id = ? and locked_until < NOW()", issue.ID).Delete(&dao.IssueDescriptionLock{}).Error; err != nil {
 			return EError(c, err)
@@ -3549,10 +3581,14 @@ func (s *Services) issueDescriptionLock(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/description-unlock [post]
 func (s *Services) issueDescriptionUnlock(c echo.Context) error {
-	user := c.(IssueContext).User
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
-	res := s.db.Where("issue_id = ? and user_id = ?", issue.ID, user.ID).Delete(&dao.IssueDescriptionLock{})
+	res := s.DB(c).Where("issue_id = ? and user_id = ?", issue.ID, user.ID).Delete(&dao.IssueDescriptionLock{})
 	if res.Error != nil {
 		return EError(c, res.Error)
 	}
@@ -3579,9 +3615,13 @@ func (s *Services) issueDescriptionUnlock(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/pin [post]
 func (s *Services) issuePin(c echo.Context) error {
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
-	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
+	if err := s.DB(c).Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", true).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -3602,9 +3642,13 @@ func (s *Services) issuePin(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/pin [post]
 func (s *Services) issueUnpin(c echo.Context) error {
-	issue := c.(IssueContext).Issue
+	apiCtx := apicontext.GetContext(c)
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
-	if err := s.db.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
+	if err := s.DB(c).Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", false).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -3629,12 +3673,16 @@ func (s *Services) issueUnpin(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Задача не найдена"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/ [get]
 func (s *Services) getIssueProperties(c echo.Context) error {
-	issue := c.(IssueContext).Issue
-	projectMember := c.(IssueContext).ProjectMember
+	apiCtx := apicontext.GetContext(c)
+	projectMember := apiCtx.GetProjectMember()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
 	// Получаем все шаблоны полей проекта
 	var templates []dao.ProjectPropertyTemplate
-	if err := s.db.Where("project_id = ?", issue.ProjectId).
+	if err := s.DB(c).Where("project_id = ?", issue.ProjectId).
 		Where("only_admin = ? OR only_admin = ?", false, projectMember.Role == types.AdminRole).
 		Order("sort_order, created_at").
 		Find(&templates).Error; err != nil {
@@ -3643,7 +3691,7 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 
 	// Получаем существующие значения для задачи
 	var existingProps []dao.IssueProperty
-	if err := s.db.Where("issue_id = ?", issue.ID).
+	if err := s.DB(c).Where("issue_id = ?", issue.ID).
 		Find(&existingProps).Error; err != nil {
 		return EError(c, err)
 	}
@@ -3708,9 +3756,13 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "Задача или шаблон не найден"
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/ [post]
 func (s *Services) setIssueProperty(c echo.Context) error {
-	user := c.(IssueContext).User
-	issue := c.(IssueContext).Issue
-	projectMember := c.(IssueContext).ProjectMember
+	apiCtx := apicontext.GetContext(c)
+	projectMember := apiCtx.GetProjectMember()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 
 	templateId := c.Param("templateId")
 	templateUUID, err := uuid.FromString(templateId)
@@ -3725,7 +3777,7 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 
 	// Проверяем существование шаблона
 	var template dao.ProjectPropertyTemplate
-	if err := s.db.Where("id = ? AND project_id = ?", templateUUID, issue.ProjectId).First(&template).Error; err != nil {
+	if err := s.DB(c).Where("id = ? AND project_id = ?", templateUUID, issue.ProjectId).First(&template).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
 		}
@@ -3738,7 +3790,7 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	}
 
 	// Валидируем значение через JSON Schema
-	if err := validatePropertyValue(template, request.Value); err != nil {
+	if err := validatePropertyValue(c.Request().Context(), template, request.Value); err != nil {
 		return EErrorDefined(c, apierrors.ErrPropertyValueValidationFailed)
 	}
 
@@ -3747,7 +3799,7 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 
 	// Проверяем существование значения
 	var existingProp dao.IssueProperty
-	err = s.db.Where("issue_id = ? AND template_id = ?", issue.ID, templateUUID).First(&existingProp).Error
+	err = s.DB(c).Where("issue_id = ? AND template_id = ?", issue.ID, templateUUID).First(&existingProp).Error
 
 	status := http.StatusOK
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -3763,7 +3815,7 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 			UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
 		}
 
-		if err := s.db.Create(&existingProp).Error; err != nil {
+		if err := s.DB(c).Create(&existingProp).Error; err != nil {
 			return EError(c, err)
 		}
 		status = http.StatusCreated
@@ -3774,15 +3826,19 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		existingProp.Value = valueStr
 		existingProp.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 
-		if err := s.db.Save(&existingProp).Error; err != nil {
+		if err := s.DB(c).Save(&existingProp).Error; err != nil {
 			return EError(c, err)
 		}
 	}
 
 	// Загружаем шаблон для ответа
 	existingProp.Template = &template
+	resp := existingProp.ToDTO()
+	if resp.Type == "link" {
+		resp.Value = json.RawMessage(resp.Value.(string))
+	}
 
-	return c.JSON(status, existingProp.ToDTO())
+	return c.JSON(status, resp)
 }
 
 // getDefaultPropertyValue возвращает дефолтное значение для типа поля
@@ -3815,7 +3871,7 @@ func parsePropertyValue(propType, value string) any {
 		if value == "" {
 			return nil
 		}
-		var m map[string]any
+		var m json.RawMessage
 		if err := json.Unmarshal([]byte(value), &m); err != nil {
 			return value
 		}
@@ -3826,9 +3882,8 @@ func parsePropertyValue(propType, value string) any {
 }
 
 // validatePropertyValue валидирует значение через JSON Schema
-func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) error {
+func validatePropertyValue(ctx context.Context, template dao.ProjectPropertyTemplate, value any) error {
 	schema := types.GenValueSchema(template.Type, template.Options)
-
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("schema.json", schema); err != nil {
 		return err
@@ -3839,7 +3894,11 @@ func validatePropertyValue(template dao.ProjectPropertyTemplate, value any) erro
 		return err
 	}
 
-	return sch.Validate(value)
+	err = sch.Validate(value)
+	if errors.Is(err, &jsonschema.ValidationError{}) {
+		slog.DebugContext(ctx, "JSON schema validation error", "err", err)
+	}
+	return err
 }
 
 // serializePropertyValue сериализует значение в строку для хранения в БД

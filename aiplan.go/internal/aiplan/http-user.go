@@ -17,14 +17,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/golang-jwt/jwt/v5"
 
@@ -153,7 +154,7 @@ func (s *Services) getUser(c echo.Context) error {
 	userId := c.Param("userId")
 
 	var user dao.User
-	if err := s.db.Where("id = ? or email = ?", userId, userId).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ? or email = ?", userId, userId).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrUserNotFound)
 		}
@@ -174,13 +175,13 @@ func (s *Services) getUser(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/ [get]
 func (s *Services) getCurrentUser(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	var count int
-	if err := s.db.Select("count(*)").
+	if err := s.DB(c).Select("count(*)").
 		Where("viewed = false").
 		Where("user_id = ?", user.ID).
 		Where("deleted_at IS NULL").
-		Model(&dao.UserNotifications{}).
+		Model(&dao.UserAppNotify{}).
 		Find(&count).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
@@ -207,7 +208,7 @@ func (s *Services) getCurrentUser(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/ [patch]
 func (s *Services) updateCurrentUser(c echo.Context) error {
-	user := c.(AuthContext).User // c.MustGet("User").(dao.User)
+	user := apicontext.GetContext(c).GetUser() // c.MustGet("User").(dao.User)
 
 	var req UserUpdateRequest
 	if err := c.Bind(&req); err != nil {
@@ -239,7 +240,7 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 		if settings.DeadlineNotification != user.Settings.DeadlineNotification {
 			diff := user.Settings.DeadlineNotification - settings.DeadlineNotification
 
-			err := s.db.
+			err := s.DB(c).
 				Model(&dao.DeferredNotifications{}).
 				Where("user_id = ?", user.ID).
 				Where("sent_at IS NULL").
@@ -259,7 +260,7 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 		updateMap["status_end_date"] = nil
 	}
 
-	if err := s.db.Model(&user).Updates(updateMap).Error; err != nil {
+	if err := s.DB(c).Model(&user).Updates(updateMap).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrUsernameConflict)
 		}
@@ -284,7 +285,7 @@ func (s *Services) updateCurrentUser(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/avatar/ [post]
 func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -297,7 +298,7 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 		CreatedById: userID,
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := s.uploadAvatarForm(tx, file, &fileAsset); err != nil {
 			return err
 		}
@@ -323,9 +324,9 @@ func (s *Services) updateCurrentUserAvatar(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/avatar/ [delete]
 func (s *Services) deleteCurrentUserAvatar(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		user.AvatarId = uuid.NullUUID{}
 		user.Avatar = ""
 		if err := tx.Omit(clause.Associations).Save(&user).Error; err != nil {
@@ -363,7 +364,7 @@ func (s *Services) deleteCurrentUserAvatar(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/onboard/ [post]
 func (s *Services) updateUserOnBoard(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if user.IsOnboarded {
 		return c.NoContent(http.StatusNotModified)
@@ -385,7 +386,7 @@ func (s *Services) updateUserOnBoard(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(&user).Select("first_name", "last_name", "username", "role", "telegram_id", "is_onboarded").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("first_name", "last_name", "username", "role", "telegram_id", "is_onboarded").Updates(&user).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrUsernameConflict)
 		} else {
@@ -410,14 +411,14 @@ func (s *Services) updateUserOnBoard(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/view-props/ [post]
 func (s *Services) updateUserViewProps(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var props types.ViewProps
 	if err := c.Bind(&props); err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(&user).Update("view_props", props).Error; err != nil {
+	if err := s.DB(c).Model(&user).Update("view_props", props).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -434,13 +435,13 @@ func (s *Services) updateUserViewProps(c echo.Context) error {
 // @Param day query string false "День выборки активностей" default("")
 // @Param offset query int false "Смещение для пагинации" default(-1)
 // @Param limit query int false "Лимит результатов" default(100)
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список действий пользователя"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список действий пользователя"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/:userId/activities/ [get]
 func (s *Services) getUserActivityList(c echo.Context) error {
-	currentUser := *c.(AuthContext).User
+	currentUser := apicontext.GetContext(c).GetUser()
 	userId := c.Param("userId")
 
 	var day DayRequest
@@ -454,34 +455,31 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project)
-
-	query := unionTable.
+	var activities []dao.ActivityEvent
+	query := s.db.
 		Joins("Workspace").
 		Joins("Actor").
 		Joins("Issue").
 		Joins("Project").
-		Joins("Form").
 		Joins("Doc").
-		Order("fa.created_at desc").
-		Where("fa.actor_id = ?", userId).
-		Where("field NOT IN (?)", []string{"start_date", "end_date"}).
-		Where("fa.entity_type = 'issue' OR (fa.entity_type = 'project' AND fa.field = 'issue')").
+		Order("created_at desc").
+		Where("actor_id = ?", userId).
+		Where("field NOT IN (?)", []string{actField.StartDate.Field.String(), actField.EndDate.Field.String()}).
+		Where("entity_type = ? OR (entity_type = ? AND field = ?)", types.LayerIssue, types.LayerProject, actField.Issue.Field).
 		Set("userId", currentUser.ID)
 
 	if !currentUser.IsSuperuser {
-		query.Where("fa.workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
+		query = query.
+			Where("activity_events.workspace_id in (?)", s.db.Select("workspace_members.workspace_id").
+				Where("member_id = ?", currentUser.ID).
+				Model(&dao.WorkspaceMember{}),
+			)
 	}
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("fa.created_at >= ?", time.Time(day)).Where("fa.created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("created_at >= ?", time.Time(day)).Where("created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
-	var activities []dao.FullActivity
 	resp, err := dao.PaginationRequest(
 		offset,
 		limit,
@@ -492,7 +490,7 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(pa *dao.FullActivity) dto.EntityActivityFull { return *pa.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(pa *dao.ActivityEvent) dto.ActivityEventFull { return *pa.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }
@@ -509,13 +507,13 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 // @Param limit query int false "Лимит результатов" default(100)
 // @Param workspace query []string false "Workspace IDs"
 // @Param project query []string false "Project IDs"
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список действий пользователя"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список действий пользователя"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/activities/ [get]
 func (s *Services) getMyActivityList(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspaceIds, projectIds []string
 	var day DayRequest
@@ -532,23 +530,9 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var root dao.RootActivity
-	root.UnionCustomFields = "'root' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
+	var activities []dao.ActivityEvent
 
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc, sprint)
-	query := unionTable.
+	query := s.db.
 		Joins("Actor").
 		Joins("Project").
 		Joins("Workspace").
@@ -556,35 +540,29 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 		Joins("Doc").
 		Joins("Form").
 		Joins("Sprint").
-		Order("fa.created_at desc").
-		Where("fa.actor_id = ?", user.ID).
+		Order("activity_events.created_at desc").
+		Where("activity_events.actor_id = ?", user.ID).
 		//Where("field NOT IN (?)", []string{"start_date", "end_date"}). //TODO create & move to ActivitySkipper
 		Set("userId", user.ID)
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("fa.created_at >= ?", time.Time(day)).Where("fa.created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("activity_events.created_at >= ?", time.Time(day)).Where("activity_events.created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
-	var activities []dao.FullActivity
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
+		query = query.Where("workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id::text IN (?)", projectIds)
+		query = query.Where("project_id::text IN (?)", projectIds)
 	}
 
-	resp, err := dao.PaginationRequest(
-		offset,
-		limit,
-		query,
-		&activities,
-	)
+	resp, err := dao.PaginationRequest(offset, limit, query, &activities)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(ea *dao.FullActivity) dto.EntityActivityFull { return *ea.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(ea *dao.ActivityEvent) dto.ActivityEventFull { return *ea.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }
@@ -607,7 +585,7 @@ func (s *Services) getMyActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/users/me/activities/table/ [get]
 func (s *Services) getMyActivitiesTable(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspaceIds, projectIds []string
 
@@ -622,32 +600,16 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var root dao.RootActivity
-	root.UnionCustomFields = "'root' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project, workspace, form, root, doc, sprint)
-	query := unionTable.
-		Where("fa.actor_id = ?", user.ID)
+	query := s.db.
+		Where("actor_id = ?", user.ID)
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper
 
 	if len(workspaceIds) > 0 {
-		query = query.Where("fa.workspace_id::text IN (?)", workspaceIds)
+		query = query.Where("workspace_id::text IN (?)", workspaceIds)
 	}
 
 	if len(projectIds) > 0 {
-		query = query.Where("fa.project_id::text IN (?)", projectIds)
+		query = query.Where("project_id::text IN (?)", projectIds)
 	}
 
 	tables, err := GetActivitiesTable(query, from, to)
@@ -680,7 +642,7 @@ func (s *Services) getMyActivitiesTable(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/users/{userId}/activities/table/ [get]
 func (s *Services) getUserActivitiesTable(c echo.Context) error {
-	currentUser := c.(AuthContext).User
+	currentUser := apicontext.GetContext(c).GetUser()
 	userId := c.Param("userId")
 
 	var from, to DayRequest
@@ -695,7 +657,7 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 	// If email provided
 	userUUID, err := uuid.FromString(userId)
 	if err != nil {
-		if err := s.db.Select("id").Where("email = ?", userId).Model(&dao.User{}).Find(&userId).Error; err != nil {
+		if err := s.DB(c).Select("id").Where("email = ?", userId).Model(&dao.User{}).Find(&userId).Error; err != nil {
 			return EError(c, err)
 		}
 		if userId == "" {
@@ -703,25 +665,19 @@ func (s *Services) getUserActivitiesTable(c echo.Context) error {
 		}
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, issue, project)
-
-	query := unionTable.
-		Where("fa.actor_id = ?", userId).
-		Where("field NOT IN (?)", []string{"start_date", "end_date"}).
-		Where("fa.entity_type = 'issue' OR (fa.entity_type = 'project' AND fa.field = 'issue')")
+	query := s.db.
+		Where("actor_id = ?", userId).
+		Where("field NOT IN (?)", []string{actField.StartDate.Field.String(), actField.EndDate.Field.String()}).
+		Where("entity_type = ? OR (entity_type = ? AND field = ?)", types.LayerIssue, types.LayerProject, actField.Issue.Field)
 
 	//Where("entity_type NOT IN (?)", []string{tracker.ENTITY_TYPE_PROJECT, tracker.ENTITY_TYPE_WORKSPACE})
-	//query := s.db.
+	//query := s.DB(c).
 	//	Where("actor_id = ?", userId).
 	//	Where("entity_type NOT IN (?)", []string{tracker.ENTITY_TYPE_PROJECT, tracker.ENTITY_TYPE_WORKSPACE}).
 	//	Where("field NOT IN (?)", []string{"start_date", "end_date"}) //TODO create & move to ActivitySkipper
 
 	if !currentUser.IsSuperuser {
-		query = query.Where("fa.workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
+		query = query.Where("workspace_id in (?)", s.db.Select("workspace_id").Where("member_id = ?", currentUser.ID).Model(&dao.WorkspaceMember{}))
 	}
 
 	tables, err := GetActivitiesTable(query, from, to)
@@ -755,12 +711,16 @@ func (s *Services) forgotPassword(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	if cfg.LDAPForce {
+		return EErrorDefined(c, apierrors.ErrResetPasswordForbidden)
+	}
+
 	if !CaptchaService.Validate(data.CaptchaPayload) {
 		return EError(c, nil)
 	}
 
 	var user dao.User
-	if err := s.db.Where("email = ?", data.Email).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("email = ?", data.Email).First(&user).Error; err != nil {
 		if err != gorm.ErrRecordNotFound {
 			return EError(c, err)
 		}
@@ -772,7 +732,7 @@ func (s *Services) forgotPassword(c echo.Context) error {
 	}
 
 	user.Token = dao.GenID()
-	if err := s.db.Model(&user).Select("Token").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("Token").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -798,8 +758,8 @@ func (s *Services) forgotPassword(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/change-my-password/ [post]
 func (s *Services) updateMyPassword(c echo.Context) error {
-	user := *c.(AuthContext).User
-	accessToken := c.(AuthContext).AccessToken
+	user := apicontext.GetContext(c).GetUser()
+	accessToken := apicontext.GetContext(c).GetAccessToken()
 
 	var data PasswordRequest
 	if err := c.Bind(&data); err != nil {
@@ -815,7 +775,7 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 	user.LastLogoutTime = &tm
 	user.LastLogoutIp = c.RealIP()
 	user.Token = ""
-	if err := s.db.Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
 		log.Println(err)
 	}
 
@@ -831,13 +791,13 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 	}
 
 	//Reset all user sessions
-	if err := dao.ResetUserSessions(s.db, &user); err != nil {
+	if err := dao.ResetUserSessions(s.db, user); err != nil {
 		return EError(c, err)
 	}
 	s.notificationsService.Ws.CloseUserSessions(user.ID)
 
 	//Email notification
-	if err := s.emailService.ChangePasswordNotify(user); err != nil {
+	if err := s.emailService.ChangePasswordNotify(*user); err != nil {
 		return EError(c, err)
 	}
 
@@ -865,7 +825,7 @@ func (s *Services) updateMyPassword(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/change-email/ [post]
 func (s *Services) changeMyEmail(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var data EmailRequest
 	if err := c.Bind(&data); err != nil {
@@ -887,7 +847,7 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 		return err
 	}
 
-	err = s.emailService.UserChangeEmailNotify(user, newEmail, fmt.Sprintf("%s/api/auth/users/me/verify-email/%s", cfg.WebURL, token))
+	err = s.emailService.UserChangeEmailNotify(*user, newEmail, fmt.Sprintf("%s/api/auth/users/me/verify-email/%s", cfg.WebURL.URL.String(), token))
 	if err != nil {
 		return EError(c, err)
 	}
@@ -910,7 +870,7 @@ func (s *Services) changeMyEmail(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/verify-email/{token}/ [get]
 func (s *Services) confirmEmail(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	token := c.Param("token")
 
 	ref, _ := url.Parse("/not-found")
@@ -939,18 +899,19 @@ func (s *Services) confirmEmail(c echo.Context) error {
 	}
 
 	var existUser dao.User
-	if err := s.db.Where("email = ?", newEmail).Find(&existUser).Error; err != nil {
+	if err := s.DB(c).Where("email = ?", newEmail).Find(&existUser).Error; err != nil {
 		return c.Redirect(http.StatusTemporaryRedirect, ErrPath.String())
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 
-		if !c.(AuthContext).TokenAuth {
-			if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		auth := apicontext.GetContext(c).GetAuthInfo()
+		if !auth.TokenAuth {
+			if err := s.memDB.BlacklistToken(auth.AccessToken.JWT.Signature); err != nil {
 				return err
 			}
 
-			if err := s.memDB.BlacklistToken(c.(AuthContext).RefreshToken.JWT.Signature); err != nil {
+			if err := s.memDB.BlacklistToken(auth.RefreshToken.JWT.Signature); err != nil {
 				return err
 			}
 
@@ -962,7 +923,7 @@ func (s *Services) confirmEmail(c echo.Context) error {
 				return err
 			}
 			//Reset all old user sessions
-			if err := dao.ResetUserSessions(tx, &user); err != nil {
+			if err := dao.ResetUserSessions(tx, user); err != nil {
 				return err
 			}
 			s.notificationsService.Ws.CloseUserSessions(user.ID)
@@ -1005,13 +966,17 @@ func (s *Services) resetPassword(c echo.Context) error {
 	uidb64 := c.Param("uidb64")
 	token := c.Param("token")
 
+	if cfg.LDAPForce {
+		return EErrorDefined(c, apierrors.ErrResetPasswordForbidden)
+	}
+
 	id, err := base64.StdEncoding.DecodeString(uidb64)
 	if err != nil {
 		return EError(c, err)
 	}
 
 	var user dao.User
-	if err := s.db.Where("id = ?", string(id)).Where("token = ?", token).First(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", string(id)).Where("token = ?", token).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrInvalidResetToken)
 		}
@@ -1032,7 +997,7 @@ func (s *Services) resetPassword(c echo.Context) error {
 	user.LastLogoutTime = &tm
 	user.LastLogoutIp = c.RealIP()
 	user.Token = ""
-	if err := s.db.Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password", "Token").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1066,22 +1031,23 @@ func (s *Services) resetPassword(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/sign-out/ [post]
 func (s *Services) signOut(c echo.Context) error {
-	if c.(AuthContext).TokenAuth {
+	auth := apicontext.GetContext(c).GetAuthInfo()
+	if auth.TokenAuth {
 		return c.NoContent(http.StatusOK)
 	}
 
-	if refreshToken := c.(AuthContext).RefreshToken; refreshToken == nil {
+	if refreshToken := auth.RefreshToken; refreshToken == nil {
 		return EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	} else {
-		u := *c.(AuthContext).User
+		u := apicontext.GetContext(c).GetUser()
 		tm := time.Now()
 		u.LastLogoutTime = &tm
 		u.LastLogoutIp = c.RealIP()
-		if err := s.db.Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
+		if err := s.DB(c).Model(u).Select("LastLogoutTime", "LastLogoutIp").Updates(u).Error; err != nil {
 			return EError(c, err)
 		}
 
-		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(auth.AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
@@ -1106,28 +1072,29 @@ func (s *Services) signOut(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/sign-out-everywhere/ [post]
 func (s *Services) signOutEverywhere(c echo.Context) error {
-	if refreshToken := c.(AuthContext).RefreshToken; refreshToken == nil {
+	auth := apicontext.GetContext(c).GetAuthInfo()
+	if refreshToken := auth.RefreshToken; refreshToken == nil {
 		return EErrorDefined(c, apierrors.ErrRefreshTokenRequired)
 	} else {
-		u := *c.(AuthContext).User
+		u := apicontext.GetContext(c).GetUser()
 		tm := time.Now()
 		u.LastLogoutTime = &tm
 		u.LastLogoutIp = c.RealIP()
-		if err := s.db.Model(&u).Select("LastLogoutTime", "LastLogoutIp").Updates(&u).Error; err != nil {
+		if err := s.DB(c).Model(u).Select("LastLogoutTime", "LastLogoutIp").Updates(u).Error; err != nil {
 			return EError(c, err)
 		}
 
 		//Reset all user sessions
-		if err := dao.ResetUserSessions(s.db, &u); err != nil {
+		if err := dao.ResetUserSessions(s.db, u); err != nil {
 			return EError(c, err)
 		}
 		s.notificationsService.Ws.CloseUserSessions(u.ID)
 
-		if c.(AuthContext).TokenAuth {
+		if auth.TokenAuth {
 			return c.NoContent(http.StatusOK)
 		}
 
-		if err := s.memDB.BlacklistToken(c.(AuthContext).AccessToken.JWT.Signature); err != nil {
+		if err := s.memDB.BlacklistToken(auth.AccessToken.JWT.Signature); err != nil {
 			return EError(c, err)
 		}
 
@@ -1158,8 +1125,12 @@ func (s *Services) signOutEverywhere(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/reset-user-password/{uidb64}/ [post]
 func (s *Services) resetUserPassword(c echo.Context) error {
-	admin := *c.(AuthContext).User
+	admin := apicontext.GetContext(c).GetUser()
 	uidb64 := c.Param("uidb64")
+
+	if cfg.LDAPForce {
+		return EErrorDefined(c, apierrors.ErrResetPasswordForbidden)
+	}
 
 	if !admin.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrChangePasswordForbidden)
@@ -1171,7 +1142,7 @@ func (s *Services) resetUserPassword(c echo.Context) error {
 	}
 
 	var user dao.User
-	if err := s.db.Where("id = ?", string(id)).Find(&user).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", string(id)).Find(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1188,7 +1159,7 @@ func (s *Services) resetUserPassword(c echo.Context) error {
 	tm := time.Now()
 	user.LastLogoutTime = &tm
 	user.LastLogoutIp = c.RealIP()
-	if err := s.db.Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("LastLogoutTime", "LastLogoutIp", "Password").Updates(&user).Error; err != nil {
 		log.Println(err)
 	}
 
@@ -1241,7 +1212,7 @@ func (s *Services) getTGBotLink(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/all/projects/ [get]
 func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	searchQuery := ""
 	if err := echo.QueryParamsBinder(c).
@@ -1251,7 +1222,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 	}
 	var projects []dao.Project
 	query := dao.PreloadProjectMembersWithFilters(
-		s.db.
+		s.DB(c).
 			Preload(clause.Associations).
 			Preload("Workspace.Owner").
 			Order("name"))
@@ -1262,7 +1233,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 	}
 
 	query = query.Where("id in (?)",
-		s.db.Model(&dao.ProjectMember{}).
+		s.DB(c).Model(&dao.ProjectMember{}).
 			Select("project_id").
 			Where("member_id = ?", user.ID))
 
@@ -1290,7 +1261,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/token/ [get]
 func (s *Services) getMyAuthToken(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	if user.AuthToken == nil {
 		return c.NoContent(http.StatusNoContent)
 	}
@@ -1309,9 +1280,9 @@ func (s *Services) getMyAuthToken(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/token/reset/ [post]
 func (s *Services) resetMyAuthToken(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
-	if err := s.db.Model(&user).UpdateColumn("auth_token", password.MustGenerate(64, 30, 0, false, true)).Error; err != nil {
+	if err := s.DB(c).Model(&user).UpdateColumn("auth_token", password.MustGenerate(64, 30, 0, false, true)).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusCreated)
@@ -1351,9 +1322,9 @@ func (s *Services) signUp(c echo.Context) error {
 	}
 
 	var exist bool
-	if err := s.db.Model(&dao.User{}).
+	if err := s.DB(c).Model(&dao.User{}).
 		Select("EXISTS(?)",
-			s.db.Model(&dao.User{}).
+			s.DB(c).Model(&dao.User{}).
 				Select("1").
 				Where("email = ?", req.Email),
 		).
@@ -1375,7 +1346,7 @@ func (s *Services) signUp(c echo.Context) error {
 		IsActive: true,
 	}
 
-	if err := s.db.Create(&user).Error; err != nil {
+	if err := s.DB(c).Create(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1384,12 +1355,12 @@ func (s *Services) signUp(c echo.Context) error {
 		if err == nil {
 			return c.NoContent(http.StatusOK)
 		}
-		slog.Error("Send user sign up email notification", "email", user.Email, "try", i+1, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Send user sign up email notification", "email", user.Email, "try", i+1, "err", err)
 		time.Sleep(time.Second * 5)
 	}
 	// If failed to deliver mail delete user and return error
-	if err := s.db.Unscoped().Delete(&user).Error; err != nil {
-		slog.Error("Delete failed user", "err", err)
+	if err := s.DB(c).Unscoped().Delete(&user).Error; err != nil {
+		slog.ErrorContext(c.Request().Context(), "Delete failed user", "err", err)
 	}
 	return EErrorDefined(c, apierrors.ErrNewUserMailFailed)
 }
@@ -1409,10 +1380,10 @@ func (s *Services) signUp(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/feedback/ [get]
 func (s *Services) getMyFeedback(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var feedback dao.UserFeedback
-	if err := s.db.Where("user_id = ?", user.ID).Preload(clause.Associations).First(&feedback).Error; err != nil {
+	if err := s.DB(c).Where("user_id = ?", user.ID).Preload(clause.Associations).First(&feedback).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.NoContent(http.StatusNoContent)
 		}
@@ -1436,7 +1407,7 @@ func (s *Services) getMyFeedback(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/feedback/ [post]
 func (s *Services) createMyFeedback(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var feedback PostFeedbackRequest
 	if err := c.Bind(&feedback); err != nil {
@@ -1447,7 +1418,7 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 		feedback.Stars = 5
 	}
 
-	if err := s.db.Save(&dao.UserFeedback{
+	if err := s.DB(c).Save(&dao.UserFeedback{
 		UserID:    user.ID,
 		UpdatedAt: time.Now(),
 		Stars:     feedback.Stars,
@@ -1470,9 +1441,9 @@ func (s *Services) createMyFeedback(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/feedback/ [delete]
 func (s *Services) deleteMyFeedback(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
-	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserFeedback{}).Error; err != nil {
+	if err := s.DB(c).Where("user_id = ?", user.ID).Delete(&dao.UserFeedback{}).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -1495,7 +1466,7 @@ func (s *Services) deleteMyFeedback(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/notifications [get]
 func (s *Services) getMyNotificationList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	offset := -1
 	limit := 100
 
@@ -1505,90 +1476,30 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// TODO refactoring & add other Activities
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "ua", dao.FullActivity{}, issue, project, doc, form, workspace, sprint)
-
-	var userNotifications []dao.UserNotifications
-
-	getActivityId := func(u *dao.UserNotifications) uuid.NullUUID {
-		if u.IssueActivityId.Valid {
-			return u.IssueActivityId
-		}
-		if u.ProjectActivityId.Valid {
-			return u.ProjectActivityId
-		}
-		if u.DocActivityId.Valid {
-			return u.DocActivityId
-		}
-		if u.FormActivityId.Valid {
-			return u.FormActivityId
-		}
-		if u.WorkspaceActivityId.Valid {
-			return u.WorkspaceActivityId
-		}
-		if u.SprintActivityId.Valid {
-			return u.SprintActivityId
-		}
-
-		return uuid.NullUUID{}
-	}
-
-	query := s.db.
-		//Preload("EntityActivity").
-		//Preload("EntityActivity.Actor").
-		//Preload("EntityActivity.Issue").
-		//Preload("EntityActivity.Project").
-		//Preload("EntityActivity.Workspace").
-		Joins("IssueActivity").
-		Joins("ProjectActivity").
-		Joins("DocActivity").
-		Joins("FormActivity").
-		Joins("SprintActivity").
-
-		//Joins("IssueActivity").
-		//Preload("IssueActivity.Actor").
-		//Preload("IssueActivity.Issue").
-		//Preload("IssueActivity.Project").
-		//Preload("IssueActivity.Workspace").
-		//Joins("ProjectActivity").
-		//Preload("ProjectActivity.Actor").
-		//Preload("ProjectActivity.Project").
-		//Preload("ProjectActivity.Workspace").
-		//Joins("WorkspaceActivity").
-		//Preload("WorkspaceActivity.Actor").
-		//Preload("WorkspaceActivity.Workspace").
-		//Joins("DocActivity").
-		//Preload("DocActivity.Actor").
-		//Preload("DocActivity.Workspace").
-		//Preload("DocActivity.Doc").
-		//Preload("FormActivity.Actor").
-		//Preload("FormActivity.Workspace").
-		//Preload("FormActivity.Form").
-		//Joins("RootActivity").
-		//Preload("RootActivity.Actor").
-		Joins("Comment").
-		Preload("Comment.Actor").
-		Preload("Comment.Issue").
-		Preload("Comment.Project").
-		Preload("Comment.Workspace").
+	var userNotifications []dao.UserAppNotify
+	query := s.DB(c).
+		Preload("ActivityEvent",
+			func(db *gorm.DB) *gorm.DB {
+				return db.
+					Joins("Actor").
+					Joins("Issue").
+					Joins("Project").
+					Joins("Workspace").
+					Joins("Doc").
+					Joins("Form").
+					Joins("Sprint")
+			}).
+		Joins("IssueComment").
+		Joins("IssueComment.Actor").
+		Joins("IssueComment.Issue").
+		Joins("IssueComment.Project").
+		Joins("IssueComment.Workspace").
 		Joins("Workspace").
 		Joins("Author").
 		Joins("Issue").
-		Preload("Issue.Project").
-		Where("user_id = ?", user.ID).Order("created_at desc")
+		Joins("Issue.Project").
+		Where("user_app_notifies.user_id = ?", user.ID).
+		Order("user_app_notifies.created_at desc")
 
 	resp, err := dao.PaginationRequest(
 		offset,
@@ -1600,64 +1511,12 @@ func (s *Services) getMyNotificationList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
-	elementsRes := utils.Filter(
-		slices.All(*resp.Result.(*[]dao.UserNotifications)),
-		func(t dao.UserNotifications) bool {
-			if id := getActivityId(&t); id.Valid {
-				return true
-			}
-			return false
-		})
-
-	res := slices.Collect(elementsRes)
-
-	qqq := utils.SliceToSlice(&res, func(t *dao.UserNotifications) uuid.UUID {
-		if id := getActivityId(t); id.Valid {
-			return id.UUID
-		}
-		return uuid.Nil
-	})
-
-	var fa []dao.FullActivity
-	if err := unionTable.
-		Joins("Project").
-		Joins("Workspace").
-		Joins("Actor").
-		Joins("Issue").
-		Joins("Doc").
-		Joins("Form").
-		Joins("Sprint").
-		Where("ua.id::text IN (?)", qqq).
-		Find(&fa).Error; err != nil {
-		if err != gorm.ErrRecordNotFound {
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		}
-	}
-
-	idMap := utils.SliceToMap(&fa, func(t *dao.FullActivity) uuid.UUID {
-		return t.Id
-	})
-
-	for i := 0; i < len(*resp.Result.(*[]dao.UserNotifications)); i++ {
-		var id uuid.NullUUID
-		if results, ok := resp.Result.(*[]dao.UserNotifications); ok {
-			id = getActivityId(&(*results)[i])
-			if !id.Valid {
-				continue
-			}
-
-			if v, ok := idMap[id.UUID]; ok {
-				(*resp.Result.(*[]dao.UserNotifications))[i].FullActivity = &v
-			}
-		}
-	}
-
 	resp.Result = userNotifyToSimple(resp.Result)
 	return c.JSON(http.StatusOK, resp)
 }
 
 func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse {
-	temp := from.(*[]dao.UserNotifications)
+	temp := from.(*[]dao.UserAppNotify)
 	res := make([]notifications.NotificationResponse, 0, len(*temp))
 	for _, notify := range *temp {
 		tmp := notifications.NotificationResponse{
@@ -1690,45 +1549,31 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 				Msg:   notify.Msg,
 			}
 		case "comment":
-			if notify.Comment != nil {
+			if notify.IssueComment != nil {
 				tmp.Detail = notifications.NotificationDetailResponse{
-					User:      notify.Comment.Actor.ToLightDTO(),
-					Issue:     notify.Comment.Issue.ToLightDTO(),
-					Project:   notify.Comment.Project.ToLightDTO(),
-					Workspace: notify.Comment.Workspace.ToLightDTO(),
+					User:      notify.IssueComment.Actor.ToLightDTO(),
+					Issue:     notify.IssueComment.Issue.ToLightDTO(),
+					Project:   notify.IssueComment.Project.ToLightDTO(),
+					Workspace: notify.IssueComment.Workspace.ToLightDTO(),
 				}
 			}
-			tmp.Data = notify.Comment.ToLightDTO()
+			tmp.Data = notify.IssueComment.ToLightDTO()
 		case "activity":
-			if notify.FullActivity != nil {
+			if notify.ActivityEvent != nil {
 				tmp.Detail = notifications.NotificationDetailResponse{
-					User:      notify.FullActivity.Actor.ToLightDTO(),
-					Issue:     notify.FullActivity.Issue.ToLightDTO(),
-					Project:   notify.FullActivity.Project.ToLightDTO(),
-					Workspace: notify.FullActivity.Workspace.ToLightDTO(),
-					Doc:       notify.FullActivity.Doc.ToLightDTO(),
-					Form:      notify.FullActivity.Form.ToLightDTO(),
-					Sprint:    notify.FullActivity.Sprint.ToLightDTO(),
+					User:      notify.ActivityEvent.Actor.ToLightDTO(),
+					Issue:     notify.ActivityEvent.Issue.ToLightDTO(),
+					Project:   notify.ActivityEvent.Project.ToLightDTO(),
+					Workspace: notify.ActivityEvent.Workspace.ToLightDTO(),
+					Doc:       notify.ActivityEvent.Doc.ToLightDTO(),
+					Form:      notify.ActivityEvent.Form.ToLightDTO(),
+					Sprint:    notify.ActivityEvent.Sprint.ToLightDTO(),
 				}
-				entityActivity := notify.FullActivity.ToLightDTO()
+				entityActivity := notify.ActivityEvent.ToLightDTO()
 				//entityActivity.NewEntity = dao.GetActionEntity(*notify.FullActivity, "New")
 				//entityActivity.OldEntity = dao.GetActionEntity(*notify.FullActivity, "Old")
 				tmp.Data = entityActivity
 			}
-			if notify.EntityActivity != nil {
-				tmp.Detail = notifications.NotificationDetailResponse{
-					User:      notify.EntityActivity.Actor.ToLightDTO(),
-					Issue:     notify.EntityActivity.Issue.ToLightDTO(),
-					Project:   notify.EntityActivity.Project.ToLightDTO(),
-					Workspace: notify.EntityActivity.Workspace.ToLightDTO(),
-					//Doc:       notify.EntityActivity.Doc.ToLightDTO(),
-				}
-				entityActivity := notify.EntityActivity.ToLightDTO()
-				entityActivity.NewEntity = dao.GetActionEntity(*notify.EntityActivity, "New")
-				entityActivity.OldEntity = dao.GetActionEntity(*notify.EntityActivity, "Old")
-				tmp.Data = entityActivity
-			}
-
 		}
 		res = append(res, tmp)
 
@@ -1751,9 +1596,9 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/notifications [delete]
 func (s *Services) deleteMyNotifications(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
-	if err := s.db.Where("user_id = ?", user.ID).Delete(&dao.UserNotifications{}).Error; err != nil {
+	if err := s.DB(c).Where("user_id = ?", user.ID).Delete(&dao.UserAppNotify{}).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 	return c.NoContent(http.StatusOK)
@@ -1775,7 +1620,7 @@ func (s *Services) deleteMyNotifications(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/notifications [post]
 func (s *Services) updateToReadMyNotifications(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	var count int
 
 	var notification NotificationViewRequest
@@ -1784,7 +1629,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 	}
 
 	if notification.ViewedAll == true {
-		if err := s.db.Model(&dao.UserNotifications{}).
+		if err := s.DB(c).Model(&dao.UserAppNotify{}).
 			Where("user_id = ?", user.ID).
 			Where("viewed = false").
 			Where("deleted_at is NULL").
@@ -1794,7 +1639,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 		}
 		count = 0
 	} else {
-		if err := s.db.Model(&dao.UserNotifications{}).
+		if err := s.DB(c).Model(&dao.UserAppNotify{}).
 			Where("user_id = ?", user.ID).
 			Where("id IN ?", notification.Ids).
 			Where("deleted_at is NULL").
@@ -1803,11 +1648,11 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 
-		if err := s.db.Select("count(*)").
+		if err := s.DB(c).Select("count(*)").
 			Where("viewed = false").
 			Where("user_id = ?", user.ID).
 			Where("deleted_at IS NULL").
-			Model(&dao.UserNotifications{}).
+			Model(&dao.UserAppNotify{}).
 			Find(&count).Error; err != nil {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
@@ -1833,7 +1678,7 @@ func (s *Services) updateToReadMyNotifications(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/tutorial/ [post]
 func (s *Services) updateUserTutorial(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	var step int
 
 	if err := echo.QueryParamsBinder(c).
@@ -1846,7 +1691,7 @@ func (s *Services) updateUserTutorial(c echo.Context) error {
 	}
 	user.Tutorial = step
 
-	if err := s.db.Model(&user).Select("tutorial").Updates(&user).Error; err != nil {
+	if err := s.DB(c).Model(&user).Select("tutorial").Updates(&user).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1871,7 +1716,7 @@ func (s *Services) updateUserTutorial(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/ [get]
 func (s *Services) getSearchFilterList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	offset := -1
 	limit := 100
@@ -1885,7 +1730,7 @@ func (s *Services) getSearchFilterList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.Preload(clause.Associations)
+	query := s.DB(c).Preload(clause.Associations)
 	if !user.IsSuperuser {
 		query = query.Where("public = true")
 	}
@@ -1932,14 +1777,14 @@ func (s *Services) getSearchFilterList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/ [post]
 func (s *Services) createSearchFilter(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	filter, _, err := bindSearchFilter(c, nil)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Model(user).Association("SearchFilters").Append(filter); err != nil {
+	if err := s.DB(c).Model(user).Association("SearchFilters").Append(filter); err != nil {
 		return EError(c, err)
 	}
 	return c.JSON(http.StatusCreated, filter.ToFullDTO())
@@ -1960,7 +1805,19 @@ func (s *Services) createSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/{filterId}/ [get]
 func (s *Services) getSearchFilter(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	// Фильтр грузится в middleware только по id, поэтому проверяем доступ здесь:
+	// читать может владелец, кто угодно (если фильтр публичный) или суперюзер.
+	if filter.AuthorID != user.ID && !filter.Public && !user.IsSuperuser {
+		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
+	}
+
 	return c.JSON(http.StatusOK, filter.ToFullDTO())
 }
 
@@ -1981,19 +1838,23 @@ func (s *Services) getSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/{filterId}/ [patch]
 func (s *Services) updateSearchFilter(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if filter.AuthorID != user.ID {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
-	newFilter, fields, err := bindSearchFilter(c, &filter)
+	newFilter, fields, err := bindSearchFilter(c, filter)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Select(fields).Updates(newFilter).Error; err != nil {
+	if err := s.DB(c).Select(fields).Updates(newFilter).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2012,14 +1873,18 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/filters/{filterId}/ [delete]
 func (s *Services) deleteSearchFilter(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if filter.AuthorID != user.ID && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
 	}
 
-	if err := s.db.Select(clause.Associations).Delete(&filter).Error; err != nil {
+	if err := s.DB(c).Select(clause.Associations).Delete(filter).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -2038,10 +1903,10 @@ func (s *Services) deleteSearchFilter(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/filters/ [get]
 func (s *Services) getMySearchFilterList(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var filters []dao.SearchFilter
-	if err := s.db.Model(&user).Association("SearchFilters").Find(&filters); err != nil {
+	if err := s.DB(c).Model(&user).Association("SearchFilters").Find(&filters); err != nil {
 		return EError(c, err)
 	}
 
@@ -2066,14 +1931,18 @@ func (s *Services) getMySearchFilterList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/filters/{filterId}/ [post]
 func (s *Services) addSearchFilterToMe(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if !filter.Public && !user.IsSuperuser {
 		return EErrorDefined(c, apierrors.ErrCannotAddNonPublicFilter)
 	}
 
-	if err := s.db.Model(&user).Association("SearchFilters").Append(&filter); err != nil {
+	if err := s.DB(c).Model(user).Association("SearchFilters").Append(filter); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2092,14 +1961,18 @@ func (s *Services) addSearchFilterToMe(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/filters/{filterId}/ [delete]
 func (s *Services) deleteSearchFilterFromMe(c echo.Context) error {
-	filter := c.(SearchFilterContext).Filter
-	user := c.(SearchFilterContext).User
+	apiContext := apicontext.GetContext(c)
+	filter := apiContext.GetSearchFilter()
+	user := apiContext.GetUser()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if filter.AuthorID == user.ID {
 		return EErrorDefined(c, apierrors.ErrCannotRemoveOwnFilter)
 	}
 
-	if err := s.db.Model(&user).Association("SearchFilters").Delete(&filter); err != nil {
+	if err := s.DB(c).Model(user).Association("SearchFilters").Delete(filter); err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -2131,7 +2004,7 @@ func (s *Services) getFilterMemberList(c echo.Context) error {
 
 	var users []dao.User
 
-	query := s.db.Preload(clause.Associations).
+	query := s.DB(c).Preload(clause.Associations).
 		Where("is_integration = ? AND is_bot = ?", false, false).
 		Where("id IN (?)", userIds)
 
@@ -2191,7 +2064,7 @@ func (s *Services) getFilterStateList(c echo.Context) error {
 
 	var states []dao.State
 
-	stateQuery := s.db.Preload("Project").
+	stateQuery := s.DB(c).Preload("Project").
 		Joins("JOIN projects ON projects.id = states.project_id").
 		Where("project_id IN (?)", projectQuery)
 
@@ -2245,7 +2118,7 @@ func (s *Services) getFilterLabelList(c echo.Context) error {
 
 	var labels []dao.Label
 
-	labelQuery := s.db.Preload("Project").
+	labelQuery := s.DB(c).Preload("Project").
 		Joins("JOIN projects ON projects.id = labels.project_id").
 		Where("project_id IN (?)", projectQuery)
 
@@ -2286,15 +2159,19 @@ func (s *Services) getFilterLabelList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/release-notes/{noteId} [get]
 func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
-	noteContext := c.(ReleaseNoteContext)
+	apiContext := apicontext.GetContext(c)
+	note := apiContext.GetReleaseNote()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var notes []dao.ReleaseNote
-	if err := s.db.Where("tag_name >= ?", noteContext.ReleaseNote.TagName).Find(&notes).Error; err != nil {
+	if err := s.DB(c).Where("tag_name >= ?", note.TagName).Find(&notes).Error; err != nil {
 		return EError(c, err)
 	}
 	notesDTO := make([]dto.ReleaseNoteLight, 0)
-	for _, note := range notes {
-		notesDTO = append(notesDTO, *note.ToLightDTO())
+	for _, n := range notes {
+		notesDTO = append(notesDTO, *n.ToLightDTO())
 	}
 	return c.JSON(http.StatusOK, notesDTO)
 }
@@ -2308,29 +2185,31 @@ func (s *Services) getRecentReleaseNoteList(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body []uuid.UUID false "Список ID рабочих пространств"
-// @Success 200 {array} dto.WorkspaceMember "Список членств в рабочих пространствах"
+// @Success 200 {array} dto.WorkspaceMemberWithOwner "Список членств в рабочих пространствах"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/memberships/workspaces/ [post]
 func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var workspaces []uuid.UUID
 	if err := c.Bind(&workspaces); err != nil {
 		return EError(c, err)
 	}
 
-	query := s.db.Where("member_id = ?", user.ID)
+	query := s.DB(c).Select("workspace_members.*, owner_id = ? as is_workspace_owner", user.ID).
+		Joins("Workspace").
+		Where("member_id = ?", user.ID)
 	if len(workspaces) > 0 {
 		query = query.Where("workspace_id in (?)", workspaces)
 	}
 
-	var memberships []dao.WorkspaceMember
+	var memberships []dao.WorkspaceMemberWithOwner
 	if err := query.Find(&memberships).Error; err != nil {
 		return EError(c, err)
 	}
-	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.WorkspaceMember) dto.WorkspaceMember { return *t.ToDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.WorkspaceMemberWithOwner) dto.WorkspaceMemberWithOwner { return *t.ToDTOWithOwner() }))
 }
 
 // getCurrentUserProjectMemberships godoc
@@ -2342,29 +2221,31 @@ func (s *Services) getCurrentUserWorkspaceMemberships(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param data body []uuid.UUID false "Список ID проектов"
-// @Success 200 {array} dto.ProjectMember "Список членств в проектах"
+// @Success 200 {array} dto.ProjectMemberWithLead "Список членств в проектах"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/memberships/projects/ [post]
 func (s *Services) getCurrentUserProjectMemberships(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var projects []uuid.UUID
 	if err := c.Bind(&projects); err != nil {
 		return EError(c, err)
 	}
 
-	query := s.db.Where("member_id = ?", user.ID)
+	query := s.DB(c).Select("project_members.*, project_lead_id = ? as is_project_lead", user.ID).
+		Joins("Project").
+		Where("member_id = ?", user.ID)
 	if len(projects) > 0 {
 		query = query.Where("project_id in (?)", projects)
 	}
 
-	var memberships []dao.ProjectMember
+	var memberships []dao.ProjectMemberWithLead
 	if err := query.Find(&memberships).Error; err != nil {
 		return EError(c, err)
 	}
-	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.ProjectMember) dto.ProjectMember { return *t.ToDTO() }))
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&memberships, func(t *dao.ProjectMemberWithLead) dto.ProjectMemberWithLead { return *t.ToDTOWithLead() }))
 }
 
 // EmailCaptchaRequest представляет структуру данных для запроса на восстановление пароля
@@ -2413,12 +2294,7 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 	}
 
 	if filter == nil {
-		var user *dao.User
-		if authCtx, ok := c.(AuthContext); ok {
-			user = authCtx.User
-		} else {
-			user = c.(SearchFilterContext).User
-		}
+		user := apicontext.GetContext(c).GetUser()
 		return &dao.SearchFilter{
 			ID: dao.GenUUID(),
 			//CreatedAt:   time.Now(),

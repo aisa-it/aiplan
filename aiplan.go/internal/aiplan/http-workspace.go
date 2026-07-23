@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/stack-error"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -34,17 +36,20 @@ import (
 
 func (s *Services) LastVisitedWorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		workspaceContext, ok := c.(WorkspaceContext)
-		if !ok {
+		apiContext := apicontext.GetContext(c)
+		if apiContext == nil {
 			return next(c)
 		}
 
-		workspace := workspaceContext.Workspace
-		user := workspaceContext.User
+		workspace := apiContext.GetWorkspace()
+		user := apiContext.GetUser()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
 
 		if !user.LastWorkspaceId.Valid || user.LastWorkspaceId.UUID != workspace.ID {
-			user.LastWorkspace = &workspace
-			if err := s.db.Model(&user).Update("last_workspace_id", workspace.ID).Error; err != nil {
+			user.LastWorkspace = workspace
+			if err := s.DB(c).Model(user).Update("last_workspace_id", workspace.ID).Error; err != nil {
 				return EError(c, err)
 			}
 		}
@@ -55,58 +60,38 @@ func (s *Services) LastVisitedWorkspaceMiddleware(next echo.HandlerFunc) echo.Ha
 
 func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		user := c.(AuthContext).User
 		slugOrId := c.Param("workspaceSlug")
 
-		/*
-			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
-				etag = strings.TrimSuffix(etag, user.ID.String())
-				var exist bool
-				if err := s.db.Model(&dao.Workspace{}).
-					Select("EXISTS(?)",
-						s.db.Model(&dao.Workspace{}).
-							Select("1").
-							Where("encode(hash, 'hex') = ?", etag),
-					).
-					Find(&exist).Error; err != nil {
-					return EError(c, err)
-				}
+		user := apicontext.GetContext(c).GetUser()
 
-				if exist {
-					return c.NoContent(http.StatusNotModified)
-				}
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			etag = strings.TrimSuffix(etag, user.ID.String())
+			var exist bool
+			if err := s.DB(c).Model(&dao.Workspace{}).
+				Select("EXISTS(?)",
+					s.DB(c).Model(&dao.Workspace{}).
+						Select("1").
+						Where("encode(hash, 'hex') = ?", etag),
+				).
+				Find(&exist).Error; err != nil {
+				return EError(c, err)
 			}
-		*/
 
-		var workspace dao.Workspace
-		workspaceQuery := s.db.
-			Joins("Owner").
-			Joins("LogoAsset").
-			Set("userID", user.ID) // TODO: Remove when front remove current_membership
-
-		if id, err := uuid.FromString(slugOrId); err == nil {
-			workspaceQuery = workspaceQuery.Where("workspaces.id = ?", id)
-		} else {
-			workspaceQuery = workspaceQuery.Where("slug = ?", slugOrId)
+			if exist {
+				return c.NoContent(http.StatusNotModified)
+			}
 		}
 
-		if err := workspaceQuery.First(&workspace).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
-			}
+		// Check if workspace exists
+		exists, err := dao.IsWorkspaceExists(s.DB(c), user, slugOrId)
+		if err != nil {
 			return EError(c, err)
 		}
-
-		var workspaceMember dao.WorkspaceMember
-		if err := s.db.Where("workspace_id = ?", workspace.ID).Where("member_id = ?", user.ID).First(&workspaceMember).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
-			}
-			return EError(c, err)
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
-		workspaceMember.Workspace = &workspace
 
-		return next(WorkspaceContext{c.(AuthContext), workspace, workspaceMember})
+		return next(c)
 	}
 }
 
@@ -116,7 +101,6 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
 	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
 
-	// ../front/services/workspace.service.ts
 	g.GET("users/me/workspaces/", s.getUserWorkspaceList)
 
 	// Favorites
@@ -131,6 +115,8 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	workspaceGroup.POST("/logo/", s.updateWorkspaceLogo)
 	workspaceGroup.DELETE("/logo/", s.deleteWorkspaceLogo)
 	workspaceGroup.DELETE("/", s.deleteWorkspace)
+
+	workspaceGroup.GET("/summary/", s.getWorkspaceSummary)
 
 	workspaceGroup.POST("/invite/", s.addToWorkspace)
 
@@ -151,7 +137,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 
 	g.GET("users/last-visited-workspace/", s.getLastVisitedWorkspace)
 
-	workspaceGroup.GET("/workspace-members/me/", s.getWorkspaceMemberMe)
+	workspaceGroup.GET("/workspace-members/me/", s.getWorkspaceMemberMe) // Legacy TODO: delete after front
 
 	workspaceGroup.GET("/states/", s.getWorkspaceStateList)
 
@@ -181,7 +167,11 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/workspace-members/me/ [get]
 func (s *Services) getWorkspaceMemberMe(c echo.Context) error {
-	wm := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	wm := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, wm.ToDTO())
 }
 
@@ -201,7 +191,11 @@ func (s *Services) getWorkspaceMemberMe(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug} [get]
 func (s *Services) getWorkspace(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	c.Response().Header().Add("ETag", hex.EncodeToString(workspace.Hash))
 	return c.JSON(http.StatusOK, workspace.ToDTO())
 }
@@ -223,11 +217,14 @@ func (s *Services) getWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug} [patch]
 func (s *Services) updateWorkspace(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiCtx := apicontext.GetContext(c)
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
-	// Pre-update activity tracking
-	oldWorkspaceMap := StructToJSONMap(workspace)
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
 
 	oldOwnerId := workspace.OwnerId
 	id := workspace.ID
@@ -237,8 +234,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	workspace.ID = id
 	workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	workspace.Name = strings.TrimSpace(workspace.Name)
-	var newMemberOwnerId uuid.UUID
-	var newMemberOwnerEmail string
+	//var newMemberOwnerEmail string
 	err := c.Validate(workspace)
 	if err != nil {
 		return EError(c, err)
@@ -248,7 +244,7 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 	// Check new owner id exists and admin
 	if changeOwner {
 		var member dao.WorkspaceMember
-		if err := s.db.
+		if err := s.DB(c).
 			Joins("Member").
 			Where("workspace_id = ?", workspace.ID).
 			Where("member_id = ?", workspace.OwnerId).
@@ -258,37 +254,26 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 			}
 			return EError(c, err)
 		}
-		newMemberOwnerId = member.MemberId
-		newMemberOwnerEmail = member.Member.Email
+		//newMemberOwnerEmail = member.Member.Email
 	}
 
 	if !user.IsSuperuser && user.ID != oldOwnerId && oldOwnerId != workspace.OwnerId {
 		return EErrorDefined(c, apierrors.ErrPermissionChangeWorkspaceOwner)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Select([]string{"name", "description", "company_size", "owner_id"}).Updates(&workspace).Error; err != nil {
 			return err
-		}
-
-		// Post-update activity tracking
-		newWorkspaceMap := StructToJSONMap(workspace)
-		if changeOwner {
-			newWorkspaceMap["owner_activity_val"] = newMemberOwnerEmail
-			newWorkspaceMap["owner_updateScopeId"] = newMemberOwnerId
-			newWorkspaceMap["owner_field_log"] = activities.Owner.Field
-			oldWorkspaceMap["owner_activity_val"] = user.Email
-			oldWorkspaceMap["owner_updateScopeId"] = user.ID
-			oldWorkspaceMap["owner_field_log"] = activities.Owner.Field
-		}
-
-		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newWorkspaceMap, oldWorkspaceMap, workspace, user)
-		if err != nil {
-			errStack.GetError(c, err)
 		}
 		return nil
 	}); err != nil {
 		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	err = s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, workspace.ToDTO())
@@ -311,8 +296,12 @@ func (s *Services) updateWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/logo [post]
 func (s *Services) updateWorkspaceLogo(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if !limiter.Limiter.CanAddAttachment(workspace.ID) {
 		return EError(c, apierrors.ErrAssetsLimitExceed)
@@ -330,9 +319,9 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 		WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
 	}
 
-	oldLogoId := workspace.LogoId
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		var oldLogo dao.FileAsset
 		if workspace.LogoAsset != nil {
 			if err := tx.Where("id = ?", workspace.LogoId).First(&oldLogo).Error; err != nil {
@@ -360,21 +349,12 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 			}
 		}
 
-		//Трекинг активности
-		oldMap := map[string]interface{}{
-			"logo": oldLogoId.UUID.String(),
-		}
-		newMap := map[string]interface{}{
-			"logo": fileAsset.Id.String(),
-		}
-
-		err = tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
-		if err != nil {
-			errStack.GetError(c, err)
-		}
-
 		return nil
 	}); err != nil {
+		return EError(c, err)
+	}
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
 		return EError(c, err)
 	}
 
@@ -396,11 +376,17 @@ func (s *Services) updateWorkspaceLogo(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/logo [delete]
 func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	oldLogoId := workspace.LogoId.UUID
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
+	apiCtx := apicontext.GetContext(c)
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		workspace.LogoId = uuid.NullUUID{}
 		if err := tx.Select("logo_id").Updates(&workspace).Error; err != nil {
@@ -417,19 +403,12 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	//Трекинг активности
-	oldMap := map[string]interface{}{
-		"logo": oldLogoId.String(),
-	}
-	newMap := map[string]interface{}{
-		"logo": uuid.Nil.String(),
-	}
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user)
 
-	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.JSON(http.StatusOK, workspace.ToDTO())
 }
 
@@ -448,19 +427,109 @@ func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug} [delete]
 func (s *Services) deleteWorkspace(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	// Cancel jira imports
 	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.business.DeleteWorkspace(user, &workspace); err != nil {
+	if err := s.business.DeleteWorkspace(user, workspace); err != nil {
 		return EError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
+}
+
+// getWorkspaceSummary godoc
+// @id getWorkspaceSummary
+// @Summary Пространство: получение сводки рабочего пространства
+// @Description Возвращает сводку рабочего пространства (проекты, спринты, формы) с учётом роли пользователя
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceSummaryResponse "Сводка рабочего пространства"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/summary/ [get]
+func (s *Services) getWorkspaceSummary(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	workspaceSummary := cache.WorkspaceSummary.Load(c.Request().Context(), workspaceMember.WorkspaceId)
+	if workspaceSummary == nil {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	// Роль подмешана в ETag, т.к. ниже по коду один и тот же кэш фильтруется по роли
+	// (Forms/Sprints/Projects) — без этого смена роли участника не сбросила бы старый ETag.
+	etag := fmt.Sprintf("%s-%d", hex.EncodeToString(workspaceSummary.Hash), workspaceMember.Role)
+
+	// Список приватных проектов для не-админов зависит от персонального членства (project_members),
+	// которое не входит в общий кэш сводки (он один на весь workspace, без разреза по пользователю).
+	// Досчитываем членство заранее и подмешиваем в ETag, иначе добавление/удаление пользователя
+	// из проекта не инвалидировало бы его старый ETag.
+	var membershipsMap map[uuid.UUID]struct{}
+	if workspaceMember.Role < types.AdminRole && len(workspaceSummary.Projects) > 0 {
+		var memberships []dao.ProjectMember
+		if err := s.DB(c).
+			Where("workspace_id = ?", workspaceMember.WorkspaceId).
+			Where("member_id = ?", user.ID).
+			Find(&memberships).Error; err != nil {
+			return EError(c, err)
+		}
+
+		membershipsMap = make(map[uuid.UUID]struct{}, len(memberships))
+		projectIds := make([]string, 0, len(memberships))
+		for _, member := range memberships {
+			membershipsMap[member.ProjectId] = struct{}{}
+			projectIds = append(projectIds, member.ProjectId.String())
+		}
+		slices.Sort(projectIds)
+
+		h := sha256.New()
+		for _, id := range projectIds {
+			h.Write([]byte(id))
+		}
+		etag += "-" + hex.EncodeToString(h.Sum(nil))
+	}
+
+	if c.Request().Header.Get("If-None-Match") == etag {
+		return c.NoContent(http.StatusNotModified)
+	}
+	c.Response().Header().Set("ETag", etag)
+
+	// Show forms only for admins
+	if workspaceMember.Role != types.AdminRole && len(workspaceSummary.Forms) > 0 {
+		workspaceSummary.Forms = make([]dto.FormLight, 0)
+	}
+
+	// Show sprints only for members and admins
+	if workspaceMember.Role < types.MemberRole && len(workspaceSummary.Sprints) > 0 {
+		workspaceSummary.Sprints = make([]dto.SprintFolder, 0)
+	}
+
+	if membershipsMap != nil {
+		filteredProjects := make([]dto.ProjectLight, 0, len(workspaceSummary.Projects))
+		for _, project := range workspaceSummary.Projects {
+			if _, ok := membershipsMap[project.ID]; ok || project.Public {
+				filteredProjects = append(filteredProjects, project)
+			}
+		}
+		workspaceSummary.Projects = filteredProjects
+	}
+
+	return c.JSON(http.StatusOK, workspaceSummary)
 }
 
 // ############# Activities methods ###################
@@ -477,13 +546,18 @@ func (s *Services) deleteWorkspace(c echo.Context) error {
 // @Param day query string false "День выборки активностей" default("")
 // @Param offset query int false "Смещение для пагинации" default(-1)
 // @Param limit query int false "Количество результатов на странице" default(100)
-// @Success 200 {object} dao.PaginationResponse{result=[]dto.EntityActivityFull} "Список активностей рабочего пространства"
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список активностей рабочего пространства"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
 // @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/activities [get]
 func (s *Services) getWorkspaceActivityList(c echo.Context) error {
-	workspaceId := c.(WorkspaceContext).Workspace.ID
+	apiContext := apicontext.GetContext(c)
+	ws := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	workspaceId := ws.ID
 
 	var day DayRequest
 	offset := -1
@@ -496,21 +570,7 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	var issue dao.IssueActivity
-	issue.UnionCustomFields = "'issue' AS entity_type"
-	var project dao.ProjectActivity
-	project.UnionCustomFields = "'project' AS entity_type"
-	var workspace dao.WorkspaceActivity
-	workspace.UnionCustomFields = "'workspace' AS entity_type"
-	var form dao.FormActivity
-	form.UnionCustomFields = "'form' AS entity_type"
-	var doc dao.DocActivity
-	doc.UnionCustomFields = "'doc' AS entity_type"
-	var sprint dao.SprintActivity
-	sprint.UnionCustomFields = "'sprint' AS entity_type"
-
-	unionTable := dao.BuildUnionSubquery(s.db, "union_activities", dao.FullActivity{}, issue, project, workspace, form, doc, sprint)
-	query := unionTable.
+	query := s.db.
 		Joins("Project").
 		Joins("Workspace").
 		Joins("Actor").
@@ -518,25 +578,20 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 		Joins("Doc").
 		Joins("Form").
 		Joins("Sprint").
-		Order("union_activities.created_at desc").
-		Where("union_activities.workspace_id = ?", workspaceId)
+		Order("created_at desc").
+		Where("activity_events.workspace_id = ?", workspaceId)
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("union_activities.created_at >= ?", time.Time(day)).Where("union_activities.created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("created_at >= ?", time.Time(day)).Where("created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
-	var activities []dao.FullActivity
-	resp, err := dao.PaginationRequest(
-		offset,
-		limit,
-		query,
-		&activities,
-	)
+	var acts []dao.ActivityEvent
+	resp, err := dao.PaginationRequest(offset, limit, query, &acts)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.FullActivity), func(ea *dao.FullActivity) dto.EntityActivityFull { return *ea.ToDTO() })
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(ea *dao.ActivityEvent) dto.ActivityEventFull { return *ea.ToDTO() })
 
 	return c.JSON(http.StatusOK, resp)
 }
@@ -564,10 +619,15 @@ func (s *Services) getWorkspaceActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members [get]
 func (s *Services) getWorkspaceMemberList(c echo.Context) error {
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
-	offset := -1
-	limit := 100
+	offset := 0
+	limit := 1000
 	searchQuery := ""
 	orderBy := ""
 	desc := true
@@ -582,13 +642,44 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	if limit < 0 {
+		limit = -limit
+	}
+
+	if offset > limit || offset < 0 {
+		offset = 0
+	}
+
+	cMembers, ok := cache.WorkspaceMembersCache.Load(workspace.ID)
+	if ok && searchQuery == "" {
+		fullHash := fmt.Sprintf("%x%d%d%s%t", cMembers.Hash, offset, limit, orderBy, desc)
+
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			if fullHash == etag {
+				return c.NoContent(http.StatusNotModified)
+			}
+		}
+
+		c.Response().Header().Set("ETag", fullHash)
+
+		count := int64(len(cMembers.Members))
+		cMembers.Members = cache.SortWorkspaceMembers(cMembers.Members, offset, limit, orderBy, desc)
+
+		return c.JSON(http.StatusOK, dao.PaginationResponse{
+			Offset: offset,
+			Limit:  limit,
+			Count:  count,
+			Result: cMembers.Members,
+		})
+	}
+
 	switch orderBy {
 	case "email":
-		orderBy = "lower(email)"
+		orderBy = "lower(\"Member\".email)"
 	case "role":
 		break
 	default:
-		orderBy = "lower(last_name)"
+		orderBy = "lower(\"Member\".last_name)"
 	}
 
 	if desc {
@@ -597,10 +688,8 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		orderBy = fmt.Sprintf("%s %s", orderBy, "asc")
 	}
 
-	query := s.db.Preload("Workspace").
-		Preload("Workspace.Owner").
+	query := s.DB(c).
 		Joins("Member").
-		Preload("Member").
 		Where("workspace_id in (?)", workspaceMember.WorkspaceId).
 		Order(orderBy)
 
@@ -611,8 +700,8 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 
 	var members []dao.WorkspaceMember
 	res, err := dao.PaginationRequest(
-		offset,
-		limit,
+		0,
+		1000,
 		query,
 		&members,
 	)
@@ -620,7 +709,16 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	for i := range members {
+		members[i].Workspace = workspace
+	}
+
 	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
+	if searchQuery == "" {
+		cache.WorkspaceMembersCache.Store(workspace.ID, res.Result.([]dto.WorkspaceMemberLight))
+	}
+
+	res.Result = res.Result.([]dto.WorkspaceMemberLight)[max(offset, 0):min(offset+limit, len(members))]
 
 	return c.JSON(http.StatusOK, res)
 }
@@ -634,14 +732,24 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param workspaceSlug path string true "Slug рабочего пространства"
-// @Success 200 {object} dto.WorkspaceMember "Успешный ответ с данными текущего участника рабочего пространства"
+// @Success 200 {object} dto.WorkspaceMemberWithOwner "Успешный ответ с данными текущего участника рабочего пространства"
 // @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
 // @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members/me/ [get]
 func (s *Services) getWorkspaceCurrentMembership(c echo.Context) error {
-	member := c.(WorkspaceContext).WorkspaceMember
-	return c.JSON(http.StatusOK, member.ToDTO())
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	res := dao.WorkspaceMemberWithOwner{
+		WorkspaceMember:  *workspaceMember,
+		IsWorkspaceOwner: workspaceMember.MemberId == workspace.OwnerId,
+	}
+	return c.JSON(http.StatusOK, res.ToDTOWithOwner())
 }
 
 // updateWorkspaceMember godoc
@@ -663,9 +771,14 @@ func (s *Services) getWorkspaceCurrentMembership(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members/{memberId} [patch]
 func (s *Services) updateWorkspaceMember(c echo.Context) error {
-	user := *c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
 	requestedMemberId := c.Param("memberId")
 
 	var req requestRoleMember
@@ -675,13 +788,14 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 	}
 
 	var requestedMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Preload("Member").
 		Where("id = ?", requestedMemberId).
 		Where("workspace_id = ?", workspace.ID).
 		First(&requestedMember).Error; err != nil {
 		return EError(c, err)
 	}
+	oldSnapshot := tracker.MemberToSnapshot(&requestedMember)
 
 	if requestedMember.MemberId == workspace.OwnerId {
 		return EErrorDefined(c, apierrors.ErrUpdateOwnerForbidden)
@@ -694,15 +808,22 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 	if workspaceMember.Role < requestedMember.Role {
 		return EErrorDefined(c, apierrors.ErrUpdateHigherRoleUserForbidden)
 	}
-	oldMemberMap := StructToJSONMap(requestedMember)
-	var newMemberMap map[string]interface{}
 
 	var oldMemberRole int
 	if req.Role != nil {
+		// Валидируем НОВОЕ значение роли: оно должно быть допустимым и не выше
+		// роли вызывающего (проверка выше сравнивает лишь с текущей ролью цели).
+		if !IsValidRole(*req.Role) {
+			return EErrorDefined(c, apierrors.ErrUnsupportedRole.WithFormattedMessage(*req.Role))
+		}
+		if *req.Role > workspaceMember.Role {
+			return EErrorDefined(c, apierrors.ErrUpdateHigherRoleUserForbidden)
+		}
+
 		oldMemberRole = *req.Role
 
 		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 			requestedMember.UpdatedById = userID
 			requestedMember.UpdatedAt = time.Now()
 			requestedMember.Role = *req.Role
@@ -751,20 +872,20 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 					return err
 				}
 			}
-
-			newMemberMap = StructToJSONMap(requestedMember)
-			newMemberMap["updateScopeId"] = requestedMember.MemberId
-
 			return nil
 		}); err != nil {
 			return EError(c, err)
 		}
 	}
 
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMemberMap, oldMemberMap, requestedMember, &user)
+	newSnapshot := tracker.MemberToSnapshot(&requestedMember)
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user)
+
 	if err != nil {
 		errStack.GetError(c, err)
 	}
+
+	cache.WorkspaceMembersCache.Update(workspace.ID, requestedMember)
 
 	return c.JSON(http.StatusOK, requestedMember.ToLightDTO())
 }
@@ -788,8 +909,12 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members/{memberId}/set-email/ [patch]
 func (s *Services) updateUserEmail(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	requestedMemberId := c.Param("memberId")
 
 	if workspaceMember.Role != types.AdminRole {
@@ -797,7 +922,7 @@ func (s *Services) updateUserEmail(c echo.Context) error {
 	}
 
 	var requestedMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("member_id = ?", requestedMemberId).
 		Where("workspace_id = ?", workspace.ID).
 		Preload("Member").
@@ -820,7 +945,7 @@ func (s *Services) updateUserEmail(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrInvalidEmail)
 	}
 
-	if err := s.db.Model(&dao.User{}).
+	if err := s.DB(c).Model(&dao.User{}).
 		Where("id = ?", requestedMember.MemberId).
 		UpdateColumn("email", req.Email).Error; err != nil {
 		return EError(c, err)
@@ -846,9 +971,13 @@ func (s *Services) updateUserEmail(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members/{memberId} [delete]
 func (s *Services) deleteWorkspaceMember(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	requestedMemberId := c.Param("memberId")
 
 	if workspaceMember.Member == nil {
@@ -856,13 +985,13 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 	}
 
 	var requestedMember dao.WorkspaceMember
-	if err := s.db.Preload("Member").
+	if err := s.DB(c).Preload("Member").
 		Where("id = ?", requestedMemberId).
 		Where("workspace_id = ?", workspace.ID).
 		First(&requestedMember).Error; err != nil {
 		return EError(c, err)
 	}
-	requestedMember.Workspace = &workspace
+	requestedMember.Workspace = workspace
 
 	// One cannot remove role higher than his own role
 	if workspaceMember.Role < requestedMember.Role && !user.IsSuperuser {
@@ -882,7 +1011,7 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 
 	// Delete workspace if this is last member(last user leaves workspace)
 	var possibleOwners []dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Model(&dao.WorkspaceMember{}).
 		Joins("Member").
 		Where("workspace_id = ?", workspace.ID).
@@ -902,16 +1031,18 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 
 	if user.ID != requestedMember.Member.ID {
 		// If not current user - set current user as new owner
-		if err := s.business.DeleteWorkspaceMember(&workspaceMember, &requestedMember); err != nil {
+		if err := s.business.DeleteWorkspaceMember(workspaceMember, &requestedMember); err != nil {
 			return EError(c, err)
 		}
 	} else {
 		newOwner := possibleOwners[0]
-		newOwner.Workspace = &workspace
+		newOwner.Workspace = workspace
 		if err := s.business.DeleteWorkspaceMember(&newOwner, &requestedMember); err != nil {
 			return EError(c, err)
 		}
 	}
+
+	cache.WorkspaceMembersCache.Delete(workspace.ID, requestedMember)
 
 	return c.NoContent(http.StatusNoContent)
 
@@ -935,8 +1066,12 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members/activities/ [get]
 func (s *Services) getWorkspaceMembersActivityList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if workspaceMember.Role != types.AdminRole {
 		return EErrorDefined(c, apierrors.ErrWorkspaceAdminRoleRequired)
@@ -950,15 +1085,13 @@ func (s *Services) getWorkspaceMembersActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	unionTable := dao.BuildUnionSubquery(s.db, "fa", dao.FullActivity{}, dao.FormActivity{}, dao.IssueActivity{}, dao.DocActivity{}, dao.WorkspaceActivity{}, dao.ProjectActivity{})
-
-	query := unionTable.Where("fa.workspace_id = ?", workspace.ID)
-	activities, err := GetActivitiesTable(query, from, to)
+	query := s.db.Where("workspace_id = ?", workspace.ID)
+	acts, err := GetActivitiesTable(query, from, to)
 	if err != nil {
 		return EError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, activities)
+	return c.JSON(http.StatusOK, acts)
 }
 
 // createMessageForWorkspaceMember godoc
@@ -978,8 +1111,13 @@ func (s *Services) getWorkspaceMembersActivityList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/members/message/ [post]
 func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
-	user := c.(WorkspaceContext).User
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
 	var req requestMessage
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
@@ -991,7 +1129,7 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 	var members []dao.WorkspaceMember
 	var notificationSentAt []dao.DeferredNotifications
 
-	query := s.db.Preload("Member").Where("workspace_id = ?", workspace.ID)
+	query := s.DB(c).Preload("Member").Where("workspace_id = ?", workspace.ID)
 
 	if len(req.Members) > 0 {
 		query = query.Where("id IN (?)", req.Members)
@@ -1018,7 +1156,7 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 				User:   member.Member,
 
 				WorkspaceID:         uuid.NullUUID{UUID: workspace.ID, Valid: true},
-				Workspace:           &workspace,
+				Workspace:           workspace,
 				NotificationType:    "message",
 				DeliveryMethod:      "telegram",
 				AttemptCount:        0,
@@ -1038,7 +1176,7 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 	}
 
 	if len(notificationSentAt) > 0 {
-		if err := s.db.Omit(clause.Associations).Create(&notificationSentAt).Error; err != nil {
+		if err := s.DB(c).Omit(clause.Associations).Create(&notificationSentAt).Error; err != nil {
 			return EErrorDefined(c, apierrors.ErrGeneric)
 		}
 	}
@@ -1063,22 +1201,18 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/invite [post]
 func (s *Services) addToWorkspace(c echo.Context) error {
-	issuer := *c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiCtx := apicontext.GetContext(c)
+	issuer := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
 
 	var req requestMembersInvite
 
 	if err := c.Bind(&req); err != nil {
 		return EError(c, err)
 	}
-
-	type memberTracker struct {
-		pm   dao.ProjectMember
-		data map[string]any
-	}
-
-	var createMemberLog []memberTracker
-
 	remainInvites := limiter.Limiter.GetRemainingInvites(workspace.ID)
 
 	if remainInvites == 0 {
@@ -1101,7 +1235,15 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 
 		var user dao.User
 		var workspaceMember dao.WorkspaceMember
-		if err := s.db.Transaction(func(tx *gorm.DB) error {
+
+		type projectMemberTrack struct {
+			project dao.Project
+			member  dao.ProjectMember
+		}
+
+		var projectMemberTrackLog []projectMemberTrack
+
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 			if err := tx.Where("email = ?", invite.Email).First(&user).Error; err != nil {
 				if err == gorm.ErrRecordNotFound {
 					// Create new user
@@ -1141,8 +1283,8 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 				Role:                            invite.Role,
 				CreatedById:                     userID,
 				Member:                          &user,
-				Workspace:                       &workspace,
-				CreatedBy:                       &issuer,
+				Workspace:                       workspace,
+				CreatedBy:                       issuer,
 				NotificationAuthorSettingsEmail: types.DefaultWorkspaceMemberNS,
 				NotificationAuthorSettingsApp:   types.DefaultWorkspaceMemberNS,
 				NotificationAuthorSettingsTG:    types.DefaultWorkspaceMemberNS,
@@ -1187,41 +1329,42 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 					}).Create(&projectMember).Error; err != nil {
 						return err
 					}
-
-					newMemberMap := StructToJSONMap(projectMember)
-
-					newMemberMap["updateScopeId"] = projectMember.MemberId
-					newMemberMap["member_activity_val"] = projectMember.Role
-
-					createMemberLog = append(createMemberLog, memberTracker{projectMember, newMemberMap})
+					projectMemberTrackLog = append(projectMemberTrackLog, projectMemberTrack{project: project, member: projectMember})
 				}
 			}
 
 			s.notificationsService.Tg.WorkspaceInvitation(workspaceMember)
-			go s.emailService.WorkspaceInvitation(workspaceMember) // TODO в пул воркеров на отправку
+			go s.emailService.WorkspaceInvitation(workspaceMember)
 
 			return nil
 		}); err != nil {
 			return EError(c, err)
 		}
 
-		for _, m := range createMemberLog {
-			err := tracker.TrackActivity[dao.ProjectMember, dao.ProjectActivity](s.tracker, activities.EntityAddActivity, m.data, nil, m.pm, &issuer)
+		for _, t := range projectMemberTrackLog {
+			oldSnapshot := tracker.ProjectToSnapshot(&t.project)
+			newSnapshot := tracker.ProjectToSnapshot(&t.project, tracker.WithProjectMembers([]dao.ProjectMember{t.member}, func(m dao.ProjectMember) string {
+				return fmt.Sprint(m.Role)
+			}))
+			err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &t.project, issuer)
 			if err != nil {
 				errStack.GetError(c, err)
 			}
 		}
 
-		data := map[string]interface{}{
-			"updateScopeId":       workspaceMember.MemberId,
-			"member_activity_val": workspaceMember.Role,
-		}
+		oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+		newSnapshot := tracker.WorkspaceToSnapshot(workspace, tracker.WithWorkspaceMembers([]dao.WorkspaceMember{workspaceMember}, func(m dao.WorkspaceMember) string {
+			return fmt.Sprint(m.Role)
+		}))
 
-		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityAddActivity, data, nil, workspaceMember, &issuer)
+		err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, issuer)
+
 		if err != nil {
 			errStack.GetError(c, err)
 		}
 	}
+
+	cache.WorkspaceMembersCache.Expire(workspace.ID)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "Emails sent successfully",
@@ -1242,7 +1385,7 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/users/me/workspaces/ [get]
 func (s *Services) getUserWorkspaceList(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	searchQuery := ""
 
 	if err := echo.QueryParamsBinder(c).
@@ -1252,11 +1395,11 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 	}
 
 	var workspaces []dao.WorkspaceWithCount
-	query := s.db.Model(&dao.Workspace{}).
+	query := s.DB(c).Model(&dao.Workspace{}).
 		Select("*,(?) as total_members,(?) as total_projects,(?) as is_favorite",
-			s.db.Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
-			s.db.Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
-			s.db.Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
+			s.DB(c).Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			s.DB(c).Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			s.DB(c).Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
 		).
 		Preload("Owner").
 		Set("userID", user.ID).
@@ -1269,7 +1412,7 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 	}
 
 	if err := query.
-		Where("workspaces.id in (?)", s.db.Model(&dao.WorkspaceMember{}).
+		Where("workspaces.id in (?)", s.DB(c).Model(&dao.WorkspaceMember{}).
 			Select("workspace_id").
 			Where("member_id = ?", user.ID)).
 		Find(&workspaces).Error; err != nil {
@@ -1290,7 +1433,7 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 // @Router /api/auth/release-notes/ [get]
 func (s *Services) getProductUpdateList(c echo.Context) error {
 	var notes []dao.ReleaseNote
-	if err := s.db.Preload("Author").Order("published_at DESC").Find(&notes).Error; err != nil {
+	if err := s.DB(c).Preload("Author").Order("published_at DESC").Find(&notes).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1310,7 +1453,7 @@ func (s *Services) getProductUpdateList(c echo.Context) error {
 // @Failure 409 {object} apierrors.DefinedError "Ошибка: конфликт с существующим рабочим пространством"
 // @Router /api/auth/workspaces/ [post]
 func (s *Services) createWorkspace(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if !limiter.Limiter.CanCreateWorkspace(user.ID) {
 		return EErrorDefined(c, apierrors.ErrWorkspaceLimitExceed)
@@ -1341,7 +1484,7 @@ func (s *Services) createWorkspace(c echo.Context) error {
 	workspace.CreatedById = user.ID
 	workspace.IntegrationToken = password.MustGenerate(64, 30, 0, false, true)
 
-	if err := s.db.Create(&workspace).Error; err != nil {
+	if err := s.DB(c).Create(&workspace).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return EErrorDefined(c, apierrors.ErrWorkspaceSlugConflict)
 		}
@@ -1362,15 +1505,15 @@ func (s *Services) createWorkspace(c echo.Context) error {
 		NotificationSettingsApp:         types.DefaultWorkspaceMemberNS,
 		NotificationSettingsTG:          types.DefaultWorkspaceMemberNS,
 	}
-	if err := s.db.Create(&workspaceMember).Error; err != nil {
+	if err := s.DB(c).Create(&workspaceMember).Error; err != nil {
 		return EError(c, err)
 	}
 
-	err = tracker.TrackActivity[dao.Workspace, dao.RootActivity](s.tracker, activities.EntityCreateActivity, nil, nil, workspace, &user)
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+	err = s.snapshotTracker.TrackChanges(types.LayerRoot, nil, newSnapshot, &workspace, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}
-
 	return c.JSON(http.StatusCreated, workspace.ToDTO())
 }
 
@@ -1387,7 +1530,7 @@ func (s *Services) createWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/users/last-visited-workspace [get]
 func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	if !user.LastWorkspaceId.Valid {
 		return c.JSON(http.StatusOK, dto.LastWorkspaceResponse{
@@ -1397,12 +1540,12 @@ func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 	}
 
 	var workspace dao.Workspace
-	if err := s.db.Where("id = ?", user.LastWorkspaceId.UUID).Find(&workspace).Error; err != nil {
+	if err := s.DB(c).Where("id = ?", user.LastWorkspaceId.UUID).Find(&workspace).Error; err != nil {
 		return EError(c, err)
 	}
 
 	var projectMember []dao.ProjectMember
-	if err := s.db.Preload("Workspace").
+	if err := s.DB(c).Preload("Workspace").
 		Preload("Workspace.Owner").
 		Preload("Project").
 		Preload("Member").
@@ -1432,9 +1575,13 @@ func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/token [get]
 func (s *Services) getWorkspaceToken(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
-	workspaceMember := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if !user.IsSuperuser && workspaceMember.Role != types.AdminRole && workspace.OwnerId != workspaceMember.MemberId {
 		return c.NoContent(http.StatusForbidden)
@@ -1457,27 +1604,25 @@ func (s *Services) getWorkspaceToken(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/token/reset/ [post]
 func (s *Services) resetWorkspaceToken(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiCtx := apicontext.GetContext(c)
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
 
 	newToken := map[string]interface{}{
 		"integration_token": password.MustGenerate(64, 30, 0, false, true),
 	}
 
-	if err := s.db.Model(&workspace).UpdateColumn("integration_token", newToken["integration_token"]).Error; err != nil {
+	if err := s.DB(c).Model(&workspace).UpdateColumn("integration_token", newToken["integration_token"]).Error; err != nil {
 		return EError(c, err)
 	}
 
-	//Трекинг активности
-	oldMap := map[string]interface{}{
-		"integration_token": "",
-	}
-	newMap := map[string]interface{}{
-		"integration_token": "******",
-	}
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
 
-	err := tracker.TrackActivity[dao.Workspace, dao.WorkspaceActivity](s.tracker, activities.EntityUpdatedActivity, newMap, oldMap, workspace, user)
-	if err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -1498,7 +1643,11 @@ func (s *Services) resetWorkspaceToken(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/states/ [get]
 func (s *Services) getWorkspaceStateList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
 		etagHash, err := hex.DecodeString(etag)
@@ -1507,7 +1656,7 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 		}
 
 		var state dao.State
-		if err := s.db.Model(&dao.State{}).Select("digest(string_agg(hash, '' order by sequence), 'sha256') as hash").Where("workspace_id = ?", workspace.ID).Find(&state).Error; err != nil {
+		if err := s.DB(c).Model(&dao.State{}).Select("digest(string_agg(hash, '' order by sequence), 'sha256') as hash").Where("workspace_id = ?", workspace.ID).Find(&state).Error; err != nil {
 			return EError(c, err)
 		}
 
@@ -1517,7 +1666,7 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 	}
 
 	var states []dao.State
-	if err := s.db.
+	if err := s.DB(c).
 		Preload(clause.Associations).
 		Order("sequence").
 		Where("workspace_id = ?", workspace.ID).
@@ -1554,8 +1703,12 @@ func (s *Services) getWorkspaceStateList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/jitsi-token [get]
 func (s *Services) getWorkspaceJitsiToken(c echo.Context) error {
-	user := c.(WorkspaceContext).User
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	token, err := s.jitsiTokenIss.IssueToken(user, false, workspace.Slug)
 	if err != nil {
@@ -1580,10 +1733,10 @@ func (s *Services) getWorkspaceJitsiToken(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка при получении избранных рабочих пространств"
 // @Router /api/auth/users/user-favorite-workspaces/ [get]
 func (s *Services) getFavoriteWorkspaceList(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var favorites []dao.WorkspaceFavorites
-	if err := s.db.Where("user_id = ?", user.ID).
+	if err := s.DB(c).Where("user_id = ?", user.ID).
 		Preload("Workspace").
 		Preload("Workspace.Owner").
 		Set("userId", user.ID).
@@ -1613,7 +1766,7 @@ func (s *Services) getFavoriteWorkspaceList(c echo.Context) error {
 // @Failure 409 {object} apierrors.DefinedError "Рабочее пространство уже в избранном"
 // @Router /api/auth/users/user-favorite-workspaces/ [post]
 func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	var req requestAddFavorite
 	if err := c.Bind(&req); err != nil {
@@ -1635,7 +1788,7 @@ func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
 		Workspace:   &workspace,
 		UserId:      user.ID,
 	}
-	if err := s.db.Create(&workspaceFavorite).Error; err != nil {
+	if err := s.DB(c).Create(&workspaceFavorite).Error; err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			return c.NoContent(http.StatusOK)
 		}
@@ -1659,7 +1812,7 @@ func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
 // @Router /api/auth/users/user-favorite-workspaces/{workspaceID} [delete]
 func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
-	user := *c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceID := c.Param("workspaceID")
 	userIdStr := user.ID
 	workspace, err := dao.GetWorkspaceByID(s.db, workspaceID, user.ID)
@@ -1668,7 +1821,7 @@ func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if err := s.db.Where("workspace_id = ?", workspace.ID).
+	if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
 		Where("user_id = ?", userIdStr).
 		Delete(&dao.WorkspaceFavorites{}).Error; err != nil {
 		return EError(c, err)
@@ -1692,7 +1845,11 @@ func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/integrations/ [get]
 func (s *Services) getIntegrationList(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID))
 }
@@ -1714,11 +1871,17 @@ func (s *Services) getIntegrationList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/integrations/add/{name}/ [post]
 func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
-	user := c.(WorkspaceContext).User
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	workspaceMember := apiCtx.GetWorkspaceMember()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 	name := c.Param("name")
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
 
-	if c.(WorkspaceContext).WorkspaceMember.Role != types.AdminRole {
+	if workspaceMember.Role != types.AdminRole {
 		return EErrorDefined(c, apierrors.ErrNotEnoughRights)
 	}
 
@@ -1728,7 +1891,7 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	workspaceMember := dao.WorkspaceMember{
+	newMember := dao.WorkspaceMember{
 		ID:          dao.GenUUID(),
 		WorkspaceId: workspace.ID,
 		MemberId:    integration.ID,
@@ -1736,17 +1899,13 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 		CreatedById: userID,
 		Member:      integration,
 	}
-	if err := s.db.Save(&workspaceMember).Error; err != nil {
+	if err := s.DB(c).Save(&newMember).Error; err != nil {
 		return EError(c, err)
 	}
 
-	data := map[string]interface{}{
-		"member_key":               "integration",
-		"integration_activity_val": name,
-	}
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace, tracker.WithIntegration(integration.ID, name))
 
-	err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityAddActivity, data, nil, workspaceMember, user)
-	if err != nil {
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -1770,10 +1929,17 @@ func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/integrations/{name}/ [post]
 func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	workspaceMember := apiCtx.GetWorkspaceMember()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
 	name := c.Param("name")
 
-	if c.(WorkspaceContext).WorkspaceMember.Role != types.AdminRole {
+	if workspaceMember.Role != types.AdminRole {
 		return EErrorDefined(c, apierrors.ErrNotEnoughRights)
 	}
 
@@ -1781,27 +1947,23 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 	if integration == nil {
 		return EErrorDefined(c, apierrors.ErrIntegrationNotFound)
 	}
-
-	data := map[string]interface{}{
-		"member_key":               "integration",
-		"integration_activity_val": name,
-	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace, tracker.WithIntegration(integration.ID, name))
 
 	var wm dao.WorkspaceMember
-	if err := s.db.Joins("Member").Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).First(&wm).Error; err != nil {
+	if err := s.DB(c).Joins("Member").Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).First(&wm).Error; err != nil {
 		return EError(c, err)
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		err := tracker.TrackActivity[dao.WorkspaceMember, dao.WorkspaceActivity](s.tracker, activities.EntityRemoveActivity, data, nil, wm, c.(WorkspaceContext).User)
-		if err != nil {
-			errStack.GetError(c, err)
-			return err
-		}
-
-		return s.db.Session(&gorm.Session{SkipHooks: true}).Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).Delete(&dao.WorkspaceMember{}).Error
-	}); err != nil {
+	if err := s.DB(c).Session(&gorm.Session{SkipHooks: true}).
+		Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).
+		Delete(&dao.WorkspaceMember{}).Error; err != nil {
 		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
+		errStack.GetError(c, err)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -1820,7 +1982,12 @@ func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/workspaces/{workspaceSlug}/me/notifications/ [post]
 func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
-	wm := c.(WorkspaceContext).WorkspaceMember
+	apiContext := apicontext.GetContext(c)
+	wm := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
 	var req workspaceNotificationRequest
 	fields, err := BindData(c, "", &req)
 	if err != nil {
@@ -1844,7 +2011,7 @@ func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
 		}
 	}
 
-	if err := s.db.Select(fields).Updates(&wm).Error; err != nil {
+	if err := s.DB(c).Select(fields).Updates(&wm).Error; err != nil {
 		return EError(c, err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -1860,7 +2027,11 @@ func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
 // @Success 200 {object} dto.WorkspaceLimitsInfo "Текущий тариф"
 // @Router /api/auth/workspaces/{workspaceSlug}/tariff/ [get]
 func (s *Services) getWorkspaceTariff(c echo.Context) error {
-	workspace := c.(WorkspaceContext).Workspace
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 	return c.JSON(http.StatusOK, limiter.Limiter.GetWorkspaceLimitInfo(workspace.ID))
 }
 
@@ -1890,7 +2061,7 @@ type requestAddFavorite struct {
 type requestMessage struct {
 	Title   string    `json:"title"`
 	Msg     string    `json:"msg"`
-	SendAt  time.Time `json:"send_at,omitempty"`
+	SendAt  time.Time `json:"send_at"`
 	Members []string  `json:"members,omitempty"`
 }
 

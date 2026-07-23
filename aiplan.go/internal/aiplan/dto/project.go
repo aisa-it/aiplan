@@ -24,8 +24,9 @@ type ProjectLight struct {
 	Emoji         int32         `json:"emoji,string"`
 	CoverImage    *string       `json:"cover_image" extensions:"x-nullable"`
 	LogoId        uuid.NullUUID `json:"logo"  extensions:"x-nullable" swaggertype:"string"`
-	Url           types.JsonURL `json:"url,omitempty"`
+	Url           types.JsonURL `json:"url"`
 	IsFavorite    bool          `json:"is_favorite"`
+	Archived      bool          `json:"archived"`
 
 	CurrentUserMembership *ProjectMemberLight `json:"current_user_membership,omitempty"  extensions:"x-nullable"`
 
@@ -78,6 +79,12 @@ type ProjectMember struct {
 	NotificationAuthorSettingsTG    types.ProjectMemberNS `json:"notification_author_settings_tg" `
 	NotificationSettingsEmail       types.ProjectMemberNS `json:"notification_settings_email" `
 	NotificationAuthorSettingsEmail types.ProjectMemberNS `json:"notification_author_settings_email" `
+}
+
+type ProjectMemberWithLead struct {
+	ProjectMember
+
+	IsProjectLead bool `json:"is_project_lead"`
 }
 
 type ProjectFavorites struct {

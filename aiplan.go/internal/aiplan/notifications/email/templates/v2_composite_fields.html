@@ -1,0 +1,33 @@
+<table style="background-color: #f0f4ff; border-radius: 8px; width: 100%; font-size: 14px; padding: 0 6px;">
+        <tr>
+            <td align='left' valign='top' style='white-space: nowrap;'>
+                {{- if  .IsNew }}
+                <span style="color:#05bd8d">{{- .Title  -}}</span>
+                {{- else if .IsUpdate }}
+                {{- .Title -}}
+                {{- else if .IsGone }}
+                <del style="color:#999999">{{- .Title -}}</del>
+                {{- end -}}
+            </td>
+        </tr>
+
+    {{- range $key, $cf := .ValuesMap }}
+        <tr>
+            <td align='right' valign='top' style='white-space: nowrap;'><b>{{- $key -}}</b></td>
+        </tr>
+    <tr>
+        <td align='left' valign='top' style='word-break: break-word;'>
+        {{- if  $cf.Created }}
+        {{ $cf.New }}
+        {{- else if $cf.Updated }}
+            <del style="color:#999999">{{ $cf.Old }}</del> <span style="color:#05bd8d">{{ $cf.New }}</span>
+            {{- else if $cf.Deleted }}
+            <span style="color:#999999">{{ $cf.Old }}</span>
+            {{- end -}}
+        </td>
+
+    </tr>
+
+    {{- end }}
+
+</table>

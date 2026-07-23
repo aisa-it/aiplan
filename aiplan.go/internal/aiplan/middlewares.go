@@ -13,10 +13,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/gofrs/uuid"
 
@@ -25,6 +27,25 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 )
+
+// ServerHeader middleware adds a `Server` header to the response.
+func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		c.Response().Header().Set(echo.HeaderServer, "AIPlan")
+		return next(c)
+	}
+}
+
+// PodHeader middleware adds a X-Pod-Name header with pod name to response for balancer debug
+func PodHeader(next echo.HandlerFunc) echo.HandlerFunc {
+	podName := os.Getenv("POD_NAME")
+	return func(c echo.Context) error {
+		if podName != "" {
+			c.Response().Header().Set("X-Pod-Name", podName)
+		}
+		return next(c)
+	}
+}
 
 // Запрет методов, если включен демо-режим
 func DemoMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -36,24 +57,16 @@ func DemoMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-type SearchFilterContext struct {
-	AuthContext
-	Filter dao.SearchFilter
-}
-
 func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		filterId := c.Param("filterId")
-
-		var filter dao.SearchFilter
-		if err := s.db.Where("id = ?", filterId).First(&filter).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return c.NoContent(http.StatusNotFound)
-			}
+		exists, err := dao.IsSearchFilterExists(s.DB(c), c.Param("filterId"))
+		if err != nil {
 			return EError(c, err)
 		}
-
-		return next(SearchFilterContext{c.(AuthContext), filter})
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrSearchFilterNotFound)
+		}
+		return next(c)
 	}
 }
 
@@ -110,16 +123,17 @@ func NewJitsiTokenLogMiddleware(db *gorm.DB) func(echo.HandlerFunc) echo.Handler
 			var workspaceId uuid.NullUUID
 			var room string
 
-			if workspaceCtx, ok := c.(WorkspaceContext); ok {
-				userId = workspaceCtx.User.ID
-				workspaceId = uuid.NullUUID{Valid: true, UUID: workspaceCtx.Workspace.ID}
-				room = workspaceCtx.Workspace.Slug
-			} else if authCtx, ok := c.(AuthContext); ok {
-				userId = authCtx.User.ID
-				room = c.Param("room")
-			} else {
+			apiContext := apicontext.GetContext(c)
+			if apiContext == nil || apiContext.GetUser() == nil {
 				slog.Warn("Jitsi token logger unsupported route", "route", c.Path(), "url", c.Request().URL)
 				return next(c)
+			}
+			userId = apiContext.GetUser().ID
+			room = c.Param("room")
+
+			if ws := apiContext.GetWorkspace(); ws != nil {
+				workspaceId = uuid.NullUUID{Valid: true, UUID: ws.ID}
+				room = ws.Slug
 			}
 
 			logLine := &dao.JitsiTokenLog{

@@ -66,6 +66,8 @@ func parseNode(node TipTapNode) any {
 		return parseMention(node)
 	case "hardBreak":
 		return parseHardBreak(node)
+	case "drawio":
+		return parseDrawio(node)
 	default:
 		slog.Debug("Unknown node type", "type", node.Type)
 		return nil

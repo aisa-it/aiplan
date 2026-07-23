@@ -14,8 +14,10 @@ package integrations
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
+	"strings"
 
-	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
 
@@ -42,7 +44,6 @@ type Integration struct {
 	db              *gorm.DB
 	telegramService *tg.TgService
 	fileStorage     filestorage.FileStorage
-	tracker         *tracker.ActivitiesTracker
 	bl              *business.Business
 }
 
@@ -99,10 +100,10 @@ type IntegrationsService struct {
 	db           *gorm.DB
 }
 
-func NewIntegrationService(g *echo.Group, db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, tr *tracker.ActivitiesTracker, bl *business.Business) *IntegrationsService {
+func NewIntegrationService(g *echo.Group, db *gorm.DB, tS *tg.TgService, fs filestorage.FileStorage, bl *business.Business) *IntegrationsService {
 	integrations := []IntegrationInterface{
-		NewGitlabIntegration(db, tS, fs, tr, bl),
-		NewGithubIntegration(db, tS, fs, tr, bl),
+		NewGitlabIntegration(db, tS, fs, bl),
+		NewGithubIntegration(db, tS, fs, bl),
 	}
 
 	webhooksGroup := g.Group("integrations/webhooks/")
@@ -137,4 +138,33 @@ func (is *IntegrationsService) GetIntegrationUser(name string) *dao.User {
 		}
 	}
 	return user
+}
+
+type Issue struct {
+	Project string
+	Seq     int
+}
+
+func (i Issue) String() string {
+	return fmt.Sprintf("%s-%d", i.Project, i.Seq)
+}
+
+var issueReg = regexp.MustCompile(`[A-Z0-9]+-\d+`)
+
+func ParseMessage(msg string) []Issue {
+	entries := issueReg.FindAllString(msg, 10)
+	res := make([]Issue, 0, len(entries))
+	for _, entry := range entries {
+		foundIssue := strings.Split(entry, "-")
+		if len(foundIssue) != 2 {
+			continue
+		}
+		seq, err := strconv.Atoi(foundIssue[1])
+		if err != nil {
+			slog.Error("ParseMessage from hook encounter incorrect issue", "issue", entry, "msg", msg)
+			continue
+		}
+		res = append(res, Issue{Project: foundIssue[0], Seq: seq})
+	}
+	return res
 }

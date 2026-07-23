@@ -19,7 +19,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/atomic"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import/entity"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
 	"github.com/glebarez/sqlite"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
@@ -33,7 +33,7 @@ type ImportService struct {
 	memDB         *gorm.DB
 	db            *gorm.DB
 	storage       filestorage.FileStorage
-	notifyService *notifications.EmailService
+	notifyService *email.EmailService
 
 	closeCh chan bool
 }
@@ -154,7 +154,7 @@ type FailedAttachment struct {
 	AttachmentId string `json:"attachment_id"`
 }
 
-func NewImportService(db *gorm.DB, storage filestorage.FileStorage, notifyService *notifications.EmailService) *ImportService {
+func NewImportService(db *gorm.DB, storage filestorage.FileStorage, notifyService *email.EmailService) *ImportService {
 	memDB, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		slog.Error("Open sqlite memory DB", "err", err)

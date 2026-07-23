@@ -31,7 +31,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/mail"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -41,14 +40,21 @@ import (
 	"syscall"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/business"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cache"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/token"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tokens-cache"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/tracer"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/cronmanager"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
@@ -91,40 +97,40 @@ import (
 
 type Services struct {
 	db                  *gorm.DB
-	tracker             *tracker.ActivitiesTracker
+	snapshotTracker     *tracker.SnapshotTracker
 	storage             filestorage.FileStorage
-	emailService        *notifications.EmailService
+	emailService        *email.EmailService
 	memDB               *mem.AIPlanMemAPI
 	integrationsService *integrations.IntegrationsService
 	importService       *issues_import.ImportService
 	jitsiTokenIss       *jitsi_token.JitsiTokenIssuer
+	authProvider        *authprovider.LdapProvider
 
 	notificationsService *notifications.Notification
 
-	business *business.Business
+	business    *business.Business
+	tokensCache *tokenscache.TokensCache
 }
+
+// DB возвращает *gorm.DB, привязанный к контексту HTTP-запроса.
+// При cancel/timeout контекста pgx отправит pg_cancel_backend в Postgres,
+// что не даёт зависшим запросам копиться в пуле.
+func (s *Services) DB(c echo.Context) *gorm.DB {
+	return s.db.WithContext(c.Request().Context())
+}
+
+// RawDB возвращает исходный *gorm.DB без привязки к запросу.
+// Использовать только в фоновых задачах, кронах и не-HTTP-обработчиках.
+func (s *Services) RawDB() *gorm.DB {
+	return s.db
+}
+
+const requestTimeout = time.Second * 20
+
+const spanCtxKey = "trace.span_context"
 
 var cfg *config.Config
 var appVersion string
-
-// ServerHeader middleware adds a `Server` header to the response.
-func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		c.Response().Header().Set(echo.HeaderServer, "AIPlan")
-		return next(c)
-	}
-}
-
-// PodHeader middleware adds a X-Pod-Name header with pod name to response for balancer debug
-func PodHeader(next echo.HandlerFunc) echo.HandlerFunc {
-	podName := os.Getenv("POD_NAME")
-	return func(c echo.Context) error {
-		if podName != "" {
-			c.Response().Header().Set("X-Pod-Name", podName)
-		}
-		return next(c)
-	}
-}
 
 func Server(db *gorm.DB, c *config.Config, version string) {
 	cfg = c
@@ -148,12 +154,48 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			c.NoContent(http.StatusNotFound)
 			return
 		}
-		slog.Error("Unhandled error in endpoint", "handler", c.Path(), "url", c.Request().URL, "err", err)
-		EErrorMsgStatus(c, nil, code)
+		ctx := c.Request().Context()
+		if sc, ok := c.Get(spanCtxKey).(trace.SpanContext); ok {
+			ctx = trace.ContextWithSpanContext(ctx, sc)
+		}
+		// Обрыв запроса (клиент отвалился) — не ошибка сервера: пишем в otel
+		// root span запроса вместо лога.
+		if errors.Is(err, context.Canceled) {
+			span := trace.SpanFromContext(c.Request().Context())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "request canceled")
+		} else {
+			slog.ErrorContext(ctx, "API error",
+				"err", err,
+				"method", c.Request().Method,
+				"url", c.Request().URL.String(),
+			)
+		}
+		er := apierrors.ErrGeneric
+		er.StatusCode = code
+		if err != nil {
+			er.Err = err.Error()
+		}
+		EErrorDefined(c, er)
 	}
 
 	var storage filestorage.FileStorage
 	var err error
+
+	var stopTracer tracer.StopFn
+	if cfg.OTELEndpoint != "" {
+		slog.Info("Start OTEL tracer")
+		stopTracer, err = tracer.Init(context.Background(), &tracer.Config{
+			Endpoint:    cfg.OTELEndpoint,
+			Token:       cfg.OTELToken,
+			Version:     appVersion,
+			SampleRatio: cfg.OTELSampleRate,
+		}, db)
+		if err != nil {
+			slog.Error("Init OTEL tracer", "err", err)
+			os.Exit(1)
+		}
+	}
 
 	if cfg.AssetsPath == "" {
 		slog.Warn("ASSETS_PATH param empty, fallback to ./assets dir")
@@ -180,17 +222,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	dao.FileStorage = storage
 
-	//slog.Info("Migrate old activities")
-	//activityMigrate(db) //TODO migrate to newActivities
-	// Query counter
-	ql := dao.NewQueryLogger()
-	if err := db.Callback().
-		Query().
-		After("*").
-		Register("instrumentation:after_query", ql.QueryCallback); err != nil {
-		slog.Error("Register query callback", "err", err)
-	}
-
 	memDBConn := "session.db"
 	if cfg.ExternalMemDB.URL != nil {
 		memDBConn = cfg.ExternalMemDB.URL.String()
@@ -201,19 +232,18 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		os.Exit(1)
 	}
 
-	es := notifications.NewEmailService(cfg, db)
-	tr := tracker.NewActivitiesTracker(db)
-	bl, err := business.NewBL(db, tr)
+	es := email.NewEmailService(cfg, db)
+	snapshotTracker := tracker.NewSnapshotTracker(db)
+	bl, err := business.NewBL(db, snapshotTracker)
+
 	if err != nil {
 		os.Exit(1)
 	}
-	ns := notifications.NewNotificationService(cfg, db, tr, bl)
+	ns := notifications.NewNotificationService(cfg, db, bl)
 	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
-	/*if err := np.ListenNotifications(cfg.DatabaseDSN); err != nil {
-		slog.Error("Notification listener fail", "err", err)
-		os.Exit(1)
-	}*/
-	//ts := notifications.NewTelegramService(db, cfg, tracker)
+
+	cache.InitUsersCache(db)
+	cache.InitWorkspaceSummaryCache(db)
 
 	var ldapProvider *authprovider.LdapProvider
 	if cfg.LDAPServerURL.URL != nil {
@@ -272,17 +302,17 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}
 
 	s := &Services{
-		db:           db,
-		tracker:      tr,
-		storage:      storage,
-		emailService: es,
-		//telegramService:       ts,
-		memDB:         memDB,
-		importService: issues_import.NewImportService(db, storage, es),
-		//wsNotificationService: ws,
+		db:                   db,
+		snapshotTracker:      snapshotTracker,
+		storage:              storage,
+		emailService:         es,
+		memDB:                memDB,
+		importService:        issues_import.NewImportService(db, storage, es),
 		notificationsService: ns,
 		business:             bl,
 		jitsiTokenIss:        jitsi_token.NewJitsiTokenIssuer(cfg.JitsiJWTSecret, cfg.JitsiAppID),
+		authProvider:         ldapProvider,
+		tokensCache:          tokenscache.NewTokensCache(),
 	}
 
 	// Start cronManager
@@ -291,6 +321,9 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	// Create a channel to handle termination signals
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	slog.Info("Start DB subscriptions")
+	go dao.NotifiSubscription.Start(ctx, cfg.DatabaseDSN)
 
 	// Запуск SSH сервера для Git (если включен)
 	var sshServer *SSHServer
@@ -326,13 +359,20 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	go func() {
 		<-ctx.Done()
 		slog.Info("Shutting down gracefully, press Ctrl+C again to force")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
 		// Останавливаем SSH сервер
 		if sshServer != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 			if err := sshServer.Shutdown(shutdownCtx); err != nil {
 				slog.Error("SSH server shutdown error", "err", err)
+			}
+		}
+
+		if stopTracer != nil {
+			// Stoping tracer
+			if err := stopTracer(shutdownCtx); err != nil {
+				slog.Error("Stop OTEL tracer", "err", err)
 			}
 		}
 
@@ -340,35 +380,17 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		np.Stop()
 		es.Stop()
 		ns.Tg.Stop()
-		e.Shutdown(context.Background())
+		e.Shutdown(shutdownCtx)
 		os.Exit(0)
 	}()
 
 	sendPasswordDefaultAdmin(db, es)
 
-	{ // register handler ws & UserNotify activity
-		tr.RegisterHandler(notifications.NewIssueNotification(ns))
-		tr.RegisterHandler(notifications.NewProjectNotification(ns))
-		tr.RegisterHandler(notifications.NewDocNotification(ns))
-		tr.RegisterHandler(notifications.NewWorkspaceNotification(ns))
-		tr.RegisterHandler(notifications.NewFormNotification(ns))
-		tr.RegisterHandler(notifications.NewSprintNotification(ns))
-	}
-
-	{ // register handler telegram activity
-		tr.RegisterHandler(tg.NewTelegramNotification(ns.Tg))
-		//tr.RegisterHandler(notifications.NewTgNotifyIssue(ns.Tg))
-		//tr.RegisterHandler(notifications.NewTgNotifyProject(ns.Tg))
-		//tr.RegisterHandler(notifications.NewTgNotifyDoc(ns.Tg))
-		//tr.RegisterHandler(notifications.NewTgNotifyWorkspace(ns.Tg))
-	}
+	snapshotTracker.RegisterHandler(notifications.NewEventNotificationService(ns))
 
 	// Global middlewares
 	e.Use(ServerHeader)
 	e.Use(PodHeader)
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowCredentials: true,
-	}))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
 		Limit: "5M",
 		Skipper: func(c echo.Context) bool {
@@ -401,6 +423,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}))
 	e.Use(echoprometheus.NewMiddleware("aiplan"))
 	e.Pre(
+		middleware.ContextTimeout(requestTimeout),
 		middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 			Skipper: func(c echo.Context) bool {
 				return !strings.HasPrefix(c.Path(), "/api")
@@ -427,22 +450,40 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			},
 		}),
 	)
+	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+		XFrameOptions:         "DENY",
+		ContentTypeNosniff:    "nosniff",
+		HSTSMaxAge:            31536000,
+		HSTSExcludeSubdomains: false,
+		ReferrerPolicy:        "strict-origin-when-cross-origin",
+		Skipper: func(c echo.Context) bool {
+			return c.Path() == "/api/auth/file/:fileName/"
+		},
+	}))
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {
+				c.Set(spanCtxKey, sc)
+			}
+			return next(c)
+		}
+	})
 
 	e.Validator = NewRequestValidator()
 
-	AddAuthenticationServices(db, e, []byte(cfg.SecretKey), memDB, ns.Tg, es, ldapProvider)
-
 	//services with auth
-	apiGroup := e.Group("/api/")
+	apiGroup := e.Group("/api/",
+		otelecho.Middleware("aiplan",
+			otelecho.WithSkipper(func(c echo.Context) bool {
+				p := c.Path()
+				return strings.Contains(p, "_health") || strings.Contains(p, "/api/version") || strings.Contains(p, "/ws") || strings.Contains(p, "swagger")
+			}),
+		),
+	)
 
-	s.integrationsService = integrations.NewIntegrationService(apiGroup, db, s.notificationsService.Tg, s.storage, tr, bl)
+	s.integrationsService = integrations.NewIntegrationService(apiGroup, db, s.notificationsService.Tg, s.storage, bl)
 
-	authMiddleware := AuthMiddleware(AuthConfig{
-		Secret:      []byte(cfg.SecretKey),
-		DB:          db,
-		MemDB:       memDB,
-		TokensCache: tokenscache.NewTokensCache(),
-	})
+	authMiddleware := s.AuthMiddleware([]byte(cfg.SecretKey), nil)
 	authGroup := apiGroup.Group("auth/", authMiddleware)
 
 	apiGroup.Group("docs", middleware.StaticWithConfig(middleware.StaticConfig{
@@ -456,7 +497,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	}))
 	apiGroup.GET("docsIndex/", NewHelpIndex("aiplan-help/"))
 
-	authGroup.GET("queryLog/", ql.CountEndpoint)
+	s.AddAuthenticationServices(apiGroup, []byte(cfg.SecretKey))
 	s.AddFormServices(authGroup)
 	s.AddProjectServices(authGroup)
 	s.AddWorkspaceServices(authGroup)
@@ -465,7 +506,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	s.AddBackupServices(authGroup)
 	s.AddAdminServices(authGroup)
 	s.AddGitServices(authGroup)
-	AddProfileServices(e.Group("/"))
+	//AddProfileServices(e.Group("/"))
 	s.AddIssueMigrationServices(authGroup)
 	s.AddImportServices(authGroup)
 	s.AddDocServices(authGroup)
@@ -498,7 +539,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	// Websocket notifications endpoint
 	authGroup.GET("ws/notifications/", func(c echo.Context) error {
-		s.notificationsService.Ws.Handle(c.(AuthContext).User.ID, c.Response(), c.Request())
+		s.notificationsService.Ws.Handle(apicontext.GetContext(c).GetUser().ID, c.Response(), c.Request())
 		return nil
 	})
 
@@ -546,15 +587,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 			NewSPACacheMiddleware(config),
 			middleware.StaticWithConfig(config),
 		)
-
-		uHttp, _ := url.Parse(fmt.Sprintf("http://%s", cfg.AWSEndpoint))
-		e.Group("/"+cfg.AWSBucketName,
-			middleware.RemoveTrailingSlash(),
-			middleware.Proxy(middleware.NewRoundRobinBalancer([]*middleware.ProxyTarget{
-				{
-					URL: utils.CheckHttps(uHttp),
-				},
-			})))
 	}
 
 	// Prometheus metrics
@@ -605,20 +637,20 @@ func checkPassword(password string, pass string) bool {
 }
 
 // Генерация ключа доступа
-func createAccessToken(userId uuid.UUID) (*Token, *Token, error) {
-	ta, err := GenJwtToken([]byte(cfg.SecretKey), "access", userId)
+func createAccessToken(userId uuid.UUID) (*token.Token, *token.Token, error) {
+	ta, err := token.GenJwtToken([]byte(cfg.SecretKey), "access", userId)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tr, err := GenJwtToken([]byte(cfg.SecretKey), "refresh", userId)
+	tr, err := token.GenJwtToken([]byte(cfg.SecretKey), "refresh", userId)
 	if err != nil {
 		return nil, nil, err
 	}
 	return ta, tr, err
 }
 
-func setAuthCookies(c echo.Context, accessToken *Token, refreshToken *Token) {
+func setAuthCookies(c echo.Context, accessToken *token.Token, refreshToken *token.Token) {
 	accessCookie := new(http.Cookie)
 	accessCookie.Name = "access_token"
 	accessCookie.Value = accessToken.SignedString
@@ -672,46 +704,6 @@ func clearAuthCookies(c echo.Context) {
 	}
 	refreshCookie.MaxAge = -1
 	c.SetCookie(refreshCookie)
-}
-
-type Token struct {
-	JWT          *jwt.Token
-	SignedString string
-	Type         string
-}
-
-// Генерация JWT ключа
-func GenJwtToken(secret []byte, tokenType string, userid uuid.UUID) (*Token, error) {
-	u, _ := uuid.NewV4()
-	claims := jwt.MapClaims{
-		"exp":        jwt.NewNumericDate(time.Now().Add(types.TokenExpiresPeriod)),
-		"iat":        jwt.NewNumericDate(time.Now()),
-		"jti":        fmt.Sprintf("%x", u),
-		"token_type": tokenType,
-		"user_id":    userid.String(),
-	}
-	if tokenType == "refresh" {
-		claims["exp"] = jwt.NewNumericDate(time.Now().Add(types.RefreshTokenExpiresPeriod))
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedString, err := token.SignedString(secret)
-	if err != nil {
-		return nil, err
-	}
-
-	// Waiting for PR https://github.com/golang-jwt/jwt/pull/417
-	sigStr := signedString[strings.LastIndex(signedString, ".")+1:]
-	sig, err := base64.RawURLEncoding.DecodeString(sigStr)
-	if err != nil {
-		return nil, err
-	}
-	token.Signature = sig
-
-	return &Token{
-		JWT:          token,
-		SignedString: signedString,
-		Type:         tokenType,
-	}, nil
 }
 
 func GenInviteToken(email string) (string, error) {
@@ -973,7 +965,7 @@ func GetActivitiesTable(query *gorm.DB, from DayRequest, to DayRequest) (map[uui
 		Where("actor_id is not null").
 		Group("actor_id, Day").
 		Order("Day").
-		Model(&dao.FullActivity{}).
+		Model(&dao.ActivityEvent{}).
 		Find(&activities).Error; err != nil {
 		return nil, err
 	}
@@ -1080,7 +1072,7 @@ func slicesEqualIgnoreOrder(s1, s2 reflect.Value) bool {
 	return true
 }
 
-func sendPasswordDefaultAdmin(tx *gorm.DB, es *notifications.EmailService) {
+func sendPasswordDefaultAdmin(tx *gorm.DB, es *email.EmailService) {
 	var user dao.User
 	if err := tx.Where("username = ?", "admin").Where("is_onboarded = ?", false).First(&user).Error; err != nil {
 		return

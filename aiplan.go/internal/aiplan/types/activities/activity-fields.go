@@ -1,8 +1,61 @@
 package activities
 
-import "fmt"
+import (
+	"database/sql/driver"
+	"fmt"
+)
+
+type FieldKey struct {
+	Field ActivityField
+	Kind  FieldKind
+}
+
+type FieldKind string
+
+func (k FieldKind) AsField() ActivityField {
+	return ActivityField(k)
+}
+
+func (fk FieldKey) String() string {
+	if fk.Kind == "" {
+		return fk.Field.String()
+	}
+	return fmt.Sprintf("%s_%s", fk.Field.String(), fk.Kind)
+}
 
 type ActivityField string
+
+func (f ActivityField) Value() (driver.Value, error) {
+	return string(f), nil
+}
+
+func (f *ActivityField) Scan(value interface{}) error {
+	if value == nil {
+		*f = ActivityField("")
+		return nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		*f = ActivityField(v)
+	case []byte:
+		*f = ActivityField(v)
+	case fmt.Stringer:
+		*f = ActivityField(v.String())
+	default:
+		return fmt.Errorf("cannot scan type %T into ActivityField: %v", value, value)
+	}
+
+	return nil
+}
+
+func New[E ~string](field E) ActivityField {
+	return ActivityField(field)
+}
+
+func (a ActivityField) String() string {
+	return string(a)
+}
 
 type FieldMapping struct {
 	Req   string
@@ -81,6 +134,7 @@ var (
 	Fields        = FieldMapping{"fields", "fields"}
 	Group         = FieldMapping{"group", "group"}
 	Sprint        = FieldMapping{"sprint", "sprint"}
+	SprintFolder  = FieldMapping{"sprint_folder", "sprint_folder"}
 
 	Member = FieldMapping{"", "member"}
 
@@ -111,13 +165,6 @@ var (
 )
 
 const (
-	EntityUpdatedActivity = "entity.updated"
-	EntityCreateActivity  = "entity.create"
-	EntityDeleteActivity  = "entity.delete"
-	EntityAddActivity     = "entity.add"
-	EntityRemoveActivity  = "entity.remove"
-	EntityMoveActivity    = "entity.move"
-
 	VerbUpdated = "updated"
 	VerbRemoved = "removed"
 	VerbAdded   = "added"
@@ -130,22 +177,6 @@ const (
 	VerbMoveDocDoc       = "move_doc_to_doc"
 	VerbMoveWorkspaceDoc = "move_workspace_to_doc"
 )
-
-func (a ActivityField) String() string {
-	return string(a)
-}
-
-func (a ActivityField) WithActivityValStr() string {
-	return fmt.Sprintf("%s_%s", a.String(), "activity_val")
-}
-
-func (a ActivityField) WithFuncStr() string {
-	return fmt.Sprintf("%s_%s", a.String(), "func")
-}
-
-func (a ActivityField) WithGetFieldStr() string {
-	return fmt.Sprintf("%s_%s", a.String(), "get_field")
-}
 
 func ReqFieldMapping(in string) string {
 	if v, ok := fieldChange[in]; ok {

@@ -15,3 +15,19 @@ const (
 	EmailCodeLifeTime time.Duration = time.Minute * 5
 	EmailCodeLimitReq               = time.Minute
 )
+
+const (
+	LayerRoot EntityLayer = iota
+	LayerWorkspace
+	LayerProject
+	LayerIssue
+	LayerDoc
+	LayerForm
+	LayerSprint
+)
+
+const (
+	TgCh NotifyChannel = iota
+	EmailCh
+	AppCh
+)

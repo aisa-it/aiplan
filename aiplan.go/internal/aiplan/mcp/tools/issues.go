@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -319,11 +319,31 @@ var issuesTools = []Tool{
 		),
 		getIssueAttachments,
 	},
+	{
+		mcp.NewTool(
+			"create_issue_comment",
+			mcp.WithDescription("Создание комментария к задаче"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithString("comment_html",
+				mcp.Required(),
+				mcp.Description("Текст комментария в HTML формате"),
+			),
+		),
+		createIssueComment,
+	},
 }
 
 func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
+	all := append([]Tool{}, issuesTools...)
+	all = append(all, issuesActionsTools...)
+
 	var resources []server.ServerTool
-	for _, t := range issuesTools {
+	for _, t := range all {
 		resources = append(resources, server.ServerTool{
 			Tool:    t.Tool,
 			Handler: WrapTool(db, bl, t.Handler),
@@ -402,7 +422,7 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	}
 
 	// Получаем сырые данные из БД напрямую через BuildIssueListQuery
-	issues, count, err := search.BuildIssueListQuery(
+	issues, count, err := search.SearchIssuesList(
 		db,
 		*user,
 		dao.ProjectMember{}, // пустой - глобальный поиск
@@ -412,6 +432,27 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	)
 	if err != nil {
 		return logger.Error(err), nil
+	}
+
+	if len(issues) > 0 {
+		ids := make([]uuid.UUID, len(issues))
+		for i := range issues {
+			ids[i] = issues[i].ID
+		}
+		var withWatchers []dao.Issue
+		if err := db.Select("issues.id").
+			Where("id in (?)", ids).
+			Preload("Watchers").
+			Find(&withWatchers).Error; err != nil {
+			return logger.Error(err), nil
+		}
+		watchersMap := make(map[uuid.UUID]*[]dao.User, len(withWatchers))
+		for i := range withWatchers {
+			watchersMap[withWatchers[i].ID] = withWatchers[i].Watchers
+		}
+		for i := range issues {
+			issues[i].Watchers = watchersMap[issues[i].ID]
+		}
 	}
 
 	// Форматируем в Markdown таблицу для экономии токенов
@@ -575,9 +616,6 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	// Activity tracking
 	issueNew.Project = &project
 	issueNew.Workspace = project.Workspace
-	if err := tracker.TrackActivity[dao.Issue, dao.ProjectActivity](bl.GetTracker(), activities.EntityCreateActivity, nil, nil, issueNew, user); err != nil {
-		return logger.Error(err), nil
-	}
 
 	// Загружаем созданную задачу с связями для ответа
 	var createdIssue dao.Issue
@@ -592,6 +630,11 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		Where("issues.id = ?", issueNew.ID).
 		First(&createdIssue).Error; err != nil {
 		return logger.Error(err), nil
+	}
+
+	err = bl.GetSnapshotTracker().TrackChanges(types.LayerProject, nil, tracker.IssueToSnapshot(issueNew), &project, user)
+	if err != nil {
+		slog.Error("MCP createIssue: track changes failed", "error", err)
 	}
 
 	return mcp.NewToolResultJSON(createdIssue.ToDTO())
@@ -853,14 +896,6 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		return logger.Error(err), nil
 	}
 
-	// Activity tracking
-	if len(data) > 0 {
-		oldData := structToMap(oldIssue)
-		if err := tracker.TrackActivity[dao.Issue, dao.IssueActivity](bl.GetTracker(), activities.EntityUpdatedActivity, data, oldData, issue, user); err != nil {
-			return logger.Error(err), nil
-		}
-	}
-
 	// Загружаем обновлённую задачу с связями для ответа
 	var updatedIssue dao.Issue
 	if err := db.
@@ -874,6 +909,13 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		Where("issues.id = ?", issue.ID).
 		First(&updatedIssue).Error; err != nil {
 		return logger.Error(err), nil
+	}
+
+	err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue,
+		tracker.IssueToSnapshot(oldIssue),
+		tracker.IssueToSnapshot(updatedIssue), &updatedIssue, user)
+	if err != nil {
+		slog.Error("MCP updateIssue: track changes failed", "error", err)
 	}
 
 	return mcp.NewToolResultJSON(updatedIssue.ToDTO())
@@ -971,8 +1013,6 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 	// Получаем спринты с задачами для статистики
 	var sprints []dao.Sprint
 	if err := db.
-		Set("issueProgress", true).
-		Preload("Issues.State").
 		Where("workspace_id = ?", workspace.ID).
 		Order("sequence_id DESC").
 		Limit(limit).
@@ -981,21 +1021,12 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 		return logger.Error(err), nil
 	}
 
-	// Подсчитываем статистику
+	statsBySprint, err := business.GetSprintStatsByWorkspace(db.WithContext(ctx), workspace.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
 	for i := range sprints {
-		sprints[i].Stats.AllIssues = len(sprints[i].Issues)
-		for _, issue := range sprints[i].Issues {
-			switch issue.IssueProgress.Status {
-			case types.InProgress:
-				sprints[i].Stats.InProgress++
-			case types.Pending:
-				sprints[i].Stats.Pending++
-			case types.Cancelled:
-				sprints[i].Stats.Cancelled++
-			case types.Completed:
-				sprints[i].Stats.Completed++
-			}
-		}
+		sprints[i].Stats = statsBySprint[sprints[i].Id]
 	}
 
 	// Преобразуем в DTO
@@ -1221,23 +1252,26 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	// Получаем историю
 	query := db.
 		Joins("Actor").
-		Where("issue_activities.issue_id = ?", issue.ID).
-		Order("issue_activities.created_at DESC").
+		Where("activity_events.entity_type = ?", types.LayerIssue).
+		Where("activity_events.issue_id = ?", issue.ID).
+		Order("activity_events.created_at DESC").
 		Limit(limit).
 		Offset(offset)
 
 	if field != "" {
-		query = query.Where("issue_activities.field = ?", field)
+		query = query.Where("activity_events.field = ?", field)
 	}
 
-	var activities []dao.IssueActivity
-	if err := query.Find(&activities).Error; err != nil {
+	var activities []dao.ActivityEvent
+	if err := dao.LoadActivitiesBatched(query, &activities); err != nil {
 		return logger.Error(err), nil
 	}
 
 	// Подсчёт общего количества
 	var total int64
-	countQuery := db.Model(&dao.IssueActivity{}).Where("issue_id = ?", issue.ID)
+	countQuery := db.Model(&dao.ActivityEvent{}).
+		Where("activity_events.entity_type = ?", types.LayerIssue).
+		Where("issue_id = ?", issue.ID)
 	if field != "" {
 		countQuery = countQuery.Where("field = ?", field)
 	}
@@ -1261,21 +1295,17 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	result := make([]activityResponse, len(activities))
 	for i, a := range activities {
 		resp := activityResponse{
-			ID:            a.Id.String(),
+			ID:            a.ID.String(),
 			CreatedAt:     a.CreatedAt,
 			Verb:          a.Verb,
 			NewValue:      a.NewValue,
-			Comment:       a.Comment,
+			OldValue:      a.OldValue,
+			Comment:       a.Comment(),
+			Field:         a.Field.String(),
 			NewIdentifier: a.NewIdentifier,
 			OldIdentifier: a.OldIdentifier,
 		}
 
-		if a.Field != nil {
-			resp.Field = *a.Field
-		}
-		if a.OldValue != nil {
-			resp.OldValue = *a.OldValue
-		}
 		if a.Actor != nil {
 			resp.ActorID = a.Actor.ID.String()
 			resp.ActorName = a.Actor.GetName()
@@ -1478,6 +1508,89 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 	}
 
 	return mcp.NewToolResultJSON(utils.SliceToSlice(&attachments, func(ia *dao.IssueAttachment) dto.Attachment { return *ia.ToLightDTO() }))
+}
+
+// createIssueComment создаёт комментарий к задаче
+func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	commentHtml, ok := args["comment_html"].(string)
+	if !ok || strings.TrimSpace(commentHtml) == "" {
+		return apierrors.ErrIssueCommentEmpty.MCPError(), nil
+	}
+
+	// Находим задачу
+	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+	if issue == nil {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	// Проверяем членство в проекте
+	var projectMember dao.ProjectMember
+	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrProjectForbidden.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	// Проверка кулдауна
+	var lastCommentTime time.Time
+	if err := db.Select("created_at").
+		Where("workspace_id = ?", issue.WorkspaceId).
+		Where("actor_id = ?", user.ID).
+		Order("created_at desc").
+		Model(&dao.IssueComment{}).
+		First(&lastCommentTime).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return logger.Error(err), nil
+	}
+	if time.Since(lastCommentTime) <= 5*time.Second {
+		return apierrors.ErrTooManyComments.MCPError(), nil
+	}
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	comment := dao.IssueComment{
+		Id:              dao.GenUUID(),
+		ProjectId:       issue.ProjectId,
+		Project:         issue.Project,
+		IssueId:         issue.ID,
+		WorkspaceId:     issue.WorkspaceId,
+		Workspace:       issue.Workspace,
+		ActorId:         userID,
+		Issue:           issue,
+		CommentHtml:     types.RedactorHTML{Body: commentHtml},
+		CommentStripped: types.RemoveInvisibleChars(commentHtml),
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Create(&comment).Error; err != nil {
+			return err
+		}
+
+		issue.UpdatedAt = time.Now()
+		return tx.Select("updated_at").Updates(issue).Error
+	}); err != nil {
+		return logger.Error(err), nil
+	}
+
+	// Activity tracking
+	comment.Actor = user
+
+	newSnapshot := tracker.CommentToSnapshot(&comment)
+	err = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
+	if err != nil {
+		slog.Error("MCP createIssueComment: track changes failed", "error", err)
+	}
+
+	return mcp.NewToolResultJSON(comment.ToDTO())
 }
 
 // findIssueByIdOrSeq — вспомогательная функция для поиска задачи по ID или sequence

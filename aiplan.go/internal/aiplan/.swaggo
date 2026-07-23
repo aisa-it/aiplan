@@ -3,3 +3,4 @@ replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.JsonURL string
 replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.TargetDate string
 replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.RedactorHTML string
 replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.TargetDateTimeZ string
+replace github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types.JSONTime number

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -115,7 +116,7 @@ type RepoInfoDTO struct {
 // @Router /api/auth/git/config/ [get]
 func (s *Services) getGitConfig(c echo.Context) error {
 	// Проверяем, что пользователь авторизован (middleware уже проверил это)
-	_ = c.(AuthContext).User
+	_ = apicontext.GetContext(c).GetUser()
 
 	gitConfig := dto.GitConfigInfo{
 		GitEnabled:          cfg.GitEnabled,
@@ -141,7 +142,7 @@ func (s *Services) getGitConfig(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [post]
 func (s *Services) createGitRepository(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что Git функциональность включена
 	if !cfg.GitEnabled {
@@ -150,7 +151,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Проверяем наличие пути к репозиториям
 	if cfg.GitRepositoriesPath == "" {
-		slog.Error("GIT_REPOSITORIES_PATH is not configured")
+		slog.ErrorContext(c.Request().Context(), "GIT_REPOSITORIES_PATH is not configured")
 		return EErrorDefined(c, apierrors.ErrGitDisabled)
 	}
 
@@ -163,7 +164,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 	// Парсим входные данные
 	var req dto.CreateGitRepositoryRequest
 	if err := c.Bind(&req); err != nil {
-		slog.Error("Failed to bind request", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to bind request", "err", err)
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -179,7 +180,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Получаем workspace по slug
 	var workspace dao.Workspace
-	if err := s.db.
+	if err := s.DB(c).
 		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
@@ -187,7 +188,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Проверяем права пользователя на workspace (должен быть как минимум членом)
 	var workspaceMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).
 		First(&workspaceMember).Error; err != nil {
 		return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
@@ -214,7 +215,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Создаем директорию для репозитория
 	if err := os.MkdirAll(repoPath, 0755); err != nil {
-		slog.Error("Failed to create repository directory", "path", repoPath, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to create repository directory", "path", repoPath, "err", err)
 		return EErrorDefined(c, apierrors.ErrGitPathCreationFailed)
 	}
 
@@ -222,7 +223,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 	cmd := exec.Command("git", "init", "--bare", "--initial-branch="+branch, repoPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		slog.Error("Failed to init git repository",
+		slog.ErrorContext(c.Request().Context(), "Failed to init git repository",
 			"path", repoPath,
 			"err", err,
 			"output", string(output))
@@ -250,7 +251,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Сохраняем метаданные в файл aiplan.json
 	if err := gitRepo.Save(); err != nil {
-		slog.Error("Failed to save repository metadata", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to save repository metadata", "err", err)
 		os.RemoveAll(repoPath) // Cleanup
 		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Failed to save metadata"))
 	}
@@ -259,7 +260,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 	if req.Description != "" {
 		descFile := filepath.Join(repoPath, "description")
 		if err := os.WriteFile(descFile, []byte(req.Description), 0644); err != nil {
-			slog.Warn("Failed to write description file", "path", descFile, "err", err)
+			slog.WarnContext(c.Request().Context(), "Failed to write description file", "path", descFile, "err", err)
 			// Не критичная ошибка, продолжаем
 		}
 	}
@@ -267,7 +268,7 @@ func (s *Services) createGitRepository(c echo.Context) error {
 	// Генерируем clone URL
 	cloneURL := fmt.Sprintf("git@%s:%s/%s.git", cfg.WebURL.URL.Host, workspace.Slug, req.Name)
 
-	slog.Info("Git repository created",
+	slog.InfoContext(c.Request().Context(), "Git repository created",
 		"workspace", workspace.Slug,
 		"repo", req.Name,
 		"path", repoPath,
@@ -275,8 +276,8 @@ func (s *Services) createGitRepository(c echo.Context) error {
 
 	// Загружаем пользователя для ответа
 	var creator dao.User
-	if err := s.db.Where("id = ?", user.ID).First(&creator).Error; err != nil {
-		slog.Warn("Failed to load creator user", "err", err)
+	if err := s.DB(c).Where("id = ?", user.ID).First(&creator).Error; err != nil {
+		slog.WarnContext(c.Request().Context(), "Failed to load creator user", "err", err)
 	}
 
 	// Формируем ответ
@@ -341,33 +342,33 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 	}
 
 	// 2. Получение пользователя
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// 3. Проверка существования workspace в БД
 	var workspace dao.Workspace
-	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+	if err := s.DB(c).Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
-		slog.Error("Failed to load workspace", "slug", workspaceSlug, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to load workspace", "slug", workspaceSlug, "err", err)
 		return EError(c, err)
 	}
 
 	// 4. Проверка прав доступа к workspace (любая роль - достаточно быть участником)
 	var member dao.WorkspaceMember
-	err := s.db.Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
+	err := s.DB(c).Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&member).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
 		}
-		slog.Error("Failed to check workspace permissions", "user", user.ID, "workspace", workspace.ID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to check workspace permissions", "user", user.ID, "workspace", workspace.ID, "err", err)
 		return EError(c, err)
 	}
 
 	// 5. Получение списка репозиториев из файловой системы
 	repos, err := ListGitRepositories(workspace.Slug, cfg.GitRepositoriesPath)
 	if err != nil {
-		slog.Error("Failed to list git repositories",
+		slog.ErrorContext(c.Request().Context(), "Failed to list git repositories",
 			"workspace", workspace.Slug,
 			"path", cfg.GitRepositoriesPath,
 			"err", err)
@@ -405,7 +406,7 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 		Total:        len(reposList),
 	}
 
-	slog.Info("Listed git repositories",
+	slog.InfoContext(c.Request().Context(), "Listed git repositories",
 		"workspace", workspace.Slug,
 		"count", len(repos),
 		"user", user.Email)
@@ -429,11 +430,11 @@ func (s *Services) listGitRepositories(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/ [delete]
 func (s *Services) deleteGitRepository(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем наличие пути к репозиториям
 	if cfg.GitRepositoriesPath == "" {
-		slog.Error("GIT_REPOSITORIES_PATH is not configured")
+		slog.ErrorContext(c.Request().Context(), "GIT_REPOSITORIES_PATH is not configured")
 		return EErrorDefined(c, apierrors.ErrGitDisabled)
 	}
 
@@ -446,7 +447,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 	// Парсим входные данные
 	var req dto.DeleteGitRepositoryRequest
 	if err := c.Bind(&req); err != nil {
-		slog.Error("Failed to bind request", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to bind request", "err", err)
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -462,32 +463,32 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 
 	// Получаем workspace по slug
 	var workspace dao.Workspace
-	if err := s.db.
+	if err := s.DB(c).
 		Where("slug = ?", workspaceSlug).
 		First(&workspace).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
 		}
-		slog.Error("Failed to load workspace", "slug", workspaceSlug, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to load workspace", "slug", workspaceSlug, "err", err)
 		return EError(c, err)
 	}
 
 	// Проверяем права пользователя на workspace
 	// Для удаления репозитория требуется роль администратора workspace
 	var workspaceMember dao.WorkspaceMember
-	if err := s.db.
+	if err := s.DB(c).
 		Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).
 		First(&workspaceMember).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return EErrorDefined(c, apierrors.ErrWorkspaceForbidden)
 		}
-		slog.Error("Failed to check workspace membership", "user", user.ID, "workspace", workspace.ID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to check workspace membership", "user", user.ID, "workspace", workspace.ID, "err", err)
 		return EError(c, err)
 	}
 
 	// Проверяем, что пользователь является администратором workspace
 	if workspaceMember.Role != types.AdminRole && !user.IsSuperuser {
-		slog.Warn("User attempted to delete repository without admin rights",
+		slog.WarnContext(c.Request().Context(), "User attempted to delete repository without admin rights",
 			"user", user.Email,
 			"workspace", workspace.Slug,
 			"repo", req.Name,
@@ -502,14 +503,14 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 
 	// Удаляем репозиторий из файловой системы
 	if err := DeleteGitRepository(workspace.Slug, req.Name, cfg.GitRepositoriesPath); err != nil {
-		slog.Error("Failed to delete git repository",
+		slog.ErrorContext(c.Request().Context(), "Failed to delete git repository",
 			"workspace", workspace.Slug,
 			"repo", req.Name,
 			"err", err)
 		return EErrorDefined(c, apierrors.ErrGitCommandFailed.WithFormattedMessage("Failed to delete repository"))
 	}
 
-	slog.Info("Git repository deleted",
+	slog.InfoContext(c.Request().Context(), "Git repository deleted",
 		"workspace", workspace.Slug,
 		"repo", req.Name,
 		"user", user.Email,
@@ -533,7 +534,7 @@ func (s *Services) deleteGitRepository(c echo.Context) error {
 // @Router /api/auth/git/ssh-config/ [get]
 func (s *Services) getGitSSHConfig(c echo.Context) error {
 	// Проверяем авторизацию (middleware уже проверил это)
-	_ = c.(AuthContext).User
+	_ = apicontext.GetContext(c).GetUser()
 
 	// Получаем hostname из WebURL
 	sshHost := cfg.WebURL.URL.Host
@@ -564,7 +565,7 @@ func (s *Services) getGitSSHConfig(c echo.Context) error {
 // @Failure 409 {object} apierrors.DefinedError "SSH ключ с таким fingerprint уже существует"
 // @Router /api/auth/git/ssh-keys/ [post]
 func (s *Services) addGitSSHKey(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -574,7 +575,7 @@ func (s *Services) addGitSSHKey(c echo.Context) error {
 	// Парсим входные данные
 	var req dto.AddSSHKeyRequest
 	if err := c.Bind(&req); err != nil {
-		slog.Error("Failed to bind AddSSHKeyRequest", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to bind AddSSHKeyRequest", "err", err)
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
 
@@ -598,12 +599,12 @@ func (s *Services) addGitSSHKey(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrSSHKeyAlreadyExists)
 		}
 
-		slog.Error("Failed to add SSH key", "user", user.Email, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to add SSH key", "user", user.Email, "err", err)
 		return EError(c, err)
 	}
 
 	// Логируем успех
-	slog.Info("SSH key added",
+	slog.InfoContext(c.Request().Context(), "SSH key added",
 		"user", user.Email,
 		"key_id", keyMetadata.ID,
 		"key_name", keyMetadata.Name,
@@ -637,7 +638,7 @@ func (s *Services) addGitSSHKey(c echo.Context) error {
 // @Failure 403 {object} apierrors.DefinedError "Git или SSH отключены"
 // @Router /api/auth/git/ssh-keys/ [get]
 func (s *Services) listGitSSHKeys(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -655,7 +656,7 @@ func (s *Services) listGitSSHKeys(c echo.Context) error {
 			})
 		}
 
-		slog.Error("Failed to load user SSH keys", "user", user.Email, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to load user SSH keys", "user", user.Email, "err", err)
 		return EError(c, err)
 	}
 
@@ -695,7 +696,7 @@ func (s *Services) listGitSSHKeys(c echo.Context) error {
 // @Failure 404 {object} apierrors.DefinedError "SSH ключ не найден"
 // @Router /api/auth/git/ssh-keys/{keyId} [delete]
 func (s *Services) deleteGitSSHKey(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 
 	// Проверяем, что SSH функциональность включена
 	if !cfg.SSHEnabled {
@@ -722,11 +723,11 @@ func (s *Services) deleteGitSSHKey(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrSSHKeyNotFound)
 		}
 
-		slog.Error("Failed to delete SSH key", "user", user.Email, "key_id", keyId, "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to delete SSH key", "user", user.Email, "key_id", keyId, "err", err)
 		return EError(c, err)
 	}
 
-	slog.Info("SSH key deleted",
+	slog.InfoContext(c.Request().Context(), "SSH key deleted",
 		"user", user.Email,
 		"key_id", keyId)
 
@@ -919,12 +920,12 @@ func (s *Services) checkRepositoryAccess(user *dao.User, workspaceSlug, repoName
 
 	// Приватный репозиторий - проверяем membership в workspace
 	var workspace dao.Workspace
-	if err := s.db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+	if err := s.RawDB().Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		return false, fmt.Errorf("workspace not found: %w", err)
 	}
 
 	var membership dao.WorkspaceMember
-	err = s.db.Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).First(&membership).Error
+	err = s.RawDB().Where("workspace_id = ? AND member_id = ?", workspace.ID, user.ID).First(&membership).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, nil // Не является членом workspace
@@ -957,7 +958,7 @@ func (s *Services) checkRepositoryAccess(user *dao.User, workspaceSlug, repoName
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/tree [get]
 func (s *Services) getRepositoryTree(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -971,7 +972,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 	// Проверка прав доступа
 	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
 	if err != nil {
-		slog.Error("Failed to check repository access", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to check repository access", "err", err)
 		return EError(c, err)
 	}
 	if !hasAccess {
@@ -990,7 +991,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 	if ref == "" {
 		defaultBranch, err := getDefaultBranch(repoPath)
 		if err != nil {
-			slog.Warn("Failed to get default branch, using 'main'", "err", err)
+			slog.WarnContext(c.Request().Context(), "Failed to get default branch, using 'main'", "err", err)
 			ref = "main"
 		} else {
 			ref = defaultBranch
@@ -1013,7 +1014,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 
 	output, err := executeGitCommand(repoPath, "ls-tree", gitPath)
 	if err != nil {
-		slog.Error("Failed to execute git ls-tree",
+		slog.ErrorContext(c.Request().Context(), "Failed to execute git ls-tree",
 			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
 			"ref", ref,
 			"path", path,
@@ -1024,7 +1025,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 	// Парсим результат
 	entries, err := parseLsTree(output)
 	if err != nil {
-		slog.Error("Failed to parse ls-tree output", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to parse ls-tree output", "err", err)
 		return EError(c, err)
 	}
 
@@ -1050,7 +1051,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 		Entries: entries,
 	}
 
-	slog.Info("Git tree browsed",
+	slog.InfoContext(c.Request().Context(), "Git tree browsed",
 		"workspace", workspaceSlug,
 		"repo", repoName,
 		"ref", ref,
@@ -1080,7 +1081,7 @@ func (s *Services) getRepositoryTree(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/blob [get]
 func (s *Services) getRepositoryBlob(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1094,7 +1095,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 	// Проверка прав доступа
 	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
 	if err != nil {
-		slog.Error("Failed to check repository access", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to check repository access", "err", err)
 		return EError(c, err)
 	}
 	if !hasAccess {
@@ -1113,7 +1114,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 	if ref == "" {
 		defaultBranch, err := getDefaultBranch(repoPath)
 		if err != nil {
-			slog.Warn("Failed to get default branch, using 'main'", "err", err)
+			slog.WarnContext(c.Request().Context(), "Failed to get default branch, using 'main'", "err", err)
 			ref = "main"
 		} else {
 			ref = defaultBranch
@@ -1126,7 +1127,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 	// Получаем размер файла
 	sizeOutput, err := executeGitCommand(repoPath, "cat-file", "-s", ref+":"+path)
 	if err != nil {
-		slog.Error("Failed to get file size",
+		slog.ErrorContext(c.Request().Context(), "Failed to get file size",
 			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
 			"ref", ref,
 			"path", path,
@@ -1145,7 +1146,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 	// Получаем SHA файла
 	shaOutput, err := executeGitCommand(repoPath, "rev-parse", ref+":"+path)
 	if err != nil {
-		slog.Error("Failed to get file SHA", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to get file SHA", "err", err)
 		return EError(c, err)
 	}
 	sha := strings.TrimSpace(shaOutput)
@@ -1153,7 +1154,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 	// Получаем содержимое файла
 	contentOutput, err := executeGitCommand(repoPath, "show", ref+":"+path)
 	if err != nil {
-		slog.Error("Failed to get file content", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to get file content", "err", err)
 		return EError(c, err)
 	}
 
@@ -1175,7 +1176,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 		IsBinary: isBinary,
 	}
 
-	slog.Info("Git file blob retrieved",
+	slog.InfoContext(c.Request().Context(), "Git file blob retrieved",
 		"workspace", workspaceSlug,
 		"repo", repoName,
 		"ref", ref,
@@ -1206,7 +1207,7 @@ func (s *Services) getRepositoryBlob(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/commits [get]
 func (s *Services) getRepositoryCommits(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 	ref := c.QueryParam("ref")
@@ -1241,7 +1242,7 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 	// Проверка прав доступа
 	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
 	if err != nil {
-		slog.Error("Failed to check repository access", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to check repository access", "err", err)
 		return EError(c, err)
 	}
 	if !hasAccess {
@@ -1260,7 +1261,7 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 	if ref == "" {
 		defaultBranch, err := getDefaultBranch(repoPath)
 		if err != nil {
-			slog.Warn("Failed to get default branch, using 'main'", "err", err)
+			slog.WarnContext(c.Request().Context(), "Failed to get default branch, using 'main'", "err", err)
 			ref = "main"
 		} else {
 			ref = defaultBranch
@@ -1270,7 +1271,7 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 	// Получаем общее количество коммитов
 	countOutput, err := executeGitCommand(repoPath, "rev-list", "--count", ref)
 	if err != nil {
-		slog.Error("Failed to count commits",
+		slog.ErrorContext(c.Request().Context(), "Failed to count commits",
 			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
 			"ref", ref,
 			"err", err)
@@ -1285,14 +1286,14 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 	args := []string{"log", "--pretty=format:" + format, fmt.Sprintf("--skip=%d", offset), fmt.Sprintf("--max-count=%d", limit), ref}
 	output, err := executeGitCommand(repoPath, args...)
 	if err != nil {
-		slog.Error("Failed to execute git log", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to execute git log", "err", err)
 		return EError(c, err)
 	}
 
 	// Парсим коммиты
 	commits, err := parseCommitLog(output)
 	if err != nil {
-		slog.Error("Failed to parse commit log", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to parse commit log", "err", err)
 		return EError(c, err)
 	}
 
@@ -1303,7 +1304,7 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 		Offset:  offset,
 	}
 
-	slog.Info("Git commits retrieved",
+	slog.InfoContext(c.Request().Context(), "Git commits retrieved",
 		"workspace", workspaceSlug,
 		"repo", repoName,
 		"ref", ref,
@@ -1331,7 +1332,7 @@ func (s *Services) getRepositoryCommits(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/branches [get]
 func (s *Services) getRepositoryBranches(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 
@@ -1343,7 +1344,7 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 	// Проверка прав доступа
 	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
 	if err != nil {
-		slog.Error("Failed to check repository access", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to check repository access", "err", err)
 		return EError(c, err)
 	}
 	if !hasAccess {
@@ -1361,7 +1362,7 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 	// Получаем ветку по умолчанию
 	defaultBranch, err := getDefaultBranch(repoPath)
 	if err != nil {
-		slog.Warn("Failed to get default branch", "err", err)
+		slog.WarnContext(c.Request().Context(), "Failed to get default branch", "err", err)
 		defaultBranch = "main"
 	}
 
@@ -1369,7 +1370,7 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 	// Формат: <sha> refs/heads/<branch>
 	output, err := executeGitCommand(repoPath, "show-ref", "--heads")
 	if err != nil {
-		slog.Warn("Failed to execute git show-ref",
+		slog.WarnContext(c.Request().Context(), "Failed to execute git show-ref",
 			"repo", fmt.Sprintf("%s/%s", workspaceSlug, repoName),
 			"err", err)
 		// Репозиторий может быть пустым (нет веток)
@@ -1410,7 +1411,7 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 		Branches: branches,
 	}
 
-	slog.Info("Git branches retrieved",
+	slog.InfoContext(c.Request().Context(), "Git branches retrieved",
 		"workspace", workspaceSlug,
 		"repo", repoName,
 		"branches_count", len(branches),
@@ -1435,7 +1436,7 @@ func (s *Services) getRepositoryBranches(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/git/{workspaceSlug}/repositories/{repoName}/info [get]
 func (s *Services) getRepositoryInfo(c echo.Context) error {
-	user := c.(AuthContext).User
+	user := apicontext.GetContext(c).GetUser()
 	workspaceSlug := c.Param("workspaceSlug")
 	repoName := c.Param("repoName")
 
@@ -1447,7 +1448,7 @@ func (s *Services) getRepositoryInfo(c echo.Context) error {
 	// Проверка прав доступа
 	hasAccess, err := s.checkRepositoryAccess(user, workspaceSlug, repoName)
 	if err != nil {
-		slog.Error("Failed to check repository access", "err", err)
+		slog.ErrorContext(c.Request().Context(), "Failed to check repository access", "err", err)
 		return EError(c, err)
 	}
 	if !hasAccess {
@@ -1465,7 +1466,7 @@ func (s *Services) getRepositoryInfo(c echo.Context) error {
 	// Получаем ветку по умолчанию
 	defaultBranch, err := getDefaultBranch(repoPath)
 	if err != nil {
-		slog.Warn("Failed to get default branch", "err", err)
+		slog.WarnContext(c.Request().Context(), "Failed to get default branch", "err", err)
 		defaultBranch = "main"
 	}
 
@@ -1496,7 +1497,7 @@ func (s *Services) getRepositoryInfo(c echo.Context) error {
 		return nil
 	})
 	if err != nil {
-		slog.Warn("Failed to calculate repository size", "err", err)
+		slog.WarnContext(c.Request().Context(), "Failed to calculate repository size", "err", err)
 	}
 
 	// Получаем последний коммит
@@ -1520,7 +1521,7 @@ func (s *Services) getRepositoryInfo(c echo.Context) error {
 		LastCommit:    lastCommit,
 	}
 
-	slog.Info("Git repository info retrieved",
+	slog.InfoContext(c.Request().Context(), "Git repository info retrieved",
 		"workspace", workspaceSlug,
 		"repo", repoName,
 		"branches_count", branchesCount,

@@ -40,6 +40,7 @@ func New(db *gorm.DB) *Migration {
 			NewMigrateDocAccessRule(db),
 			NewMigrateActivityFieldsUpdate(db),
 			NewMigrateActivityTargetDateUpdate(db),
+			NewMigrateActivitiesToOneTable(db),
 		},
 	}
 }

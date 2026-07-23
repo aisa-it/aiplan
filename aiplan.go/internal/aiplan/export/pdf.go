@@ -162,20 +162,7 @@ func (w *pdfWriter) writeDescription(doc *editor.Document) error {
 			w.pdf.Line(11, y1, 11, w.pdf.GetY())
 			w.pdf.Ln(2)
 		case editor.List:
-			w.pdf.SetLeftMargin(13)
-			for i, e := range el.Elements {
-				if el.Numbered {
-					w.write(fmt.Sprintf("%d.", i+1))
-				} else {
-					w.write("•")
-				}
-
-				for _, p := range e.Content {
-					w.pdf.SetX(17)
-					w.writeParagraph(p)
-				}
-			}
-			w.pdf.SetLeftMargin(10)
+			w.writeList(el)
 		case editor.Table:
 			w.writeEditorTable(el)
 		case editor.Code:
@@ -202,20 +189,7 @@ func (w *pdfWriter) writeDescription(doc *editor.Document) error {
 			w.pdf.Line(11, y1, 11, w.pdf.GetY())
 			w.pdf.Ln(2)
 		case *editor.List:
-			w.pdf.SetLeftMargin(13)
-			for i, e := range el.Elements {
-				if el.Numbered {
-					w.write(fmt.Sprintf("%d.", i+1))
-				} else {
-					w.write("•")
-				}
-
-				for _, p := range e.Content {
-					w.pdf.SetX(17)
-					w.writeParagraph(p)
-				}
-			}
-			w.pdf.SetLeftMargin(10)
+			w.writeList(*el)
 		case *editor.Table:
 			w.writeEditorTable(*el)
 		case *editor.Code:
@@ -231,7 +205,43 @@ func (w *pdfWriter) writeDescription(doc *editor.Document) error {
 	return nil
 }
 
+func (w *pdfWriter) writeList(list editor.List) {
+	w.pdf.SetLeftMargin(13)
+	for i, e := range list.Elements {
+		if list.TaskList {
+			w.writeTaskListMarker(e.Checked)
+		} else if list.Numbered {
+			w.write(fmt.Sprintf("%d.", i+1))
+		} else {
+			w.write("•")
+		}
+
+		for _, p := range e.Content {
+			w.pdf.SetX(18)
+			w.writeParagraph(p)
+		}
+	}
+	w.pdf.SetLeftMargin(10)
+}
+
+func (w *pdfWriter) writeTaskListMarker(checked bool) {
+	if checked {
+		w.pdf.SetTextColor(0, 150, 0)
+		w.write("[x]")
+	} else {
+		w.pdf.SetTextColor(160, 160, 160)
+		w.write("[ ]")
+	}
+	w.pdf.SetTextColor(0, 0, 0)
+}
+
 func (w *pdfWriter) writeParagraph(p editor.Paragraph) {
+	// Для нестандартного выравнивания (Center, Right) используем MultiCell
+	if p.Align != editor.LeftAlign {
+		w.writeAlignedParagraph(p)
+		return
+	}
+
 	afterHardBreak := false
 	for _, t := range p.Content {
 		switch tt := t.(type) {
@@ -262,23 +272,80 @@ func (w *pdfWriter) writeParagraph(p editor.Paragraph) {
 	w.pdf.Ln(-1)
 }
 
+// writeAlignedParagraph рендерит параграф с выравниванием (Center/Right).
+// Из-за ограничений fpdf используется MultiCell с простым текстом (без форматирования).
+func (w *pdfWriter) writeAlignedParagraph(p editor.Paragraph) {
+	alignStr := "L"
+	switch p.Align {
+	case editor.CenterAlign:
+		alignStr = "C"
+	case editor.RightAlign:
+		alignStr = "R"
+	}
+
+	// Собрать текст из элементов параграфа, преобразуя HardBreak в \n
+	var text strings.Builder
+	for _, t := range p.Content {
+		switch tt := t.(type) {
+		case editor.Text:
+			text.WriteString(cleanUnsupportedSymbols(tt.Content))
+		case *editor.HardBreak:
+			text.WriteString("\n")
+		}
+	}
+
+	// Получить текущий размер шрифта (должен быть Rubik 12)
+	_, fontSize := w.pdf.GetFontSize()
+	maxWidth := w.getMaxContentWidth()
+
+	// MultiCell сам переводит строку после себя
+	w.pdf.MultiCell(maxWidth, fontSize+0.1, text.String(), "", alignStr, false)
+}
+
 func (w *pdfWriter) writeEditorText(t editor.Text) float64 {
 	w.prepareEditorText(&t)
 	_, s := w.pdf.GetFontSize()
 
-	if t.BgColor != nil {
-		x := w.pdf.GetX()
-		w.pdf.SetX(x + w.pdf.GetCellMargin())
+	// Superscript/Subscript — смещение текста относительно baseline
+	yOffset := 0.0
+	if t.Sup {
+		yOffset = -s * 0.4
+	} else if t.Sub {
+		yOffset = s * 0.35
+	}
 
-		// Записать текст сразу с фоном
+	if t.BgColor != nil {
+		// BgColor + возможно sup/sub: используем CellFormat для заливки фона
+		x := w.pdf.GetX()
+		y := w.pdf.GetY()
+		w.pdf.SetXY(x, y+yOffset)
+
 		if t.URL != nil {
 			w.pdf.CellFormat(w.pdf.GetStringWidth(t.Content), s+0.1, t.Content, "", 0, "LM", true, 0, t.URL.String())
 		} else {
 			w.pdf.CellFormat(w.pdf.GetStringWidth(t.Content), s+0.1, t.Content, "", 0, "LM", true, 0, "")
 		}
 
-		// Сбросить фон (установить белый)
 		w.pdf.SetFillColor(255, 255, 255)
+		w.pdf.SetXY(x+w.pdf.GetStringWidth(t.Content), y)
+		return w.pdf.GetStringWidth(t.Content)
+	}
+
+	if t.Sup || t.Sub {
+		// Sup/Sub без bgColor: пишем через WriteLinkString со смещением Y
+		x := w.pdf.GetX()
+		y := w.pdf.GetY()
+		w.pdf.SetXY(x, y+yOffset)
+
+		if t.URL != nil {
+			w.pdf.WriteLinkString(s+0.1, t.Content, t.URL.String())
+		} else {
+			w.pdf.WriteLinkString(s+0.1, t.Content, "")
+		}
+
+		// Восстановить Y, X берём из позиции после записи текста
+		newX := w.pdf.GetX()
+		w.pdf.SetXY(newX, y)
 		return w.pdf.GetStringWidth(t.Content)
 	}
 
@@ -308,7 +375,13 @@ func (w *pdfWriter) prepareEditorText(t *editor.Text) {
 	if t.Size == 0 {
 		t.Size = 14
 	}
-	w.pdf.SetFont("Rubik", styleStr, w.PxToUnit(t.Size)*3)
+
+	// Superscript/Subscript использует уменьшенный размер шрифта
+	size := t.Size
+	if t.Sup || t.Sub {
+		size = int(float64(t.Size) * 0.65)
+	}
+	w.pdf.SetFont("Rubik", styleStr, w.PxToUnit(size)*3)
 
 	if t.Color != nil {
 		w.pdf.SetTextColor(int(t.Color.R), int(t.Color.G), int(t.Color.B))
@@ -466,7 +539,9 @@ func (w *pdfWriter) writeEditorTable(table editor.Table) {
 						contentWidth += w.calcEditorText(&tt)
 					case *editor.Image:
 						info := w.getEditorImageInfo(tt)
-						pHeight = (sizes.colWidth[j] - w.pdf.GetCellMargin()*2.0) * info.Height() / info.Width()
+						if info != nil {
+							pHeight = (sizes.colWidth[j] - w.pdf.GetCellMargin()*2.0) * info.Height() / info.Width()
+						}
 					}
 				}
 
@@ -509,8 +584,10 @@ func (w *pdfWriter) writeEditorTable(table editor.Table) {
 						if tt.Src.Host == "" {
 							u = w.webURL.ResolveReference(u)
 						}
-						w.getEditorImageInfo(tt)
-						w.pdf.ImageOptions(tt.Src.Path, w.pdf.GetX()+w.pdf.GetCellMargin(), -1, sizes.colWidth[j]-w.pdf.GetCellMargin()*2.0, 0, true, fpdf.ImageOptions{ReadDpi: true}, 0, u.String())
+						info := w.getEditorImageInfo(tt)
+						if info != nil {
+							w.pdf.ImageOptions(tt.Src.Path, w.pdf.GetX()+w.pdf.GetCellMargin(), -1, sizes.colWidth[j]-w.pdf.GetCellMargin()*2.0, 0, true, fpdf.ImageOptions{ReadDpi: true}, 0, u.String())
+						}
 					}
 				}
 				if pI != len(cell.Content)-1 {

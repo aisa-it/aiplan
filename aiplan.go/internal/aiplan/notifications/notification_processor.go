@@ -14,8 +14,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/email"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/tg"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/microcosm-cc/bluemonday"
 	"gorm.io/gorm/clause"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -30,11 +34,13 @@ const (
 	notificationsChannel = "notifications"
 )
 
+var htmlStripPolicy *bluemonday.Policy = bluemonday.StrictPolicy()
+
 // NotificationProcessor is responsible for processing notifications
 type NotificationProcessor struct {
 	db               *gorm.DB
 	telegramService  *tg.TgService
-	emailService     *EmailService
+	emailService     *email.EmailService
 	websocketService *WebsocketNotificationService
 
 	ctx    context.Context
@@ -47,7 +53,7 @@ func CreateNotificationSender(notification *dao.DeferredNotifications) (INotifyS
 	case "message":
 		res = &notifyMessage{}
 	case "deadline_notification":
-		res = &notifyDeadline{}
+		res = &NotifyDeadline{}
 	case "service_message":
 		res = &serviceMessage{}
 	default:
@@ -59,7 +65,7 @@ func CreateNotificationSender(notification *dao.DeferredNotifications) (INotifyS
 	return res, nil
 }
 
-func NewNotificationProcessor(db *gorm.DB, telegramService *tg.TgService, emailService *EmailService, websocketService *WebsocketNotificationService) *NotificationProcessor {
+func NewNotificationProcessor(db *gorm.DB, telegramService *tg.TgService, emailService *email.EmailService, websocketService *WebsocketNotificationService) *NotificationProcessor {
 	ctx, cancle := context.WithCancel(context.Background())
 	return &NotificationProcessor{
 		db:               db,
@@ -119,6 +125,7 @@ func (np *NotificationProcessor) ProcessNotifications() {
 		Preload("Issue").
 		Preload("Issue.Workspace").
 		Preload("Issue.Project").
+		Preload("Issue.State").
 		Preload("Workspace").
 		Where("sent_at IS NULL AND time_send < NOW()  AND attempt_count < ?", maxRetryAttempts).
 		Find(&notifications).Error
@@ -140,6 +147,10 @@ func (np *NotificationProcessor) ProcessNotifications() {
 			}
 		case "deadline_notification":
 			if notification.Issue == nil || notification.Issue.Project == nil {
+				notifyDel = append(notifyDel, notification.ID)
+				continue
+			}
+			if notification.Issue.CompletedAt != nil || notification.Issue.State.Group == "cancelled" {
 				notifyDel = append(notifyDel, notification.ID)
 				continue
 			}
@@ -238,13 +249,13 @@ func (np *NotificationProcessor) sendToApp(notification *dao.DeferredNotificatio
 	return true
 }
 
-func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNotifications, send INotifySend) (*dao.UserNotifications, int, error) {
+func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNotifications, send INotifySend) (*dao.UserAppNotify, int, error) {
 	un := send.getUserNotification()
 
 	var exist bool
-	if err := np.db.Model(&dao.UserNotifications{}).
+	if err := np.db.Model(&dao.UserAppNotify{}).
 		Select("EXISTS(?)",
-			np.db.Model(&dao.UserNotifications{}).
+			np.db.Model(&dao.UserAppNotify{}).
 				Select("1").
 				Where("id = ?", un.ID),
 		).
@@ -277,7 +288,7 @@ func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNoti
 			Where("viewed = false").
 			Where("user_id = ?", notification.UserID).
 			Where("deleted_at IS NULL").
-			Model(&dao.UserNotifications{}).
+			Model(&dao.UserAppNotify{}).
 			Find(&count).Error; err != nil {
 			return nil, 0, err
 		}
@@ -287,7 +298,7 @@ func (np *NotificationProcessor) createUserNotify(notification *dao.DeferredNoti
 	return nil, 0, nil
 }
 
-type emailNotify struct {
+type EmailNotify struct {
 	Subj       string
 	Title      string
 	Msg        string
@@ -297,13 +308,13 @@ type emailNotify struct {
 }
 
 type INotifySend interface {
-	getUserNotification() *dao.UserNotifications
+	getUserNotification() *dao.UserAppNotify
 	getAuthor(tx *gorm.DB) *dao.User
 	isNotifyTg(tx *gorm.DB, notification *dao.DeferredNotifications) bool
 	isNotifyEmail(tx *gorm.DB, notification *dao.DeferredNotifications) bool
 	isNotifyApp(tx *gorm.DB, notification *dao.DeferredNotifications) bool
 	toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any)
-	toEmail(emailService *EmailService, notification *dao.DeferredNotifications, author *dao.User) bool
+	toEmail(emailService *email.EmailService, notification *dao.DeferredNotifications, author *dao.User) bool
 }
 
 // Workspace message
@@ -322,9 +333,9 @@ func (nm *notifyMessage) getAuthor(tx *gorm.DB) *dao.User {
 	return &user
 }
 
-func (nm *notifyMessage) getUserNotification() *dao.UserNotifications {
+func (nm *notifyMessage) getUserNotification() *dao.UserAppNotify {
 	authorUUID, _ := uuid.FromString(nm.AuthorId)
-	res := dao.UserNotifications{
+	res := dao.UserAppNotify{
 		ID:       nm.Id,
 		Type:     "message",
 		Title:    nm.Title,
@@ -360,8 +371,8 @@ func (nm *notifyMessage) toTelegram(notification *dao.DeferredNotifications, aut
 	return *notification.User.TelegramId, formatMsg, out
 }
 
-func (nm *notifyMessage) toEmail(emailService *EmailService, notification *dao.DeferredNotifications, author *dao.User) bool {
-	msg := emailNotify{
+func (nm *notifyMessage) toEmail(emailService *email.EmailService, notification *dao.DeferredNotifications, author *dao.User) bool {
+	msg := EmailNotify{
 		Subj:       "Сообщение для участников рабочего пространства: " + notification.Workspace.Name,
 		Title:      nm.Title,
 		Msg:        nm.Msg,
@@ -370,7 +381,17 @@ func (nm *notifyMessage) toEmail(emailService *EmailService, notification *dao.D
 		TextButton: "Перейти в рабочее пространство",
 	}
 
-	err := emailService.MessageNotify(*notification, msg)
+	r := email.MessageNotifyCtx{
+		WebUrl:     msg.AddRout,
+		Actor:      msg.Author,
+		TitleMsg:   msg.Title,
+		Msg:        msg.Msg,
+		TimeSend:   *notification.TimeSend,
+		Workspace:  notification.Workspace,
+		TextButton: msg.TextButton,
+	}
+
+	err := emailService.MessageNotify(*notification, msg.Subj, r)
 	if err != nil {
 		return false
 	}
@@ -389,20 +410,19 @@ func (nm *notifyMessage) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNoti
 	return true
 }
 
-// notifyDeadline
-type notifyDeadline struct {
+// NotifyDeadline
+type NotifyDeadline struct {
 	Id       uuid.UUID `json:"id"`
 	Body     string    `json:"body"`
 	Deadline time.Time `json:"deadline"`
 }
 
-func (nd *notifyDeadline) getAuthor(tx *gorm.DB) *dao.User {
+func (nd *NotifyDeadline) getAuthor(tx *gorm.DB) *dao.User {
 	return nil
 }
 
-func (nd *notifyDeadline) getUserNotification() *dao.UserNotifications {
-
-	res := dao.UserNotifications{
+func (nd *NotifyDeadline) getUserNotification() *dao.UserAppNotify {
+	res := dao.UserAppNotify{
 		ID:     nd.Id,
 		Type:   "message",
 		Title:  "Уведомление об истечении срока выполнения задачи",
@@ -412,7 +432,7 @@ func (nd *notifyDeadline) getUserNotification() *dao.UserNotifications {
 	return &res
 }
 
-func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any) {
+func (nd *NotifyDeadline) toTelegram(notification *dao.DeferredNotifications, author *dao.User) (tgId int64, format string, any []any) {
 	formatMsg := "❗Срок выполнения задачи\n[%s](%s)\nистекает *%s*"
 	var out []interface{}
 	if notification.Workspace != nil {
@@ -434,7 +454,7 @@ func (nd *notifyDeadline) toTelegram(notification *dao.DeferredNotifications, au
 	return *notification.User.TelegramId, formatMsg, out
 }
 
-func (nd *notifyDeadline) toEmail(emailService *EmailService, notification *dao.DeferredNotifications, author *dao.User) bool {
+func (nd *NotifyDeadline) toEmail(emailService *email.EmailService, notification *dao.DeferredNotifications, author *dao.User) bool {
 	if notification.Workspace != nil {
 		notification.Issue.Workspace = notification.Workspace
 	}
@@ -442,14 +462,18 @@ func (nd *notifyDeadline) toEmail(emailService *EmailService, notification *dao.
 		notification.Issue.Project = notification.Project
 	}
 	notification.Issue.SetUrl()
-	err := emailService.DeadlineMessageNotify(*notification.User, *notification, *nd)
+	r := email.MessageDeadlineCtx{
+		Msg:      nd.Body,
+		Deadline: nd.Deadline,
+	}
+	err := emailService.DeadlineMessageNotify(*notification.User, *notification, r)
 	if err != nil {
 		return false
 	}
 	return true
 }
 
-func (nd *notifyDeadline) isNotifyTg(tx *gorm.DB, notification *dao.DeferredNotifications) bool {
+func (nd *NotifyDeadline) isNotifyTg(tx *gorm.DB, notification *dao.DeferredNotifications) bool {
 	var projectMember dao.ProjectMember
 	err := tx.Where("project_id = ?", notification.Issue.ProjectId).Where("member_id = ?", notification.User.ID).First(&projectMember).Error
 
@@ -459,11 +483,11 @@ func (nd *notifyDeadline) isNotifyTg(tx *gorm.DB, notification *dao.DeferredNoti
 	}
 	field := "deadline"
 	if notification.Issue.CreatedById == projectMember.MemberId {
-		if !projectMember.NotificationAuthorSettingsTG.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationAuthorSettingsTG.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	} else {
-		if !projectMember.NotificationSettingsTG.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationSettingsTG.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	}
@@ -471,7 +495,7 @@ func (nd *notifyDeadline) isNotifyTg(tx *gorm.DB, notification *dao.DeferredNoti
 	return true
 }
 
-func (nd *notifyDeadline) isNotifyEmail(tx *gorm.DB, notification *dao.DeferredNotifications) bool {
+func (nd *NotifyDeadline) isNotifyEmail(tx *gorm.DB, notification *dao.DeferredNotifications) bool {
 	var projectMember dao.ProjectMember
 	err := tx.Where("project_id = ?", notification.Issue.ProjectId).Where("member_id = ?", notification.User.ID).First(&projectMember).Error
 
@@ -483,18 +507,18 @@ func (nd *notifyDeadline) isNotifyEmail(tx *gorm.DB, notification *dao.DeferredN
 	field := "deadline"
 
 	if notification.Issue.CreatedById == projectMember.MemberId {
-		if !projectMember.NotificationAuthorSettingsEmail.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationAuthorSettingsEmail.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	} else {
-		if !projectMember.NotificationSettingsEmail.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationSettingsEmail.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	}
 	return true
 }
 
-func (nd *notifyDeadline) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNotifications) bool {
+func (nd *NotifyDeadline) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNotifications) bool {
 	var projectMember dao.ProjectMember
 	err := tx.Where("project_id = ?", notification.Issue.ProjectId).Where("member_id = ?", notification.User.ID).First(&projectMember).Error
 
@@ -504,11 +528,11 @@ func (nd *notifyDeadline) isNotifyApp(tx *gorm.DB, notification *dao.DeferredNot
 	}
 	field := "deadline"
 	if notification.Issue.CreatedById == projectMember.MemberId {
-		if !projectMember.NotificationAuthorSettingsApp.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationAuthorSettingsApp.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	} else {
-		if !projectMember.NotificationSettingsApp.IsNotify(&field, "issue", "all", projectMember.Role) {
+		if !projectMember.NotificationSettingsApp.IsNotify(actField.ActivityField(field), types.LayerIssue, "all", projectMember.Role) {
 			return false
 		}
 	}
@@ -523,8 +547,8 @@ type serviceMessage struct {
 	Msg   string    `json:"msg"`
 }
 
-func (s serviceMessage) getUserNotification() *dao.UserNotifications {
-	res := dao.UserNotifications{
+func (s serviceMessage) getUserNotification() *dao.UserAppNotify {
+	res := dao.UserAppNotify{
 		ID:       s.Id,
 		Type:     "service_message",
 		Title:    s.Title,
@@ -563,15 +587,15 @@ func (s serviceMessage) toTelegram(notification *dao.DeferredNotifications, auth
 	return *notification.User.TelegramId, formatMsg, out
 }
 
-func (s serviceMessage) toEmail(emailService *EmailService, notification *dao.DeferredNotifications, author *dao.User) bool {
-	msg := emailNotify{
-		Subj:       "Сервисное уведомление пользователям",
-		Title:      s.Title,
+func (s serviceMessage) toEmail(emailService *email.EmailService, notification *dao.DeferredNotifications, author *dao.User) bool {
+	r := email.MessageNotifyCtx{
+		WebUrl:     "",
+		TitleMsg:   s.Title,
 		Msg:        s.Msg,
 		TextButton: "Перейти на главную страницу",
 	}
 
-	err := emailService.MessageNotify(*notification, msg)
+	err := emailService.MessageNotify(*notification, "Сервисное уведомление пользователям", r)
 	if err != nil {
 		return false
 	}

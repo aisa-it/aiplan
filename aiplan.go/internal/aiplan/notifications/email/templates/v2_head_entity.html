@@ -1,0 +1,41 @@
+<!--{{if .Issue}}-->
+<!--<div class="breadcrumbs" style="margin-bottom: 4px;letter-spacing: 0.5px;">-->
+<!--    {{.Issue.Workspace.Name}} / Задача-->
+<!--    {{.Issue.String}}-->
+<!--</div>-->
+<!--{{end}}-->
+
+<!--{{if .Project}}-->
+<!--<div class="breadcrumbs" style="margin-bottom: 4px;letter-spacing: 0.5px;">-->
+<!--    {{.Project.Workspace.Name}} / {{.Project.Name}}-->
+<!--</div>-->
+<!--{{end}}-->
+
+<!--<div class="title"-->
+<!--     style="font-size: 24px;font-weight: 500;line-height: 19px;margin-bottom: 8px;">-->
+<!--    {{.Title}}-->
+<!--</div>-->
+
+<!--{{if .Issue}}-->
+<!--<div><a class="task-link" href="{{.Issue.URL.String}}"-->
+<!--        style="color: #3f76ff;text-decoration: none;letter-spacing: 0.5px;">Посмотреть-->
+<!--    задачу</a></div>-->
+<!--{{else if .Project}}-->
+<!--<div><a class="task-link" href="{{.Project.URL.String}}"-->
+<!--        style="color: #3f76ff;text-decoration: none;letter-spacing: 0.5px;">Перейти в проект</a></div>-->
+<!--{{else}}-->
+<!--<div class="datetime-info" style="color: #8b8b98;">{{.CreatedAt.Format-->
+<!--    "02.01.2006 15:04 MST"}}-->
+<!--</div>-->
+<!--{{end}}-->
+
+
+<div class="breadcrumbs" style="margin-bottom: 4px;letter-spacing: 0.5px;">
+    {{.WorkspaceName}} / {{.Layer}} {{.Identifier}}
+</div>
+<div class="title"
+     style="font-size: 24px;font-weight: 500;line-height: 19px;margin-bottom: 8px;">
+    {{.Title}}
+</div>
+<div><a class="task-link" href="{{.Url}}"
+        style="color: #3f76ff;text-decoration: none;letter-spacing: 0.5px;">{{.UrlText}}</a></div>

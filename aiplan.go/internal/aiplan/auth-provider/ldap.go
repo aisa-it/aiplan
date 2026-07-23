@@ -2,6 +2,7 @@ package authprovider
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -89,10 +90,11 @@ func (lp *LdapProvider) AuthUser(email string, password string) bool {
 	}
 
 	if err := l.Bind(sr.Entries[0].DN, password); err != nil {
-		if ldapErr, ok := err.(*ldap.Error); ok && ldapErr.ResultCode == 49 {
-			return false
+		var ldapErr *ldap.Error
+		if !errors.As(err, &ldapErr) || ldapErr.ResultCode != 49 {
+			slog.Error("LDAP bind", "err", err)
 		}
-		slog.Error("LDAP bind", "err", err)
+		return false
 	}
 
 	return true

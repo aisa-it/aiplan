@@ -7,54 +7,54 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 )
 
-func genComment[R dao.IRedactorHTML](comment *R, oldV *string, verb, titleUpdate, titleCreate, titleDelete string) TgMsg {
+func genComment[R dao.IRedactorHTML](comment *R, oldV string, verb, titleUpdate, titleCreate, titleDelete string) TgMsg {
 	msg := NewTgMsg()
 
 	if comment != nil {
-		msg.body = Stelegramf("```\n%s```",
+		msg.Body = Stelegramf("```\n%s```",
 			utils.HtmlToTg((*comment).GetRedactorHtml().Body),
 		)
 	} else {
-		if oldV != nil {
-			msg.body = Stelegramf("```\n%s```",
-				utils.HtmlToTg(*oldV))
+		if oldV != "" {
+			msg.Body = Stelegramf("```\n%s```",
+				utils.HtmlToTg(oldV))
 		}
 	}
-	msg.replace[userMentioned] = struct{}{}
+	msg.Replace[userMentioned] = struct{}{}
 
 	switch verb {
 	case actField.VerbUpdated:
-		msg.title = titleUpdate
+		msg.Title = titleUpdate
 	case actField.VerbCreated:
-		msg.title = titleCreate
+		msg.Title = titleCreate
 	case actField.VerbDeleted:
-		msg.title = titleDelete
+		msg.Title = titleDelete
 	}
 	return msg
 }
 
-func genAttachment(oldV *string, newV, verb, titleCreate, titleDelete string) TgMsg {
+func genAttachment(oldV string, newV, verb, titleCreate, titleDelete string) TgMsg {
 	msg := NewTgMsg()
 	switch verb {
 	case actField.VerbCreated:
-		msg.title = titleCreate
-		msg.body += Stelegramf("*Файл*: %s", newV)
+		msg.Title = titleCreate
+		msg.Body += Stelegramf("*Файл*: %s", newV)
 	case actField.VerbDeleted:
-		msg.title = titleDelete
-		msg.body += Stelegramf("*Файл*: ~%s~", *oldV)
+		msg.Title = titleDelete
+		msg.Body += Stelegramf("*Файл*: ~%s~", oldV)
 	}
 	return msg
 }
 
-func genDefault(oldV *string, newV string, af actField.ActivityField, title string) TgMsg {
+func genDefault(oldV string, newV string, af actField.ActivityField, title string) TgMsg {
 	msg := NewTgMsg()
 
-	msg.title = title
+	msg.Title = title
 
-	if oldV != nil {
-		msg.body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], *oldV, newV)
+	if oldV != "" {
+		msg.Body += Stelegramf("*%s*: ~%s~ %s", types.FieldsTranslation[af], oldV, newV)
 	} else {
-		msg.body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], newV)
+		msg.Body += Stelegramf("*%s*: %s", types.FieldsTranslation[af], newV)
 	}
 	return msg
 }
