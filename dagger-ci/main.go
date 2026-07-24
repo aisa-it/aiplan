@@ -191,10 +191,16 @@ func (m *Aiplan) BuildLocal(ctx context.Context, source *dagger.Directory) []*da
 	return m.Build("v0.1.0", source)
 }
 
+// BuildApp builds the app and publishes it under its version tag, plus a moving
+// tag pointing to the freshest build of a channel: "latest" for releases, "dev"
+// for internal test builds. An empty movingTag publishes the version tag only.
 func (m *Aiplan) BuildApp(ctx context.Context, version string, source *dagger.Directory,
 	registrySecret *dagger.Secret,
 	registryUser string,
 	imageName string,
+	// +optional
+	// +default="latest"
+	movingTag string,
 ) error {
 	back := m.Build(version, source)
 
@@ -204,7 +210,11 @@ func (m *Aiplan) BuildApp(ctx context.Context, version string, source *dagger.Di
 	}
 	fmt.Println(backRef)
 
-	backRef, err = m.Publish(ctx, back, registrySecret, registryUser, fmt.Sprintf("%s:%s", imageName, "latest"))
+	if movingTag == "" {
+		return nil
+	}
+
+	backRef, err = m.Publish(ctx, back, registrySecret, registryUser, fmt.Sprintf("%s:%s", imageName, movingTag))
 	if err != nil {
 		return err
 	}
