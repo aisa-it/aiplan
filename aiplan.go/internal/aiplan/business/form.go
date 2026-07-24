@@ -21,19 +21,20 @@ func GenBodyAnswer(answer *dao.FormAnswer, user *dao.User) (string, error) {
 
 	t, err := template.New("AnswerIssue").Funcs(template.FuncMap{
 		"getValString": func(t string, val interface{}) template.HTML {
+			if val == nil {
+				return ""
+			}
 			switch t {
 			case "checkbox":
-				if val == nil {
-					return template.HTML("Нет")
-				} else {
-					if v := val.(bool); v {
-						return template.HTML("Да")
-					} else {
-						return template.HTML("Нет")
-					}
+				if v, ok := val.(bool); ok && v {
+					return template.HTML("Да")
 				}
+				return template.HTML("Нет")
 			case "date":
-				return template.HTML(time.UnixMilli(int64(val.(float64))).Format("02.01.2006"))
+				if v, ok := val.(float64); ok {
+					return template.HTML(time.UnixMilli(int64(v)).Format("02.01.2006"))
+				}
+				return template.HTML(fmt.Sprint(val))
 			case "multiselect":
 				if values, ok := val.([]interface{}); ok {
 					var stringValues []string
@@ -46,9 +47,8 @@ func GenBodyAnswer(answer *dao.FormAnswer, user *dao.User) (string, error) {
 			case "attachment":
 				if v, ok := fileName[fmt.Sprint(val)]; ok {
 					return template.HTML(v)
-				} else {
-					return template.HTML(fmt.Sprint(val))
 				}
+				return template.HTML(fmt.Sprint(val))
 			}
 			return template.HTML(fmt.Sprint(val))
 		},
