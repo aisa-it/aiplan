@@ -41,6 +41,7 @@ const (
 	targetDateTimeZ   = "TargetDateTimeZ"
 	targetDateZ       = "TargetDateZ"
 	complexActivities = "ComplexActivities"
+	customIssueBody   = "CustomIssueBody"
 )
 
 func prepareHtmlBody(html string) string {
@@ -121,25 +122,15 @@ func msgReplace(user member_role.MemberNotify, msg FieldPrerender) FieldPrerende
 	if msg.Replace == nil {
 		return msg
 	}
-	for k, v := range msg.Replace {
-		key := k
-		keys := strings.Split(k, "_")
-		if len(keys) > 1 {
-			key = keys[0]
+
+	baseKey := func(k string) string {
+		if keys := strings.Split(k, "_"); len(keys) > 1 {
+			return keys[0]
 		}
-		switch key {
-		case targetDateTimeZ:
-			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006 15:04", &user.GetUser().UserTimezone); err == nil {
-				msg.Value = strings.ReplaceAll(msg.Value, strReplace(k), strNeW)
-			} else {
-				return FieldPrerender{}
-			}
-		case targetDateZ:
-			if strNeW, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), "02.01.2006", &user.GetUser().UserTimezone); err == nil {
-				msg.Value = strings.ReplaceAll(msg.Value, strReplace(k), strNeW)
-			} else {
-				return FieldPrerender{}
-			}
+		return k
+	}
+	for k := range msg.Replace {
+		switch baseKey(k) {
 		case complexActivities:
 			if msg.Has(optPrerenderComplex) {
 				res := make(map[uuid.UUID]string)
@@ -147,7 +138,7 @@ func msgReplace(user member_role.MemberNotify, msg FieldPrerender) FieldPrerende
 					msg.Count = 0
 				}
 				for u, s := range msg.ValueComplex {
-					if user.IsActNotify([]uuid.UUID{u}) {
+					if msg.ActivityIds == nil || user.IsActNotify(append([]uuid.UUID{u}, msg.ActivityIds...)) {
 						if !msg.Has(optCompositeFields) {
 							msg.Count++
 						}
@@ -159,8 +150,40 @@ func msgReplace(user member_role.MemberNotify, msg FieldPrerender) FieldPrerende
 				msg.Remove(optPrerenderComplex)
 				msg.Add(optPrerenderAll)
 			}
+		case customIssueBody:
+			if msg.Has(optCustomBody) {
+				res := make(map[uuid.UUID]string)
+				msg.Count = 0
+				for u, s := range msg.CustomBodyValue {
+					if user.IsActNotify([]uuid.UUID{u}) {
+						msg.Count++
+						res[u] = s
+					}
+				}
+				msg.CustomBodyValue = res
+				msg.Value = strings.ReplaceAll(msg.Value, strReplace(k), msg.CustomBodyGetValue())
+				msg.Remove(optCustomBody)
+			}
 		}
 	}
+	dateFormat := map[string]string{
+		targetDateTimeZ: "02.01.2006 15:04",
+		targetDateZ:     "02.01.2006",
+	}
+	for k, v := range msg.Replace {
+		switch key := baseKey(k); key {
+		case targetDateTimeZ, targetDateZ:
+			strNew, err := utils.FormatDateStr(v.(sql.NullTime).Time.String(), dateFormat[key], &user.GetUser().UserTimezone)
+			if err != nil {
+				return FieldPrerender{}
+			}
+			msg.Value = strings.ReplaceAll(msg.Value, strReplace(k), strNew)
+			for id, body := range msg.CustomBodyValue {
+				msg.CustomBodyValue[id] = strings.ReplaceAll(body, strReplace(k), strNew)
+			}
+		}
+	}
+
 	return msg
 }
 
@@ -207,6 +230,7 @@ const (
 	optPrerenderComplex
 	optComplexBlock
 	optCompositeFields
+	optCustomBody
 )
 
 func (fp *FieldPrerender) Has(t prerenderType) bool {
@@ -232,4 +256,10 @@ func (fp *FieldPrerender) GetValue() string {
 		}), sep)
 	}
 	return fp.Value
+}
+
+func (fp *FieldPrerender) CustomBodyGetValue() string {
+	return strings.Join(utils.MapToSlice(fp.CustomBodyValue, func(k uuid.UUID, t string) string {
+		return t
+	}), "\n")
 }
