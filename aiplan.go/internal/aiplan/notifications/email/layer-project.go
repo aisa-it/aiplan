@@ -3,6 +3,9 @@ package email
 import (
 	"database/sql"
 	"fmt"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
@@ -90,13 +93,6 @@ func (p ProjectProcessor) GroupActivities(acts []dao.ActivityEvent) ActivityBuck
 	)
 }
 
-func issueMemberStep(act dao.ActivityEvent) []member_role.UsersStep {
-	return []member_role.UsersStep{
-		member_role.AddIssueUsers(act.NewIssue, member_role.WithActivityId(act.ID)),
-		member_role.AddDefaultWatchers(act.ProjectID.UUID, member_role.WithActivityId(act.ID)),
-	}
-}
-
 func (p ProjectProcessor) BuildRecipients(tx *gorm.DB, acts []dao.ActivityEvent, entity dao.IDaoAct) ([]member_role.MemberNotify, EmailContext) {
 	steps := []member_role.UsersStep{
 		member_role.AddProjectAdmin(entity.GetId()),
@@ -110,15 +106,23 @@ func (p ProjectProcessor) BuildRecipients(tx *gorm.DB, acts []dao.ActivityEvent,
 					issue = *act.ProjectActivityExtendFields.NewIssue
 					if err := tx.Unscoped().
 						Joins("Author").
+						Joins("Parent").
+						Joins("State").
 						Preload("Assignees").
 						Preload("Watchers").
+						Preload("Sprints").
 						First(&issue).Error; err != nil {
 						return nil
 					}
 				}
 				issue.Project = act.Project
+				issue.Workspace = act.Workspace
+				issue.SetUrl()
 				*act.ProjectActivityExtendFields.NewIssue = issue
-				return issueMemberStep(act)
+				return []member_role.UsersStep{
+					member_role.AddIssueUsers(act.NewIssue, member_role.WithActivityId(act.ID)),
+					member_role.AddDefaultWatchers(act.ProjectID.UUID, member_role.WithActivityId(act.ID)),
+				}
 			}
 			return []member_role.UsersStep{}
 		},
@@ -135,7 +139,251 @@ func (p ProjectProcessor) BuildRecipients(tx *gorm.DB, acts []dao.ActivityEvent,
 }
 
 func (p ProjectProcessor) BuildDigest(tx *gorm.DB, templates *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct) (map[string]FieldPrerender, int) {
-	return renderDigest(tx, templates, acts, entity, projectFieldConfigs)
+
+	result, totalChanges := renderDigest(tx, templates, acts, entity, projectFieldConfigs)
+
+	if len(acts) > 0 {
+		allIDs := make([]uuid.UUID, len(acts))
+		for i, act := range acts {
+			allIDs[i] = act.ID
+		}
+		for key, fp := range result {
+			if key != actField.Issue.Field.String() {
+				fp.ActivityIds = allIDs
+				result[key] = fp
+			}
+		}
+	}
+
+	var issueActs []dao.ActivityEvent
+	for _, act := range acts {
+		if act.Field == actField.Issue.Field && slices.Contains([]string{actField.VerbCreated, actField.VerbCopied, actField.VerbAdded}, act.Verb) {
+			issueActs = append(issueActs, act)
+		}
+	}
+
+	customBodyFP := buildProjectCustomBody(tx, templates, issueActs, entity)
+	if customBodyFP.Count > 0 {
+		result[customBodyFieldKey] = customBodyFP
+		totalChanges += customBodyFP.Count
+	}
+
+	return result, totalChanges
+}
+
+func renderProjectIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct) FieldPrerender {
+	views := make([]DigestView, 0, len(acts))
+	authors := make(map[uuid.UUID]dao.User)
+	var start, end time.Time
+
+	for _, act := range acts {
+		if act.Verb == actField.VerbDeleted || act.Verb == actField.VerbRemoved {
+			// только удаленные и перемещенные
+			views = append(views, DigestView{Title: act.OldValue, IsGone: true})
+
+			if act.Actor != nil {
+				authors[act.Actor.ID] = *act.Actor
+			}
+			if start.IsZero() || act.CreatedAt.Before(start) {
+				start = act.CreatedAt
+			}
+			if end.IsZero() || act.CreatedAt.After(end) {
+				end = act.CreatedAt
+			}
+		}
+	}
+
+	if len(views) == 0 {
+		return FieldPrerender{}
+	}
+
+	fp := t.RenderCollectAll(collectAllCtx{
+		Key:    "Задачи",
+		Views:  views,
+		Start:  sql.NullTime{Time: start, Valid: true},
+		End:    sql.NullTime{Time: end, Valid: true},
+		Author: authors,
+	}, len(views))
+	fp.Verb = actField.VerbDeleted
+	return fp
+}
+
+func buildProjectCustomBody(tx *gorm.DB, templates *EmailTemplates, issueActs []dao.ActivityEvent, entity dao.IDaoAct) FieldPrerender {
+	if len(issueActs) == 0 {
+		return FieldPrerender{}
+	}
+
+	project, ok := entity.(*dao.Project)
+	if !ok {
+		return FieldPrerender{}
+	}
+
+	customBodyData := make(map[uuid.UUID]string)
+	var actIds []uuid.UUID
+	replaceMap := make(map[string]any)
+
+	for _, act := range issueActs {
+		issue := act.ProjectActivityExtendFields.NewIssue
+		if issue == nil {
+			continue
+		}
+		headCtx := headEntityCtx{
+			WorkspaceName: project.Workspace.Slug,
+			Layer:         "задача",
+			Identifier:    issue.String(),
+			Title:         issue.Name,
+			Url:           issue.URL.String(),
+			UrlText:       "Посмотреть задачу",
+		}
+		headHTML := templates.RenderHead(headCtx)
+
+		fieldsHTML := renderIssueFieldsFromIssue(tx, templates, issue, act.CreatedAt, act.Actor, replaceMap)
+		activityHTML := templates.RenderActivity(activityBodyCtx{
+			Body:           fieldsHTML,
+			ActivityActors: "",
+			CustomBody:     "",
+		})
+
+		customBodyData[act.ID] = `<hr style="border:none;border-top:1px solid #dde2ea;margin:24px 0;">` + headHTML + activityHTML
+		actIds = append(actIds, act.ID)
+	}
+
+	if len(customBodyData) == 0 {
+		return FieldPrerender{}
+	}
+
+	placeholder := ApplyCustomReplaceText(customIssueBody, replaceMap)
+
+	fp := FieldPrerender{
+		CustomBodyValue: customBodyData,
+		Verb:            actField.VerbCreated,
+		Field:           actField.Issue.Field,
+		Count:           len(customBodyData),
+		ActivityIds:     actIds,
+		Value:           placeholder,
+		Replace:         replaceMap,
+		Authors:         collectIssueAuthors(issueActs),
+	}
+
+	fp.Add(optCustomBody)
+	return fp
+}
+
+func collectIssueAuthors(acts []dao.ActivityEvent) []dao.User {
+	seen := make(map[uuid.UUID]bool)
+	var authors []dao.User
+	for _, act := range acts {
+		if act.Actor != nil && !seen[act.Actor.ID] {
+			seen[act.Actor.ID] = true
+			authors = append(authors, *act.Actor)
+		}
+	}
+	return authors
+}
+
+func renderIssueFieldsFromIssue(tx *gorm.DB, templates *EmailTemplates, issue *dao.Issue, actTime time.Time, actor *dao.User, replaceMap map[string]any) string {
+	if issue == nil {
+		return ""
+	}
+
+	var synActs []dao.ActivityEvent
+
+	if issue.Name != "" {
+		synActs = append(synActs, addScalar(actTime, actor, actField.Name.Field, issue.Name))
+	}
+	if issue.DescriptionHtml != "" && issue.DescriptionHtml != "<p></p>" {
+		synActs = append(synActs, addScalar(actTime, actor, actField.Description.Field, issue.DescriptionHtml))
+	}
+	if issue.Priority != nil {
+		synActs = append(synActs, addScalar(actTime, actor, actField.Priority.Field, *issue.Priority))
+	}
+	if issue.State != nil {
+		synActs = append(synActs, addScalar(actTime, actor, actField.Status.Field, issue.State.Name))
+	}
+	if issue.Parent != nil {
+		issue.Parent.Project = issue.Project
+		synActs = append(synActs, addScalar(actTime, actor, actField.Parent.Field, issue.Parent.FullIssueName()))
+	}
+	if issue.TargetDate != nil && !issue.TargetDate.Time.IsZero() {
+		synActs = append(synActs, addScalar(actTime, actor, actField.TargetDate.Field, issue.TargetDate.Time.Format(time.RFC3339)))
+	}
+
+	if issue.Assignees != nil {
+		synActs = append(synActs, addCollection(actTime, actor, actField.Assignees.Field, *issue.Assignees,
+			func(u *dao.User) dao.IssueActivityExtendFields {
+				return dao.IssueActivityExtendFields{
+					IssueAssigneeExtendFields: dao.IssueAssigneeExtendFields{NewAssignee: u},
+				}
+			})...)
+	}
+	if issue.Watchers != nil {
+		synActs = append(synActs, addCollection(actTime, actor, actField.Watchers.Field, *issue.Watchers,
+			func(u *dao.User) dao.IssueActivityExtendFields {
+				return dao.IssueActivityExtendFields{
+					IssueWatchersExtendFields: dao.IssueWatchersExtendFields{NewWatcher: u},
+				}
+			})...)
+	}
+	if issue.Sprints != nil {
+		synActs = append(synActs, addCollection(actTime, actor, actField.Sprint.Field, *issue.Sprints,
+			func(s *dao.Sprint) dao.IssueActivityExtendFields {
+				return dao.IssueActivityExtendFields{
+					IssueSprintExtendFields: dao.IssueSprintExtendFields{NewIssueSprint: s},
+				}
+			})...)
+	}
+
+	if len(synActs) == 0 {
+		return ""
+	}
+
+	result, _ := renderDigest(tx, templates, synActs, issue, issueFieldConfigs)
+
+	orderedFields := []actField.ActivityField{
+		actField.Name.Field, actField.Description.Field, actField.Status.Field,
+		actField.Parent.Field, actField.Priority.Field, actField.Assignees.Field,
+		actField.Watchers.Field, actField.Sprint.Field, actField.TargetDate.Field,
+	}
+
+	var parts []string
+	for _, field := range orderedFields {
+		if fp, ok := result[field.String()]; ok && fp.Value != "" {
+			for k, v := range fp.Replace {
+				if replaceMap != nil {
+					replaceMap[k] = v
+				}
+			}
+			parts = append(parts, fp.Value)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n")
+}
+
+func addScalar(actTime time.Time, actor *dao.User, field actField.ActivityField, value string) dao.ActivityEvent {
+	return dao.ActivityEvent{
+		CreatedAt: actTime,
+		Actor:     actor,
+		Field:     field,
+		Verb:      actField.VerbCreated,
+		NewValue:  value,
+	}
+}
+
+func addCollection[T any](actTime time.Time, actor *dao.User, field actField.ActivityField, items []T, extFn func(*T) dao.IssueActivityExtendFields) []dao.ActivityEvent {
+	var acts []dao.ActivityEvent
+	for i := range items {
+		acts = append(acts, dao.ActivityEvent{
+			CreatedAt:                 actTime,
+			Actor:                     actor,
+			Field:                     field,
+			Verb:                      actField.VerbAdded,
+			IssueActivityExtendFields: extFn(&items[i]),
+		})
+	}
+	return acts
 }
 
 func (p *ProjectProcessor) BuildSubject(entity dao.IDaoAct) string {
@@ -221,42 +469,11 @@ func renderProjectMemberRole(tx *gorm.DB, t *EmailTemplates, acts []dao.Activity
 			if str == nil {
 				return nil
 			}
-			return utils.ToPtr(types.RoleTranslation[*str])
-		}),
-	)
-}
-
-func renderProjectIssue(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct) FieldPrerender {
-	project, ok := entity.(*dao.Project)
-	if !ok || project == nil {
-		return FieldPrerender{}
-	}
-
-	return renderEntityChangeComplex(tx, t, acts, "Задачи",
-		WithTitleFunc(func(act *dao.ActivityEvent) *string {
-			var issue *dao.Issue
-			if act.ProjectActivityExtendFields.NewIssue != nil {
-				issue = act.ProjectActivityExtendFields.NewIssue
-				if err := tx.Unscoped().
-					Joins("Parent").
-					Joins("State").
-					Joins("Author").
-					Preload("Assignees").
-					Preload("Watchers").
-					Preload("Sprints").
-					First(issue).Error; err != nil {
-					return nil
-				}
-				issue.Project = project
-				act.ProjectActivityExtendFields.NewIssue = issue
+			if v, ok := types.RoleTranslation[*str]; ok {
+				return utils.ToPtr(v)
 			}
-			if issue == nil {
-				return utils.ToPtr(act.OldValue)
-			}
-
-			return utils.ToPtr(issue.FullIssueName())
+			return str
 		}),
-		WithComplexAggregateFunc(issueCreateFunc),
 	)
 }
 

@@ -179,6 +179,7 @@ type activityBodyCtx struct {
 	Title          string
 	Body           string
 	ActivityActors string
+	CustomBody     string
 }
 
 func (t *EmailTemplates) RenderActivity(c activityBodyCtx) string {
