@@ -2,7 +2,6 @@ package email
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
@@ -334,65 +333,4 @@ func renderIssueLinks(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, 
 				return getRemovedEntities(tx, uuids, func(a dao.IssueLink) string { return a.GetString() })
 			},
 		})
-}
-
-func issueCreateFunc(c *entityChange, act dao.ActivityEvent) {
-	var issue dao.Issue
-	if act.IssueExtendFields.NewIssue != nil {
-		issue = *act.IssueExtendFields.NewIssue
-	}
-
-	switch act.Verb {
-	case actField.VerbCreated:
-		c.Created = true
-		var builder strings.Builder
-
-		addField := func(label, value string) {
-			if value != "" {
-				builder.WriteString("<table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom: 8px;'>")
-				builder.WriteString("<tr>")
-				builder.WriteString("<td align='right' valign='top' style='white-space: nowrap;'><b>" + label + "</b></td>")
-				builder.WriteString("</tr>")
-
-				builder.WriteString("<tr>")
-				builder.WriteString("<td align='left' valign='top' style='word-break: break-word;'>" + value + "</td>")
-				builder.WriteString("</tr>")
-				builder.WriteString("</table>")
-			}
-		}
-		if issue.Author != nil {
-			addField("Автор", issue.Author.GetName())
-		}
-
-		if issue.DescriptionHtml != "<p></p>" {
-			addField("Описание", "<br>"+*htmlReplacer(&issue.DescriptionHtml))
-		}
-
-		if issue.State != nil {
-			addField("Статус", issue.State.Name)
-		}
-		if issue.Parent != nil {
-			issue.Parent.Project = issue.Project
-			addField("Родительская задача", issue.Parent.FullIssueName())
-		}
-
-		if issue.Priority != nil {
-			addField("Приоритет", types.TranslateMap(types.PriorityTranslation, issue.Priority))
-		}
-
-		if issue.Assignees != nil {
-			addField("Исполнители", strings.Join(utils.SliceToSlice(issue.Assignees, func(t *dao.User) string { return t.GetName() }), "<br>"))
-		}
-		if issue.Watchers != nil {
-			addField("Наблюдатели", strings.Join(utils.SliceToSlice(issue.Watchers, func(t *dao.User) string { return t.GetName() }), "<br>"))
-		}
-		if issue.Sprints != nil {
-			addField("Спринты", strings.Join(utils.SliceToSlice(issue.Sprints, func(t *dao.Sprint) string { return t.GetString() }), "<br>"))
-		}
-
-		c.LastNew = utils.ToPtr(builder.String())
-	case actField.VerbDeleted:
-		c.Deleted = true
-		c.FirstOld = utils.ToPtr("удалена")
-	}
 }
