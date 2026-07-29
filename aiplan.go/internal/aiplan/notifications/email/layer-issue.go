@@ -74,7 +74,7 @@ func (i IssueProcessor) FullLoad(tx *gorm.DB, entity dao.IDaoAct) dao.IDaoAct {
 		Preload("Assignees").
 		Preload("Watchers").
 		Preload("Labels").
-		Preload("Links").
+		Preload("Links", "deleted_at IS NULL").
 		Preload("Sprints").
 		Joins("State").
 		Joins("Parent").
@@ -326,11 +326,17 @@ func renderIssueLinks(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, 
 		"Ссылки",
 		entitySpec[dao.IssueLink]{
 			entityID: func(event dao.ActivityEvent) uuid.UUID {
-				return getUUIDFromActivity(uuidPtrFrom(event.IssueActivityExtendFields.NewLink), uuidPtrFrom(event.IssueActivityExtendFields.OldLink))
+				return getUUIDFromActivity(uuidPtrFromNullUUID(event.OldIdentifier), uuidPtrFromNullUUID(event.NewIdentifier))
 			},
 			entityTitle: func(i dao.IssueLink) string { return i.GetString() },
 			loadRemoved: func(tx *gorm.DB, uuids []uuid.UUID) map[uuid.UUID]string {
-				return getRemovedEntities(tx, uuids, func(a dao.IssueLink) string { return a.GetString() })
+				res := make(map[uuid.UUID]string)
+				for _, act := range acts {
+					if act.Verb == actField.VerbRemoved {
+						res[act.OldIdentifier.UUID] = act.OldValue
+					}
+				}
+				return res
 			},
 		})
 }
