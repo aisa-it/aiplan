@@ -177,11 +177,12 @@ func issueLink(act *dao.ActivityEvent, af actField.ActivityField) TgMsg {
 	}
 
 	switch act.Verb {
-	case actField.VerbCreated:
+	case actField.VerbAdded:
 		msg.Title = "добавил(-a) ссылку в"
-	case actField.VerbDeleted:
+	case actField.VerbRemoved:
 		msg.Title = "удалил(-a) ссылку из"
-		format = ""
+		format = "~%s~ "
+		values = []any{act.OldValue}
 	case actField.VerbUpdated:
 		if act.OldValue != "" {
 			format = "~%s~ " + format
