@@ -2123,7 +2123,7 @@ func (s *Services) deleteIssueLink(c echo.Context) error {
 
 	apiCtx := apicontext.GetContext(c)
 	project := apiCtx.GetProject()
-	issue := apiCtx.GetIssue()
+	issue := apiCtx.GetIssue(apicontext.WithLinks())
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}
