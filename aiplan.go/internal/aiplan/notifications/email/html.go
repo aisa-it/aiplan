@@ -194,6 +194,13 @@ func uuidPtrFrom[T dao.IDaoAct](v *T) *uuid.UUID {
 	return utils.ToPtr((*v).GetId())
 }
 
+func uuidPtrFromNullUUID(u uuid.NullUUID) *uuid.UUID {
+	if u.Valid {
+		return &u.UUID
+	}
+	return nil
+}
+
 func strReplace(in string) string {
 	out := strings.Split(in, "_")
 	return "$$$" + strings.Join(out, "$$$") + "$$$"
