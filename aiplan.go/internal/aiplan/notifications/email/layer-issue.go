@@ -33,6 +33,8 @@ var issueFieldConfigs = map[actField.ActivityField]EntityFieldConfig{
 	actField.Linked.Field:      {collectAll, renderIssueLinked},
 	actField.Sprint.Field:      {collectAll, renderIssueSprint},
 	actField.Link.Field:        {collectAll, renderIssueLinks},
+	actField.LinkUrl.Field:     {collectAll, renderIssueLinks},
+	actField.LinkTitle.Field:   {collectAll, renderIssueLinks},
 	actField.Comment.Field:     {collectAll, renderIssueComment},
 	actField.Attachment.Field:  {collectAll, renderIssueAttachment},
 }
@@ -322,21 +324,29 @@ func renderIssueLinks(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, 
 		return FieldPrerender{}
 	}
 
-	return renderEntityChange(tx, t, acts, *issue.Links,
-		"Ссылки",
-		entitySpec[dao.IssueLink]{
-			entityID: func(event dao.ActivityEvent) uuid.UUID {
-				return getUUIDFromActivity(uuidPtrFromNullUUID(event.OldIdentifier), uuidPtrFromNullUUID(event.NewIdentifier))
-			},
-			entityTitle: func(i dao.IssueLink) string { return i.GetString() },
-			loadRemoved: func(tx *gorm.DB, uuids []uuid.UUID) map[uuid.UUID]string {
-				res := make(map[uuid.UUID]string)
-				for _, act := range acts {
-					if act.Verb == actField.VerbRemoved {
-						res[act.OldIdentifier.UUID] = act.OldValue
+	switch acts[0].Field {
+	case actField.LinkTitle.Field:
+		return renderEntityChangeComplex(tx, t, acts, "Названия URL")
+	case actField.LinkUrl.Field:
+		return renderEntityChangeComplex(tx, t, acts, "URL")
+	case actField.Link.Field:
+		return renderEntityChange(tx, t, acts, *issue.Links,
+			"Ссылки",
+			entitySpec[dao.IssueLink]{
+				entityID: func(event dao.ActivityEvent) uuid.UUID {
+					return getUUIDFromActivity(uuidPtrFromNullUUID(event.OldIdentifier), uuidPtrFromNullUUID(event.NewIdentifier))
+				},
+				entityTitle: func(i dao.IssueLink) string { return i.GetString() },
+				loadRemoved: func(tx *gorm.DB, uuids []uuid.UUID) map[uuid.UUID]string {
+					res := make(map[uuid.UUID]string)
+					for _, act := range acts {
+						if act.Verb == actField.VerbRemoved {
+							res[act.OldIdentifier.UUID] = act.OldValue
+						}
 					}
-				}
-				return res
-			},
-		})
+					return res
+				},
+			})
+	}
+	return FieldPrerender{}
 }
