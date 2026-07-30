@@ -19,6 +19,8 @@ type FieldPrerender struct {
 	Value        string
 	ValueComplex map[uuid.UUID]string
 
+	CustomBodyValue map[uuid.UUID]string
+
 	Count   int
 	Authors []dao.User
 

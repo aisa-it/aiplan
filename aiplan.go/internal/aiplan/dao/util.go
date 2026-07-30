@@ -191,7 +191,7 @@ func GenPasswordHash(password string) string {
 	)
 }
 
-func GetMentionedUsers(db *gorm.DB, text types.RedactorHTML) ([]User, error) {
+func GetMentionedUsersLimitProject(db *gorm.DB, text types.RedactorHTML, projectID uuid.UUID) ([]User, error) {
 	reg := regexp.MustCompile(`@(\w+)`)
 
 	res := reg.FindAllStringSubmatch(text.Body, -1)
@@ -206,7 +206,10 @@ func GetMentionedUsers(db *gorm.DB, text types.RedactorHTML) ([]User, error) {
 	}
 
 	var users []User
-	err := db.Where("username in (?)", usernames).Find(&users).Error
+	err := db.
+		Where("username in (?)", usernames).
+		Where("id IN (SELECT member_id FROM project_members WHERE project_id = ?)", projectID).
+		Find(&users).Error
 	return users, err
 }
 

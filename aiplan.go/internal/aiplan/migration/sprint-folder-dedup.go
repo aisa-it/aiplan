@@ -9,6 +9,16 @@ import (
 )
 
 func DeduplicateSprintFolders(db *gorm.DB) error {
+	var tableExists bool
+
+	if err := db.Raw(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sprint_folders')`).Scan(&tableExists).Error; err != nil {
+		return fmt.Errorf("failed to check if sprint_folders table exists: %w", err)
+	}
+
+	if !tableExists {
+		return nil
+	}
+
 	type dupRow struct {
 		WorkspaceID string
 		Name        string
