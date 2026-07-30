@@ -1,0 +1,74 @@
+name: Build and Push postgres-pgvector image to github registry
+
+# Образ БД собирается редко и живёт своим циклом, не связанным с версиями АИПлана,
+# поэтому здесь не dagger, как в docker-push.yml, а обычный buildx: Dockerfile.postgres
+# ничего не собирает из репозитория, ему нужен только сам файл.
+on:
+  workflow_dispatch:
+    inputs:
+      pg_major:
+        description: "Мажорная версия PostgreSQL"
+        default: "17"
+      pgvector_version:
+        description: "Тег pgvector (не ниже уже установленного в БД — понизить версию расширения нельзя)"
+        default: "v0.8.4"
+  push:
+    branches:
+      - main
+    paths:
+      - "Dockerfile.postgres"
+      - ".github/workflows/postgres-pgvector.yml"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: "false"
+          fetch-depth: 1
+
+      - name: Resolve tags
+        id: meta
+        run: |
+          pg="${{ inputs.pg_major || '17' }}"
+          pgv="${{ inputs.pgvector_version || 'v0.8.4' }}"
+          image="ghcr.io/${{ github.repository_owner }}/postgres-pgvector"
+          {
+            echo "pg=$pg"
+            echo "pgvector=$pgv"
+            # Первый тег — подвижный, второй фиксирует версию расширения: по нему
+            # видно, что именно катится в кластер, и его можно пинить в манифестах.
+            echo "tags=${image}:${pg}-alpine,${image}:${pg}-alpine-pgv${pgv#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.postgres
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            PG_MAJOR=${{ steps.meta.outputs.pg }}
+            PGVECTOR_VERSION=${{ steps.meta.outputs.pgvector }}
+          # Только amd64: pgvector компилируется из исходников, и arm64 через QEMU
+          # добавляет к сборке десятки минут. Нужен arm — добавить сюда linux/arm64
+          # и шаг docker/setup-qemu-action.
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
