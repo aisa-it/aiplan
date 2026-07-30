@@ -3333,12 +3333,7 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 	}
 	oldSnapshot := tracker.AttachmentToSnapshot(&attachment)
 
-	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
-			return err
-		}
-		return tx.Omit(clause.Associations).Delete(attachment.Asset).Error
-	}); err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Delete(&attachment).Error; err != nil {
 		return EError(c, err)
 	}
 
