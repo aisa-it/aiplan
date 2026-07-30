@@ -34,7 +34,7 @@
         {{- else if .IsGone }}
             <tr>
                 <td style="text-align: left;">
-                    <span style="color:#999999">{{ .Old }}</span>
+                    <del style="color:#999999">{{ .Old }}</del>
                 </td>
             </tr>
         {{- else if .IsUpdate }}
