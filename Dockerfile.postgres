@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+#
+# PostgreSQL (Alpine) + pgvector — drop-in замена postgres:17-alpine.
+#
+#   docker build -f Dockerfile.postgres -t registry.aiplan.aisa.ru/postgres-pgvector:17-alpine .
+#   docker push registry.aiplan.aisa.ru/postgres-pgvector:17-alpine
+
+ARG PG_MAJOR=17
+ARG PGVECTOR_VERSION=v0.8.4
+# Alpine-сборка PostgreSQL идёт --with-llvm и требует ровно тот clang, которым собиралась
+# (CLANG=clang-21 в Makefile.global); метапакета clang в Alpine нет, только версионные.
+# При переезде базового образа на новый Alpine — поднять версию здесь.
+ARG LLVM_MAJOR=21
+
+FROM postgres:${PG_MAJOR}-alpine AS builder
+ARG PGVECTOR_VERSION
+ARG LLVM_MAJOR
+
+# OPTFLAGS="" убирает -march=native, иначе бинарь словит SIGILL на другой ноде.
+RUN apk add --no-cache build-base git "clang${LLVM_MAJOR}" "llvm${LLVM_MAJOR}-dev" \
+    && git clone --branch "${PGVECTOR_VERSION}" --depth 1 \
+        https://github.com/pgvector/pgvector.git /tmp/pgvector \
+    && make -C /tmp/pgvector USE_PGXS=1 OPTFLAGS="" install
+
+FROM postgres:${PG_MAJOR}-alpine
+
+COPY --from=builder /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/
+COPY --from=builder /usr/local/lib/postgresql/bitcode/vector* /usr/local/lib/postgresql/bitcode/
+COPY --from=builder /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
