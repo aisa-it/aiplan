@@ -85,6 +85,9 @@ type projectMemberNotifies struct {
 }
 
 func (p *projectMemberNotifies) getSettings(nCh types.NotifyChannel) *types.ProjectMemberNS {
+	if p == nil {
+		return nil
+	}
 	switch nCh {
 	case types.TgCh:
 		return &p.Tg
@@ -278,32 +281,19 @@ func AddDefaultWatchers(projectId uuid.UUID, opts ...MemberOption) UsersStep {
 
 	return func(tx *gorm.DB, users UserRegistry) error {
 
-		var defaultWatchers []struct {
-			ID           uuid.UUID
-			TelegramId   *int64
-			UserTimezone types.TimeZone
-			Settings     types.UserSettings
-		}
+		var defaultWatchers []dao.ProjectMember
 
 		err := tx.Model(&dao.ProjectMember{}).
-			Select("users.id, users.telegram_id, users.user_timezone, users.settings").
-			Joins("JOIN users ON users.id = project_members.member_id").
+			Joins("Member").
 			Where("project_id = ? AND is_default_watcher = true", projectId).
-			Scan(&defaultWatchers).Error
+			Find(&defaultWatchers).Error
 
 		if err != nil {
 			return fmt.Errorf("get default watchers for activity: %v", err)
 		}
 
 		for _, w := range defaultWatchers {
-			user := &dao.User{
-				ID:           w.ID,
-				TelegramId:   w.TelegramId,
-				UserTimezone: w.UserTimezone,
-				Settings:     w.Settings,
-			}
-
-			users.AddUser(user, config, ProjectDefaultWatcher)
+			users.AddUser(w.Member, config, ProjectDefaultWatcher)
 		}
 		return nil
 	}
@@ -379,7 +369,16 @@ func AddCommentMentionedUsers[R dao.IRedactorHTML](comment *R) UsersStep {
 		}
 
 		var us []dao.User
-		tx.Where("username in (?)", usernames).Find(&us)
+		query := tx.Where("username in (?)", usernames)
+
+		switch c := any(*comment).(type) {
+		case dao.IssueComment:
+			query = query.Where("id IN (SELECT member_id FROM project_members WHERE project_id = ?)", c.ProjectId)
+		case dao.DocComment:
+			query = query.Where("id IN (SELECT member_id FROM workspace_members WHERE workspace_id = ?)", c.WorkspaceId)
+		}
+
+		query.Find(&us)
 		for _, u := range us {
 			users.AddUser(&u, config, CommentMentioned)
 		}

@@ -2123,7 +2123,7 @@ func (s *Services) deleteIssueLink(c echo.Context) error {
 
 	apiCtx := apicontext.GetContext(c)
 	project := apiCtx.GetProject()
-	issue := apiCtx.GetIssue()
+	issue := apiCtx.GetIssue(apicontext.WithLinks())
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}
@@ -2459,7 +2459,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			}
 		}
 
-		users, err := dao.GetMentionedUsers(tx, comment.CommentHtml)
+		users, err := dao.GetMentionedUsersLimitProject(tx, comment.CommentHtml, comment.ProjectId)
 		if err != nil {
 			return err
 		}
@@ -2780,7 +2780,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			}
 		}
 
-		users, err := dao.GetMentionedUsers(tx, commentOld.CommentHtml)
+		users, err := dao.GetMentionedUsersLimitProject(tx, commentOld.CommentHtml, commentOld.ProjectId)
 		if err != nil {
 			return err
 		}
