@@ -7,7 +7,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
-	actField "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/gofrs/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -113,9 +112,6 @@ func (d *AppDelivery) Commit(tx *gorm.DB) error {
 
 func formatWsActivity(event *dao.ActivityEvent) *WebsocketMsg {
 	var msg WebsocketMsg
-	if event.EntityType == types.LayerIssue && event.Verb == actField.VerbDeleted && event.Field != actField.Linked.Field {
-		return nil
-	}
 	msg.Type = "activity"
 	msg.Detail = NotificationDetailResponse{
 		User:      event.Actor.ToLightDTO(),
