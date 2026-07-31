@@ -750,10 +750,8 @@ func (attachment *DocAttachment) AfterDelete(tx *gorm.DB) error {
 			return err
 		}
 
-		if del {
-			if err := tx.Delete(attachment.Asset).Error; err != nil {
-				return err
-			}
+		if del && !attachment.Asset.Id.IsNil() {
+			return tx.Delete(attachment.Asset).Error
 		}
 	}
 	return nil
