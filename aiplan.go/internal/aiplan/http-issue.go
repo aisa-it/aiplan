@@ -2123,7 +2123,7 @@ func (s *Services) deleteIssueLink(c echo.Context) error {
 
 	apiCtx := apicontext.GetContext(c)
 	project := apiCtx.GetProject()
-	issue := apiCtx.GetIssue()
+	issue := apiCtx.GetIssue(apicontext.WithLinks())
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}
@@ -2459,7 +2459,7 @@ func (s *Services) createIssueComment(c echo.Context) error {
 			}
 		}
 
-		users, err := dao.GetMentionedUsers(tx, comment.CommentHtml)
+		users, err := dao.GetMentionedUsersLimitProject(tx, comment.CommentHtml, comment.ProjectId)
 		if err != nil {
 			return err
 		}
@@ -2780,7 +2780,7 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 			}
 		}
 
-		users, err := dao.GetMentionedUsers(tx, commentOld.CommentHtml)
+		users, err := dao.GetMentionedUsersLimitProject(tx, commentOld.CommentHtml, commentOld.ProjectId)
 		if err != nil {
 			return err
 		}
@@ -3333,12 +3333,7 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 	}
 	oldSnapshot := tracker.AttachmentToSnapshot(&attachment)
 
-	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Omit(clause.Associations).Delete(&attachment).Error; err != nil {
-			return err
-		}
-		return tx.Omit(clause.Associations).Delete(attachment.Asset).Error
-	}); err != nil {
+	if err := s.DB(c).Omit(clause.Associations).Delete(&attachment).Error; err != nil {
 		return EError(c, err)
 	}
 

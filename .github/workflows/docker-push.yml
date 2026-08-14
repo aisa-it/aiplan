@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+  # Manual run for internal test builds: publishes a pre-release image and moves
+  # the "dev" tag, never "latest", and creates no git tag.
+  workflow_dispatch:
 
 jobs:
   build-and-push:
@@ -16,6 +19,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: "recursive"
+          # full history: version of a manual build is derived from repo tags
+          fetch-depth: 0
 
       #- name: Fetch front submodules
       #  run: |
@@ -23,12 +28,36 @@ jobs:
       #    cd aiplan-front
       #    git submodule update --recursive --init
 
+      # Tag push is a release: keep the tag as version and move "latest".
+      # Manual run is a test build: derive a pre-release version from the highest
+      # repo tag and move "dev". Version must be valid semver, the front build
+      # feeds it to "yarn version --new-version".
+      - name: Resolve version and channel
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            version="${{ github.ref_name }}"
+            moving="latest"
+          else
+            base=$(git tag --sort=-v:refname | head -n 1)
+            base=${base:-v0.0.0}
+            base=${base#v}
+            major=$(echo "$base" | cut -d. -f1)
+            minor=$(echo "$base" | cut -d. -f2)
+            # 10# avoids octal parsing, g prefix keeps the sha non-numeric
+            version="v${major}.$((10#$minor + 1)).0-dev.${{ github.run_number }}.g$(git rev-parse --short=7 HEAD)"
+            moving="dev"
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "moving_tag=$moving" >> $GITHUB_OUTPUT
+          echo "Building $version, moving tag: $moving"
+
       - name: Build and Push
         uses: dagger/dagger-for-github@v8.4.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          call: build-app --source=. --version=${{ github.ref_name }} --registryUser=${{ github.actor }} --registrySecret=GITHUB_TOKEN --imageName=aisa-it/aiplan
+          call: build-app --source=. --version=${{ steps.meta.outputs.version }} --registryUser=${{ github.actor }} --registrySecret=GITHUB_TOKEN --imageName=aisa-it/aiplan --movingTag=${{ steps.meta.outputs.moving_tag }}
           version: "0.20.8"
 
   generate-api:

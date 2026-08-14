@@ -1013,8 +1013,6 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 	// Получаем спринты с задачами для статистики
 	var sprints []dao.Sprint
 	if err := db.
-		Set("issueProgress", true).
-		Preload("Issues.State").
 		Where("workspace_id = ?", workspace.ID).
 		Order("sequence_id DESC").
 		Limit(limit).
@@ -1023,21 +1021,12 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 		return logger.Error(err), nil
 	}
 
-	// Подсчитываем статистику
+	statsBySprint, err := business.GetSprintStatsByWorkspace(db.WithContext(ctx), workspace.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
 	for i := range sprints {
-		sprints[i].Stats.AllIssues = len(sprints[i].Issues)
-		for _, issue := range sprints[i].Issues {
-			switch issue.IssueProgress.Status {
-			case types.InProgress:
-				sprints[i].Stats.InProgress++
-			case types.Pending:
-				sprints[i].Stats.Pending++
-			case types.Cancelled:
-				sprints[i].Stats.Cancelled++
-			case types.Completed:
-				sprints[i].Stats.Completed++
-			}
-		}
+		sprints[i].Stats = statsBySprint[sprints[i].Id]
 	}
 
 	// Преобразуем в DTO

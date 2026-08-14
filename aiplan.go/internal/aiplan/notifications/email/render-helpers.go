@@ -559,7 +559,12 @@ func renderCompositeFieldChange(tx *gorm.DB, t *EmailTemplates, acts []dao.Activ
 			p = t.RenderCollectValues(v)
 		}
 
-		m[dao.GenUUID()] = p.Value
+		key := dao.GenUUID()
+		for id := range v.ActivityMap {
+			key = id
+			break
+		}
+		m[key] = p.Value
 	}
 
 	ctx := collectComplexCtx{

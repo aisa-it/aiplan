@@ -20,7 +20,7 @@ services:
       - aiplan-net
 
   db:
-    image: postgres:17-alpine
+    image: aiplan-postgres
     ports:
       - 5432:5432 # For database debug
     restart: always
