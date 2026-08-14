@@ -227,6 +227,7 @@ var (
 	ErrInvalidSprintViewProps  = DefinedError{Code: 3606, StatusCode: http.StatusBadRequest, Err: "invalid sprint view properties %s", RuErr: "Указаны некорректные параметры настроек спринта (%s)"}
 	ErrInvalidSprintTimeWindow = DefinedError{Code: 3607, StatusCode: http.StatusBadRequest, Err: "invalid sprint time window", RuErr: "Некорректный период спринта"}
 	ErrSprintFolderDelete      = DefinedError{Code: 3608, StatusCode: http.StatusBadRequest, Err: "cannot delete folder that contains sprints", RuErr: "Нельзя удалить папку, в которой есть добавленные спринты"}
+	ErrSprintFolderExists      = DefinedError{Code: 3609, StatusCode: http.StatusConflict, Err: "a sprint folder with this name already exists", RuErr: "Папка с таким именем уже существует"}
 
 	// 4*** - issue errors
 	ErrIssueNotFound                   = DefinedError{Code: 4001, StatusCode: http.StatusNotFound, Err: "issue not found", RuErr: "Задача не найдена"}

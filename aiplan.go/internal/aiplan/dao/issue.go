@@ -1313,9 +1313,7 @@ func (attachment *IssueAttachment) AfterDelete(tx *gorm.DB) error {
 		}
 
 		if del && !attachment.Asset.Id.IsNil() {
-			if err := tx.Where("id = ?", attachment.Asset.Id).Delete(&FileAsset{}).Error; err != nil {
-				return err
-			}
+			return tx.Delete(&attachment.Asset).Error
 		}
 	}
 	return nil

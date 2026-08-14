@@ -143,11 +143,27 @@ func BuildEmailMessages(buckets ActivityBuckets, p EmailProcessor, template Emai
 	return res
 }
 
-func filterVisibleFields(b *ActivityBucket, r Recipient, ctx *EmailContext) ([]FieldPrerender, []string) {
+const customBodyFieldKey = "_custom_body"
+
+func filterVisibleFields(b *ActivityBucket, r Recipient, ctx *EmailContext) ([]FieldPrerender, []string, string, int, []dao.User) {
 	visible := make([]FieldPrerender, 0, len(b.Prepared))
 	parts := make([]string, 0, len(b.Prepared))
+	customBody := ""
+	issueCount := 0
+	var customBodyAuthors []dao.User
 
 	for field, html := range b.Prepared {
+
+		if field == customBodyFieldKey {
+			if !r.MemberNotify.IsActNotify(html.ActivityIds) {
+				continue
+			}
+			html = msgReplace(*r.MemberNotify, html)
+			customBody = html.CustomBodyGetValue()
+			issueCount = html.Count
+			customBodyAuthors = html.Authors
+			continue
+		}
 		needActionAuthor := ctx.Plan.AuthorRole == member_role.ActionAuthor &&
 			!isUserInAuthors(html.Authors, r.MemberNotify.GetUser().Email)
 
@@ -174,10 +190,10 @@ func filterVisibleFields(b *ActivityBucket, r Recipient, ctx *EmailContext) ([]F
 		parts = append(parts, html.GetValue())
 	}
 
-	return visible, parts
+	return visible, parts, customBody, issueCount, customBodyAuthors
 }
 
-func buildActorView(acts []FieldPrerender, tz *types.TimeZone) *ActivityActorView {
+func buildActorView(acts []FieldPrerender, tz *types.TimeZone, issueCount int, customBodyAuthors []dao.User, bucketFirstAt, bucketLastAt time.Time) *ActivityActorView {
 	authors := make(map[uuid.UUID]dao.User)
 	var (
 		start        time.Time
@@ -235,6 +251,20 @@ func buildActorView(acts []FieldPrerender, tz *types.TimeZone) *ActivityActorVie
 		}
 	}
 
+	if !init && !bucketFirstAt.IsZero() {
+		start = bucketFirstAt
+		end = bucketLastAt
+		init = true
+	}
+
+	for _, author := range customBodyAuthors {
+		if author.ID != uuid.Nil {
+			authors[author.ID] = author
+		}
+	}
+
+	count += issueCount
+
 	if count == 0 && commentCount == 0 {
 		return nil
 	}
@@ -265,13 +295,14 @@ func buildActorView(acts []FieldPrerender, tz *types.TimeZone) *ActivityActorVie
 	}
 }
 
-func renderBody(actorView *ActivityActorView, parts []string, template EmailTemplates) (string, string) {
+func renderBody(actorView *ActivityActorView, parts []string, customBody string, template EmailTemplates) (string, string) {
 	sss := template.RenderActivityAuthor(*actorView)
 	ccc := template.RenderChangesActivities(*actorView)
 
 	body := activityBodyCtx{
 		Body:           strings.Join(parts, "\n"),
 		ActivityActors: sss,
+		CustomBody:     customBody,
 	}
 
 	activity := template.RenderActivity(body)
@@ -299,18 +330,18 @@ func finalRender(activity, changes, headBody string, actorView *ActivityActorVie
 
 func BuildEmailMessage(b *ActivityBucket, r Recipient, ctx *EmailContext, template EmailTemplates) EmailMessage {
 
-	visible, parts := filterVisibleFields(b, r, ctx)
+	visible, parts, customBody, issueCount, customBodyAuthors := filterVisibleFields(b, r, ctx)
 
-	if len(parts) == 0 {
+	if len(parts) == 0 && customBody == "" {
 		return EmailMessage{}
 	}
 
-	actorView := buildActorView(visible, &r.MemberNotify.GetUser().UserTimezone)
+	actorView := buildActorView(visible, &r.MemberNotify.GetUser().UserTimezone, issueCount, customBodyAuthors, b.FirstAt, b.LastAt)
 	if actorView == nil {
 		return EmailMessage{}
 	}
 
-	activity, changes := renderBody(actorView, parts, template)
+	activity, changes := renderBody(actorView, parts, customBody, template)
 	msg, from := finalRender(activity, changes, b.HeadBody, actorView, template)
 
 	return EmailMessage{

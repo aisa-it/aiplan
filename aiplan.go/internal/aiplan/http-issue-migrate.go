@@ -1062,14 +1062,16 @@ func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao
 
 	// Check memberships
 	{
-		if _, exist := dao.IsProjectMember(s.db, srcIssue.CreatedById, targetProject.ID); !exist {
-			res.Errors = append(res.Errors, ErrClause{
-				Error:           ErrAuthorNotAProjectMember,
-				SrcIssueId:      &srcIssue.ID,
-				IssueSequenceId: srcIssue.SequenceId,
-				Type:            "user",
-				Entities:        []uuid.UUID{srcIssue.CreatedById},
-			})
+		if !srcIssue.Author.IsBot {
+			if _, exist := dao.IsProjectMember(s.db, srcIssue.CreatedById, targetProject.ID); !exist {
+				res.Errors = append(res.Errors, ErrClause{
+					Error:           ErrAuthorNotAProjectMember,
+					SrcIssueId:      &srcIssue.ID,
+					IssueSequenceId: srcIssue.SequenceId,
+					Type:            "user",
+					Entities:        []uuid.UUID{srcIssue.CreatedById},
+				})
+			}
 		}
 
 		assigneeErr := ErrClause{

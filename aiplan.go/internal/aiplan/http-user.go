@@ -462,8 +462,8 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 		Joins("Issue").
 		Joins("Project").
 		Joins("Doc").
-		Order("created_at desc").
-		Where("actor_id = ?", userId).
+		Order("activity_events.created_at desc").
+		Where("activity_events.actor_id = ?", userId).
 		Where("field NOT IN (?)", []string{actField.StartDate.Field.String(), actField.EndDate.Field.String()}).
 		Where("entity_type = ? OR (entity_type = ? AND field = ?)", types.LayerIssue, types.LayerProject, actField.Issue.Field).
 		Set("userId", currentUser.ID)
@@ -477,7 +477,7 @@ func (s *Services) getUserActivityList(c echo.Context) error {
 	}
 
 	if !time.Time(day).IsZero() {
-		query = query.Where("created_at >= ?", time.Time(day)).Where("created_at < ?", time.Time(day).Add(time.Hour*24))
+		query = query.Where("activity_events.created_at >= ?", time.Time(day)).Where("activity_events.created_at < ?", time.Time(day).Add(time.Hour*24))
 	}
 
 	resp, err := dao.PaginationRequest(

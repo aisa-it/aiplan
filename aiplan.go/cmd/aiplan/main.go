@@ -15,6 +15,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/gormlogger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"gorm.io/driver/postgres"
@@ -194,7 +195,13 @@ func main() {
 			slog.Info("No UUID columns need migration, skipping UUID migration steps")
 		}
 
-		// Step 8: AutoMigrate models (в отдельной транзакции)
+		// Step 8: Deduplicate sprint_folders before adding unique index
+		if err := migration.DeduplicateSprintFolders(dbForMigration); err != nil {
+			slog.Error("Sprint folder deduplication failed", "err", err)
+			os.Exit(1)
+		}
+
+		// Step 9: AutoMigrate models (в отдельной транзакции)
 		err = dbForMigration.Transaction(func(tx *gorm.DB) error {
 			slog.Info("Migrate models without relations")
 			tx.DisableForeignKeyConstraintWhenMigrating = true
