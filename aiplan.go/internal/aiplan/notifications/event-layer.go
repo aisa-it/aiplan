@@ -290,3 +290,14 @@ func (f formEvent) GetSettingsFunc() member_role.IsNotifyFunc {
 func (f formEvent) AuthorRole() member_role.Role {
 	return member_role.ActionAuthor
 }
+
+type skipper struct{}
+
+func (skipper) CanHandle(_ *dao.ActivityEvent) bool                             { return false }
+func (skipper) Preload(_ *gorm.DB, _ *dao.ActivityEvent) error                  { return nil }
+func (skipper) GetRecipientsSteps(_ *dao.ActivityEvent) []member_role.UsersStep { return nil }
+func (skipper) GetSettingsFunc() member_role.IsNotifyFunc                       { return nil }
+func (skipper) AuthorRole() member_role.Role                                    { return 0 }
+func (skipper) FilterRecipients(_ *dao.ActivityEvent, r []member_role.MemberNotify) []member_role.MemberNotify {
+	return r
+}

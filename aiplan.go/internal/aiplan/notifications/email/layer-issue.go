@@ -2,7 +2,6 @@ package email
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	member_role "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/member-role"
@@ -34,6 +33,8 @@ var issueFieldConfigs = map[actField.ActivityField]EntityFieldConfig{
 	actField.Linked.Field:      {collectAll, renderIssueLinked},
 	actField.Sprint.Field:      {collectAll, renderIssueSprint},
 	actField.Link.Field:        {collectAll, renderIssueLinks},
+	actField.LinkUrl.Field:     {collectAll, renderIssueLinks},
+	actField.LinkTitle.Field:   {collectAll, renderIssueLinks},
 	actField.Comment.Field:     {collectAll, renderIssueComment},
 	actField.Attachment.Field:  {collectAll, renderIssueAttachment},
 }
@@ -75,7 +76,7 @@ func (i IssueProcessor) FullLoad(tx *gorm.DB, entity dao.IDaoAct) dao.IDaoAct {
 		Preload("Assignees").
 		Preload("Watchers").
 		Preload("Labels").
-		Preload("Links").
+		Preload("Links", "deleted_at IS NULL").
 		Preload("Sprints").
 		Joins("State").
 		Joins("Parent").
@@ -323,76 +324,29 @@ func renderIssueLinks(tx *gorm.DB, t *EmailTemplates, acts []dao.ActivityEvent, 
 		return FieldPrerender{}
 	}
 
-	return renderEntityChange(tx, t, acts, *issue.Links,
-		"Ссылки",
-		entitySpec[dao.IssueLink]{
-			entityID: func(event dao.ActivityEvent) uuid.UUID {
-				return getUUIDFromActivity(uuidPtrFrom(event.IssueActivityExtendFields.NewLink), uuidPtrFrom(event.IssueActivityExtendFields.OldLink))
-			},
-			entityTitle: func(i dao.IssueLink) string { return i.GetString() },
-			loadRemoved: func(tx *gorm.DB, uuids []uuid.UUID) map[uuid.UUID]string {
-				return getRemovedEntities(tx, uuids, func(a dao.IssueLink) string { return a.GetString() })
-			},
-		})
-}
-
-func issueCreateFunc(c *entityChange, act dao.ActivityEvent) {
-	var issue dao.Issue
-	if act.IssueExtendFields.NewIssue != nil {
-		issue = *act.IssueExtendFields.NewIssue
+	switch acts[0].Field {
+	case actField.LinkTitle.Field:
+		return renderEntityChangeComplex(tx, t, acts, "Названия URL")
+	case actField.LinkUrl.Field:
+		return renderEntityChangeComplex(tx, t, acts, "URL")
+	case actField.Link.Field:
+		return renderEntityChange(tx, t, acts, *issue.Links,
+			"Ссылки",
+			entitySpec[dao.IssueLink]{
+				entityID: func(event dao.ActivityEvent) uuid.UUID {
+					return getUUIDFromActivity(uuidPtrFromNullUUID(event.OldIdentifier), uuidPtrFromNullUUID(event.NewIdentifier))
+				},
+				entityTitle: func(i dao.IssueLink) string { return i.GetString() },
+				loadRemoved: func(tx *gorm.DB, uuids []uuid.UUID) map[uuid.UUID]string {
+					res := make(map[uuid.UUID]string)
+					for _, act := range acts {
+						if act.Verb == actField.VerbRemoved {
+							res[act.OldIdentifier.UUID] = act.OldValue
+						}
+					}
+					return res
+				},
+			})
 	}
-
-	switch act.Verb {
-	case actField.VerbCreated:
-		c.Created = true
-		var builder strings.Builder
-
-		addField := func(label, value string) {
-			if value != "" {
-				builder.WriteString("<table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom: 8px;'>")
-				builder.WriteString("<tr>")
-				builder.WriteString("<td align='right' valign='top' style='white-space: nowrap;'><b>" + label + "</b></td>")
-				builder.WriteString("</tr>")
-
-				builder.WriteString("<tr>")
-				builder.WriteString("<td align='left' valign='top' style='word-break: break-word;'>" + value + "</td>")
-				builder.WriteString("</tr>")
-				builder.WriteString("</table>")
-			}
-		}
-		if issue.Author != nil {
-			addField("Автор", issue.Author.GetName())
-		}
-
-		if issue.DescriptionHtml != "<p></p>" {
-			addField("Описание", "<br>"+*htmlReplacer(&issue.DescriptionHtml))
-		}
-
-		if issue.State != nil {
-			addField("Статус", issue.State.Name)
-		}
-		if issue.Parent != nil {
-			issue.Parent.Project = issue.Project
-			addField("Родительская задача", issue.Parent.FullIssueName())
-		}
-
-		if issue.Priority != nil {
-			addField("Приоритет", types.TranslateMap(types.PriorityTranslation, issue.Priority))
-		}
-
-		if issue.Assignees != nil {
-			addField("Исполнители", strings.Join(utils.SliceToSlice(issue.Assignees, func(t *dao.User) string { return t.GetName() }), "<br>"))
-		}
-		if issue.Watchers != nil {
-			addField("Наблюдатели", strings.Join(utils.SliceToSlice(issue.Watchers, func(t *dao.User) string { return t.GetName() }), "<br>"))
-		}
-		if issue.Sprints != nil {
-			addField("Спринты", strings.Join(utils.SliceToSlice(issue.Sprints, func(t *dao.Sprint) string { return t.GetString() }), "<br>"))
-		}
-
-		c.LastNew = utils.ToPtr(builder.String())
-	case actField.VerbDeleted:
-		c.Deleted = true
-		c.FirstOld = utils.ToPtr("удалена")
-	}
+	return FieldPrerender{}
 }
