@@ -74,6 +74,7 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 
 	g.POST("issues/search/", s.getIssueList)
 	g.POST("issues/search/export/", s.exportIssueList)
+	g.POST("issues/jql/", s.searchIssuesJQL)
 
 	issueGroup.GET("/", s.getIssue)
 	issueGroup.PATCH("/", s.updateIssue)

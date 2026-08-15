@@ -296,6 +296,7 @@ type SearchFilter struct {
 	NameTokens  types.TsVector `json:"-" gorm:"index:search_filter_name_tokens,type:gin"`
 	Description string         `json:"description"`
 	Public      bool           `json:"public"`
+	JQL         *string        `json:"jql,omitempty"`
 
 	Filter types.IssuesListFilters `json:"filter" gorm:"type:jsonb"`
 
@@ -316,6 +317,7 @@ func (sf *SearchFilter) ToLightDTO() *dto.SearchFilterLight {
 		Name:        sf.Name,
 		Description: sf.Description,
 		Public:      sf.Public,
+		JQL:         sf.JQL,
 		Filter:      sf.Filter,
 		Url:         types.JsonURL{URL: sf.URL},
 		ShortUrl:    types.JsonURL{URL: sf.ShortURL},
