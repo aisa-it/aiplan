@@ -2303,6 +2303,7 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 			Name:        req.Name,
 			Description: req.Description,
 			Public:      req.Public,
+			JQL:         req.JQL,
 			Filter:      req.Filter,
 			Author:      user,
 		}, fields, nil
@@ -2318,6 +2319,8 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 				CompareAndAddFields(&filter.Public, &req.Public, field, &resFields)
 			case "filter":
 				CompareAndAddFields(&filter.Filter, &req.Filter, field, &resFields)
+			case "jql":
+				CompareAndAddFields(&filter.JQL, &req.JQL, field, &resFields)
 			}
 		}
 		return filter, resFields, nil
