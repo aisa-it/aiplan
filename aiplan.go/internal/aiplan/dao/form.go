@@ -27,8 +27,8 @@ type Form struct {
 	CreatedById uuid.UUID `json:"created_by" gorm:"type:uuid;index"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	Author      *User         `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	Author      *User         `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	Slug        string             `json:"slug" gorm:"uniqueIndex;not null"`
 	Title       string             `json:"title" validate:"required"`
@@ -228,7 +228,7 @@ type FormAnswer struct {
 
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by_id" gorm:"index;type:uuid"`
-	Responder   *User         `json:"responder" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	Responder   *User         `json:"responder" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	WorkspaceId uuid.UUID  `json:"workspace" gorm:"index;type:uuid"`
 	Workspace   *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
@@ -358,8 +358,8 @@ type FormAttachment struct {
 	Workspace *Workspace  `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Asset     *FileAsset  `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
 	Answer    *FormAnswer `json:"answer_detail" gorm:"foreignKey:AnswerId" extensions:"x-nullable"`
-	CreatedBy *User       `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User       `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User       `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User       `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы для сущности Form. Используется GORM для определения имени таблицы в базе данных.
