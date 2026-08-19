@@ -13,9 +13,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"go/types"
 	"log/slog"
-	"math"
 	"net/http"
 	"net/url"
 
@@ -175,13 +173,9 @@ func (s *Services) createForm(c echo.Context) error {
 	}
 	user := apiContext.GetUser()
 
-	var req reqForm
-	if err := c.Bind(&req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormBadRequest)
-	}
-
-	if err := c.Validate(req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormRequestValidate)
+	req, err := bindAndValidate[reqForm](c)
+	if err != nil {
+		return EError(c, err)
 	}
 
 	form, err := req.toDao(nil, nil)
@@ -189,14 +183,14 @@ func (s *Services) createForm(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrFormBadConvertRequest.WithFormattedMessage(err.Error()))
 	}
 
-	if form.EndDate != nil && !form.EndDate.Time.After(time.Now().Truncate(24*time.Hour).UTC().Add(-time.Millisecond)) {
-		return EErrorDefined(c, apierrors.ErrFormEndDate)
-	}
-
 	form.Author = user
 	form.Workspace = workspace
 
-	if err := checkFormFields(&form.Fields); err != nil {
+	if err := validateFormEndDate(form.EndDate); err != nil {
+		return EErrorDefined(c, apierrors.ErrFormEndDate)
+	}
+
+	if err := validateForm(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
 	}
 
@@ -205,9 +199,7 @@ func (s *Services) createForm(c echo.Context) error {
 	}
 
 	newSnap := tracker.FormToSnapshot(form)
-
-	err = s.snapshotTracker.TrackChanges(types2.LayerWorkspace, nil, &newSnap, workspace, user)
-	if err != nil {
+	if err := s.snapshotTracker.TrackChanges(types2.LayerWorkspace, nil, &newSnap, workspace, user); err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -246,44 +238,39 @@ func (s *Services) updateForm(c echo.Context) error {
 
 	oldSnap := tracker.FormToSnapshot(&form)
 
-	var req reqForm
-	if err := c.Bind(&req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormBadRequest)
+	req, err := bindAndValidate[reqForm](c)
+	if err != nil {
+		return EError(c, err)
 	}
 
-	if err := c.Validate(req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormRequestValidate)
-	}
-
-	requestMap := StructToJSONMap(req)
+	updateMap := StructToJSONMap(*req)
 	if req.EndDate != nil {
-		requestMap["end_date"] = req.EndDate.Time
+		updateMap["end_date"] = req.EndDate.Time
 	} else {
-		requestMap["end_date"] = nil
+		updateMap["end_date"] = nil
+	}
+	if _, ok := updateMap["fields"]; ok {
+		updateMap["fields"] = req.Fields
 	}
 
-	if _, ok := requestMap["fields"]; ok {
-		requestMap["fields"] = req.Fields
-	}
-
-	newForm, err := req.toDao(&form, requestMap)
+	newForm, err := req.toDao(&form, updateMap)
 	if err != nil {
 		return EErrorDefined(c, apierrors.ErrFormBadConvertRequest.WithFormattedMessage(err.Error()))
 	}
 
-	if newForm.EndDate != nil && !newForm.EndDate.Time.After(time.Now().Truncate(24*time.Hour).UTC().Add(-time.Millisecond)) {
+	if err := validateFormEndDate(newForm.EndDate); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormEndDate)
 	}
 
 	newForm.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 	newForm.Workspace = workspace
 
-	if err := checkFormFields(&form.Fields); err != nil {
+	if err := validateForm(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
 	}
 
 	updateFields := []string{"updated_by", "workspace_detail"}
-	for k := range requestMap {
+	for k := range updateMap {
 		updateFields = append(updateFields, k)
 	}
 	if err := s.DB(c).Select(updateFields).Updates(&newForm).Error; err != nil {
@@ -292,9 +279,7 @@ func (s *Services) updateForm(c echo.Context) error {
 
 	newForm = apiContext.CleanForm().GetForm(apicontext.WithFormAll())
 	newSnap := tracker.FormToSnapshot(newForm)
-
-	err = s.snapshotTracker.TrackChanges(types2.LayerForm, &oldSnap, &newSnap, &form, user)
-	if err != nil {
+	if err := s.snapshotTracker.TrackChanges(types2.LayerForm, &oldSnap, &newSnap, &form, user); err != nil {
 		errStack.GetError(c, err)
 	}
 
@@ -509,27 +494,35 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	form := *formPtr
 	user := apiContext.GetUser()
 
-	var userAnswer types2.FormFieldsSlice
-
-	if err := c.Bind(&userAnswer); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormBadRequest)
-	}
-
 	if !form.Active {
 		return EErrorDefined(c, apierrors.ErrFormAnswerEnd)
+	}
+
+	var userAnswer types2.FormFieldsSlice
+	if err := c.Bind(&userAnswer); err != nil {
+		return EErrorDefined(c, apierrors.ErrFormBadRequest)
 	}
 
 	if len(form.Fields) != len(userAnswer) {
 		return EErrorDefined(c, apierrors.ErrLenAnswers)
 	}
 
-	resultAnswers, err := formAnswer(userAnswer, &form)
+	validator, err := types2.NewFormValidator(form.Fields)
 	if err != nil {
-		if errors.Is(err, apierrors.ErrFormAnswerDependOn) {
+		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage("schema compile: "+err.Error()))
+	}
+
+	resultAnswers, errs := validateAnswers(validator, form.Fields, userAnswer)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			slog.Debug("form validation error", "index", e.Index, "err", e.Message)
+		}
+		if strings.Contains(errs[0].Error(), "null") {
 			return EErrorDefined(c, apierrors.ErrFormDependOn)
 		}
-		return EErrorDefined(c, apierrors.ErrFormCheckAnswers)
+		return EErrorDefined(c, apierrors.ErrFormCheckAnswers.WithFormattedMessage(errs[0].Error()))
 	}
+
 	if len(resultAnswers) == 0 {
 		return EErrorDefined(c, apierrors.ErrFormEmptyAnswers)
 	}
@@ -543,23 +536,16 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 
 	var answer dao.FormAnswer
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
-		var seqId int
-		// Calculate sequence id
 		var lastId sql.NullInt64
 		row := tx.Model(&dao.FormAnswer{}).
-			Select("max(seq_id)").
-			Unscoped().
-			Where("form_id = ?", form.ID).
-			Row()
+			Select("max(seq_id)").Unscoped().
+			Where("form_id = ?", form.ID).Row()
 		if err := row.Scan(&lastId); err != nil {
 			return err
 		}
-		// Just use the last ID specified (which should be the greatest) and add one to it
+		seqId := 1
 		if lastId.Valid {
-			seqId = int(lastId.Int64)
-			seqId++
-		} else {
-			seqId = 1
+			seqId = int(lastId.Int64) + 1
 		}
 
 		answer.ID = dao.GenUUID()
@@ -573,24 +559,26 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		if err := tx.Model(&dao.FormAnswer{}).Create(&answer).Error; err != nil {
 			return err
 		}
-
 		if len(attachmentUUIDs) > 0 {
-			if err := tx.Model(&dao.FormAttachment{}).Where("workspace_id = ?", form.WorkspaceId).
+			if err := tx.Model(&dao.FormAttachment{}).
+				Where("workspace_id = ?", form.WorkspaceId).
 				Where("form_id = ?", form.ID).
 				Where("id IN (?)", attachmentUUIDs).
 				Update("answer_id", answer.ID).Error; err != nil {
 				return err
 			}
 		}
-
 		return nil
-
 	}); err != nil {
 		return EError(c, err)
 	}
+
 	if user == nil {
-		if err := s.DB(c).Where("username = ?", "no_auth_user").First(&user).Error; err != nil {
-			return EError(c, err)
+		var sysUser dao.User
+		if err := s.db.Where("username = ?", "no_auth_user").First(&sysUser).Error; err != nil {
+			user = dao.GetSystemUser(s.db)
+		} else {
+			user = &sysUser
 		}
 	}
 
@@ -601,29 +589,25 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 	}
 
 	newSnap := tracker.FormAnswerToSnapshot(&answer)
-
-	// no-auth-роут: user == nil, актор активности — системный пользователь
 	actor := user
 	if actor == nil {
 		actor = dao.GetSystemUser(s.db)
 	}
-	err = s.snapshotTracker.TrackChanges(types2.LayerForm, nil, &newSnap, &answer, actor)
-	if err != nil {
+	if err := s.snapshotTracker.TrackChanges(types2.LayerForm, nil, &newSnap, &answer, actor); err != nil {
 		errStack.GetError(c, err)
 	}
 
+	// callbacks
 	if form.TargetProjectId.Valid {
-		go func(form *dao.Form, answer *dao.FormAnswer, user *dao.User) {
-			if err := s.createAnswerIssue(c, form, answer, user); err != nil {
-				slog.ErrorContext(c.Request().Context(), "Create answer issue", "formId", form.ID, "err", err)
+		go func(f *dao.Form, a *dao.FormAnswer, u *dao.User) {
+			if err := s.createAnswerIssue(c, f, a, u); err != nil {
+				slog.ErrorContext(c.Request().Context(), "Create answer issue", "formId", f.ID, "err", err)
 			}
 		}(&form, &answer, user)
 	}
-
 	if form.NotificationChannels.Email && !form.Author.Settings.EmailNotificationMute {
 		s.emailService.FormAnswerNotify(&form, &answer, user)
 	}
-
 	if form.NotificationChannels.Telegram && !form.Author.Settings.TgNotificationMute && form.Author.TelegramId != nil {
 		s.notificationsService.Tg.SendFormAnswer(*form.Author.TelegramId, form, &answer, user)
 	}
@@ -632,7 +616,6 @@ func (s *Services) createAnswerAuth(c echo.Context) error {
 		Form:   *form.ToLightDTO(),
 		Fields: resultAnswers,
 	}
-
 	return c.JSON(http.StatusOK, result)
 }
 
@@ -945,264 +928,15 @@ func (s *Services) deleteFormAttachment(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// ValidateFieldDependency рекурсивно проверяет выполнение условий depend_on(зависимостей) поля формы.
-// Используется для проверки пользовательских ответов и допустимо ли его текущее значение относительно родительского поля
-//
-// Параметры:
-//   - field — текущее поле формы, для которого выполняется проверка зависимостей
-//   - idx — индекс текущего поля в списке полей формы
-//   - answers — список ответов пользователя на поля формы
-//   - formFields — список исходных полей формы с правилами валидации
-//   - currentVal — текущее значение поля (используется для проверки пустого значения)
-//
-// Возвращает:
-//   - bool — признак необходимости пропустить дальнейшую валидацию поля
-//   - error — ошибку, если порядок зависимостей некорректен или если условия depend_on не выполнены; иначе nil
-func ValidateFieldDependency(field types2.FormFields, idx int, answers types2.FormFieldsSlice, formFields types2.FormFieldsSlice, currentVal interface{}) (bool, error) {
-
-	if field.DependOn == nil {
-		return false, nil
+func bindAndValidate[T any](c echo.Context) (*T, error) {
+	var req T
+	if err := c.Bind(&req); err != nil {
+		return nil, apierrors.ErrFormBadRequest
 	}
-
-	dep := field.DependOn
-
-	if idx <= dep.FieldIndex {
-		return false, fmt.Errorf("invalid depend_on order: %d must be greater than %d", idx, dep.FieldIndex)
+	if err := c.Validate(req); err != nil {
+		return nil, apierrors.ErrFormRequestValidate
 	}
-
-	parentAnswer := answers[dep.FieldIndex]
-	parentField := formFields[dep.FieldIndex]
-
-	if skip, err := ValidateFieldDependency(parentAnswer, dep.FieldIndex, answers, formFields, parentAnswer.Val); err != nil {
-		return skip, err
-	}
-
-	ok := isParentCondition(parentAnswer, parentField, dep)
-
-	if !ok {
-		if currentVal == nil {
-			return true, nil
-		}
-		return false, apierrors.ErrFormAnswerDependOn
-	}
-
-	return false, nil
-}
-
-// isParentCondition проверяет, выполнено ли условие depend_on
-// для родительского поля в зависимости от его типа и ожидаемого значения.
-//
-// Параметры:
-//   - answer — ответ пользователя на родительское поле
-//   - field — описание родительского поля с правилами валидации
-//   - dep — описание зависимости depend_on текущего поля
-//
-// Возвращает:
-//   - bool — true, если условие depend_on выполнено; иначе false
-func isParentCondition(answer types2.FormFields, field types2.FormFields, dep *types2.FormFieldDependency) bool {
-
-	switch answer.Type {
-
-	case formFieldCheckbox:
-		val, ok := answer.Val.(bool)
-		if !ok {
-			return false
-		}
-		return val == dep.ExpectedValue
-
-	case formFieldSelect:
-		if dep.OptionIndex == nil {
-			return false
-		}
-
-		val, ok := answer.Val.(string)
-		if !ok {
-			return false
-		}
-
-		if field.Validate == nil || field.Validate.Opt == nil {
-			return false
-		}
-
-		optionSelected := field.Validate.Opt[*dep.OptionIndex] == val
-		return optionSelected == dep.ExpectedValue
-
-	case formFieldMultiselect:
-		if dep.OptionIndex == nil {
-			return false
-		}
-
-		values, ok := answer.Val.([]interface{})
-		if !ok {
-			return false
-		}
-
-		if field.Validate == nil || field.Validate.Opt == nil {
-			return false
-		}
-
-		expected := field.Validate.Opt[*dep.OptionIndex]
-
-		optionSelected := false
-		for _, v := range values {
-			if v == expected {
-				optionSelected = true
-				break
-			}
-		}
-
-		return optionSelected == dep.ExpectedValue
-	}
-
-	return false
-}
-
-func formAnswer(answers types2.FormFieldsSlice, form *dao.Form) (types2.FormFieldsSlice, error) {
-
-	validator := FormValidator()
-	var resultAnswer types2.FormFieldsSlice
-
-	for i, field := range form.Fields {
-		skip, err := ValidateFieldDependency(field, i, resultAnswer, form.Fields, answers[i].Val)
-		if err != nil {
-			return nil, err
-		}
-
-		if !skip {
-			validFunc := validator[field.Type]
-			checkVal := validFunc(answers[i].Val, field.Required, field.Validate)
-			if !checkVal {
-				return nil, fmt.Errorf("field missing or wrong type")
-			}
-		}
-
-		resultAnswer = append(resultAnswer,
-			types2.FormFields{
-				Type:  field.Type,
-				Label: field.Label,
-				Val:   answers[i].Val,
-			})
-	}
-	return resultAnswer, nil
-}
-
-func checkFormFields(fields *types2.FormFieldsSlice) error {
-	validator := FormValidator()
-	var checkIssueNameField bool
-	for i, field := range *fields {
-		if field.IssueNameField {
-			if field.Type != formFieldInput {
-				return fmt.Errorf("issue_name_field only input type")
-			}
-			if checkIssueNameField {
-				return fmt.Errorf("issue_name_field duplicate")
-			}
-			checkIssueNameField = true
-			(*fields)[i].Required = true
-			(*fields)[i].DependOn = nil
-		}
-		if _, ok := validator[field.Type]; !ok {
-			return fmt.Errorf("unknown field type")
-		}
-		(*fields)[i].Val = nil
-
-		if (*fields)[i].Validate == nil {
-			(*fields)[i].Validate = &types2.ValidationRule{}
-		}
-
-		(*fields)[i].Validate.ValidationType = strings.TrimSpace((*fields)[i].Validate.ValidationType)
-		if len((*fields)[i].Validate.ValidationType) != 0 {
-			typeArr := strings.Split((*fields)[i].Validate.ValidationType, " ")
-			var lenOpt int
-			for _, t := range typeArr {
-				if v, ok := formTypeValidator[t]; ok {
-					var fieldSupport bool
-					for _, s := range v.FieldTypeSupport {
-						if field.Type != s {
-							continue
-						} else {
-							if v.CountOpt == 0 {
-								fieldSupport = true
-								break
-							}
-							if len((*fields)[i].Validate.Opt) >= lenOpt+v.CountOpt {
-								for _, opt := range (*fields)[i].Validate.Opt[lenOpt : lenOpt+v.CountOpt-1] {
-									switch v.TypeOpt {
-									case types.Float64:
-										if _, okType := opt.(float64); !okType {
-											return fmt.Errorf("wrong opt type")
-										}
-									default:
-										return fmt.Errorf("opt type not supported")
-									}
-								}
-							} else {
-								return fmt.Errorf("error count args for validation opt")
-
-							}
-							lenOpt += v.CountOpt
-							fieldSupport = true
-						}
-					}
-
-					if !fieldSupport {
-						return fmt.Errorf("form field not suported this validation type")
-
-					}
-				} else {
-					return fmt.Errorf("unknown validation type")
-				}
-			}
-		}
-
-		switch field.Type {
-		case formFieldNumeric:
-			(*fields)[i].Validate.ValueType = "numeric"
-		case formFieldCheckbox:
-			(*fields)[i].Validate.ValueType = "bool"
-		case formFieldInput:
-			(*fields)[i].Validate.ValueType = "string"
-		case formFieldTextarea:
-			(*fields)[i].Validate.ValueType = "string"
-		case formFieldColor:
-			(*fields)[i].Validate.ValueType = "string"
-		case formFieldDate:
-			(*fields)[i].Validate.ValidationType = "only_integer min_max"
-			(*fields)[i].Validate.Opt = []interface{}{math.MinInt64, math.MaxInt64}
-			(*fields)[i].Validate.ValueType = "numeric"
-		case formFieldAttachment:
-			(*fields)[i].Validate.ValueType = "uuid"
-		case formFieldSelect:
-			(*fields)[i].Validate.ValueType = "select"
-		case formFieldMultiselect:
-			(*fields)[i].Validate.ValueType = "multiselect"
-		}
-
-		if field.DependOn != nil { // проверка корректности конфигурации depend_on при создании/обновлении формы
-			if i <= field.DependOn.FieldIndex { // зависимое поле должно идти после поля, от которого оно зависит
-				return fmt.Errorf("invalid depend_on order: %d must be greater than %d", i, field.DependOn.FieldIndex)
-			}
-			f := (*fields)[field.DependOn.FieldIndex]
-			switch f.Type {
-			case formFieldCheckbox:
-				if field.DependOn.OptionIndex != nil {
-					return fmt.Errorf("invalid depend_on config")
-				}
-			case formFieldSelect, formFieldMultiselect:
-				if field.DependOn.OptionIndex == nil {
-					return fmt.Errorf("depend_on option index required")
-				}
-				if f.Validate == nil || f.Validate.Opt == nil ||
-					*field.DependOn.OptionIndex >= len(f.Validate.Opt) {
-					return fmt.Errorf("depend_on option index out of range")
-				}
-			default:
-				return fmt.Errorf("unsupported depend_on field type")
-			}
-
-		}
-	}
-	return nil
+	return &req, nil
 }
 
 // ***** REQUEST *****
