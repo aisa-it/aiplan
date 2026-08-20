@@ -616,6 +616,13 @@ func (s *Services) updateIssue(c echo.Context) error {
 	oldIssue := *issue
 	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
+	// Lua-правилам нужны данные, которые WithAll не загружает: счётчик вложений и кастомные поля
+	if project.RulesScript != nil {
+		if err := enrichIssueForRules(s.DB(c), &oldIssue); err != nil {
+			return EError(c, err)
+		}
+	}
+
 	var data map[string]interface{}
 	form, _ := c.MultipartForm()
 
@@ -3874,6 +3881,20 @@ func parsePropertyValue(propType, value string) any {
 	default:
 		return value
 	}
+}
+
+// enrichIssueForRules догружает в задачу счётчик вложений и значения кастомных полей
+// с шаблонами — данные, недоступные после стандартной загрузки, но нужные Lua-правилам
+func enrichIssueForRules(db *gorm.DB, issue *dao.Issue) error {
+	if err := db.Model(&dao.IssueAttachment{}).
+		Where("issue_id = ?", issue.ID).
+		Count(&issue.AttachmentCount).Error; err != nil {
+		return err
+	}
+
+	return db.Where("issue_id = ?", issue.ID).
+		Preload("Template").
+		Find(&issue.Properties).Error
 }
 
 // validatePropertyValue валидирует значение через JSON Schema

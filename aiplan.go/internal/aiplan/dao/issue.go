@@ -106,6 +106,9 @@ type Issue struct {
 
 	InlineAttachments []FileAsset `json:"issue_inline_attachments" gorm:"foreignKey:IssueId"`
 
+	// Значения кастомных полей с шаблонами; заполняется отдельно перед вызовом Lua-правил
+	Properties []IssueProperty `json:"-" gorm:"-"`
+
 	AssigneeIDs     []uuid.UUID `json:"assignees" gorm:"-"`
 	WatcherIDs      []uuid.UUID `json:"watchers" gorm:"-"`
 	LabelIDs        []uuid.UUID `json:"labels" gorm:"-"`

@@ -13,6 +13,13 @@
 //   - BeforeWatchersChange(ctx, watchers) — перед изменением наблюдателей
 //   - BeforeLabelsChange(ctx, labels) — перед изменением меток
 //
+// Первый аргумент хука (ctx/params) содержит таблицы user, status, project, space, issue
+// (включая issue.attachment_count), а также значения кастомных полей задачи:
+// properties (список {name, type, value}) и метод ctx:getProp(name) для доступа
+// к значению по имени поля. Данные берутся из Issue.Properties и
+// Issue.AttachmentCount — вызывающая сторона должна догрузить их заранее
+// (см. enrichIssueForRules в http-issue.go).
+//
 // Скрипты выполняются в песочнице с таймаутом 10 секунд. Опасные функции
 // (os, io, require, debug и др.) отключены для безопасности.
 package rules
@@ -254,6 +261,44 @@ func getStructLTable(state *lua.LState, obj interface{}) *lua.LTable {
 	return table
 }
 
+// propertyValueToLua преобразует хранимое строковое значение свойства в Lua-значение
+// по типу шаблона (совместимо с parsePropertyValue из http-issue.go)
+func propertyValueToLua(propType, value string) lua.LValue {
+	switch propType {
+	case "boolean":
+		return lua.LBool(value == "true")
+	case "select", "link":
+		if value == "" {
+			return lua.LNil
+		}
+		return lua.LString(value)
+	default:
+		return lua.LString(value)
+	}
+}
+
+// getPropertiesTables собирает две таблицы по значениям кастомных полей задачи:
+// массив {name, type, value} и map «имя поля → значение»
+func getPropertiesTables(state *lua.LState, props []dao.IssueProperty) (*lua.LTable, *lua.LTable) {
+	list := state.NewTable()
+	byName := state.NewTable()
+	for _, prop := range props {
+		if prop.Template == nil {
+			continue
+		}
+		value := propertyValueToLua(prop.Template.Type, prop.Value)
+
+		entry := state.NewTable()
+		entry.RawSetString("name", lua.LString(prop.Template.Name))
+		entry.RawSetString("type", lua.LString(prop.Template.Type))
+		entry.RawSetString("value", value)
+		list.Append(entry)
+
+		byName.RawSetString(prop.Template.Name, value)
+	}
+	return list, byName
+}
+
 func getCallParams(state *lua.LState, issuer dao.User, currentIssue dao.Issue) *lua.LTable {
 	params := state.NewTable()
 	params.RawSetString("user", getStructLTable(state, issuer))
@@ -262,6 +307,17 @@ func getCallParams(state *lua.LState, issuer dao.User, currentIssue dao.Issue) *
 	params.RawSetString("space", getStructLTable(state, *currentIssue.Workspace))
 	params.RawSetString("issue", getStructLTable(state, currentIssue))
 
+	propsList, propsByName := getPropertiesTables(state, currentIssue.Properties)
+	params.RawSetString("properties", propsList)
+
+	state.SetMetatable(params, newParamsMetaTable(state, propsByName))
+
+	return params
+}
+
+// newParamsMetaTable создает metatable с функциями-хелперами для таблицы params;
+// propsByName — таблица «имя кастомного поля → значение» для getProp
+func newParamsMetaTable(state *lua.LState, propsByName *lua.LTable) *lua.LTable {
 	metaTable := state.NewTable()
 
 	state.SetFuncs(metaTable, map[string]lua.LGFunction{
@@ -295,8 +351,15 @@ func getCallParams(state *lua.LState, issuer dao.User, currentIssue dao.Issue) *
 			return 1
 		},
 	})
-	state.SetField(metaTable, "__index", metaTable)
-	state.SetMetatable(params, metaTable)
+	state.SetFuncs(metaTable, map[string]lua.LGFunction{
+		"getProp": func(L *lua.LState) int {
+			name := L.CheckString(2)
+			L.Push(propsByName.RawGetString(name))
+			return 1
+		},
+	})
 
-	return params
+	state.SetField(metaTable, "__index", metaTable)
+
+	return metaTable
 }
