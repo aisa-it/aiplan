@@ -408,7 +408,18 @@ func GetIssueListData(
 	streamCallback StreamCallback,
 ) (any, error) {
 	if searchParams.GroupByParam != "" && !slices.Contains(types.IssueGroupFields, searchParams.GroupByParam) {
-		return nil, apierrors.ErrUnsupportedGroup
+		templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam)
+		if !ok {
+			return nil, apierrors.ErrUnsupportedGroup
+		}
+		var templateExists bool
+		if err := db.Model(&dao.ProjectPropertyTemplate{}).Select("count(*) > 0").
+			Where("id = ?", templateId).Find(&templateExists).Error; err != nil {
+			return nil, err
+		}
+		if !templateExists {
+			return nil, apierrors.ErrPropertyTemplateNotFound
+		}
 	}
 
 	// OnlyCount - особый случай, считаем через SearchIssuesList

@@ -4064,7 +4064,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "\"\"",
-                        "description": "Поле для группировки результатов",
+                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:<uuid шаблона кастомного поля>",
                         "name": "group_by",
                         "in": "query"
                     },
@@ -4197,7 +4197,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "\"\"",
-                        "description": "Поле для группировки результатов",
+                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:<uuid шаблона кастомного поля>",
                         "name": "group_by",
                         "in": "query"
                     },
