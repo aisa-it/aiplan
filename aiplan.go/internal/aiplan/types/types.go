@@ -359,6 +359,9 @@ type FormFields struct {
 	IssueNameField bool                 `json:"issue_name_field"`
 	Validate       *ValidationRule      `json:"validate,omitempty" extensions:"x-nullable"`
 	DependOn       *FormFieldDependency `json:"depend_on,omitempty" extensions:"x-nullable"`
+	// Привязка к шаблону кастомного поля (ProjectPropertyTemplate) целевого проекта:
+	// значение ответа записывается в это поле создаваемой задачи
+	PropertyTemplateId uuid.NullUUID `json:"property_template_id" swaggertype:"string" extensions:"x-nullable"`
 }
 
 type FormFieldDependency struct {

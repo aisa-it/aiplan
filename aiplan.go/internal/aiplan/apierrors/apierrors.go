@@ -201,6 +201,7 @@ var (
 	ErrFormAttachmentNotFound = DefinedError{Code: 3214, StatusCode: http.StatusBadRequest, Err: "file not found by the provided UUID", RuErr: "Файл по указанному UUID не найден"}
 	ErrAttachmentInUse        = DefinedError{Code: 3215, StatusCode: http.StatusConflict, Err: "cannot delete file: it is linked to a form answer", RuErr: "Невозможно удалить файл — он привязан к ответу формы"}
 	ErrFormDependOn           = DefinedError{Code: 3216, StatusCode: http.StatusBadRequest, Err: "depend_on field has invalid value", RuErr: "Значение зависимого поля не соответствует требованиям"}
+	ErrFormPropertyMapping    = DefinedError{Code: 3217, StatusCode: http.StatusBadRequest, Err: "invalid property mapping: %s", RuErr: "Некорректная привязка поля формы к дополнительному параметру: %s"}
 
 	// 34** - doc errors
 	ErrDocNotFound            = DefinedError{Code: 3401, StatusCode: http.StatusNotFound, Err: "doc not found", RuErr: "Документ не найден"}
