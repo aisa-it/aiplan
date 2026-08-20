@@ -14,17 +14,19 @@ import (
 )
 
 type FormLight struct {
-	ID              uuid.UUID             `json:"id"`
-	Slug            string                `json:"slug"`
-	Title           string                `json:"title" validate:"required"`
-	Description     types.RedactorHTML    `json:"description" swaggertype:"string"`
-	AuthRequire     bool                  `json:"auth_require"`
-	EndDate         *types.TargetDate     `json:"end_date" extensions:"x-nullable" swaggertype:"string"`
-	TargetProjectId uuid.NullUUID         `json:"target_project_id,omitempty"  extensions:"x-nullable"`
-	WorkspaceId     uuid.UUID             `json:"workspace" `
-	Fields          types.FormFieldsSlice `json:"fields"`
-	Active          bool                  `json:"active"`
-	Url             types.JsonURL         `json:"url,omitempty"`
+	ID              uuid.UUID          `json:"id"`
+	Slug            string             `json:"slug"`
+	Title           string             `json:"title" validate:"required"`
+	Description     types.RedactorHTML `json:"description" swaggertype:"string"`
+	AuthRequire     bool               `json:"auth_require"`
+	EndDate         *types.TargetDate  `json:"end_date" extensions:"x-nullable" swaggertype:"string"`
+	TargetProjectId uuid.NullUUID      `json:"target_project_id,omitempty"  extensions:"x-nullable"`
+	// Приоритет задач, создаваемых из ответов формы
+	DefaultIssuePriority *string               `json:"default_issue_priority" enums:"urgent,high,medium,low" extensions:"x-nullable"`
+	WorkspaceId          uuid.UUID             `json:"workspace" `
+	Fields               types.FormFieldsSlice `json:"fields"`
+	Active               bool                  `json:"active"`
+	Url                  types.JsonURL         `json:"url,omitempty"`
 }
 
 type Form struct {

@@ -693,6 +693,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	issue := &dao.Issue{
 		ID:              dao.GenUUID(),
 		Name:            fmt.Sprintf("Ответ №%d формы \"%s\"", answer.SeqId, form.Title),
+		Priority:        form.DefaultIssuePriority,
 		CreatedById:     systemUser.ID,
 		ProjectId:       form.TargetProjectId.UUID,
 		Project:         form.TargetProject,
@@ -1213,12 +1214,13 @@ type reqForm struct {
 	AuthRequire          bool                    `json:"auth_require,omitempty"`
 	EndDate              *types2.TargetDate      `json:"end_date,omitempty" extensions:"x-nullable"`
 	TargetProjectId      *string                 `json:"target_project_id" extensions:"x-nullable"`
+	DefaultIssuePriority *string                 `json:"default_issue_priority" validate:"omitempty,oneof=urgent high medium low" enums:"urgent,high,medium,low" extensions:"x-nullable"`
 	Fields               types2.FormFieldsSlice  `json:"fields,omitempty"`
 	NotificationChannels types2.FormAnswerNotify `json:"notification_channels"`
 }
 
 func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao.Form, error) {
-	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id", "notification_channels"}
+	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id", "default_issue_priority", "notification_channels"}
 
 	if form == nil {
 		form = &dao.Form{}
@@ -1242,6 +1244,7 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 			projectUUID, _ := uuid.FromString(*rf.TargetProjectId)
 			form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 		}
+		form.DefaultIssuePriority = rf.DefaultIssuePriority
 		form.Fields = rf.Fields
 		form.NotificationChannels = rf.NotificationChannels
 	} else {
@@ -1307,6 +1310,16 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 						form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 					} else {
 						return nil, fmt.Errorf("target_project_id")
+					}
+				case "default_issue_priority":
+					if value == nil {
+						form.DefaultIssuePriority = nil
+						continue
+					}
+					if priority, ok := value.(string); ok {
+						form.DefaultIssuePriority = &priority
+					} else {
+						return nil, fmt.Errorf("default_issue_priority")
 					}
 				case "notification_channels":
 					if channels, ok := value.(types2.FormAnswerNotify); ok {

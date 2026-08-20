@@ -19810,6 +19810,16 @@ const docTemplate = `{
                 "auth_require": {
                     "type": "boolean"
                 },
+                "default_issue_priority": {
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
+                },
                 "description": {
                     "type": "string"
                 },
@@ -20721,6 +20731,17 @@ const docTemplate = `{
                 },
                 "auth_require": {
                     "type": "boolean"
+                },
+                "default_issue_priority": {
+                    "description": "Приоритет задач, создаваемых из ответов формы",
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
                 },
                 "description": {
                     "type": "string"
