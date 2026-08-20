@@ -4064,7 +4064,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "\"\"",
-                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:<uuid шаблона кастомного поля>",
+                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:\u003cuuid шаблона кастомного поля\u003e",
                         "name": "group_by",
                         "in": "query"
                     },
@@ -4197,7 +4197,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "\"\"",
-                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:<uuid шаблона кастомного поля>",
+                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:\u003cuuid шаблона кастомного поля\u003e",
                         "name": "group_by",
                         "in": "query"
                     },
@@ -8612,6 +8612,78 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/doc/{docId}/move/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "перенос документа",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Docs"
+                ],
+                "summary": "doc: перенос документа",
+                "operationId": "moveDoc",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Id документа",
+                        "name": "docId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "документ перемещен"
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Ошибка: не найдено",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -20600,6 +20672,17 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "default_issue_priority": {
+                    "description": "Приоритет задач, создаваемых из ответов формы",
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
+                },
                 "description": {
                     "type": "string"
                 },
@@ -23311,7 +23394,7 @@ const docTemplate = `{
                 "sprints": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/dto.SprintLight"
+                        "$ref": "#/definitions/dto.SprintFolder"
                     }
                 }
             }
