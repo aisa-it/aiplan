@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -734,12 +736,26 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		data["priority"] = priority
 	}
 
+	// Смена статуса: как в updateIssue (http-issue.go) — статус только из проекта задачи,
+	// с прогоном Lua-правил проекта
+	var statusChange bool
+	var newState dao.State
 	if stateIdStr, ok := args["state_id"].(string); ok && stateIdStr != "" {
 		stateId, err := uuid.FromString(stateIdStr)
-		if err == nil {
-			issue.StateId = stateId
-			data["state_id"] = stateId
+		if err != nil {
+			return apierrors.ErrProjectStateNotFound.MCPError(), nil
 		}
+		if err := db.Where("id = ?", stateId).
+			Where("project_id = ?", issue.ProjectId).
+			First(&newState).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apierrors.ErrProjectStateNotFound.MCPError(), nil
+			}
+			return logger.Error(err), nil
+		}
+		statusChange = true
+		issue.StateId = stateId
+		data["state_id"] = stateId
 	}
 
 	if parentIdStr, ok := args["parent_id"].(string); ok {
@@ -811,6 +827,41 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	issue.UpdatedById = userID
 	issue.LLMContent = true
+
+	var rulesLog []dao.RulesLog
+	defer func() {
+		if err := rules.AddLog(db, rulesLog); err != nil {
+			slog.Error("MCP updateIssue: create rules log", "error", err)
+		}
+	}()
+
+	// Lua-правилам нужны данные, которые стандартная загрузка не даёт:
+	// счётчик вложений и кастомные поля
+	if statusChange && oldIssue.Project != nil && oldIssue.Project.RulesScript != nil {
+		if err := rules.EnrichIssue(db, &oldIssue); err != nil {
+			return logger.Error(err), nil
+		}
+	}
+
+	// Правила проекта на смену статуса — как в updateIssue: админ может всё
+	if statusChange && projectMember.Role != types.AdminRole {
+		res, msg, err := rules.BeforeStatusChange(*user, oldIssue, newState)
+
+		rules.AppendMsg(oldIssue, *user, msg, &rulesLog)
+		rules.AppendError(oldIssue, *user, err, &rulesLog)
+		rules.ResultToLog(oldIssue, *user, res, err, &rulesLog)
+
+		if !res.ClientResult {
+			return err.ClientError().MCPError(), nil
+		}
+	}
+
+	// Check state flow — как в updateIssue: админ может переводить в любой статус
+	if statusChange && projectMember.Role != types.AdminRole &&
+		len(newState.FromStates.Array) > 0 &&
+		!slices.Contains(newState.FromStates.Array, oldIssue.StateId) {
+		return apierrors.ErrForbiddenState.MCPError(), nil
+	}
 
 	// Транзакция: обновление задачи и связей
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -916,6 +967,18 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		tracker.IssueToSnapshot(updatedIssue), &updatedIssue, user)
 	if err != nil {
 		slog.Error("MCP updateIssue: track changes failed", "error", err)
+	}
+
+	if statusChange {
+		res, msg, err := rules.AfterStatusChange(*user, oldIssue, newState)
+
+		rules.AppendMsg(oldIssue, *user, msg, &rulesLog)
+		rules.AppendError(oldIssue, *user, err, &rulesLog)
+		rules.ResultToLog(oldIssue, *user, res, err, &rulesLog)
+
+		if !res.ClientResult {
+			return err.ClientError().MCPError(), nil
+		}
 	}
 
 	return mcp.NewToolResultJSON(updatedIssue.ToDTO())
