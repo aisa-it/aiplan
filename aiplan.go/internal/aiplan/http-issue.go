@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -459,6 +460,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 // @Param desc query bool false "Сортировка по убыванию" default(true)
 // @Param only_active query bool false "Вернуть только активные задачи" default(false)
 // @Param only_pinned query bool false "Вернуть только закрепленные задачи" default(false)
+// @Param include_properties query bool false "Добавить колонки дополнительных параметров задач" default(false)
 // @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
 // @Success 200 {file} binary "ZIP архив с CSV файлами"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
@@ -475,7 +477,12 @@ func (s *Services) exportIssueList(c echo.Context) error {
 	}
 	searchParams.LightSearch = false
 	searchParams.Offset = 0
-	searchParams.Limit = 1_000_000
+	searchParams.Limit = issueExportLimit
+
+	var includeProperties bool
+	if err := echo.QueryParamsBinder(c).Bool("include_properties", &includeProperties).BindError(); err != nil {
+		return EError(c, err)
+	}
 
 	result, err := search.GetIssueListData(s.DB(c), *user, dao.ProjectMember{}, nil, true, searchParams, nil)
 	if err != nil {
@@ -483,6 +490,14 @@ func (s *Services) exportIssueList(c echo.Context) error {
 			return EErrorDefined(c, definedErr)
 		}
 		return EError(c, err)
+	}
+
+	var propsData *exportPropertiesData
+	if includeProperties {
+		propsData, err = s.loadExportProperties(c, result)
+		if err != nil {
+			return EError(c, err)
+		}
 	}
 
 	f, err := os.CreateTemp("", "export-*.zip")
@@ -504,20 +519,7 @@ func (s *Services) exportIssueList(c echo.Context) error {
 			if err != nil {
 				return EError(c, err)
 			}
-			w := csv.NewWriter(entry)
-
-			if err := w.Write(csvExportHeader()); err != nil {
-				return EError(c, err)
-			}
-
-			for _, issue := range group.Issues {
-				if err := w.Write(issueToCSVRow(issue)); err != nil {
-					return EError(c, err)
-				}
-			}
-
-			w.Flush()
-			if err := w.Error(); err != nil {
+			if err := writeIssuesCSV(entry, group.Issues, propsData); err != nil {
 				return EError(c, err)
 			}
 		}
@@ -526,21 +528,11 @@ func (s *Services) exportIssueList(c echo.Context) error {
 		if err != nil {
 			return EError(c, err)
 		}
-		w := csv.NewWriter(entry)
-		w.Comma = ';'
-
-		if err := w.Write(csvExportHeader()); err != nil {
-			return EError(c, err)
+		issues := make([]*dto.IssueWithCount, len(res.Issues))
+		for i := range res.Issues {
+			issues[i] = &res.Issues[i]
 		}
-
-		for _, issue := range res.Issues {
-			if err := w.Write(issueToCSVRow(&issue)); err != nil {
-				return EError(c, err)
-			}
-		}
-
-		w.Flush()
-		if err := w.Error(); err != nil {
+		if err := writeIssuesCSV(entry, issues, propsData); err != nil {
 			return EError(c, err)
 		}
 	}
@@ -4067,6 +4059,119 @@ func issueToCSVRow(issue *dto.IssueWithCount) []string {
 		strconv.Itoa(issue.CommentsCount),
 		strings.Join(sprints, ", "),
 	}
+}
+
+// issueExportLimit ограничивает размер CSV-выгрузки одним миллионом задач
+const issueExportLimit = 1_000_000
+
+// utf8BOM — маркер кодировки в начале CSV, иначе Excel открывает кириллицу кракозябрами
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// writeIssuesCSV пишет одну CSV-таблицу задач: BOM, разделитель ';',
+// при propsData != nil — дополнительные колонки кастомных полей
+func writeIssuesCSV(entry io.Writer, issues []*dto.IssueWithCount, propsData *exportPropertiesData) error {
+	if _, err := entry.Write(utf8BOM); err != nil {
+		return err
+	}
+	w := csv.NewWriter(entry)
+	w.Comma = ';'
+
+	header := csvExportHeader()
+	if propsData != nil {
+		header = append(header, propsData.header()...)
+	}
+	if err := w.Write(header); err != nil {
+		return err
+	}
+
+	for _, issue := range issues {
+		row := issueToCSVRow(issue)
+		if propsData != nil {
+			row = append(row, propsData.row(issue.Id)...)
+		}
+		if err := w.Write(row); err != nil {
+			return err
+		}
+	}
+
+	w.Flush()
+	return w.Error()
+}
+
+// exportPropertiesData — кастомные поля для CSV-экспорта: шаблоны проектов выдачи
+// задают колонки, значения разложены по задачам
+type exportPropertiesData struct {
+	templates []dao.ProjectPropertyTemplate
+	values    map[uuid.UUID]map[uuid.UUID]string // issueId → templateId → value
+}
+
+func (d *exportPropertiesData) header() []string {
+	cols := make([]string, 0, len(d.templates))
+	for _, t := range d.templates {
+		cols = append(cols, t.Name)
+	}
+	return cols
+}
+
+func (d *exportPropertiesData) row(issueId uuid.UUID) []string {
+	cols := make([]string, 0, len(d.templates))
+	issueValues := d.values[issueId]
+	for _, t := range d.templates {
+		cols = append(cols, issueValues[t.Id])
+	}
+	return cols
+}
+
+// loadExportProperties батчем загружает шаблоны кастомных полей всех проектов выдачи
+// и значения по всем задачам выгрузки. При мультипроектном экспорте колонки объединяются:
+// у задач проекта без такого шаблона ячейки остаются пустыми
+func (s *Services) loadExportProperties(c echo.Context, result any) (*exportPropertiesData, error) {
+	projectIds := make(map[uuid.UUID]struct{})
+	var issueIds []uuid.UUID
+	collect := func(issue *dto.IssueWithCount) {
+		projectIds[issue.ProjectId] = struct{}{}
+		issueIds = append(issueIds, issue.Id)
+	}
+	switch res := result.(type) {
+	case dto.IssuesGroupedResponse:
+		for _, group := range res.Issues {
+			for _, issue := range group.Issues {
+				collect(issue)
+			}
+		}
+	case dto.IssuesSearchResponse:
+		for i := range res.Issues {
+			collect(&res.Issues[i])
+		}
+	}
+
+	data := &exportPropertiesData{values: make(map[uuid.UUID]map[uuid.UUID]string)}
+	if len(issueIds) == 0 {
+		return data, nil
+	}
+
+	if err := s.DB(c).Where("project_id in ?", slices.Collect(maps.Keys(projectIds))).
+		Order("project_id, sort_order, created_at").
+		Find(&data.templates).Error; err != nil {
+		return nil, err
+	}
+	if len(data.templates) == 0 {
+		return data, nil
+	}
+
+	var props []dao.IssueProperty
+	if err := s.DB(c).Where("issue_id in ?", issueIds).Find(&props).Error; err != nil {
+		return nil, err
+	}
+	for _, p := range props {
+		issueValues := data.values[p.IssueId]
+		if issueValues == nil {
+			issueValues = make(map[uuid.UUID]string)
+			data.values[p.IssueId] = issueValues
+		}
+		issueValues[p.TemplateId] = p.Value
+	}
+	return data, nil
 }
 
 // getGroupFileName возвращает имя файла для группы в ZIP архиве
