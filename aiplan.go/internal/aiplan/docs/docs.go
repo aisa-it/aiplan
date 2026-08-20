@@ -23837,6 +23837,11 @@ const docTemplate = `{
                 "label": {
                     "type": "string"
                 },
+                "property_template_id": {
+                    "description": "Привязка к шаблону кастомного поля (ProjectPropertyTemplate) целевого проекта:\nзначение ответа записывается в это поле создаваемой задачи",
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "required": {
                     "type": "boolean"
                 },
