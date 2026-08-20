@@ -38,6 +38,9 @@ type Form struct {
 	TargetProjectId uuid.NullUUID `gorm:"type:uuid"`
 	TargetProject   *Project      `gorm:"foreignKey:TargetProjectId" extensions:"x-nullable"`
 
+	// Приоритет, проставляемый задачам, создаваемым из ответов формы (urgent/high/medium/low, nil — без приоритета)
+	DefaultIssuePriority *string `json:"default_issue_priority" extensions:"x-nullable"`
+
 	EndDate     *types.TargetDate `json:"end_date" gorm:"index" extensions:"x-nullable"`
 	WorkspaceId uuid.UUID         `json:"workspace" gorm:"type:uuid;index"`
 	Workspace   *Workspace        `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
@@ -77,17 +80,18 @@ func (f *Form) ToLightDTO() *dto.FormLight {
 	}
 	f.SetUrl()
 	ff := &dto.FormLight{
-		ID:              f.ID,
-		Slug:            f.Slug,
-		Title:           f.Title,
-		Description:     f.Description,
-		AuthRequire:     f.AuthRequire,
-		EndDate:         f.EndDate,
-		TargetProjectId: f.TargetProjectId,
-		WorkspaceId:     f.WorkspaceId,
-		Fields:          f.Fields,
-		Active:          f.Active,
-		Url:             types.JsonURL{f.URL},
+		ID:                   f.ID,
+		Slug:                 f.Slug,
+		Title:                f.Title,
+		Description:          f.Description,
+		AuthRequire:          f.AuthRequire,
+		EndDate:              f.EndDate,
+		TargetProjectId:      f.TargetProjectId,
+		DefaultIssuePriority: f.DefaultIssuePriority,
+		WorkspaceId:          f.WorkspaceId,
+		Fields:               f.Fields,
+		Active:               f.Active,
+		Url:                  types.JsonURL{f.URL},
 	}
 
 	return ff
