@@ -18,7 +18,7 @@
 // properties (список {name, type, value}) и метод ctx:getProp(name) для доступа
 // к значению по имени поля. Данные берутся из Issue.Properties и
 // Issue.AttachmentCount — вызывающая сторона должна догрузить их заранее
-// (см. enrichIssueForRules в http-issue.go).
+// (см. EnrichIssue в enrich.go).
 //
 // Скрипты выполняются в песочнице с таймаутом 10 секунд. Опасные функции
 // (os, io, require, debug и др.) отключены для безопасности.
