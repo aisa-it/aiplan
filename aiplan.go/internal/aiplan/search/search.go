@@ -35,6 +35,21 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 		projectQuery = db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{})
 	}
 
+	// Группировка по значению кастомного поля: group_by=property:<template_id>.
+	// switch ниже такой параметр не матчит; выдача сужается до проекта-владельца шаблона,
+	// пустое/отсутствующее значение схлопывается в группу "" («не заполнено»)
+	if templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam); ok {
+		query = query.
+			Table("issues i").
+			Select(`count(*) as Count, coalesce(ip.value, '') as "Key"`).
+			Joins("left join issue_properties ip on ip.issue_id = i.id and ip.template_id = ?", templateId).
+			Where("i.deleted_at is null").
+			Where("i.project_id in (?)", projectQuery).
+			Where("i.project_id in (?)", db.Select("project_id").Where("id = ?", templateId).Model(&dao.ProjectPropertyTemplate{})).
+			Group(`"Key"`).
+			Order(`"Key"`)
+	}
+
 	switch searchParams.GroupByParam {
 	case "priority":
 		query = query.
@@ -202,6 +217,16 @@ func fetchIssuesByGroups(
 				})
 			}
 
+			// Группировка по кастомному полю: ключ группы — значение поля, "" — «не заполнено»
+			if templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam); ok {
+				q = q.Where("issues.project_id in (?)", db.Select("project_id").Where("id = ?", templateId).Model(&dao.ProjectPropertyTemplate{}))
+				if group.Key == "" {
+					q = q.Where("not exists (select 1 from issue_properties ip where ip.issue_id = issues.id and ip.template_id = ? and ip.value <> '')", templateId)
+				} else {
+					q = q.Where("exists (select 1 from issue_properties ip where ip.issue_id = issues.id and ip.template_id = ? and ip.value = ?)", templateId, group.Key)
+				}
+			}
+
 			switch searchParams.GroupByParam {
 			case "priority":
 				if len(searchParams.Filters.Priorities) > 0 && !slices.Contains(searchParams.Filters.Priorities, group.Key) {
@@ -292,6 +317,14 @@ func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSi
 	}
 
 	entityMap := make(map[string]any, len(ids))
+
+	// Для группировки по кастомному полю сущность группы — само значение поля
+	if _, ok := types.ParsePropertyGroupBy(groupBy); ok {
+		for _, value := range ids {
+			entityMap[value] = value
+		}
+		return entityMap, nil
+	}
 
 	switch groupBy {
 	case "priority":
