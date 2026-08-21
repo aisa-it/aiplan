@@ -278,6 +278,8 @@ var (
 	ErrDictionaryRowInUse                 = DefinedError{Code: 4514, StatusCode: http.StatusConflict, Err: "dictionary row is referenced by issue properties, archive it instead", RuErr: "На строку справочника ссылаются значения в задачах — вместо удаления заархивируйте её"}
 	ErrDictionaryImportTooLarge           = DefinedError{Code: 4515, StatusCode: http.StatusBadRequest, Err: "import exceeds the limit of %d rows", RuErr: "Импорт превышает лимит в %d строк"}
 	ErrPropertyTemplateDictionaryRequired = DefinedError{Code: 4516, StatusCode: http.StatusBadRequest, Err: "existing project dictionary is required for lookup type", RuErr: "Для типа lookup требуется существующий справочник проекта"}
+	ErrPropertyDependencyInvalid          = DefinedError{Code: 4517, StatusCode: http.StatusBadRequest, Err: "invalid property dependency: %s", RuErr: "Некорректная зависимость поля: %s"}
+	ErrPropertyValueIncompatible          = DefinedError{Code: 4518, StatusCode: http.StatusBadRequest, Err: "value is not allowed by the parent property value", RuErr: "Значение недопустимо при текущем значении родительского параметра"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}

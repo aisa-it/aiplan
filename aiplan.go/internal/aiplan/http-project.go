@@ -3667,10 +3667,15 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		Type:         request.Type,
 		Options:      options,
 		DictionaryId: dictionaryId,
+		Dependency:   request.Dependency,
 		OnlyAdmin:    request.OnlyAdmin,
 		SortOrder:    request.SortOrder,
 		CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
 		UpdatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
+	}
+
+	if err := s.validateTemplateDependency(c, &template); err != nil {
+		return EError(c, err)
 	}
 
 	if err := s.DB(c).Create(&template).Error; err != nil {
@@ -3770,6 +3775,19 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 	}
 	template.DictionaryId = dictionaryId
 
+	// Обработка зависимости: нулевой parent_template_id снимает её
+	if request.Dependency != nil {
+		if request.Dependency.ParentTemplateId == uuid.Nil {
+			template.Dependency = nil
+		} else {
+			template.Dependency = request.Dependency
+		}
+		updated = true
+	}
+	if err := s.validateTemplateDependency(c, &template); err != nil {
+		return EError(c, err)
+	}
+
 	if request.OnlyAdmin != nil {
 		template.OnlyAdmin = *request.OnlyAdmin
 		updated = true
@@ -3843,6 +3861,14 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Снимаем каскадные зависимости полей, ссылавшихся на удалённый шаблон
+	if err := s.DB(c).Model(&dao.ProjectPropertyTemplate{}).
+		Where("project_id = ?", project.ID).
+		Where("dependency->>'parent_template_id' = ?", templateUUID.String()).
+		Update("dependency", nil).Error; err != nil {
+		return EError(c, err)
+	}
+
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -3869,6 +3895,101 @@ func (s *Services) checkTemplateDictionary(c echo.Context, projectId uuid.UUID, 
 		return uuid.NullUUID{}, apierrors.ErrPropertyTemplateDictionaryRequired
 	}
 	return dictionaryId, nil
+}
+
+// validateTemplateDependency валидирует каскадную зависимость шаблона поля:
+// режим, существование родителя в проекте, отсутствие циклов, совместимость типов
+func (s *Services) validateTemplateDependency(c echo.Context, template *dao.ProjectPropertyTemplate) error {
+	dep := template.Dependency
+	if dep == nil {
+		return nil
+	}
+
+	if dep.ParentTemplateId == template.Id {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("field cannot depend on itself")
+	}
+
+	var parent dao.ProjectPropertyTemplate
+	if err := s.DB(c).Where("id = ? AND project_id = ?", dep.ParentTemplateId, template.ProjectId).
+		First(&parent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("parent template not found in project")
+		}
+		return err
+	}
+
+	if err := s.checkDependencyCycle(c, template.Id, &parent); err != nil {
+		return err
+	}
+
+	switch dep.Mode {
+	case types.PropertyDependencyOptionsMap:
+		return validateOptionsMapDependency(&parent, template)
+	case types.PropertyDependencyRowFilter:
+		return validateRowFilterDependency(&parent, template)
+	default:
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("unknown mode, allowed: options_map, row_filter")
+	}
+}
+
+// checkDependencyCycle поднимается по цепочке родителей и запрещает цикл
+func (s *Services) checkDependencyCycle(c echo.Context, childId uuid.UUID, parent *dao.ProjectPropertyTemplate) error {
+	current := parent
+	for range 100 {
+		if current.Dependency == nil {
+			return nil
+		}
+		if current.Dependency.ParentTemplateId == childId {
+			return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("dependency cycle detected")
+		}
+		var next dao.ProjectPropertyTemplate
+		if err := s.DB(c).Where("id = ? AND project_id = ?", current.Dependency.ParentTemplateId, parent.ProjectId).
+			First(&next).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		current = &next
+	}
+	return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("dependency chain is too deep")
+}
+
+// validateOptionsMapDependency: select→select, ключи карты ⊆ options родителя,
+// значения карты ⊆ options ребёнка
+func validateOptionsMapDependency(parent, child *dao.ProjectPropertyTemplate) error {
+	if parent.Type != "select" || child.Type != "select" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map requires select parent and select child")
+	}
+	if len(child.Dependency.OptionsMap) == 0 {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map is empty")
+	}
+	for parentOption, childOptions := range child.Dependency.OptionsMap {
+		if !slices.Contains(parent.Options, parentOption) {
+			return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map key is not a parent option: " + parentOption)
+		}
+		for _, childOption := range childOptions {
+			if !slices.Contains(child.Options, childOption) {
+				return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map value is not a child option: " + childOption)
+			}
+		}
+	}
+	return nil
+}
+
+// validateRowFilterDependency: ребёнок lookup со справочником, родитель select или
+// lookup, имя атрибута задано
+func validateRowFilterDependency(parent, child *dao.ProjectPropertyTemplate) error {
+	if child.Type != "lookup" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("row_filter requires lookup child")
+	}
+	if parent.Type != "select" && parent.Type != "lookup" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("row_filter requires select or lookup parent")
+	}
+	if strings.TrimSpace(child.Dependency.RowFilterAttr) == "" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("row_filter_attr is required")
+	}
+	return nil
 }
 
 // archiveProject godoc

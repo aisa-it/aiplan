@@ -28,6 +28,9 @@ type ProjectPropertyTemplate struct {
 	// DictionaryId - справочник для типа "lookup" (значение поля - id строки справочника)
 	DictionaryId uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
 
+	// Dependency - каскадная зависимость от родительского поля (nil - независимое поле)
+	Dependency *types.PropertyDependency `gorm:"type:jsonb;serializer:json" extensions:"x-nullable"`
+
 	Workspace  *Workspace  `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project    *Project    `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Dictionary *Dictionary `gorm:"foreignKey:DictionaryId" extensions:"x-nullable"`
@@ -50,6 +53,7 @@ func (t *ProjectPropertyTemplate) ToDTO() *dto.ProjectPropertyTemplate {
 		Type:         t.Type,
 		Options:      t.Options,
 		DictionaryId: t.DictionaryId,
+		Dependency:   t.Dependency,
 		OnlyAdmin:    t.OnlyAdmin,
 		SortOrder:    t.SortOrder,
 		CreatedAt:    t.CreatedAt,
@@ -106,6 +110,7 @@ func (p *IssueProperty) ToDTO() *dto.IssueProperty {
 		result.Type = p.Template.Type
 		result.Options = p.Template.Options
 		result.DictionaryId = p.Template.DictionaryId
+		result.Dependency = p.Template.Dependency
 	}
 
 	return result

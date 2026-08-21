@@ -14198,6 +14198,95 @@
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/available-values/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает допустимые значения кастомного поля для задачи с учётом каскадной зависимости и текущего значения родительского поля. Для select - список options, для lookup - строки справочника с пагинацией и поиском.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueProperties"
+                ],
+                "summary": "Свойства задачи: допустимые значения поля",
+                "operationId": "getAvailablePropertyValues",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID шаблона поля",
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (для lookup, по умолчанию 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Количество строк (для lookup, по умолчанию 100, максимум 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Поиск по отображаемому значению (для lookup)",
+                        "name": "search_query",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Допустимые значения поля",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AvailablePropertyValues"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к задаче",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача или шаблон не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/": {
             "get": {
                 "security": [
@@ -21067,6 +21156,14 @@
                 "type"
             ],
             "properties": {
+                "dependency": {
+                    "x-nullable": true,
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ]
+                },
                 "dictionary_id": {
                     "type": "string",
                     "x-nullable": true
@@ -22056,6 +22153,14 @@
         "dto.IssueProperty": {
             "type": "object",
             "properties": {
+                "dependency": {
+                    "x-nullable": true,
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ]
+                },
                 "dictionary_id": {
                     "type": "string",
                     "x-nullable": true
@@ -22077,6 +22182,13 @@
                 },
                 "project_id": {
                     "type": "string"
+                },
+                "reset_properties": {
+                    "description": "ResetProperties - имена зависимых полей, значения которых были сброшены\nустановкой этого значения (только в ответе установки значения)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "template_id": {
                     "type": "string"
@@ -23083,11 +23195,70 @@
                 }
             }
         },
+        "dto.AvailablePropertyValues": {
+            "type": "object",
+            "properties": {
+                "options": {
+                    "description": "Options - допустимые варианты (для типа select)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "restricted": {
+                    "description": "Restricted - применён ли каскадный фильтр (у поля есть зависимость и родитель заполнен)",
+                    "type": "boolean"
+                },
+                "rows": {
+                    "description": "Rows - допустимые строки справочника с пагинацией (для типа lookup)",
+                    "type": "object",
+                    "x-nullable": true
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.PropertyDependency": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "description": "\"options_map\" или \"row_filter\"",
+                    "type": "string"
+                },
+                "options_map": {
+                    "description": "OptionsMap (режим options_map): значение родителя → допустимые options ребёнка",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "x-nullable": true
+                },
+                "parent_template_id": {
+                    "type": "string"
+                },
+                "row_filter_attr": {
+                    "description": "RowFilterAttr (режим row_filter): имя атрибута строки справочника ребёнка,\nсравниваемого с отображаемым значением родителя (строка или массив строк в attrs)",
+                    "type": "string"
+                }
+            }
+        },
         "dto.ProjectPropertyTemplate": {
             "type": "object",
             "properties": {
                 "created_at": {
                     "type": "string"
+                },
+                "dependency": {
+                    "x-nullable": true,
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ]
                 },
                 "dictionary_id": {
                     "type": "string",
@@ -23754,6 +23925,14 @@
         "dto.UpdatePropertyTemplateRequest": {
             "type": "object",
             "properties": {
+                "dependency": {
+                    "x-nullable": true,
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ]
+                },
                 "dictionary_id": {
                     "type": "string",
                     "x-nullable": true

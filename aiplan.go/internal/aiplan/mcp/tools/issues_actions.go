@@ -1528,6 +1528,14 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		}
 	}
 
+	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
+	if err := dao.CheckDependencyValue(db, template, issue.ID, valueStr, lookupRow); err != nil {
+		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
+			return apierrors.ErrPropertyValueIncompatible.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 
 	var existing dao.IssueProperty
@@ -1556,11 +1564,18 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		}
 	}
 
+	// Смена значения родителя каскада: сбрасываем ставшие недопустимыми значения детей
+	resetProperties, err := dao.ResetIncompatibleChildren(db, template, issue.ID, valueStr, user.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+
 	existing.Template = &template
 	resp := existing.ToDTO()
 	if lookupRow != nil {
 		resp.ValueLabel = &lookupRow.Value
 	}
+	resp.ResetProperties = resetProperties
 	return mcp.NewToolResultJSON(resp)
 }
 
