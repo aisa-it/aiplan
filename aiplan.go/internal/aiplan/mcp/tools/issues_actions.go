@@ -1424,51 +1424,8 @@ func getIssueProperties(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return errRes, nil
 	}
 
-	var templates []dao.ProjectPropertyTemplate
-	if err := db.Where("project_id = ?", issue.ProjectId).
-		Where("only_admin = ? OR only_admin = ?", false, pm.Role == types.AdminRole).
-		Order("sort_order, created_at").
-		Find(&templates).Error; err != nil {
-		return logger.Error(err), nil
-	}
-
-	var existingProps []dao.IssueProperty
-	if err := db.Where("issue_id = ?", issue.ID).Find(&existingProps).Error; err != nil {
-		return logger.Error(err), nil
-	}
-
-	propsMap := make(map[uuid.UUID]dao.IssueProperty, len(existingProps))
-	for _, p := range existingProps {
-		propsMap[p.TemplateId] = p
-	}
-
-	result := make([]dto.IssueProperty, 0, len(templates))
-	for _, tmpl := range templates {
-		if tmpl.OnlyAdmin && pm.Role < types.AdminRole {
-			continue
-		}
-		prop := dto.IssueProperty{
-			TemplateId:   tmpl.Id,
-			IssueId:      issue.ID,
-			ProjectId:    issue.ProjectId,
-			WorkspaceId:  issue.WorkspaceId,
-			Name:         tmpl.Name,
-			Type:         tmpl.Type,
-			DictionaryId: tmpl.DictionaryId,
-			Value:        defaultPropertyValueMCP(tmpl.Type),
-		}
-		if tmpl.Type == "select" {
-			prop.Options = tmpl.Options
-		}
-		if existing, ok := propsMap[tmpl.Id]; ok {
-			prop.Id = existing.Id
-			prop.Value = parsePropertyValueMCP(tmpl.Type, existing.Value)
-		}
-		result = append(result, prop)
-	}
-
-	// Для lookup-полей резолвим отображаемые значения строк справочников
-	if err := dao.FillLookupValueLabels(db, result); err != nil {
+	result, err := dao.ListIssuePropertiesDTO(db, issue, pm.Role == types.AdminRole)
+	if err != nil {
 		return logger.Error(err), nil
 	}
 
@@ -1577,40 +1534,6 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 	resp.ResetProperties = resetProperties
 	return mcp.NewToolResultJSON(resp)
-}
-
-func defaultPropertyValueMCP(propType string) any {
-	switch propType {
-	case "string":
-		return ""
-	case "boolean":
-		return false
-	default:
-		return nil
-	}
-}
-
-func parsePropertyValueMCP(propType, value string) any {
-	switch propType {
-	case "boolean":
-		return value == "true"
-	case "select", "lookup":
-		if value == "" {
-			return nil
-		}
-		return value
-	case "link":
-		if value == "" {
-			return nil
-		}
-		var m json.RawMessage
-		if err := json.Unmarshal([]byte(value), &m); err != nil {
-			return value
-		}
-		return m
-	default:
-		return value
-	}
 }
 
 func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) error {

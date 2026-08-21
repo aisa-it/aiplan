@@ -1,11 +1,13 @@
 package dao
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
+	"gorm.io/gorm"
 )
 
 // ProjectPropertyTemplate - шаблон поля на уровне проекта
@@ -114,6 +116,98 @@ func (p *IssueProperty) ToDTO() *dto.IssueProperty {
 	}
 
 	return result
+}
+
+// DefaultPropertyValue возвращает значение по умолчанию для незаполненного поля по его типу
+func DefaultPropertyValue(propType string) any {
+	switch propType {
+	case "string":
+		return ""
+	case "boolean":
+		return false
+	default:
+		return nil
+	}
+}
+
+// ParsePropertyValue преобразует хранимое строковое значение поля в типизированное для DTO
+func ParsePropertyValue(propType, value string) any {
+	switch propType {
+	case "boolean":
+		return value == "true"
+	case "select", "lookup":
+		if value == "" {
+			return nil
+		}
+		return value
+	case "link":
+		if value == "" {
+			return nil
+		}
+		var m json.RawMessage
+		if err := json.Unmarshal([]byte(value), &m); err != nil {
+			return value
+		}
+		return m
+	default:
+		return value
+	}
+}
+
+// ListIssuePropertiesDTO собирает все кастомные поля задачи: шаблоны проекта,
+// склеенные с существующими значениями или значениями по умолчанию. OnlyAdmin-поля
+// возвращаются только админам, lookup-значениям заполняется value_label.
+// Единая точка сборки для HTTP- и MCP-каналов
+func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.IssueProperty, error) {
+	var templates []ProjectPropertyTemplate
+	if err := db.Where("project_id = ?", issue.ProjectId).
+		Where("only_admin = ? OR only_admin = ?", false, isAdmin).
+		Order("sort_order, created_at").
+		Find(&templates).Error; err != nil {
+		return nil, err
+	}
+
+	var existingProps []IssueProperty
+	if err := db.Where("issue_id = ?", issue.ID).Find(&existingProps).Error; err != nil {
+		return nil, err
+	}
+
+	propsMap := make(map[uuid.UUID]IssueProperty, len(existingProps))
+	for _, p := range existingProps {
+		propsMap[p.TemplateId] = p
+	}
+
+	result := make([]dto.IssueProperty, 0, len(templates))
+	for _, tmpl := range templates {
+		if tmpl.OnlyAdmin && !isAdmin {
+			continue
+		}
+		prop := dto.IssueProperty{
+			TemplateId:   tmpl.Id,
+			IssueId:      issue.ID,
+			ProjectId:    issue.ProjectId,
+			WorkspaceId:  issue.WorkspaceId,
+			Name:         tmpl.Name,
+			Type:         tmpl.Type,
+			DictionaryId: tmpl.DictionaryId,
+			Dependency:   tmpl.Dependency,
+			Value:        DefaultPropertyValue(tmpl.Type),
+		}
+		if tmpl.Type == "select" {
+			prop.Options = tmpl.Options
+		}
+		if existing, ok := propsMap[tmpl.Id]; ok {
+			prop.Id = existing.Id
+			prop.Value = ParsePropertyValue(tmpl.Type, existing.Value)
+		}
+		result = append(result, prop)
+	}
+
+	// Для lookup-полей резолвим отображаемые значения строк справочников
+	if err := FillLookupValueLabels(db, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // GenSchema генерирует JSON Schema для валидации значения свойства
