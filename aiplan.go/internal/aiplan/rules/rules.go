@@ -262,12 +262,14 @@ func getStructLTable(state *lua.LState, obj interface{}) *lua.LTable {
 }
 
 // propertyValueToLua преобразует хранимое строковое значение свойства в Lua-значение
-// по типу шаблона (совместимо с parsePropertyValue из http-issue.go)
+// по типу шаблона (совместимо с parsePropertyValue из http-issue.go).
+// Для lookup-полей значение - отображаемое значение строки справочника (ResolvedValue),
+// не id строки
 func propertyValueToLua(propType, value string) lua.LValue {
 	switch propType {
 	case "boolean":
 		return lua.LBool(value == "true")
-	case "select", "link":
+	case "select", "link", "lookup":
 		if value == "" {
 			return lua.LNil
 		}
@@ -286,7 +288,11 @@ func getPropertiesTables(state *lua.LState, props []dao.IssueProperty) (*lua.LTa
 		if prop.Template == nil {
 			continue
 		}
-		value := propertyValueToLua(prop.Template.Type, prop.Value)
+		storedValue := prop.Value
+		if prop.Template.Type == "lookup" {
+			storedValue = prop.ResolvedValue
+		}
+		value := propertyValueToLua(prop.Template.Type, storedValue)
 
 		entry := state.NewTable()
 		entry.RawSetString("name", lua.LString(prop.Template.Name))

@@ -20,15 +20,19 @@ type ProjectPropertyTemplate struct {
 	ProjectId   uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:2;type:uuid"`
 
 	Name      string   `gorm:"not null"`
-	Type      string   `gorm:"not null"` // "string", "boolean", "select", "link"
+	Type      string   `gorm:"not null"` // "string", "boolean", "select", "link", "lookup"
 	Options   []string `gorm:"serializer:json"`
 	OnlyAdmin bool     `gorm:"default:false"`
 	SortOrder int      `gorm:"default:0"`
 
-	Workspace *Workspace `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	CreatedBy *User      `gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
-	UpdatedBy *User      `gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	// DictionaryId - справочник для типа "lookup" (значение поля - id строки справочника)
+	DictionaryId uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
+
+	Workspace  *Workspace  `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
+	Project    *Project    `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
+	Dictionary *Dictionary `gorm:"foreignKey:DictionaryId" extensions:"x-nullable"`
+	CreatedBy  *User       `gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy  *User       `gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 func (ProjectPropertyTemplate) TableName() string { return "project_property_templates" }
@@ -39,16 +43,17 @@ func (t *ProjectPropertyTemplate) ToDTO() *dto.ProjectPropertyTemplate {
 		return nil
 	}
 	return &dto.ProjectPropertyTemplate{
-		Id:          t.Id,
-		ProjectId:   t.ProjectId,
-		WorkspaceId: t.WorkspaceId,
-		Name:        t.Name,
-		Type:        t.Type,
-		Options:     t.Options,
-		OnlyAdmin:   t.OnlyAdmin,
-		SortOrder:   t.SortOrder,
-		CreatedAt:   t.CreatedAt,
-		UpdatedAt:   t.UpdatedAt,
+		Id:           t.Id,
+		ProjectId:    t.ProjectId,
+		WorkspaceId:  t.WorkspaceId,
+		Name:         t.Name,
+		Type:         t.Type,
+		Options:      t.Options,
+		DictionaryId: t.DictionaryId,
+		OnlyAdmin:    t.OnlyAdmin,
+		SortOrder:    t.SortOrder,
+		CreatedAt:    t.CreatedAt,
+		UpdatedAt:    t.UpdatedAt,
 	}
 }
 
@@ -66,6 +71,10 @@ type IssueProperty struct {
 	IssueId     uuid.UUID `gorm:"uniqueIndex:issue_property_unique_idx,priority:4;type:uuid"`
 
 	Value string `gorm:"type:text"`
+
+	// ResolvedValue - отображаемое значение lookup-поля (Value хранит id строки
+	// справочника). Заполняется вызывающей стороной (rules.EnrichIssue), в БД не хранится
+	ResolvedValue string `gorm:"-" json:"-"`
 
 	Workspace *Workspace               `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project                 `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
@@ -96,6 +105,7 @@ func (p *IssueProperty) ToDTO() *dto.IssueProperty {
 		result.Name = p.Template.Name
 		result.Type = p.Template.Type
 		result.Options = p.Template.Options
+		result.DictionaryId = p.Template.DictionaryId
 	}
 
 	return result

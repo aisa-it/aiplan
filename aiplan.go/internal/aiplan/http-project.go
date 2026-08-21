@@ -212,6 +212,20 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectAdminGroup.PATCH("/property-templates/:templateId/", s.updatePropertyTemplate)
 	projectAdminGroup.DELETE("/property-templates/:templateId/", s.deletePropertyTemplate)
 
+	// Dictionaries (справочники проекта)
+	projectGroup.GET("/dictionaries/", s.getDictionaryList)
+	projectAdminGroup.POST("/dictionaries/", s.createDictionary)
+
+	dictionaryGroup := projectGroup.Group("/dictionaries/:dictionaryId", s.DictionariesMiddleware)
+	dictionaryAdminGroup := projectAdminGroup.Group("/dictionaries/:dictionaryId", s.DictionariesMiddleware)
+	dictionaryGroup.GET("/rows/", s.getDictionaryRows)
+	dictionaryAdminGroup.PATCH("/", s.updateDictionary)
+	dictionaryAdminGroup.DELETE("/", s.deleteDictionary)
+	dictionaryAdminGroup.POST("/rows/", s.createDictionaryRow)
+	dictionaryAdminGroup.POST("/rows/import/", s.importDictionaryRows)
+	dictionaryAdminGroup.PATCH("/rows/:rowId/", s.updateDictionaryRow)
+	dictionaryAdminGroup.DELETE("/rows/:rowId/", s.deleteDictionaryRow)
+
 	projectAdminGroup.POST("/archive/", s.archiveProject)
 	projectAdminGroup.POST("/unarchive/", s.unarchiveProject)
 }
@@ -3626,8 +3640,7 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 	}
 
 	// Валидация типа
-	validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
-	if !validTypes[request.Type] {
+	if !validPropertyTypes[request.Type] {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 	}
 
@@ -3640,17 +3653,24 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		options = request.Options
 	}
 
+	// Для типа lookup требуется справочник проекта
+	dictionaryId, err := s.checkTemplateDictionary(c, project.ID, request.Type, request.DictionaryId)
+	if err != nil {
+		return EError(c, err)
+	}
+
 	template := dao.ProjectPropertyTemplate{
-		Id:          dao.GenUUID(),
-		ProjectId:   project.ID,
-		WorkspaceId: project.WorkspaceId,
-		Name:        strings.TrimSpace(request.Name),
-		Type:        request.Type,
-		Options:     options,
-		OnlyAdmin:   request.OnlyAdmin,
-		SortOrder:   request.SortOrder,
-		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
-		UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		Id:           dao.GenUUID(),
+		ProjectId:    project.ID,
+		WorkspaceId:  project.WorkspaceId,
+		Name:         strings.TrimSpace(request.Name),
+		Type:         request.Type,
+		Options:      options,
+		DictionaryId: dictionaryId,
+		OnlyAdmin:    request.OnlyAdmin,
+		SortOrder:    request.SortOrder,
+		CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
+		UpdatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
 	}
 
 	if err := s.DB(c).Create(&template).Error; err != nil {
@@ -3718,8 +3738,7 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 
 	// Определяем тип для валидации options
 	if request.Type != nil {
-		validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
-		if !validTypes[*request.Type] {
+		if !validPropertyTypes[*request.Type] {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 		}
 		template.Type = *request.Type
@@ -3738,6 +3757,18 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
 		}
 	}
+
+	// Обработка справочника: для lookup требуется существующий справочник проекта,
+	// у остальных типов ссылка сбрасывается
+	if request.DictionaryId != nil {
+		template.DictionaryId = uuid.NullUUID{UUID: *request.DictionaryId, Valid: true}
+		updated = true
+	}
+	dictionaryId, err := s.checkTemplateDictionary(c, project.ID, template.Type, template.DictionaryId)
+	if err != nil {
+		return EError(c, err)
+	}
+	template.DictionaryId = dictionaryId
 
 	if request.OnlyAdmin != nil {
 		template.OnlyAdmin = *request.OnlyAdmin
@@ -3813,6 +3844,31 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+// validPropertyTypes - допустимые типы шаблонов кастомных полей
+var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "link": true, "lookup": true}
+
+// checkTemplateDictionary валидирует справочник шаблона поля: для типа lookup
+// требуется существующий справочник проекта, у остальных типов ссылка сбрасывается
+func (s *Services) checkTemplateDictionary(c echo.Context, projectId uuid.UUID, propType string, dictionaryId uuid.NullUUID) (uuid.NullUUID, error) {
+	if propType != "lookup" {
+		return uuid.NullUUID{}, nil
+	}
+	if !dictionaryId.Valid {
+		return uuid.NullUUID{}, apierrors.ErrPropertyTemplateDictionaryRequired
+	}
+	var exists bool
+	if err := s.DB(c).Model(&dao.Dictionary{}).
+		Select("count(*) > 0").
+		Where("id = ? AND project_id = ?", dictionaryId.UUID, projectId).
+		Find(&exists).Error; err != nil {
+		return uuid.NullUUID{}, err
+	}
+	if !exists {
+		return uuid.NullUUID{}, apierrors.ErrPropertyTemplateDictionaryRequired
+	}
+	return dictionaryId, nil
 }
 
 // archiveProject godoc
