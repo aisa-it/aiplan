@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/url"
-	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,7 +36,7 @@ var issuesTools = []Tool{
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithString("issue_id",
 				mcp.Required(),
-				mcp.Description("Индетификатор задачи. Индетификатор должен быть вида UUID, {workspace.slug}-{project.identifier}-{issue.sequence} или короткой ссылки https://{host}/i/{workspace.slug}/{project.identifier}/{issue.sequence}"),
+				mcp.Description("Индетификатор задачи. Индетификатор должен быть вида UUID, {workspace.slug}-{project.identifier}-{issue.sequence}, короткой ссылки https://{host}/i/{workspace.slug}/{project.identifier}/{issue.sequence} или полной ссылки https://{host}/{workspace}/projects/{project.id}/issues/{issue.sequence}"),
 			),
 		),
 		getIssue,
@@ -381,19 +381,13 @@ func getIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao
 		// uuid id of issue
 		query = query.Where("issues.id = ?", id)
 	} else {
-		var params []string
-		if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
-			params = filepath.SplitList(u.Path)
-		} else {
-			params = strings.Split(issueIdOrSeq, "-")
-		}
-
-		if len(params) != 3 {
+		ref, ok := parseIssueRef(issueIdOrSeq)
+		if !ok {
 			return logger.Error(apierrors.ErrIssueNotFound, "некорректный формат задачи"), nil
 		}
 
 		// sequence id of issue
-		query = query.Where(`"Workspace".slug = ? and "Project".identifier = ? and issues.sequence_id = ?`, params[0], params[1], params[2])
+		query = ref.apply(query)
 	}
 
 	if err := query.
@@ -665,18 +659,12 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	if id, err := uuid.FromString(issueIdOrSeq); err == nil {
 		query = query.Where("issues.id = ?", id)
 	} else {
-		var params []string
-		if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
-			params = filepath.SplitList(u.Path)
-		} else {
-			params = strings.Split(issueIdOrSeq, "-")
-		}
-
-		if len(params) != 3 {
+		ref, ok := parseIssueRef(issueIdOrSeq)
+		if !ok {
 			return logger.Error(apierrors.ErrIssueNotFound, "некорректный формат задачи"), nil
 		}
 
-		query = query.Where(`"Workspace".slug = ? and "Project".identifier = ? and issues.sequence_id = ?`, params[0], params[1], params[2])
+		query = ref.apply(query)
 	}
 
 	if err := query.First(&issue).Error; err != nil {
@@ -1570,7 +1558,7 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&attachments, func(ia *dao.IssueAttachment) dto.Attachment { return *ia.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&attachments, func(ia *dao.IssueAttachment) dto.Attachment { return *ia.ToLightDTO() }))
 }
 
 // createIssueComment создаёт комментарий к задаче
@@ -1615,7 +1603,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		First(&lastCommentTime).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return logger.Error(err), nil
 	}
-	if time.Since(lastCommentTime) <= 5*time.Second {
+	if time.Since(lastCommentTime) <= types.CommentsCooldown {
 		return apierrors.ErrTooManyComments.MCPError(), nil
 	}
 
@@ -1656,6 +1644,81 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 	return mcp.NewToolResultJSON(comment.ToDTO())
 }
 
+// issueRef — разобранная ссылка на задачу: пространство, проект и порядковый номер.
+// Пространство и проект хранятся строками, потому что могут быть как slug/identifier,
+// так и UUID (в полной ссылке на задачу) — что именно, решает apply.
+type issueRef struct {
+	Workspace  string
+	Project    string
+	SequenceId int
+}
+
+// apply добавляет к запросу условия поиска задачи по разобранной ссылке.
+func (r issueRef) apply(query *gorm.DB) *gorm.DB {
+	if id, err := uuid.FromString(r.Workspace); err == nil {
+		query = query.Where(`"Workspace".id = ?`, id)
+	} else {
+		query = query.Where(`"Workspace".slug = ?`, r.Workspace)
+	}
+
+	if id, err := uuid.FromString(r.Project); err == nil {
+		query = query.Where(`"Project".id = ?`, id)
+	} else {
+		query = query.Where(`"Project".identifier = ?`, r.Project)
+	}
+
+	return query.Where("issues.sequence_id = ?", r.SequenceId)
+}
+
+// parseIssueRef разбирает идентификатор задачи: строку {workspace.slug}-{project.identifier}-{issue.sequence}
+// или ссылку на задачу (короткую и полную).
+func parseIssueRef(issueIdOrSeq string) (issueRef, bool) {
+	issueIdOrSeq = strings.TrimSpace(issueIdOrSeq)
+
+	if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
+		return parseIssueURL(u)
+	}
+
+	// Slug пространства сам может содержать дефисы, а identifier проекта и sequence — нет,
+	// поэтому строка режется справа: последний сегмент — номер, предпоследний — проект.
+	lastDash := strings.LastIndex(issueIdOrSeq, "-")
+	if lastDash < 0 {
+		return issueRef{}, false
+	}
+	prevDash := strings.LastIndex(issueIdOrSeq[:lastDash], "-")
+	if prevDash < 0 {
+		return issueRef{}, false
+	}
+
+	return newIssueRef(issueIdOrSeq[:prevDash], issueIdOrSeq[prevDash+1:lastDash], issueIdOrSeq[lastDash+1:])
+}
+
+// parseIssueURL разбирает ссылку на задачу: короткую /i/{workspace}/{project}/{sequence}
+// и полную /{workspace}/projects/{projectId}/issues/{sequence}.
+func parseIssueURL(u *url.URL) (issueRef, bool) {
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+
+	if len(parts) == 4 && parts[0] == "i" {
+		return newIssueRef(parts[1], parts[2], parts[3])
+	}
+
+	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "issues" {
+		return newIssueRef(parts[0], parts[2], parts[4])
+	}
+
+	return issueRef{}, false
+}
+
+// newIssueRef собирает issueRef, проверяя, что все сегменты заполнены, а номер задачи — положительное число.
+func newIssueRef(workspace, project, sequence string) (issueRef, bool) {
+	sequenceId, err := strconv.Atoi(sequence)
+	if workspace == "" || project == "" || err != nil || sequenceId <= 0 {
+		return issueRef{}, false
+	}
+
+	return issueRef{Workspace: workspace, Project: project, SequenceId: sequenceId}, true
+}
+
 // findIssueByIdOrSeq — вспомогательная функция для поиска задачи по ID или sequence
 func findIssueByIdOrSeq(db *gorm.DB, issueIdOrSeq string) (*dao.Issue, error) {
 	query := db.Joins("Project").Joins("Workspace")
@@ -1664,18 +1727,12 @@ func findIssueByIdOrSeq(db *gorm.DB, issueIdOrSeq string) (*dao.Issue, error) {
 	if id, err := uuid.FromString(issueIdOrSeq); err == nil {
 		query = query.Where("issues.id = ?", id)
 	} else {
-		var params []string
-		if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
-			params = filepath.SplitList(u.Path)
-		} else {
-			params = strings.Split(issueIdOrSeq, "-")
-		}
-
-		if len(params) != 3 {
+		ref, ok := parseIssueRef(issueIdOrSeq)
+		if !ok {
 			return nil, nil
 		}
 
-		query = query.Where(`"Workspace".slug = ? AND "Project".identifier = ? AND issues.sequence_id = ?`, params[0], params[1], params[2])
+		query = ref.apply(query)
 	}
 
 	if err := query.First(&issue).Error; err != nil {

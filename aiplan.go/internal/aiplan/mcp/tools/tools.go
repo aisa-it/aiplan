@@ -36,6 +36,20 @@ func WrapTool(db *gorm.DB, bl *business.Business, handler ToolHandler) server.To
 	}
 }
 
+// listResult оборачивает список в объект {count, result}.
+// По спецификации MCP structuredContent обязан быть объектом: массив верхнего
+// уровня клиенты с валидацией схемы (например, Claude Code) отбрасывают целиком.
+// nil-слайс нормализуется в пустой, чтобы в JSON попал [], а не null.
+func listResult[T any](items []T) (*mcp.CallToolResult, error) {
+	if items == nil {
+		items = make([]T, 0)
+	}
+	return mcp.NewToolResultJSON(map[string]any{
+		"count":  len(items),
+		"result": items,
+	})
+}
+
 func GetUUIDArg(args map[string]any, argName string) (uuid.UUID, error) {
 	raw, ok := args[argName]
 	if !ok {

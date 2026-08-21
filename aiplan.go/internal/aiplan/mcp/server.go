@@ -86,6 +86,17 @@ const mcpInstructions = `MCP сервер для работы с системо�
 - create_doc — создание документа (workspace_id, title, content в HTML/TipTap, parent_doc_id, роли доступа, draft)
 - update_doc — обновление документа (title, content, draft)
 
+### Комментарии документов (AIDoc)
+- get_doc_comments — список комментариев документа с пагинацией
+- get_doc_comment — один комментарий по UUID
+- create_doc_comment — создание комментария (doc_id, comment_html, reply_to_comment_id для ответа)
+- update_doc_comment — обновление своего комментария
+- delete_doc_comment — удаление комментария (автор или администратор пространства)
+- add_doc_comment_reaction / remove_doc_comment_reaction — реакции на комментарий
+- get_doc_comment_history — история изменений комментария
+
+Комментировать документ может любой, у кого есть доступ на чтение документа. Вложения через MCP не передаются.
+
 ## Ресурсы
 - aiplan://users/current — информация о текущем пользователе (имя, email, права, настройки)
 
@@ -126,6 +137,7 @@ const mcpInstructions = `MCP сервер для работы с системо�
 2. Для просмотра: get_workspace_docs → get_doc
 3. Для создания: create_doc с workspace_id, title и content (HTML формат TipTap)
 4. Для обновления: update_doc с doc_id и изменяемыми полями
+5. Для обсуждения: get_doc_comments → create_doc_comment (ответ — через reply_to_comment_id)
 
 ### Анализ проекта
 1. get_project_stats с флагами include_assignee_stats, include_label_stats, include_sprint_stats, include_timeline

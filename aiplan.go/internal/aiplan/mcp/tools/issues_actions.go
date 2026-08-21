@@ -473,7 +473,7 @@ func getAvailableStates(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 func getSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -521,7 +521,7 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 
 	rawIDs, ok := args["sub_issue_ids"].([]interface{})
 	if !ok || len(rawIDs) == 0 {
-		return mcp.NewToolResultJSON([]dto.IssueLight{})
+		return listResult([]dto.IssueLight{})
 	}
 
 	parentIssue, pm, errRes := loadIssueAndMember(db, user.ID, issueIdOrSeq)
@@ -548,7 +548,7 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		}
 	}
 	if len(candidateIDs) == 0 {
-		return mcp.NewToolResultJSON([]dto.IssueLight{})
+		return listResult([]dto.IssueLight{})
 	}
 
 	query := db.
@@ -602,7 +602,7 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		}
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
 }
 
 func getRootAncestorIDMCP(tx *gorm.DB, issueID uuid.UUID) (string, error) {
@@ -643,7 +643,7 @@ func getLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&issues, func(il *dao.Issue) dto.Issue { return *il.ToDTO() }))
+	return listResult(utils.SliceToSlice(&issues, func(il *dao.Issue) dto.Issue { return *il.ToDTO() }))
 }
 
 func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -700,7 +700,7 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
 		slog.Error("MCP issue action: track changes failed", "error", err)
 	}
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&issues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&issues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
 }
 
 func createIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1472,7 +1472,7 @@ func getIssueProperties(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(result)
+	return listResult(result)
 }
 
 func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
