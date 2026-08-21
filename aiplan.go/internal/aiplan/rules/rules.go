@@ -262,7 +262,7 @@ func getStructLTable(state *lua.LState, obj interface{}) *lua.LTable {
 }
 
 // propertyValueToLua преобразует хранимое строковое значение свойства в Lua-значение
-// по типу шаблона (совместимо с parsePropertyValue из http-issue.go).
+// по типу шаблона (совместимо с dao.ParsePropertyValue).
 // Для lookup-полей значение - отображаемое значение строки справочника (ResolvedValue),
 // не id строки
 func propertyValueToLua(propType, value string) lua.LValue {

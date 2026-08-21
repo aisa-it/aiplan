@@ -3675,62 +3675,8 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 		return EError(c, apiCtx.Error())
 	}
 
-	// Получаем все шаблоны полей проекта
-	var templates []dao.ProjectPropertyTemplate
-	if err := s.DB(c).Where("project_id = ?", issue.ProjectId).
-		Where("only_admin = ? OR only_admin = ?", false, projectMember.Role == types.AdminRole).
-		Order("sort_order, created_at").
-		Find(&templates).Error; err != nil {
-		return EError(c, err)
-	}
-
-	// Получаем существующие значения для задачи
-	var existingProps []dao.IssueProperty
-	if err := s.DB(c).Where("issue_id = ?", issue.ID).
-		Find(&existingProps).Error; err != nil {
-		return EError(c, err)
-	}
-
-	// Создаем map для быстрого поиска
-	propsMap := make(map[uuid.UUID]dao.IssueProperty)
-	for _, p := range existingProps {
-		propsMap[p.TemplateId] = p
-	}
-
-	// Собираем результат: все шаблоны с значениями или дефолтами
-	result := make([]dto.IssueProperty, 0, len(templates))
-	for _, tmpl := range templates {
-		// Пропускаем OnlyAdmin поля для не-админов
-		if tmpl.OnlyAdmin && projectMember.Role < types.AdminRole {
-			continue
-		}
-
-		prop := dto.IssueProperty{
-			TemplateId:   tmpl.Id,
-			IssueId:      issue.ID,
-			ProjectId:    issue.ProjectId,
-			WorkspaceId:  issue.WorkspaceId,
-			Name:         tmpl.Name,
-			Type:         tmpl.Type,
-			DictionaryId: tmpl.DictionaryId,
-			Value:        getDefaultPropertyValue(tmpl.Type),
-		}
-
-		// Добавляем options только для select полей
-		if tmpl.Type == "select" {
-			prop.Options = tmpl.Options
-		}
-
-		if existing, ok := propsMap[tmpl.Id]; ok {
-			prop.Id = existing.Id
-			prop.Value = parsePropertyValue(tmpl.Type, existing.Value)
-		}
-
-		result = append(result, prop)
-	}
-
-	// Для lookup-полей резолвим отображаемые значения строк справочников
-	if err := dao.FillLookupValueLabels(s.DB(c), result); err != nil {
+	result, err := dao.ListIssuePropertiesDTO(s.DB(c), issue, projectMember.Role == types.AdminRole)
+	if err != nil {
 		return EError(c, err)
 	}
 
@@ -3989,46 +3935,6 @@ func (s *Services) availableLookupRows(c echo.Context, template dao.ProjectPrope
 	}
 	resp.Result = result
 	return &resp, nil
-}
-
-// getDefaultPropertyValue возвращает дефолтное значение для типа поля
-func getDefaultPropertyValue(propType string) any {
-	switch propType {
-	case "string":
-		return ""
-	case "select":
-		return nil
-	case "boolean":
-		return false
-	case "link":
-		return nil
-	default:
-		return nil
-	}
-}
-
-// parsePropertyValue парсит строковое значение в соответствии с типом
-func parsePropertyValue(propType, value string) any {
-	switch propType {
-	case "boolean":
-		return value == "true"
-	case "select", "lookup":
-		if value == "" {
-			return nil
-		}
-		return value
-	case "link":
-		if value == "" {
-			return nil
-		}
-		var m json.RawMessage
-		if err := json.Unmarshal([]byte(value), &m); err != nil {
-			return value
-		}
-		return m
-	default:
-		return value
-	}
 }
 
 // validatePropertyValue валидирует значение через JSON Schema
