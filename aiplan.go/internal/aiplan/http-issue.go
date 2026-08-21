@@ -57,7 +57,7 @@ import (
 )
 
 const (
-	commentsCooldown = time.Second * 5
+	commentsCooldown = types.CommentsCooldown
 
 	descriptionLockTime = time.Minute * 15
 )
