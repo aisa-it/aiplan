@@ -133,6 +133,7 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	// Issue Properties (значения полей задачи)
 	issueGroup.GET("/properties/", s.getIssueProperties)
 	issueGroup.POST("/properties/:templateId/", s.setIssueProperty)
+	issueGroup.GET("/properties/:templateId/available-values/", s.getAvailablePropertyValues)
 }
 
 func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error) {
@@ -3813,6 +3814,14 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		}
 	}
 
+	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
+	if err := dao.CheckDependencyValue(s.DB(c), template, issue.ID, valueStr, lookupRow); err != nil {
+		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
+			return EErrorDefined(c, apierrors.ErrPropertyValueIncompatible)
+		}
+		return EError(c, err)
+	}
+
 	// Проверяем существование значения
 	var existingProp dao.IssueProperty
 	err = s.DB(c).Where("issue_id = ? AND template_id = ?", issue.ID, templateUUID).First(&existingProp).Error
@@ -3847,6 +3856,12 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		}
 	}
 
+	// Смена значения родителя каскада: сбрасываем ставшие недопустимыми значения детей
+	resetProperties, err := dao.ResetIncompatibleChildren(s.DB(c), template, issue.ID, valueStr, user.ID)
+	if err != nil {
+		return EError(c, err)
+	}
+
 	// Загружаем шаблон для ответа
 	existingProp.Template = &template
 	resp := existingProp.ToDTO()
@@ -3856,8 +3871,124 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	if lookupRow != nil {
 		resp.ValueLabel = &lookupRow.Value
 	}
+	resp.ResetProperties = resetProperties
 
 	return c.JSON(status, resp)
+}
+
+// getAvailablePropertyValues godoc
+// @id getAvailablePropertyValues
+// @Summary Свойства задачи: допустимые значения поля
+// @Description Возвращает допустимые значения кастомного поля для задачи с учётом каскадной зависимости и текущего значения родительского поля. Для select - список options, для lookup - строки справочника с пагинацией и поиском.
+// @Tags IssueProperties
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Param templateId path string true "ID шаблона поля"
+// @Param offset query int false "Смещение (для lookup, по умолчанию 0)"
+// @Param limit query int false "Количество строк (для lookup, по умолчанию 100, максимум 1000)"
+// @Param search_query query string false "Поиск по отображаемому значению (для lookup)"
+// @Success 200 {object} dto.AvailablePropertyValues "Допустимые значения поля"
+// @Failure 403 {object} apierrors.DefinedError "Нет доступа к задаче"
+// @Failure 404 {object} apierrors.DefinedError "Задача или шаблон не найден"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/available-values/ [get]
+func (s *Services) getAvailablePropertyValues(c echo.Context) error {
+	apiCtx := apicontext.GetContext(c)
+	projectMember := apiCtx.GetProjectMember()
+	issue := apiCtx.GetIssue()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+
+	templateUUID, err := uuid.FromString(c.Param("templateId"))
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	var template dao.ProjectPropertyTemplate
+	if err := s.DB(c).Where("id = ? AND project_id = ?", templateUUID, issue.ProjectId).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+		}
+		return EError(c, err)
+	}
+
+	// OnlyAdmin поля не-админам не показываем (как в getIssueProperties)
+	if template.OnlyAdmin && projectMember.Role < types.AdminRole {
+		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
+	}
+
+	// Каскадное ограничение по текущему значению родителя
+	var parentDisplay string
+	var restricted bool
+	if template.Dependency != nil {
+		parentDisplay, restricted, err = dao.CurrentParentDisplay(s.DB(c), template, issue.ID)
+		if err != nil {
+			return EError(c, err)
+		}
+	}
+
+	resp := dto.AvailablePropertyValues{Type: template.Type, Restricted: restricted}
+	switch template.Type {
+	case "select":
+		resp.Options = template.Options
+		if restricted && template.Dependency.Mode == types.PropertyDependencyOptionsMap {
+			resp.Options = template.Dependency.OptionsMap[parentDisplay]
+		}
+	case "lookup":
+		rows, err := s.availableLookupRows(c, template, parentDisplay, restricted)
+		if err != nil {
+			return EError(c, err)
+		}
+		resp.Rows = rows
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// availableLookupRows возвращает строки справочника lookup-поля с пагинацией,
+// поиском и каскадным фильтром по атрибуту (режим row_filter)
+func (s *Services) availableLookupRows(c echo.Context, template dao.ProjectPropertyTemplate, parentDisplay string, restricted bool) (*dao.PaginationResponse, error) {
+	offset := 0
+	limit := 100
+	var searchQuery string
+	if err := echo.QueryParamsBinder(c).
+		Int("offset", &offset).
+		Int("limit", &limit).
+		String("search_query", &searchQuery).
+		BindError(); err != nil {
+		return nil, err
+	}
+	if limit < 1 || limit > 1000 {
+		limit = 100
+	}
+
+	query := s.DB(c).Where("dictionary_id = ?", template.DictionaryId.UUID).
+		Where("archived = false").
+		Order("value, created_at")
+	if searchQuery != "" {
+		query = query.Where("value ILIKE ?", "%"+searchQuery+"%")
+	}
+	if restricted && template.Dependency.Mode == types.PropertyDependencyRowFilter {
+		// Атрибут-строка равен значению родителя либо атрибут-массив содержит его
+		query = query.Where("attrs -> ? @> to_jsonb(?::text)", template.Dependency.RowFilterAttr, parentDisplay)
+	}
+
+	var rows []dao.DictionaryRow
+	resp, err := dao.PaginationRequest(offset, limit, query, &rows)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]dto.DictionaryRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, *row.ToDTO())
+	}
+	resp.Result = result
+	return &resp, nil
 }
 
 // getDefaultPropertyValue возвращает дефолтное значение для типа поля

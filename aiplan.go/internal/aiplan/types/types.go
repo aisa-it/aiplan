@@ -370,6 +370,25 @@ type FormFieldDependency struct {
 	ExpectedValue bool `json:"value"`                                // Ожидаемое значение зависимого поля (или варианта ответа)
 }
 
+// Режимы каскадной зависимости кастомного поля (PropertyDependency.Mode)
+const (
+	PropertyDependencyOptionsMap = "options_map" // select→select: карта «значение родителя → допустимые options»
+	PropertyDependencyRowFilter  = "row_filter"  // ребёнок lookup: фильтр строк справочника по атрибуту
+)
+
+// PropertyDependency - каскадная зависимость шаблона кастомного поля (ProjectPropertyTemplate)
+// от родительского поля того же проекта. Каскад не делает поле обязательным - только
+// сужает допустимые значения при заполненном родителе (пустой родитель не ограничивает)
+type PropertyDependency struct {
+	ParentTemplateId uuid.UUID `json:"parent_template_id" swaggertype:"string"`
+	Mode             string    `json:"mode"` // "options_map" или "row_filter"
+	// OptionsMap (режим options_map): значение родителя → допустимые options ребёнка
+	OptionsMap map[string][]string `json:"options_map,omitempty" extensions:"x-nullable"`
+	// RowFilterAttr (режим row_filter): имя атрибута строки справочника ребёнка,
+	// сравниваемого с отображаемым значением родителя (строка или массив строк в attrs)
+	RowFilterAttr string `json:"row_filter_attr,omitempty"`
+}
+
 type ValidationRule struct {
 	ValidationType string        `json:"validation_type"`
 	ValueType      string        `json:"value_type,omitempty"`
