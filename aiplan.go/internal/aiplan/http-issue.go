@@ -3705,13 +3705,14 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 		}
 
 		prop := dto.IssueProperty{
-			TemplateId:  tmpl.Id,
-			IssueId:     issue.ID,
-			ProjectId:   issue.ProjectId,
-			WorkspaceId: issue.WorkspaceId,
-			Name:        tmpl.Name,
-			Type:        tmpl.Type,
-			Value:       getDefaultPropertyValue(tmpl.Type),
+			TemplateId:   tmpl.Id,
+			IssueId:      issue.ID,
+			ProjectId:    issue.ProjectId,
+			WorkspaceId:  issue.WorkspaceId,
+			Name:         tmpl.Name,
+			Type:         tmpl.Type,
+			DictionaryId: tmpl.DictionaryId,
+			Value:        getDefaultPropertyValue(tmpl.Type),
 		}
 
 		// Добавляем options только для select полей
@@ -3725,6 +3726,11 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 		}
 
 		result = append(result, prop)
+	}
+
+	// Для lookup-полей резолвим отображаемые значения строк справочников
+	if err := dao.FillLookupValueLabels(s.DB(c), result); err != nil {
+		return EError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, result)
@@ -3791,6 +3797,22 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	// Сериализуем значение для хранения
 	valueStr := serializePropertyValue(request.Value)
 
+	// Для lookup-полей значение - id строки справочника: строка должна существовать
+	// в справочнике шаблона и быть не архивной
+	var lookupRow *dao.DictionaryRow
+	if template.Type == "lookup" {
+		var err error
+		lookupRow, err = dao.CheckLookupValue(s.DB(c), template, valueStr)
+		switch {
+		case errors.Is(err, dao.ErrLookupRowNotFound):
+			return EErrorDefined(c, apierrors.ErrDictionaryRowNotFound)
+		case errors.Is(err, dao.ErrLookupRowArchived):
+			return EErrorDefined(c, apierrors.ErrPropertyValueValidationFailed)
+		case err != nil:
+			return EError(c, err)
+		}
+	}
+
 	// Проверяем существование значения
 	var existingProp dao.IssueProperty
 	err = s.DB(c).Where("issue_id = ? AND template_id = ?", issue.ID, templateUUID).First(&existingProp).Error
@@ -3831,6 +3853,9 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	if resp.Type == "link" {
 		resp.Value = json.RawMessage(resp.Value.(string))
 	}
+	if lookupRow != nil {
+		resp.ValueLabel = &lookupRow.Value
+	}
 
 	return c.JSON(status, resp)
 }
@@ -3856,7 +3881,7 @@ func parsePropertyValue(propType, value string) any {
 	switch propType {
 	case "boolean":
 		return value == "true"
-	case "select":
+	case "select", "lookup":
 		if value == "" {
 			return nil
 		}

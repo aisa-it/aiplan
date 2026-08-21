@@ -390,7 +390,7 @@ var issuesActionsTools = []Tool{
 			),
 			mcp.WithObject("value",
 				mcp.Required(),
-				mcp.Description("Значение: строка для string/select, bool для boolean, объект {url,title} для link"),
+				mcp.Description("Значение: строка для string/select, bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup"),
 			),
 		),
 		setIssueProperty,
@@ -1448,13 +1448,14 @@ func getIssueProperties(ctx context.Context, db *gorm.DB, bl *business.Business,
 			continue
 		}
 		prop := dto.IssueProperty{
-			TemplateId:  tmpl.Id,
-			IssueId:     issue.ID,
-			ProjectId:   issue.ProjectId,
-			WorkspaceId: issue.WorkspaceId,
-			Name:        tmpl.Name,
-			Type:        tmpl.Type,
-			Value:       defaultPropertyValueMCP(tmpl.Type),
+			TemplateId:   tmpl.Id,
+			IssueId:      issue.ID,
+			ProjectId:    issue.ProjectId,
+			WorkspaceId:  issue.WorkspaceId,
+			Name:         tmpl.Name,
+			Type:         tmpl.Type,
+			DictionaryId: tmpl.DictionaryId,
+			Value:        defaultPropertyValueMCP(tmpl.Type),
 		}
 		if tmpl.Type == "select" {
 			prop.Options = tmpl.Options
@@ -1464,6 +1465,11 @@ func getIssueProperties(ctx context.Context, db *gorm.DB, bl *business.Business,
 			prop.Value = parsePropertyValueMCP(tmpl.Type, existing.Value)
 		}
 		result = append(result, prop)
+	}
+
+	// Для lookup-полей резолвим отображаемые значения строк справочников
+	if err := dao.FillLookupValueLabels(db, result); err != nil {
+		return logger.Error(err), nil
 	}
 
 	return mcp.NewToolResultJSON(result)
@@ -1506,6 +1512,22 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	valueStr := serializePropertyValueMCP(value)
+
+	// Для lookup-полей значение - id строки справочника: строка должна существовать
+	// в справочнике шаблона и быть не архивной
+	var lookupRow *dao.DictionaryRow
+	if template.Type == "lookup" {
+		lookupRow, err = dao.CheckLookupValue(db, template, valueStr)
+		switch {
+		case errors.Is(err, dao.ErrLookupRowNotFound):
+			return apierrors.ErrDictionaryRowNotFound.MCPError(), nil
+		case errors.Is(err, dao.ErrLookupRowArchived):
+			return apierrors.ErrPropertyValueValidationFailed.MCPError(), nil
+		case err != nil:
+			return logger.Error(err), nil
+		}
+	}
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 
 	var existing dao.IssueProperty
@@ -1535,7 +1557,11 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	existing.Template = &template
-	return mcp.NewToolResultJSON(existing.ToDTO())
+	resp := existing.ToDTO()
+	if lookupRow != nil {
+		resp.ValueLabel = &lookupRow.Value
+	}
+	return mcp.NewToolResultJSON(resp)
 }
 
 func defaultPropertyValueMCP(propType string) any {
@@ -1553,7 +1579,7 @@ func parsePropertyValueMCP(propType, value string) any {
 	switch propType {
 	case "boolean":
 		return value == "true"
-	case "select":
+	case "select", "lookup":
 		if value == "" {
 			return nil
 		}

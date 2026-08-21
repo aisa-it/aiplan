@@ -262,12 +262,22 @@ var (
 	// 45** - property template errors
 	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
 	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
-	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, link", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, link"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, link, lookup", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, link, lookup"}
 	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
 	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
 	ErrPropertyOnlyAdminCanSet         = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
 	ErrPropertyValueValidationFailed   = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
 	ErrPropertyTemplateOptionsRequired = DefinedError{Code: 4508, StatusCode: http.StatusBadRequest, Err: "options are required for select type", RuErr: "Для типа select требуются варианты выбора"}
+
+	// 45** (продолжение) - справочники проекта
+	ErrDictionaryNotFound                 = DefinedError{Code: 4509, StatusCode: http.StatusNotFound, Err: "dictionary not found", RuErr: "Справочник не найден"}
+	ErrDictionaryNameRequired             = DefinedError{Code: 4510, StatusCode: http.StatusBadRequest, Err: "dictionary name is required", RuErr: "Имя справочника обязательно"}
+	ErrDictionaryRowNotFound              = DefinedError{Code: 4511, StatusCode: http.StatusNotFound, Err: "dictionary row not found", RuErr: "Строка справочника не найдена"}
+	ErrDictionaryRowValueRequired         = DefinedError{Code: 4512, StatusCode: http.StatusBadRequest, Err: "dictionary row value is required", RuErr: "Значение строки справочника обязательно"}
+	ErrDictionaryInUse                    = DefinedError{Code: 4513, StatusCode: http.StatusConflict, Err: "dictionary is used by property templates", RuErr: "Справочник используется полями проекта — сначала удалите или измените эти поля"}
+	ErrDictionaryRowInUse                 = DefinedError{Code: 4514, StatusCode: http.StatusConflict, Err: "dictionary row is referenced by issue properties, archive it instead", RuErr: "На строку справочника ссылаются значения в задачах — вместо удаления заархивируйте её"}
+	ErrDictionaryImportTooLarge           = DefinedError{Code: 4515, StatusCode: http.StatusBadRequest, Err: "import exceeds the limit of %d rows", RuErr: "Импорт превышает лимит в %d строк"}
+	ErrPropertyTemplateDictionaryRequired = DefinedError{Code: 4516, StatusCode: http.StatusBadRequest, Err: "existing project dictionary is required for lookup type", RuErr: "Для типа lookup требуется существующий справочник проекта"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}

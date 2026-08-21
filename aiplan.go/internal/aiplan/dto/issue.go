@@ -166,47 +166,53 @@ type NewIssueID struct {
 
 // IssueProperty - значение кастомного поля для задачи
 type IssueProperty struct {
-	Id          uuid.UUID `json:"id,omitempty"`
-	IssueId     uuid.UUID `json:"issue_id"`
-	TemplateId  uuid.UUID `json:"template_id"`
-	ProjectId   uuid.UUID `json:"project_id"`
-	WorkspaceId uuid.UUID `json:"workspace_id"`
-	Name        string    `json:"name"`
-	Type        string    `json:"type"`
-	Options     []string  `json:"options,omitempty"`
-	Value       any       `json:"value"`
+	Id           uuid.UUID     `json:"id,omitempty"`
+	IssueId      uuid.UUID     `json:"issue_id"`
+	TemplateId   uuid.UUID     `json:"template_id"`
+	ProjectId    uuid.UUID     `json:"project_id"`
+	WorkspaceId  uuid.UUID     `json:"workspace_id"`
+	Name         string        `json:"name"`
+	Type         string        `json:"type"`
+	Options      []string      `json:"options,omitempty"`
+	DictionaryId uuid.NullUUID `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
+	Value        any           `json:"value"`
+	// ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника)
+	ValueLabel *string `json:"value_label,omitempty" extensions:"x-nullable"`
 }
 
 // ProjectPropertyTemplate - шаблон кастомного поля проекта
 type ProjectPropertyTemplate struct {
-	Id          uuid.UUID `json:"id"`
-	ProjectId   uuid.UUID `json:"project_id"`
-	WorkspaceId uuid.UUID `json:"workspace_id"`
-	Name        string    `json:"name"`
-	Type        string    `json:"type"`
-	Options     []string  `json:"options,omitempty"`
-	OnlyAdmin   bool      `json:"only_admin"`
-	SortOrder   int       `json:"sort_order"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Id           uuid.UUID     `json:"id"`
+	ProjectId    uuid.UUID     `json:"project_id"`
+	WorkspaceId  uuid.UUID     `json:"workspace_id"`
+	Name         string        `json:"name"`
+	Type         string        `json:"type"`
+	Options      []string      `json:"options,omitempty"`
+	DictionaryId uuid.NullUUID `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
+	OnlyAdmin    bool          `json:"only_admin"`
+	SortOrder    int           `json:"sort_order"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
 }
 
 // CreatePropertyTemplateRequest - запрос на создание шаблона поля
 type CreatePropertyTemplateRequest struct {
-	Name      string   `json:"name" validate:"required,min=1,max=255"`
-	Type      string   `json:"type" validate:"required,oneof=string boolean select link"`
-	Options   []string `json:"options,omitempty"`
-	OnlyAdmin bool     `json:"only_admin"`
-	SortOrder int      `json:"sort_order"`
+	Name         string        `json:"name" validate:"required,min=1,max=255"`
+	Type         string        `json:"type" validate:"required,oneof=string boolean select link lookup"`
+	Options      []string      `json:"options,omitempty"`
+	DictionaryId uuid.NullUUID `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
+	OnlyAdmin    bool          `json:"only_admin"`
+	SortOrder    int           `json:"sort_order"`
 }
 
 // UpdatePropertyTemplateRequest - запрос на обновление шаблона поля
 type UpdatePropertyTemplateRequest struct {
-	Name      *string   `json:"name,omitempty"`
-	Type      *string   `json:"type,omitempty"`
-	Options   *[]string `json:"options,omitempty"`
-	OnlyAdmin *bool     `json:"only_admin,omitempty"`
-	SortOrder *int      `json:"sort_order,omitempty"`
+	Name         *string    `json:"name,omitempty"`
+	Type         *string    `json:"type,omitempty"`
+	Options      *[]string  `json:"options,omitempty"`
+	DictionaryId *uuid.UUID `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
+	OnlyAdmin    *bool      `json:"only_admin,omitempty"`
+	SortOrder    *int       `json:"sort_order,omitempty"`
 }
 
 // SetIssuePropertyRequest - запрос на установку значения поля задачи

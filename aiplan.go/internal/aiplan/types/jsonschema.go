@@ -37,6 +37,10 @@ func GenValueSchema(propType string, options []string) map[string]any {
 		}
 		enumValues[len(options)] = nil
 		return map[string]any{"type": []any{"string", "null"}, "enum": enumValues}
+	case "lookup":
+		// Значение - id строки справочника (или null для сброса); существование
+		// строки проверяется отдельным запросом в БД, схема проверяет только форму
+		return map[string]any{"type": []any{"string", "null"}}
 	case "link":
 		return map[string]any{
 			"$schema": "https://json-schema.org/draft/2020-12/schema",
