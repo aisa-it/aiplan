@@ -210,6 +210,43 @@ func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.Issu
 	return result, nil
 }
 
+// MigratePropertyValuesOnTypeChange приводит существующие значения задач к новой
+// конфигурации шаблона при смене типа или справочника. lookup → string: id строки
+// заменяется отображаемым значением строки справочника. Прочие смены lookup-конфигурации
+// (уход в другой тип, приход в lookup, смена справочника) сбрасывают значения —
+// они перестают быть валидными. Смены между обычными типами значения не трогают
+func MigratePropertyValuesOnTypeChange(tx *gorm.DB, templateId uuid.UUID, oldType, newType string, oldDictionaryId, newDictionaryId uuid.NullUUID) error {
+	if oldType != "lookup" && newType != "lookup" {
+		return nil
+	}
+	if oldType == newType && oldDictionaryId == newDictionaryId {
+		return nil
+	}
+	if oldType == "lookup" && newType == "string" && oldDictionaryId.Valid {
+		return convertLookupValuesToStrings(tx, templateId, oldDictionaryId.UUID)
+	}
+	return tx.Model(&IssueProperty{}).
+		Where("template_id = ? AND value <> ''", templateId).
+		Update("value", "").Error
+}
+
+// convertLookupValuesToStrings заменяет id строк справочника в значениях задач
+// отображаемыми значениями строк (включая архивные)
+func convertLookupValuesToStrings(tx *gorm.DB, templateId uuid.UUID, dictionaryId uuid.UUID) error {
+	// Порядок важен: сначала сброс битых ссылок (пока все значения ещё id),
+	// затем замена валидных id отображаемыми значениями строк
+	if err := tx.Exec(`UPDATE issue_properties SET value = ''
+		WHERE template_id = ? AND value <> ''
+		AND NOT EXISTS (SELECT 1 FROM project_dictionary_rows r WHERE r.dictionary_id = ? AND r.id::text = issue_properties.value)`,
+		templateId, dictionaryId).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`UPDATE issue_properties SET value = r.value
+		FROM project_dictionary_rows r
+		WHERE issue_properties.template_id = ? AND r.dictionary_id = ? AND r.id::text = issue_properties.value`,
+		templateId, dictionaryId).Error
+}
+
 // GenSchema генерирует JSON Schema для валидации значения свойства
 func (t ProjectPropertyTemplate) GenSchema() types.IssuePropertySchema {
 	return types.IssuePropertySchema{
