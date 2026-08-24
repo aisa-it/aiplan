@@ -885,8 +885,8 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
-	cache.WorkspaceMembersCache.Update(workspace.ID, requestedMember)
-
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
 	return c.JSON(http.StatusOK, requestedMember.ToLightDTO())
 }
 
@@ -1042,8 +1042,8 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 		}
 	}
 
-	cache.WorkspaceMembersCache.Delete(workspace.ID, requestedMember)
-
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
 	return c.NoContent(http.StatusNoContent)
 
 }
@@ -1364,8 +1364,8 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 		}
 	}
 
-	cache.WorkspaceMembersCache.Expire(workspace.ID)
-
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "Emails sent successfully",
 	})

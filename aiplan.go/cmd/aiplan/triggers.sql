@@ -793,3 +793,42 @@ CREATE OR REPLACE TRIGGER issue_sprint_stats_workspace_summary_notify
     ON issues
     FOR EACH ROW
     EXECUTE FUNCTION notify_workspace_summary_changes_issue_sprint_stats();
+
+-- ============================================================================
+-- Уведомление об изменении состава участников пространства:
+-- отправляет workspace_id в канал workspace_members_changes
+-- при добавлении/удалении участника и смене его роли.
+-- Кеш участников (cache.WorkspaceMembersCache) сбрасывается по этому каналу,
+-- поэтому изменения подхватываются независимо от источника: приглашение,
+-- админ-панель, импорт или прямой SQL.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION notify_workspace_members_changes()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    ws_id uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        ws_id := OLD.workspace_id;
+    ELSE
+        ws_id := NEW.workspace_id;
+
+        -- Смена пространства у членства: старое тоже потеряло участника
+        IF TG_OP = 'UPDATE' AND OLD.workspace_id IS DISTINCT FROM NEW.workspace_id THEN
+            PERFORM pg_notify('workspace_members_changes', OLD.workspace_id::text);
+        END IF;
+    END IF;
+
+    PERFORM pg_notify('workspace_members_changes', ws_id::text);
+    RETURN NULL;
+END;
+$$;
+
+-- UPDATE только по полям, которые попадают в кеш: настройки уведомлений
+-- участника меняются часто и сбрасывать из-за них весь список незачем.
+CREATE OR REPLACE TRIGGER workspace_members_notify
+    AFTER INSERT OR DELETE OR UPDATE OF role, member_id, workspace_id
+    ON workspace_members
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_members_changes();

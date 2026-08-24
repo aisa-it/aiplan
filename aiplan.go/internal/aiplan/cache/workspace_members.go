@@ -16,7 +16,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-const spaceMembersTTL = time.Hour
+const (
+	spaceMembersTTL = time.Hour
+
+	workspaceMembersNotifyChannel = "workspace_members_changes"
+)
 
 var (
 	WorkspaceMembersCache workspaceMembersCache = workspaceMembersCache{m: make(map[uuid.UUID]workspaceMembersEntry)}
@@ -39,6 +43,24 @@ type workspaceMembersEntry struct {
 	expire time.Time
 
 	Members []dto.WorkspaceMemberLight
+}
+
+// InitWorkspaceMembersCache подписывает кеш на изменения таблицы workspace_members.
+// Инвалидация приходит из БД, поэтому состав участников обновляется независимо от
+// того, каким путём он изменён: приглашение, админ-панель, импорт или прямой SQL.
+func InitWorkspaceMembersCache() {
+	dao.NotifiSubscription.Subscribe(workspaceMembersNotifyChannel, WorkspaceMembersCache.notifyHandler)
+}
+
+// notifyHandler сбрасывает кеш пространства: список перечитается из БД при
+// следующем запросе, точечно доставлять изменение из payload не требуется.
+func (c *workspaceMembersCache) notifyHandler(payload string) {
+	workspaceId, err := uuid.FromString(payload)
+	if err != nil {
+		slog.Warn("WORKSPACE MEMBERS CACHE invalid payload", "payload", payload, "err", err)
+		return
+	}
+	c.Expire(workspaceId)
 }
 
 func (c *workspaceMembersCache) Load(workspaceId uuid.UUID) (*workspaceMembersEntry, bool) {
@@ -99,37 +121,6 @@ func (c *workspaceMembersCache) Expire(workspaceId uuid.UUID) {
 	c.rw.Lock()
 	defer c.rw.Unlock()
 	delete(c.m, workspaceId)
-}
-
-func (c *workspaceMembersCache) Update(workspaceId uuid.UUID, updMember dao.WorkspaceMember) {
-	c.rw.Lock()
-	defer c.rw.Unlock()
-	entry, ok := c.m[workspaceId]
-	if !ok {
-		return
-	}
-	for i, member := range entry.Members {
-		if updMember.ID == member.ID {
-			entry.Members[i] = *updMember.ToLightDTO()
-		}
-	}
-}
-
-func (c *workspaceMembersCache) Delete(workspaceId uuid.UUID, dltMember dao.WorkspaceMember) {
-	c.rw.Lock()
-	defer c.rw.Unlock()
-	entry, ok := c.m[workspaceId]
-	if !ok {
-		return
-	}
-	new := make([]dto.WorkspaceMemberLight, 0, len(entry.Members)-1)
-	for _, member := range entry.Members {
-		if dltMember.ID != member.ID {
-			new = append(new, member)
-		}
-	}
-	entry.Members = new
-	c.m[workspaceId] = entry
 }
 
 func SortWorkspaceMembers(members []dto.WorkspaceMemberLight, offset, limit int, orderBy string, desc bool) []dto.WorkspaceMemberLight {
