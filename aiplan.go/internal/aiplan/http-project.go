@@ -3788,6 +3788,12 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		}
 		updated = true
 	}
+	// Смена типа делает прежнюю зависимость несовместимой — снимаем её сами,
+	// а не валим PATCH ошибкой валидации
+	typeChanged := template.Type != oldType
+	if typeChanged && request.Dependency == nil && !dependencyModeAllowsChildType(template.Dependency, template.Type) {
+		template.Dependency = nil
+	}
 	if err := s.validateTemplateDependency(c, &template); err != nil {
 		return EError(c, err)
 	}
@@ -3809,7 +3815,13 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 			if err := tx.Save(&template).Error; err != nil {
 				return err
 			}
-			return dao.MigratePropertyValuesOnTypeChange(tx, template.Id, oldType, template.Type, oldDictionaryId, template.DictionaryId)
+			if err := dao.MigratePropertyValuesOnTypeChange(tx, template.Id, oldType, template.Type, oldDictionaryId, template.DictionaryId); err != nil {
+				return err
+			}
+			if !typeChanged {
+				return nil
+			}
+			return s.cleanupIncompatibleDependents(tx, &template)
 		}); err != nil {
 			return EError(c, err)
 		}
@@ -3997,6 +4009,79 @@ func validateRowFilterDependency(parent, child *dao.ProjectPropertyTemplate) err
 	}
 	if strings.TrimSpace(child.Dependency.RowFilterAttr) == "" {
 		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("row_filter_attr is required")
+	}
+	return nil
+}
+
+// dependencyModeAllowsChildType: режим зависимости допускает такой тип поля-ребёнка
+// (правила — как в validateOptionsMapDependency/validateRowFilterDependency)
+func dependencyModeAllowsChildType(dep *types.PropertyDependency, childType string) bool {
+	if dep == nil {
+		return true
+	}
+	if dep.Mode == types.PropertyDependencyOptionsMap {
+		return childType == "select"
+	}
+	return childType == "lookup"
+}
+
+// dependencyModeAllowsParentType: режим зависимости допускает такой тип поля-родителя
+func dependencyModeAllowsParentType(dep *types.PropertyDependency, parentType string) bool {
+	if dep == nil {
+		return true
+	}
+	if dep.Mode == types.PropertyDependencyOptionsMap {
+		return parentType == "select"
+	}
+	return parentType == "select" || parentType == "lookup"
+}
+
+// cleanupIncompatibleDependents после смены типа шаблона снимает зависимость у
+// полей-детей с несовместимым режимом и отвязывает шаблон от несовместимых полей форм
+func (s *Services) cleanupIncompatibleDependents(tx *gorm.DB, template *dao.ProjectPropertyTemplate) error {
+	var children []dao.ProjectPropertyTemplate
+	if err := tx.Where("project_id = ? AND dependency->>'parent_template_id' = ?", template.ProjectId, template.Id.String()).
+		Find(&children).Error; err != nil {
+		return err
+	}
+	for i := range children {
+		if dependencyModeAllowsParentType(children[i].Dependency, template.Type) {
+			continue
+		}
+		if err := tx.Model(&children[i]).Update("dependency", nil).Error; err != nil {
+			return err
+		}
+	}
+	return cleanupIncompatibleFormMappings(tx, template)
+}
+
+// cleanupIncompatibleFormMappings отвязывает шаблон от полей форм целевого проекта,
+// тип которых несовместим с новым типом шаблона (привязка перестала проходить
+// валидацию формы и отображалась бы голым uuid)
+func cleanupIncompatibleFormMappings(tx *gorm.DB, template *dao.ProjectPropertyTemplate) error {
+	var forms []dao.Form
+	if err := tx.Where("target_project_id = ?", template.ProjectId).Find(&forms).Error; err != nil {
+		return err
+	}
+	for i := range forms {
+		changed := false
+		for j := range forms[i].Fields {
+			field := &forms[i].Fields[j]
+			if !field.PropertyTemplateId.Valid || field.PropertyTemplateId.UUID != template.Id {
+				continue
+			}
+			if slices.Contains(formPropertyTypeCompat[template.Type], field.Type) {
+				continue
+			}
+			field.PropertyTemplateId = uuid.NullUUID{}
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		if err := tx.Model(&forms[i]).Update("fields", forms[i].Fields).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
