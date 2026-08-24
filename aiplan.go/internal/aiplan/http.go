@@ -244,6 +244,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 
 	cache.InitUsersCache(db)
 	cache.InitWorkspaceSummaryCache(db)
+	cache.InitWorkspaceMembersCache()
 
 	var ldapProvider *authprovider.LdapProvider
 	if cfg.LDAPServerURL.URL != nil {
