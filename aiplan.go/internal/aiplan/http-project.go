@@ -3729,6 +3729,10 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Старая конфигурация — для миграции значений задач при смене типа/справочника
+	oldType := template.Type
+	oldDictionaryId := template.DictionaryId
+
 	// Применяем обновления напрямую к структуре
 	updated := false
 
@@ -3801,7 +3805,12 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		template.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		template.UpdatedAt = time.Now()
 
-		if err := s.DB(c).Save(&template).Error; err != nil {
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Save(&template).Error; err != nil {
+				return err
+			}
+			return dao.MigratePropertyValuesOnTypeChange(tx, template.Id, oldType, template.Type, oldDictionaryId, template.DictionaryId)
+		}); err != nil {
 			return EError(c, err)
 		}
 	}
