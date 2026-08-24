@@ -212,22 +212,32 @@ func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.Issu
 
 // MigratePropertyValuesOnTypeChange приводит существующие значения задач к новой
 // конфигурации шаблона при смене типа или справочника. lookup → string: id строки
-// заменяется отображаемым значением строки справочника. Прочие смены lookup-конфигурации
-// (уход в другой тип, приход в lookup, смена справочника) сбрасывают значения —
-// они перестают быть валидными. Смены между обычными типами значения не трогают
+// заменяется отображаемым значением строки справочника. Прочие смены с участием
+// lookup (уход в другой тип, приход в lookup, смена справочника) или link (значение —
+// JSON-ссылка, в других типах это мусор) сбрасывают значения — они перестают быть
+// валидными. Смены между остальными типами значения не трогают
 func MigratePropertyValuesOnTypeChange(tx *gorm.DB, templateId uuid.UUID, oldType, newType string, oldDictionaryId, newDictionaryId uuid.NullUUID) error {
-	if oldType != "lookup" && newType != "lookup" {
-		return nil
-	}
 	if oldType == newType && oldDictionaryId == newDictionaryId {
 		return nil
 	}
 	if oldType == "lookup" && newType == "string" && oldDictionaryId.Valid {
 		return convertLookupValuesToStrings(tx, templateId, oldDictionaryId.UUID)
 	}
+	if !typeValuesNeedReset(oldType, newType) {
+		return nil
+	}
 	return tx.Model(&IssueProperty{}).
 		Where("template_id = ? AND value <> ''", templateId).
 		Update("value", "").Error
+}
+
+// typeValuesNeedReset: старые значения невалидны для нового типа — в смене участвует
+// lookup (значение — id строки справочника) или link (значение — JSON-ссылка)
+func typeValuesNeedReset(oldType, newType string) bool {
+	if oldType == "lookup" || newType == "lookup" {
+		return true
+	}
+	return oldType == "link" || newType == "link"
 }
 
 // convertLookupValuesToStrings заменяет id строк справочника в значениях задач
