@@ -38,6 +38,11 @@ func init() {
 		"data-doc-id",
 		"contenteditable",
 		"data-comment-id",
+		// data-anchor-id намеренно НЕ здесь: он разрешается ниже отдельным
+		// правилом с проверкой формата слага. Правила атрибутов складываются
+		// по ИЛИ, поэтому попадание в этот список сделало бы проверку
+		// бесполезной — любое значение проходило бы по правилу без Matching.
+		"data-anchor-title",
 		"data-original-url",
 		"data-current-issue-id",
 		"data-project-identifier",
@@ -56,12 +61,18 @@ func init() {
 	fontRegexp := regexp.MustCompile(`^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|emoji|math|fangsong|inherit|initial|revert|revert-layer|unset)$`)
 	alignRegexp := regexp.MustCompile(`^(right|left)$`)
 	displayRegexp := regexp.MustCompile(`^(block|inline-block)$`)
-	classRegexp := regexp.MustCompile(`^(date-node|special-link-mention)$`)
+	classRegexp := regexp.MustCompile(`^(date-node|special-link-mention|doc-anchor)$`)
 	indentClassRegexp := regexp.MustCompile(`^tt-indent-[1-9]$`)
 	dataIconRegexp := regexp.MustCompile(`^(alertIcon|closeIconBorder|checkStatusIcon|infoIcon)$`)
 	colorNamesRegexp := regexp.MustCompile(`^(transparent|blue|cyan|green|red|orange|yellow|magenta)$`)
 	dataLinksRegexp := regexp.MustCompile(`^\[\s*\{[^{}]*}\s*(,\s*\{[^{}]*}\s*)*]$`)
+	// Слаг якоря документа АИДока: ASCII, первый символ буквенно-цифровой, до 64 символов.
+	// Тот же формат, что фронт кладёт в data-anchor-id и в id заголовка.
+	anchorIdRegexp := regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
+	// Правило по факту декларативное: ниже "class" разрешается на span без
+	// Matching в составе dataSpanAttrs, а политики атрибутов складываются по ИЛИ,
+	// так что на span проходит любой класс. Список ведём как описание контракта фронта.
 	UgcPolicy.AllowAttrs("class").Matching(classRegexp).OnElements("span")
 	UgcPolicy.AllowAttrs("data-issue-table-params", "style", "class").OnElements("table")
 	UgcPolicy.AllowAttrs("contenteditable").OnElements("td", "th")
@@ -69,6 +80,15 @@ func init() {
 	UgcPolicy.AllowAttrs("spellcheck", "class").OnElements("pre")
 	UgcPolicy.AllowAttrs("data-color", "style").OnElements("mark")
 	UgcPolicy.AllowAttrs(dataSpanAttrs...).OnElements("span")
+	// В отличие от id (см. ниже), это правило действительно ограничивает формат:
+	// другого правила для data-anchor-id в политике нет.
+	//
+	// Заголовки в списке не случайно: якорь заголовка живёт в data-anchor-id,
+	// а НЕ в id. Атрибут id на заголовках занят расширением оглавления
+	// (@tiptap/extension-table-of-contents пишет туда свой UUID), поэтому
+	// фронт хранит слаг отдельным атрибутом. См. headingAnchor.ts.
+	UgcPolicy.AllowAttrs("data-anchor-id").Matching(anchorIdRegexp).
+		OnElements("span", "h1", "h2", "h3", "h4", "h5", "h6")
 	UgcPolicy.AllowAttrs(dataDivAttrs...).OnElements("div")
 	UgcPolicy.AllowAttrs("class").Matching(indentClassRegexp).OnElements("p")
 
@@ -95,6 +115,20 @@ func init() {
 
 	UgcPolicy.AllowAttrs("data-heading-links").OnElements("div")
 	UgcPolicy.AllowAttrs("data-links").Matching(dataLinksRegexp).OnElements("div")
+
+	// Якоря документов АИДока: id на заголовках и на span.doc-anchor.
+	//
+	// ВНИМАНИЕ: правило НЕ ужесточает существующее. bluemonday складывает
+	// политики атрибутов по ИЛИ: сначала проверяются правила элемента
+	// (elsAndAttrs), затем глобальные (globalAttrs), и достаточно совпадения
+	// с любым (sanitize.go:512 и :527). Порядок объявления значения не имеет.
+	// UGCPolicy через AllowStandardAttributes уже разрешает id глобально по
+	// НЕЯКОРНОМУ `[a-zA-Z0-9\:\-_\.]+` (bluemonday использует MatchString,
+	// а не полное совпадение), поэтому мусорные значения вроде "foo bar"
+	// или "javascript:alert(1)" всё равно проходят по глобальному правилу.
+	// Правило ниже фиксирует ожидаемый формат якоря; ужесточение требует
+	// переопределения глобальной политики id и делается отдельно.
+	UgcPolicy.AllowAttrs("id").Matching(anchorIdRegexp).OnElements("span", "h1", "h2", "h3", "h4", "h5", "h6")
 }
 
 func ProcessCustomHtmlTag(htmlContent string) string {

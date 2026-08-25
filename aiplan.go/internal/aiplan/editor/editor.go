@@ -89,6 +89,11 @@ func parseParagraph(root *html.Node) *Paragraph {
 			continue
 		}
 
+		// Якорь документа не несёт текста и в экспорт попадать не должен
+		if isDocAnchor(el) {
+			continue
+		}
+
 		image := getImage(el)
 		if image != nil {
 			p.Content = append(p.Content, image)
@@ -296,6 +301,17 @@ func getAttrValue(key string, attrs []html.Attribute) string {
 		}
 	}
 	return ""
+}
+
+// isDocAnchor сообщает, что элемент — якорь документа АИДока:
+// <span class="doc-anchor" data-anchor-id="..." data-anchor-title="..."></span>.
+// Якорь невидим, текстового содержимого не имеет и нужен только фронту для
+// навигации по документу. Без явного пропуска он превращался бы в пустой Text,
+// который сбивает обработку отступов после HardBreak в PDF-экспорте.
+func isDocAnchor(el *html.Node) bool {
+	return el.Type == html.ElementNode &&
+		el.Data == "span" &&
+		attrExists("data-anchor-id", el.Attr)
 }
 
 func attrExists(key string, attrs []html.Attribute) bool {

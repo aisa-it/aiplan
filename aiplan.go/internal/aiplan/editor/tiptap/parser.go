@@ -68,6 +68,10 @@ func parseNode(node TipTapNode) any {
 		return parseHardBreak(node)
 	case "drawio":
 		return parseDrawio(node)
+	case "docAnchor":
+		// Якорь документа АИДока: невидимая метка для навигации,
+		// собственного представления в edtypes не имеет
+		return nil
 	default:
 		slog.Debug("Unknown node type", "type", node.Type)
 		return nil
