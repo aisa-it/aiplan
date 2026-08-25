@@ -465,8 +465,12 @@ func GetIssueListData(
 
 				groupMap[group.SortId] = &group
 				for i < len(groupMap) && groupMap[i] != nil {
-					if err := streamCallback(*groupMap[i]); err != nil {
-						return err
+					// отсечённые фильтрами группы (skippedGroupCount) в поток не отдаём,
+					// но указатель продвигаем — иначе отдача навсегда встаёт перед ними
+					if groupMap[i].Count != skippedGroupCount {
+						if err := streamCallback(*groupMap[i]); err != nil {
+							return err
+						}
 					}
 					i++
 				}
@@ -481,6 +485,15 @@ func GetIssueListData(
 			return nil, nil
 		}
 
+		// Отсечённые фильтрами группы (skippedGroupCount) в ответ не попадают
+		issuesGroups := make([]*dto.IssuesGroupResponse, 0, len(groupMap))
+		for _, gr := range groupMap {
+			if gr == nil || gr.Count == skippedGroupCount {
+				continue
+			}
+			issuesGroups = append(issuesGroups, gr)
+		}
+
 		return dto.IssuesGroupedResponse{
 			PaginationMeta: dto.PaginationMeta{
 				Count:  totalCount,
@@ -488,7 +501,7 @@ func GetIssueListData(
 				Limit:  searchParams.Limit,
 			},
 			GroupBy: searchParams.GroupByParam,
-			Issues:  groupMap,
+			Issues:  issuesGroups,
 		}, nil
 	}
 
