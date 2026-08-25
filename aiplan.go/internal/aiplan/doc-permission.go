@@ -39,7 +39,10 @@ func (s *Services) DocPermissionMiddleware(next echo.HandlerFunc) echo.HandlerFu
 func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
 	apiContext := apicontext.GetContext(c)
 	workspaceMember := apiContext.GetWorkspaceMember()
-	docPtr := apiContext.GetDoc()
+	// WithDocAccessRules обязателен: персональные права (readers/editors/watchers)
+	// заполняются из doc.AccessRules в PopulateAccessFields, без Preload множества
+	// ниже всегда пустые и доступ считается только по ролевым порогам документа.
+	docPtr := apiContext.GetDoc(apicontext.WithDocAccessRules())
 	if apiContext.Error() != nil {
 		return false, apiContext.Error()
 	}
