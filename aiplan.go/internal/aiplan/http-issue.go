@@ -4224,7 +4224,61 @@ func (s *Services) loadExportProperties(c echo.Context, result any) (*exportProp
 		}
 		issueValues[p.TemplateId] = p.Value
 	}
+
+	if err := resolveLookupExportValues(s.DB(c), data); err != nil {
+		return nil, err
+	}
 	return data, nil
+}
+
+// resolveLookupExportValues подменяет в данных экспорта id строк справочников
+// (значения lookup-полей) отображаемыми значениями строк — выгрузка предназначена
+// для чтения людьми. Значение с недоступной строкой остаётся id (данные не теряем)
+func resolveLookupExportValues(db *gorm.DB, data *exportPropertiesData) error {
+	lookupTemplates := make(map[uuid.UUID]struct{})
+	for _, t := range data.templates {
+		if t.Type == "lookup" {
+			lookupTemplates[t.Id] = struct{}{}
+		}
+	}
+	if len(lookupTemplates) == 0 {
+		return nil
+	}
+
+	var rowIds []uuid.UUID
+	for _, issueValues := range data.values {
+		for templateId, value := range issueValues {
+			if _, ok := lookupTemplates[templateId]; !ok {
+				continue
+			}
+			if rowId, err := uuid.FromString(value); err == nil {
+				rowIds = append(rowIds, rowId)
+			}
+		}
+	}
+	if len(rowIds) == 0 {
+		return nil
+	}
+
+	labels, err := dao.ResolveDictionaryRowValues(db, rowIds)
+	if err != nil {
+		return err
+	}
+	for _, issueValues := range data.values {
+		for templateId, value := range issueValues {
+			if _, ok := lookupTemplates[templateId]; !ok {
+				continue
+			}
+			rowId, err := uuid.FromString(value)
+			if err != nil {
+				continue
+			}
+			if label, ok := labels[rowId]; ok {
+				issueValues[templateId] = label
+			}
+		}
+	}
+	return nil
 }
 
 // getGroupFileName возвращает имя файла для группы в ZIP архиве
