@@ -17,7 +17,7 @@ const (
 
 	// CommentsCooldown — минимальный интервал между комментариями одного пользователя
 	// в пространстве. Общая константа для HTTP-ручек и MCP-инструментов.
-	CommentsCooldown = time.Second * 5
+	CommentsCooldown = time.Second * 1
 )
 
 const (
