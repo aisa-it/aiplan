@@ -342,7 +342,10 @@ func (s *Services) updateDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
 	workspaceMember := apiContext.GetWorkspaceMember()
-	docPtr := apiContext.GetDoc(apicontext.WithDocAccessRules())
+	// WithDocParent обязателен: ниже по коду смена reader_role/editor_role сверяется
+	// с ролями родителя (ErrDocRoleLowerThanParent). Без Preload ParentDoc всегда nil
+	// и проверка молча пропускается.
+	docPtr := apiContext.GetDoc(apicontext.WithDocAccessRules(), apicontext.WithDocParent())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
