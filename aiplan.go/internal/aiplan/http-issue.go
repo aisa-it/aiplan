@@ -515,6 +515,11 @@ func (s *Services) exportIssueList(c echo.Context) error {
 	switch res := result.(type) {
 	case dto.IssuesGroupedResponse:
 		for i, group := range res.Issues {
+			// Группы, отсечённые фильтрами внутри fetchIssuesByGroups, остаются
+			// nil-элементами groupMap — без пропуска здесь была nil pointer паника
+			if group == nil {
+				continue
+			}
 			fileName := getGroupFileName(group.Entity, i)
 			entry, err := z.Create(fileName)
 			if err != nil {
@@ -4226,6 +4231,9 @@ func (s *Services) loadExportProperties(c echo.Context, result any) (*exportProp
 func getGroupFileName(entity any, index int) string {
 	var name string
 	switch e := entity.(type) {
+	case string:
+		// группировка по приоритету и по кастомному полю: сущность группы — значение-строка
+		name = e
 	case dto.UserLight:
 		name = formatUserName(e)
 	case *dto.UserLight:
