@@ -15,6 +15,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -377,7 +378,7 @@ var issuesActionsTools = []Tool{
 	{
 		mcp.NewTool(
 			"set_issue_property",
-			mcp.WithDescription("Установка значения кастомного свойства задачи. OnlyAdmin шаблоны может ставить только админ. Значение проходит JSON Schema валидацию"),
+			mcp.WithDescription("Установка значения кастомного свойства задачи. OnlyAdmin шаблоны может ставить только админ. Значение проходит JSON Schema валидацию. Изменение может быть отклонено Lua-сценарием проекта (для не-админов)"),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithString("issue_id",
@@ -390,7 +391,7 @@ var issuesActionsTools = []Tool{
 			),
 			mcp.WithObject("value",
 				mcp.Required(),
-				mcp.Description("Значение: строка для string/select, bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup"),
+				mcp.Description("Значение: строка для string/select, bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime"),
 			),
 		),
 		setIssueProperty,
@@ -1523,6 +1524,14 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		return logger.Error(err), nil
 	}
 
+	// Lua-сценарий проекта может запретить изменение поля.
+	// На админов сценарии не распространяются (канон продукта, как в HTTP setIssueProperty)
+	if issue.Project != nil && issue.Project.RulesScript != nil && pm.Role != types.AdminRole {
+		if errRes := runPropertyChangeRulesMCP(db, user, issue, template, valueStr, lookupRow); errRes != nil {
+			return errRes, nil
+		}
+	}
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 
 	var existing dao.IssueProperty
@@ -1566,6 +1575,48 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	return mcp.NewToolResultJSON(resp)
 }
 
+// runPropertyChangeRulesMCP вызывает Lua-хук BeforeIssuePropertyChange проекта
+// (как HTTP setIssueProperty / отказ BeforeStatusChange в MCP updateIssue).
+// Не-nil результат — отказ сценария, значение поля не записывается
+func runPropertyChangeRulesMCP(db *gorm.DB, user *dao.User, issue *dao.Issue, template dao.ProjectPropertyTemplate, valueStr string, lookupRow *dao.DictionaryRow) *mcp.CallToolResult {
+	// findIssueByIdOrSeq грузит Project/Workspace, но не State, а getCallParams
+	// в rules разыменовывает *issue.State — догружаем статус вручную
+	var state dao.State
+	if err := db.Where("id = ?", issue.StateId).First(&state).Error; err != nil {
+		return logger.Error(err)
+	}
+	issue.State = &state
+
+	// Старые значения полей задачи — для old_value хука и params.properties
+	if err := rules.EnrichIssue(db, issue); err != nil {
+		return logger.Error(err)
+	}
+
+	// Для lookup хук получает отображаемое значение строки справочника, не id
+	hookValue := valueStr
+	if lookupRow != nil {
+		hookValue = lookupRow.Value
+	}
+
+	var rulesLog []dao.RulesLog
+	defer func() {
+		if err := rules.AddLog(db, rulesLog); err != nil {
+			slog.Error("MCP setIssueProperty: create rules log", "error", err)
+		}
+	}()
+
+	res, msg, rerr := rules.BeforeIssuePropertyChange(*user, *issue, template, hookValue)
+
+	rules.AppendMsg(*issue, *user, msg, &rulesLog)
+	rules.AppendError(*issue, *user, rerr, &rulesLog)
+	rules.ResultToLog(*issue, *user, res, rerr, &rulesLog)
+
+	if !res.ClientResult {
+		return rerr.ClientError().MCPError()
+	}
+	return nil
+}
+
 func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) error {
 	schema := types.GenValueSchema(template.Type, template.Options)
 	compiler := jsonschema.NewCompiler()
@@ -1576,7 +1627,14 @@ func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) e
 	if err != nil {
 		return err
 	}
-	return sch.Validate(value)
+	if err := sch.Validate(value); err != nil {
+		return err
+	}
+	// Семантика дат: JSON Schema паттерном не поймать 2026-13-45 или unix вне диапазона
+	if !types.CheckDateValue(template.Type, value) {
+		return apierrors.ErrPropertyValueValidationFailed
+	}
+	return nil
 }
 
 func serializePropertyValueMCP(value any) string {

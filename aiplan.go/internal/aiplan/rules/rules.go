@@ -12,6 +12,8 @@
 //   - BeforeAssigneesChange(ctx, assignees) — перед изменением исполнителей
 //   - BeforeWatchersChange(ctx, watchers) — перед изменением наблюдателей
 //   - BeforeLabelsChange(ctx, labels) — перед изменением меток
+//   - BeforeIssuePropertyChange(ctx, property) — перед изменением кастомного поля задачи;
+//     property — таблица {name, type, old_value, new_value}
 //
 // Первый аргумент хука (ctx/params) содержит таблицы user, status, project, space, issue
 // (включая issue.attachment_count), а также значения кастомных полей задачи:
@@ -61,6 +63,39 @@ func BeforeLabelsChange(issuer dao.User, currentIssue dao.Issue, labels []dao.La
 	state := lua.NewState()
 	assigneesTable := getLabels(state, labels)
 	return callEventFunction("BeforeLabelsChange", state, issuer, currentIssue, assigneesTable)
+}
+
+// BeforeIssuePropertyChange вызывает Lua-хук перед изменением значения кастомного поля
+// задачи. currentIssue должен быть обогащён EnrichIssue (старые значения полей).
+// newValue — новое хранимое значение; для lookup вызывающая сторона передаёт
+// отображаемое значение строки справочника, не id
+func BeforeIssuePropertyChange(issuer dao.User, currentIssue dao.Issue, template dao.ProjectPropertyTemplate, newValue string) (LuaResp, []LuaOut, IRulesError) {
+	state := lua.NewState()
+
+	property := state.NewTable()
+	property.RawSetString("name", lua.LString(template.Name))
+	property.RawSetString("type", lua.LString(template.Type))
+	property.RawSetString("old_value", oldPropertyValueToLua(currentIssue.Properties, template))
+	property.RawSetString("new_value", propertyValueToLua(template.Type, newValue))
+
+	return callEventFunction("BeforeIssuePropertyChange", state, issuer, currentIssue, property)
+}
+
+// oldPropertyValueToLua находит текущее значение поля задачи по шаблону и конвертирует
+// его в Lua-значение; для lookup берётся ResolvedValue (см. getPropertiesTables).
+// Значение не найдено (поле не заполнялось) — LNil
+func oldPropertyValueToLua(props []dao.IssueProperty, template dao.ProjectPropertyTemplate) lua.LValue {
+	for _, prop := range props {
+		if prop.TemplateId != template.Id {
+			continue
+		}
+		storedValue := prop.Value
+		if template.Type == "lookup" {
+			storedValue = prop.ResolvedValue
+		}
+		return propertyValueToLua(template.Type, storedValue)
+	}
+	return lua.LNil
 }
 
 func callEventFunction(fnName string, state *lua.LState, issuer dao.User, currentIssue dao.Issue, params ...interface{}) (LuaResp, []LuaOut, IRulesError) {
@@ -269,9 +304,18 @@ func propertyValueToLua(propType, value string) lua.LValue {
 	switch propType {
 	case "boolean":
 		return lua.LBool(value == "true")
-	case "select", "link", "lookup":
+	case "select", "link", "lookup", "date":
 		if value == "" {
 			return lua.LNil
+		}
+		return lua.LString(value)
+	case "datetime":
+		if value == "" {
+			return lua.LNil
+		}
+		// unix time в секундах — числом, чтобы скрипты сравнивали даты арифметикой
+		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return lua.LNumber(n)
 		}
 		return lua.LString(value)
 	default:

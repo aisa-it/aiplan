@@ -22,7 +22,7 @@ type ProjectPropertyTemplate struct {
 	ProjectId   uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:2;type:uuid"`
 
 	Name      string   `gorm:"not null"`
-	Type      string   `gorm:"not null"` // "string", "boolean", "select", "link", "lookup"
+	Type      string   `gorm:"not null"` // "string", "boolean", "select", "link", "lookup", "date", "datetime"
 	Options   []string `gorm:"serializer:json"`
 	OnlyAdmin bool     `gorm:"default:false"`
 	SortOrder int      `gorm:"default:0"`
@@ -135,7 +135,7 @@ func ParsePropertyValue(propType, value string) any {
 	switch propType {
 	case "boolean":
 		return value == "true"
-	case "select", "lookup":
+	case "select", "lookup", "date", "datetime":
 		if value == "" {
 			return nil
 		}
@@ -232,12 +232,16 @@ func MigratePropertyValuesOnTypeChange(tx *gorm.DB, templateId uuid.UUID, oldTyp
 }
 
 // typeValuesNeedReset: старые значения невалидны для нового типа — в смене участвует
-// lookup (значение — id строки справочника) или link (значение — JSON-ссылка)
+// lookup (значение — id строки справочника), link (значение — JSON-ссылка) либо
+// date/datetime (форматы дат несовместимы со свободным текстом и друг с другом)
 func typeValuesNeedReset(oldType, newType string) bool {
 	if oldType == "lookup" || newType == "lookup" {
 		return true
 	}
-	return oldType == "link" || newType == "link"
+	if oldType == "link" || newType == "link" {
+		return true
+	}
+	return oldType == "date" || newType == "date" || oldType == "datetime" || newType == "datetime"
 }
 
 // convertLookupValuesToStrings заменяет id строк справочника в значениях задач

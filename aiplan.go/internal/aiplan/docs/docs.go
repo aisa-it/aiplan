@@ -21200,7 +21200,9 @@ const docTemplate = `{
                         "boolean",
                         "select",
                         "link",
-                        "lookup"
+                        "lookup",
+                        "date",
+                        "datetime"
                     ]
                 }
             }
