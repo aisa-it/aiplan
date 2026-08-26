@@ -426,9 +426,22 @@ func (issue Issue) FieldsAllowedForRelationsUpdate() []string {
 var issueRefRegexp = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*)-(\d+)$`)
 
 // AuthoredOrAssigned - условие выборки задач, в которых пользователь автор или исполнитель.
+// deleted_at IS NULL обязателен: у IssueAssignee есть gorm.DeletedAt, и хотя сейчас
+// исполнителей везде удаляют через Unscoped, первый же soft-delete вернул бы бывшим
+// исполнителям права на задачу.
 func (Issue) AuthoredOrAssigned(tx *gorm.DB, userID uuid.UUID) *gorm.DB {
 	return tx.Where("issues.created_by_id = ?", userID).
-		Or("issues.id IN (SELECT issue_id FROM issue_assignees WHERE assignee_id = ?)", userID)
+		Or("issues.id IN (SELECT issue_id FROM issue_assignees WHERE assignee_id = ? AND deleted_at IS NULL)", userID)
+}
+
+// RelationCandidates - условие выборки задач, доступных пользователю для привязки
+// (родитель/подзадача): участнику - авторство или исполнительство, гостю - только
+// собственное авторство (гость по чужим задачам read-only).
+func (i Issue) RelationCandidates(tx *gorm.DB, userID uuid.UUID, role int) *gorm.DB {
+	if role >= types.MemberRole {
+		return i.AuthoredOrAssigned(tx, userID)
+	}
+	return tx.Where("issues.created_by_id = ?", userID)
 }
 
 // FullTextSearch требует JOIN на таблицу projects p в исходном запросе.
