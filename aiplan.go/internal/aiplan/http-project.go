@@ -3894,7 +3894,7 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 }
 
 // validPropertyTypes - допустимые типы шаблонов кастомных полей
-var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "link": true, "lookup": true}
+var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "link": true, "lookup": true, "date": true, "datetime": true}
 
 // checkTemplateDictionary валидирует справочник шаблона поля: для типа lookup
 // требуется существующий справочник проекта, у остальных типов ссылка сбрасывается

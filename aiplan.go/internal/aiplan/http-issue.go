@@ -3721,7 +3721,10 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 func (s *Services) setIssueProperty(c echo.Context) error {
 	apiCtx := apicontext.GetContext(c)
 	projectMember := apiCtx.GetProjectMember()
-	issue := apiCtx.GetIssue()
+	// WithState обязателен: Lua-хуку BeforeIssuePropertyChange нужен статус задачи —
+	// getCallParams разыменовывает *issue.State без проверки (Project/Workspace
+	// fetchIssue проставляет всегда)
+	issue := apiCtx.GetIssue(apicontext.WithState())
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}
@@ -3784,6 +3787,23 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Lua-сценарий проекта может запретить изменение поля.
+	// На админов сценарии не распространяются (канон продукта)
+	if issue.Project != nil && issue.Project.RulesScript != nil && projectMember.Role != types.AdminRole {
+		// Старые значения полей задачи — для old_value хука и params.properties
+		if err := rules.EnrichIssue(s.DB(c), issue); err != nil {
+			return EError(c, err)
+		}
+		// Для lookup хук получает отображаемое значение строки справочника, не id
+		hookValue := valueStr
+		if lookupRow != nil {
+			hookValue = lookupRow.Value
+		}
+		if err := s.runPropertyChangeRules(c, issue, user, template, hookValue); err != nil {
+			return EError(c, err)
+		}
+	}
+
 	// Проверяем существование значения
 	var existingProp dao.IssueProperty
 	err = s.DB(c).Where("issue_id = ? AND template_id = ?", issue.ID, templateUUID).First(&existingProp).Error
@@ -3836,6 +3856,29 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	resp.ResetProperties = resetProperties
 
 	return c.JSON(status, resp)
+}
+
+// runPropertyChangeRules вызывает Lua-хук BeforeIssuePropertyChange проекта
+// (канонический порядок — как rules-блок в updateIssue). Возврат ошибки — отказ
+// сценария, значение поля не записывается
+func (s *Services) runPropertyChangeRules(c echo.Context, issue *dao.Issue, user *dao.User, template dao.ProjectPropertyTemplate, newValue string) error {
+	var rulesLog []dao.RulesLog
+	defer func() {
+		if err := rules.AddLog(s.db, rulesLog); err != nil {
+			slog.ErrorContext(c.Request().Context(), "Create rules log", "err", err)
+		}
+	}()
+
+	res, msg, rerr := rules.BeforeIssuePropertyChange(*user, *issue, template, newValue)
+
+	rules.AppendMsg(*issue, *user, msg, &rulesLog)
+	rules.AppendError(*issue, *user, rerr, &rulesLog)
+	rules.ResultToLog(*issue, *user, res, rerr, &rulesLog)
+
+	if !res.ClientResult {
+		return rerr.ClientError()
+	}
+	return nil
 }
 
 // getAvailablePropertyValues godoc
@@ -3970,7 +4013,15 @@ func validatePropertyValue(ctx context.Context, template dao.ProjectPropertyTemp
 	if errors.Is(err, &jsonschema.ValidationError{}) {
 		slog.DebugContext(ctx, "JSON schema validation error", "err", err)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Семантика дат: JSON Schema паттерном не поймать 2026-13-45 или unix вне диапазона
+	if !types.CheckDateValue(template.Type, value) {
+		return apierrors.ErrPropertyValueValidationFailed
+	}
+	return nil
 }
 
 // serializePropertyValue сериализует значение в строку для хранения в БД
@@ -4239,7 +4290,35 @@ func (s *Services) loadExportProperties(c echo.Context, result any) (*exportProp
 	if err := resolveLookupExportValues(s.DB(c), data); err != nil {
 		return nil, err
 	}
+	resolveDatetimeExportValues(data)
 	return data, nil
+}
+
+// resolveDatetimeExportValues конвертирует значения datetime-полей (unix time
+// в секундах) в читаемый RFC3339 (UTC) — выгрузка предназначена для чтения людьми.
+// Нечисловое значение остаётся как есть (данные не теряем); date не трогаем —
+// YYYY-MM-DD и так читаем
+func resolveDatetimeExportValues(data *exportPropertiesData) {
+	datetimeTemplates := make(map[uuid.UUID]struct{})
+	for _, t := range data.templates {
+		if t.Type == "datetime" {
+			datetimeTemplates[t.Id] = struct{}{}
+		}
+	}
+	if len(datetimeTemplates) == 0 {
+		return
+	}
+
+	for _, issueValues := range data.values {
+		for templateId, value := range issueValues {
+			if _, ok := datetimeTemplates[templateId]; !ok || value == "" {
+				continue
+			}
+			if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+				issueValues[templateId] = time.Unix(n, 0).UTC().Format(time.RFC3339)
+			}
+		}
+	}
 }
 
 // resolveLookupExportValues подменяет в данных экспорта id строк справочников

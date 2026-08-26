@@ -203,7 +203,7 @@ type ProjectPropertyTemplate struct {
 // CreatePropertyTemplateRequest - запрос на создание шаблона поля
 type CreatePropertyTemplateRequest struct {
 	Name         string                    `json:"name" validate:"required,min=1,max=255"`
-	Type         string                    `json:"type" validate:"required,oneof=string boolean select link lookup"`
+	Type         string                    `json:"type" validate:"required,oneof=string boolean select link lookup date datetime"`
 	Options      []string                  `json:"options,omitempty"`
 	DictionaryId uuid.NullUUID             `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
