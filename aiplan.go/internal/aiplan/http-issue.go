@@ -920,6 +920,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 	}
 
 	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID || unpinTask
+	// Исполнителю задачи доступны связи: родитель и блокировки
+	canManageRelations := updateAll || issue.IsAssignee(user.ID)
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
@@ -956,7 +958,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		// Update blockers
-		if blockersOk && updateAll {
+		if blockersOk && canManageRelations {
 			// Delete all blockers
 			if err := tx.Where("block_id = ?", issue.ID).Unscoped().Delete(&dao.IssueBlocker{}).Error; err != nil {
 				return err
@@ -1059,7 +1061,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 
 		// Update blocked
-		if blocksOk && updateAll {
+		if blocksOk && canManageRelations {
 			// Delete all blocked
 			if err := tx.Where("blocked_by_id = ?", issue.ID).Unscoped().Delete(&dao.IssueBlocker{}).Error; err != nil {
 				return err
@@ -1144,8 +1146,13 @@ func (s *Services) updateIssue(c echo.Context) error {
 		var err error
 		if updateAll {
 			err = tx.Model(issue).Select(issue.FieldsAllowedForUpdate()).Updates(data).Error
+		} else if canManageRelations {
+			err = tx.Model(issue).Select(issue.FieldsAllowedForRelationsUpdate()).Updates(data).Error
 		} else {
 			err = tx.Model(issue).Select(issue.FieldsAllowedForAllUpdate()).Updates(data).Error
+		}
+		if err != nil {
+			return err
 		}
 
 		if err = tx.Where("issue_id = ?", issue.ID).Delete(&dao.IssueDescriptionLock{}).Error; err != nil && err != gorm.ErrRecordNotFound {
@@ -1391,12 +1398,13 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 
 	query := s.DB(c).
 		Preload("Project").
+		Preload("Assignees").
 		Where("project_id = ?", project.ID).
 		Where("parent_id is null").
 		Where("id in ?", subIssueIDs)
 
 	if projectMember.Role < types.AdminRole {
-		query = query.Where("created_by_id = ?", user.ID)
+		query = query.Where(dao.Issue{}.AuthoredOrAssigned(s.db, user.ID))
 	}
 
 	var subIssues []dao.Issue
@@ -1423,7 +1431,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	parentId := uuid.NullUUID{UUID: id, Valid: true}
 
 	for i := range subIssues {
-		if projectMember.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
+		if projectMember.Role != types.AdminRole && subIssues[i].CreatedById != user.ID && !subIssues[i].IsAssignee(user.ID) {
 			return EErrorDefined(c, apierrors.ErrPermissionParentIssue)
 		}
 		subIssues[i].ParentId = parentId
@@ -1722,7 +1730,7 @@ const (
 func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 	apiContext := apicontext.GetContext(c)
 	member := apiContext.GetProjectMember()
-	currentIssue := apiContext.GetIssue(apicontext.WithAuthor())
+	currentIssue := apiContext.GetIssue(apicontext.WithAuthor(), apicontext.WithAssignees())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
@@ -1762,7 +1770,7 @@ func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 		})
 
 	if member.Role < types.AdminRole && (issuesType == SearchParentIssues || issuesType == SearchSubIssues) {
-		query = query.Where("issues.created_by_id = ?", member.MemberId)
+		query = query.Where(dao.Issue{}.AuthoredOrAssigned(s.db, member.MemberId))
 	}
 
 	switch issuesType {
@@ -1817,7 +1825,10 @@ func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 				Model(&dao.IssueBlocker{}),
 		)
 	case SearchLinkedIssues:
-		if member.Role == types.GuestRole || (member.Role == types.MemberRole && currentIssue.Author.ID != apiContext.GetUser().ID) {
+		if member.Role == types.GuestRole ||
+			(member.Role == types.MemberRole &&
+				currentIssue.Author.ID != apiContext.GetUser().ID &&
+				!currentIssue.IsAssignee(apiContext.GetUser().ID)) {
 			query = query.Where("1 = 0")
 		}
 	default:

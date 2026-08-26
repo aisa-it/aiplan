@@ -412,7 +412,24 @@ func (Issue) FieldsAllowedForAllUpdate() []string {
 	return []string{"state_id", "completed_at", "updated_at", "updated_by_id"}
 }
 
+// FieldsAllowedForRelationsUpdate - список полей, доступных для обновления исполнителю задачи (связи родитель/ребёнок в дополнение к общим полям).
+//
+// Параметры:
+//   - Нет
+//
+// Возвращает:
+//   - []string: список строк, представляющих имена полей, которые можно обновлять.
+func (issue Issue) FieldsAllowedForRelationsUpdate() []string {
+	return append(issue.FieldsAllowedForAllUpdate(), "parent_id", "sort_order")
+}
+
 var issueRefRegexp = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*)-(\d+)$`)
+
+// AuthoredOrAssigned - условие выборки задач, в которых пользователь автор или исполнитель.
+func (Issue) AuthoredOrAssigned(tx *gorm.DB, userID uuid.UUID) *gorm.DB {
+	return tx.Where("issues.created_by_id = ?", userID).
+		Or("issues.id IN (SELECT issue_id FROM issue_assignees WHERE assignee_id = ?)", userID)
+}
 
 // FullTextSearch требует JOIN на таблицу projects p в исходном запросе.
 func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {

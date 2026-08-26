@@ -683,8 +683,10 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		return logger.Error(err), nil
 	}
 
-	// Определение прав: admin или автор могут менять все поля
+	// Определение прав: admin или автор могут менять все поля,
+	// исполнителю дополнительно доступны связи (родитель)
 	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID
+	canManageRelations := updateAll || issue.IsAssignee(user.ID)
 
 	// Сохраняем снимок старых данных для activity tracking
 	oldIssue := issue
@@ -747,7 +749,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	if parentIdStr, ok := args["parent_id"].(string); ok {
-		if !updateAll {
+		if !canManageRelations {
 			return apierrors.ErrIssueForbidden.MCPError(), nil
 		}
 		if parentIdStr == "" {

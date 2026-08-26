@@ -416,6 +416,24 @@ func loadIssueAndMember(db *gorm.DB, userID uuid.UUID, issueIdOrSeq string) (*da
 	return issue, &pm, nil
 }
 
+// canManageLinkedIssues: связями задачи управляет админ, автор или исполнитель (как в HTTP hasIssuePermissions).
+// Исполнитель проверяется запросом в БД — loadIssueAndMember не загружает Assignees.
+func canManageLinkedIssues(db *gorm.DB, issue *dao.Issue, pm *dao.ProjectMember, userID uuid.UUID) (bool, error) {
+	if pm.Role == types.AdminRole || issue.CreatedById == userID {
+		return true, nil
+	}
+	if pm.Role != types.MemberRole {
+		return false, nil
+	}
+	var isAssignee bool
+	err := db.Model(&dao.IssueAssignee{}).
+		Select("count(*) > 0").
+		Where("issue_id = ?", issue.ID).
+		Where("assignee_id = ?", userID).
+		Find(&isAssignee).Error
+	return isAssignee, err
+}
+
 func deleteIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
 	if !ok || issueIdOrSeq == "" {
@@ -553,11 +571,12 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 
 	query := db.
 		Preload("Project").
+		Preload("Assignees").
 		Where("project_id = ?", parentIssue.ProjectId).
 		Where("parent_id is null").
 		Where("id in ?", candidateIDs)
 	if pm.Role < types.AdminRole {
-		query = query.Where("created_by_id = ?", user.ID)
+		query = query.Where(dao.Issue{}.AuthoredOrAssigned(db, user.ID))
 	}
 
 	var subIssues []dao.Issue
@@ -582,7 +601,7 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	parentNullID := uuid.NullUUID{UUID: parentIssue.ID, Valid: true}
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	for i := range subIssues {
-		if pm.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
+		if pm.Role != types.AdminRole && subIssues[i].CreatedById != user.ID && !subIssues[i].IsAssignee(user.ID) {
 			return apierrors.ErrPermissionParentIssue.MCPError(), nil
 		}
 		subIssues[i].ParentId = parentNullID
@@ -667,9 +686,17 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		newIDs = append(newIDs, newID)
 	}
 
-	issue, _, errRes := loadIssueAndMember(db, user.ID, issueIdOrSeq)
+	issue, pm, errRes := loadIssueAndMember(db, user.ID, issueIdOrSeq)
 	if errRes != nil {
 		return errRes, nil
+	}
+
+	allowed, err := canManageLinkedIssues(db, issue, pm, user.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+	if !allowed {
+		return apierrors.ErrIssueForbidden.MCPError(), nil
 	}
 
 	if err := issue.FetchLinkedIssues(db); err != nil {
@@ -1200,7 +1227,7 @@ func getAvailableIssuesForRelation(ctx context.Context, db *gorm.DB, bl *busines
 		})
 
 	if pm.Role < types.AdminRole && (relationType == relationParent || relationType == relationSub) {
-		query = query.Where("issues.created_by_id = ?", user.ID)
+		query = query.Where(dao.Issue{}.AuthoredOrAssigned(db, user.ID))
 	}
 
 	switch relationType {
@@ -1253,8 +1280,11 @@ func getAvailableIssuesForRelation(ctx context.Context, db *gorm.DB, bl *busines
 				Model(&dao.IssueBlocker{}),
 		)
 	case relationLinked:
-		authorMatch := currentIssue.Author != nil && currentIssue.Author.ID == user.ID
-		if pm.Role == types.GuestRole || (pm.Role == types.MemberRole && !authorMatch) {
+		allowed, err := canManageLinkedIssues(db, currentIssue, pm, user.ID)
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if !allowed {
 			query = query.Where("1 = 0")
 		}
 	}
