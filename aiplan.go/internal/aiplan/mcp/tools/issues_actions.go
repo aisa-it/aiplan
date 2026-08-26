@@ -417,9 +417,11 @@ func loadIssueAndMember(db *gorm.DB, userID uuid.UUID, issueIdOrSeq string) (*da
 	return issue, &pm, nil
 }
 
-// canManageLinkedIssues: связями задачи управляет админ, автор или исполнитель (как в HTTP hasIssuePermissions).
-// Исполнитель проверяется запросом в БД — loadIssueAndMember не загружает Assignees.
-func canManageLinkedIssues(db *gorm.DB, issue *dao.Issue, pm *dao.ProjectMember, userID uuid.UUID) (bool, error) {
+// canManageIssueRelations: связями задачи (родитель, связанные задачи) управляет админ,
+// автор или исполнитель-участник (как в HTTP hasIssuePermissions). Гость-исполнитель
+// прав не получает - гость по чужим задачам read-only. Исполнитель проверяется
+// запросом в БД — loadIssueAndMember не загружает Assignees.
+func canManageIssueRelations(db *gorm.DB, issue *dao.Issue, pm *dao.ProjectMember, userID uuid.UUID) (bool, error) {
 	if pm.Role == types.AdminRole || issue.CreatedById == userID {
 		return true, nil
 	}
@@ -577,7 +579,7 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		Where("parent_id is null").
 		Where("id in ?", candidateIDs)
 	if pm.Role < types.AdminRole {
-		query = query.Where(dao.Issue{}.AuthoredOrAssigned(db, user.ID))
+		query = query.Where(dao.Issue{}.RelationCandidates(db, user.ID, pm.Role))
 	}
 
 	var subIssues []dao.Issue
@@ -602,7 +604,8 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	parentNullID := uuid.NullUUID{UUID: parentIssue.ID, Valid: true}
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	for i := range subIssues {
-		if pm.Role != types.AdminRole && subIssues[i].CreatedById != user.ID && !subIssues[i].IsAssignee(user.ID) {
+		if pm.Role != types.AdminRole && subIssues[i].CreatedById != user.ID &&
+			!(pm.Role >= types.MemberRole && subIssues[i].IsAssignee(user.ID)) {
 			return apierrors.ErrPermissionParentIssue.MCPError(), nil
 		}
 		subIssues[i].ParentId = parentNullID
@@ -610,7 +613,10 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		subIssues[i].SortOrder = i + maxSortOrder + 1
 	}
 
-	if err := db.Save(&subIssues).Error; err != nil {
+	// Omit(clause.Associations) обязателен: Assignees загружены Preload'ом для
+	// проверки IsAssignee, а автосохранение many2many пишет в issue_assignees
+	// без id (join-таблица не через SetupJoinTable) и валит запрос
+	if err := db.Omit(clause.Associations).Save(&subIssues).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
@@ -692,7 +698,7 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return errRes, nil
 	}
 
-	allowed, err := canManageLinkedIssues(db, issue, pm, user.ID)
+	allowed, err := canManageIssueRelations(db, issue, pm, user.ID)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1228,7 +1234,7 @@ func getAvailableIssuesForRelation(ctx context.Context, db *gorm.DB, bl *busines
 		})
 
 	if pm.Role < types.AdminRole && (relationType == relationParent || relationType == relationSub) {
-		query = query.Where(dao.Issue{}.AuthoredOrAssigned(db, user.ID))
+		query = query.Where(dao.Issue{}.RelationCandidates(db, user.ID, pm.Role))
 	}
 
 	switch relationType {
@@ -1281,7 +1287,7 @@ func getAvailableIssuesForRelation(ctx context.Context, db *gorm.DB, bl *busines
 				Model(&dao.IssueBlocker{}),
 		)
 	case relationLinked:
-		allowed, err := canManageLinkedIssues(db, currentIssue, pm, user.ID)
+		allowed, err := canManageIssueRelations(db, currentIssue, pm, user.ID)
 		if err != nil {
 			return logger.Error(err), nil
 		}

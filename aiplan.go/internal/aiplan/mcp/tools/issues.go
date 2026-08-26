@@ -684,9 +684,14 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	// Определение прав: admin или автор могут менять все поля,
-	// исполнителю дополнительно доступны связи (родитель)
+	// исполнителю-участнику дополнительно доступны связи (родитель).
+	// issue.IsAssignee здесь бесполезен - loadIssueAndMember не загружает Assignees,
+	// исполнитель проверяется запросом в БД внутри canManageIssueRelations
 	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID
-	canManageRelations := updateAll || issue.IsAssignee(user.ID)
+	canManageRelations, relErr := canManageIssueRelations(db, &issue, &projectMember, user.ID)
+	if relErr != nil {
+		return logger.Error(relErr), nil
+	}
 
 	// Сохраняем снимок старых данных для activity tracking
 	oldIssue := issue

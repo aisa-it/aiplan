@@ -920,8 +920,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 	}
 
 	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID || unpinTask
-	// Исполнителю задачи доступны связи: родитель и блокировки
-	canManageRelations := updateAll || issue.IsAssignee(user.ID)
+	// Исполнителю задачи доступны связи: родитель и блокировки.
+	// Гостю-исполнителю - нет: гость по чужим задачам read-only (мидлварь его сюда
+	// и так не пустит, проверка роли - страховка на случай смены правил мидлвари)
+	canManageRelations := updateAll ||
+		(projectMember.Role >= types.MemberRole && issue.IsAssignee(user.ID))
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
@@ -1404,7 +1407,7 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 		Where("id in ?", subIssueIDs)
 
 	if projectMember.Role < types.AdminRole {
-		query = query.Where(dao.Issue{}.AuthoredOrAssigned(s.db, user.ID))
+		query = query.Where(dao.Issue{}.RelationCandidates(s.db, user.ID, projectMember.Role))
 	}
 
 	var subIssues []dao.Issue
@@ -1431,7 +1434,8 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 	parentId := uuid.NullUUID{UUID: id, Valid: true}
 
 	for i := range subIssues {
-		if projectMember.Role != types.AdminRole && subIssues[i].CreatedById != user.ID && !subIssues[i].IsAssignee(user.ID) {
+		if projectMember.Role != types.AdminRole && subIssues[i].CreatedById != user.ID &&
+			!(projectMember.Role >= types.MemberRole && subIssues[i].IsAssignee(user.ID)) {
 			return EErrorDefined(c, apierrors.ErrPermissionParentIssue)
 		}
 		subIssues[i].ParentId = parentId
@@ -1439,7 +1443,10 @@ func (s *Services) addSubIssueList(c echo.Context) error {
 		subIssues[i].SortOrder = i + maxSortOrder + 1
 	}
 
-	if err := s.DB(c).Save(&subIssues).Error; err != nil {
+	// Omit(clause.Associations) обязателен: Assignees загружены Preload'ом для
+	// проверки IsAssignee, а автосохранение many2many пишет в issue_assignees
+	// без id (join-таблица не через SetupJoinTable) и валит запрос
+	if err := s.DB(c).Omit(clause.Associations).Save(&subIssues).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -1770,7 +1777,7 @@ func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 		})
 
 	if member.Role < types.AdminRole && (issuesType == SearchParentIssues || issuesType == SearchSubIssues) {
-		query = query.Where(dao.Issue{}.AuthoredOrAssigned(s.db, member.MemberId))
+		query = query.Where(dao.Issue{}.RelationCandidates(s.db, member.MemberId, member.Role))
 	}
 
 	switch issuesType {
