@@ -243,7 +243,7 @@ var (
 	ErrIssueLimitExceed                = DefinedError{Code: 4011, StatusCode: http.StatusPaymentRequired, Err: "issue limit exceed", RuErr: "Количество ваших задач достигло лимита бесплатной версии"}
 	ErrAssetsLimitExceed               = DefinedError{Code: 4012, StatusCode: http.StatusPaymentRequired, Err: "attachment limit exceed", RuErr: "Количество ваших вложений достигло лимита вашего плана"}
 	ErrIssueNameEmpty                  = DefinedError{Code: 4013, StatusCode: http.StatusBadRequest, Err: "Empty issue name", RuErr: "Передано пустое имя задачи"}
-	ErrPermissionParentIssue           = DefinedError{Code: 4081, StatusCode: http.StatusConflict, Err: "the task was not created by the current user", RuErr: "Выбранная задача не может быть преобразована в подзадачу. Выбранная задача не вашего авторства"}
+	ErrPermissionParentIssue           = DefinedError{Code: 4081, StatusCode: http.StatusConflict, Err: "the user is neither author nor assignee of the task", RuErr: "Выбранная задача не может быть преобразована в подзадачу: вы не её автор и не исполнитель"}
 	ErrIssueForbidden                  = DefinedError{Code: 4014, StatusCode: http.StatusForbidden, Err: "not have permissions to perform this action", RuErr: "Недостаточно прав для совершения действия"}
 	ErrIssueCommentNotFound            = DefinedError{Code: 4015, StatusCode: http.StatusNotFound, Err: "issue comment not found", RuErr: "Комментарий не найден"}
 	ErrTooHeavyAttachmentsZip          = DefinedError{Code: 4016, StatusCode: http.StatusRequestEntityTooLarge, Err: "attachments size exceed " + fmt.Sprint(AttachmentsZipMaxSizeMB) + "MB", RuErr: "Суммарный размер вложений превышает " + fmt.Sprint(AttachmentsZipMaxSizeMB) + "МБ"}
