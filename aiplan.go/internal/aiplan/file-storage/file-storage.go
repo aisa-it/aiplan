@@ -93,7 +93,10 @@ type FileStorage interface {
 	SaveReader(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error
 	SaveReaderWithBuf(reader io.Reader, fileSize int64, name uuid.UUID, contentType string, metadata *Metadata) error
 	Load(name uuid.UUID) ([]byte, error)
-	LoadReader(name uuid.UUID) (io.ReadCloser, error)
+	// LoadReader отдаёт ReadSeekCloser: Seek нужен http.ServeContent для
+	// Range-запросов (перемотка медиа, Safari). У MinIO Seek ленивый —
+	// следующий Read уходит ranged GET'ом с нужным оффсетом.
+	LoadReader(name uuid.UUID) (io.ReadSeekCloser, error)
 	Delete(name uuid.UUID) error
 	CopyOld(name string, newName uuid.UUID, newMeta *Metadata) error
 	Exist(name uuid.UUID) (bool, error)
@@ -158,7 +161,7 @@ func (s *LocalStorage) Load(name uuid.UUID) ([]byte, error) {
 	return os.ReadFile(filepath.Join(s.rootDir, name.String()))
 }
 
-func (s *LocalStorage) LoadReader(name uuid.UUID) (io.ReadCloser, error) {
+func (s *LocalStorage) LoadReader(name uuid.UUID) (io.ReadSeekCloser, error) {
 	return os.Open(filepath.Join(s.rootDir, name.String()))
 }
 
@@ -360,7 +363,7 @@ func (s *MinioStorage) Load(name uuid.UUID) ([]byte, error) {
 	return io.ReadAll(obj)
 }
 
-func (s *MinioStorage) LoadReader(name uuid.UUID) (io.ReadCloser, error) {
+func (s *MinioStorage) LoadReader(name uuid.UUID) (io.ReadSeekCloser, error) {
 	return s.client.GetObject(context.Background(),
 		s.bucketName,
 		name.String(),

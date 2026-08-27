@@ -123,13 +123,6 @@ func (s *Services) assetsHandler(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	ifNoneMatchHeader := c.Request().Header.Get("If-None-Match")
-	if ifNoneMatchHeader == stats.ETag {
-		return c.NoContent(http.StatusNotModified)
-	}
-
-	c.Response().Header().Set("ETag", stats.ETag)
-	c.Response().Header().Set("Content-Length", fmt.Sprint(stats.Size))
 	// Запрещаем браузеру угадывать тип контента по содержимому вместо
 	// заявленного Content-Type — иначе список inlineSafeContentTypes можно
 	// обойти MIME-sniffing'ом в старых браузерах.
@@ -162,5 +155,22 @@ func (s *Services) assetsHandler(c echo.Context) error {
 	c.Response().Header().Set("Content-Disposition",
 		fmt.Sprintf("%s; filename*=UTF-8''%s", disposition, url.PathEscape(asset.Name)))
 
-	return c.Stream(http.StatusOK, asset.ContentType, r)
+	// ETag обязан быть в кавычках (RFC 7232) — без них ServeContent молча
+	// игнорирует If-None-Match/If-Range и условное кеширование отваливается.
+	if stats.ETag != "" {
+		c.Response().Header().Set("ETag", `"`+stats.ETag+`"`)
+	}
+	// Content-Type ставим до ServeContent: при выставленном заголовке он его
+	// уважает, при пустом — угадывает по расширению/содержимому. Угадывание
+	// безопасно только потому, что неизвестные типы уже ушли в attachment.
+	if asset.ContentType != "" {
+		c.Response().Header().Set("Content-Type", asset.ContentType)
+	}
+
+	// ServeContent разбирает Range/If-Range/If-None-Match/If-Modified-Since,
+	// отвечает 206/304, ставит Accept-Ranges и Content-Length. Seek по
+	// minio.Object транслируется в ranged GET к MinIO — перемотка медиа
+	// стоит один запрос куска, а не перекачку файла целиком.
+	http.ServeContent(c.Response(), c.Request(), asset.Name, stats.CreatedAt, r)
+	return nil
 }
