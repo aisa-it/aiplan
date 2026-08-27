@@ -26,7 +26,11 @@ SELECT (extract(epoch from ($1 - 'epoch'::timestamptz)) * 1000)::bigint::text;
 $$ LANGUAGE sql IMMUTABLE STRICT;
 
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, logo_id::text, slug, owner_id::text, integration_token, (deleted_at is null)::text)) STORED;
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, public::text, identifier, project_lead_id::text, emoji::text, coalesce(cover_image, ''), coalesce(estimate_id, ''), coalesce(rules_script, ''), (deleted_at is null)::text)) STORED;
+-- Хеш проекта питает ETag/304 в ProjectMiddleware: поле, отдаваемое клиенту, но не входящее
+-- в формулу, после PATCH «не сохраняется» — БД обновлена, а клиент вечно получает 304 со
+-- старым кешем. Новое клиентское поле проекта ОБЯЗАНО попадать в этот список (BAK-371).
+ALTER TABLE projects DROP COLUMN IF EXISTS "hash";
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, public::text, identifier, project_lead_id::text, emoji::text, coalesce(cover_image, ''), coalesce(estimate_id, ''), coalesce(rules_script, ''), issue_deletion_allowed::text, member_attachments_allowed::text, (deleted_at is null)::text)) STORED;
 
 ALTER TABLE states DROP COLUMN IF EXISTS "hash";
 ALTER TABLE states ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, color, "group", "default"::text, sequence::text, COALESCE(immutable_array_to_string(from_states::text[], ','), ''))) STORED;
