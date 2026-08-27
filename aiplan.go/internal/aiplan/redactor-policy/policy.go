@@ -69,6 +69,9 @@ func init() {
 	// Слаг якоря документа АИДока: ASCII, первый символ буквенно-цифровой, до 64 символов.
 	// Тот же формат, что фронт кладёт в data-anchor-id и в id заголовка.
 	anchorIdRegexp := regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+	// Язык код-блока TipTap: <code class="language-js"> (languageClassPrefix).
+	// bluemonday матчит через MatchString (неякорно), поэтому ^...$ обязательны.
+	codeLanguageRegexp := regexp.MustCompile(`^language-[a-zA-Z0-9+#.-]{1,32}$`)
 
 	// Правило по факту декларативное: ниже "class" разрешается на span без
 	// Matching в составе dataSpanAttrs, а политики атрибутов складываются по ИЛИ,
@@ -77,7 +80,18 @@ func init() {
 	UgcPolicy.AllowAttrs("data-issue-table-params", "style", "class").OnElements("table")
 	UgcPolicy.AllowAttrs("contenteditable").OnElements("td", "th")
 
+	// class на pre — контракт двух потребителей фронта: подсветка код-блоков
+	// и mermaid-диаграммы (<pre class="mermaid">исходник</pre>, см.
+	// mermaidEditor.ts). Диаграмма хранится только исходным текстом,
+	// SVG рендерится на клиенте; data-атрибуты на pre не разрешены,
+	// поэтому маркер ноды — именно класс. Не сужать без ревизии фронта.
 	UgcPolicy.AllowAttrs("spellcheck", "class").OnElements("pre")
+	// Выбранный язык подсветки код-блока. До 2026-08-27 class на code вырезался
+	// целиком, и язык не переживал сохранение (после перезагрузки lowlight
+	// подсвечивал автодетектом). Правило действительно ограничивает формат:
+	// других правил для class на code в политике нет (в отличие от span и pre,
+	// где class разрешён без Matching).
+	UgcPolicy.AllowAttrs("class").Matching(codeLanguageRegexp).OnElements("code")
 	UgcPolicy.AllowAttrs("data-color", "style").OnElements("mark")
 	UgcPolicy.AllowAttrs(dataSpanAttrs...).OnElements("span")
 	// В отличие от id (см. ниже), это правило действительно ограничивает формат:
