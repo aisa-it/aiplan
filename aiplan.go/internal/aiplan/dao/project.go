@@ -67,7 +67,9 @@ type Project struct {
 	RulesScript          *string          `json:"rules_script" extensions:"x-nullable"`
 	HideFields           types.HideFields `json:"hide_fields" gorm:"type:jsonb"`
 	IssueDeletionAllowed bool             `json:"issue_deletion_allowed" gorm:"default:true"`
-	Archived             bool             `gorm:"default:false;index"`
+	// Участники (не гости) могут прикреплять вложения к любым задачам проекта, а не только к своим/назначенным
+	MemberAttachmentsAllowed bool `json:"member_attachments_allowed" gorm:"default:false"`
+	Archived                 bool `gorm:"default:false;index"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
@@ -131,25 +133,26 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 	project.SetUrl()
 
 	return &dto.ProjectLight{
-		ID:                      project.ID,
-		Name:                    project.Name,
-		Public:                  project.Public,
-		Identifier:              project.Identifier,
-		ProjectLeadId:           project.ProjectLeadId,
-		WorkspaceId:             project.WorkspaceId,
-		Emoji:                   project.Emoji,
-		LogoId:                  project.LogoId,
-		CoverImage:              project.CoverImage,
-		Url:                     types.JsonURL{project.URL},
-		IsFavorite:              project.IsFavorite,
-		Archived:                project.Archived,
-		TotalMembers:            project.TotalMembers,
-		DefaultAssignees:        project.DefaultAssignees,
-		DefaultWatchers:         project.DefaultWatchers,
-		DefaultAssigneesDetails: utils.SliceToSlice(&project.DefaultAssigneesDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
-		DefaultWatchersDetails:  utils.SliceToSlice(&project.DefaultWatchersDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
-		CurrentUserMembership:   project.CurrentUserMembership.ToLightDTO(),
-		IssueDeletionAllowed:    project.IssueDeletionAllowed,
+		ID:                       project.ID,
+		Name:                     project.Name,
+		Public:                   project.Public,
+		Identifier:               project.Identifier,
+		ProjectLeadId:            project.ProjectLeadId,
+		WorkspaceId:              project.WorkspaceId,
+		Emoji:                    project.Emoji,
+		LogoId:                   project.LogoId,
+		CoverImage:               project.CoverImage,
+		Url:                      types.JsonURL{project.URL},
+		IsFavorite:               project.IsFavorite,
+		Archived:                 project.Archived,
+		TotalMembers:             project.TotalMembers,
+		DefaultAssignees:         project.DefaultAssignees,
+		DefaultWatchers:          project.DefaultWatchers,
+		DefaultAssigneesDetails:  utils.SliceToSlice(&project.DefaultAssigneesDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
+		DefaultWatchersDetails:   utils.SliceToSlice(&project.DefaultWatchersDetails, func(pm *ProjectMember) dto.ProjectMemberLight { return *pm.ToLightDTO() }),
+		CurrentUserMembership:    project.CurrentUserMembership.ToLightDTO(),
+		IssueDeletionAllowed:     project.IssueDeletionAllowed,
+		MemberAttachmentsAllowed: project.MemberAttachmentsAllowed,
 	}
 }
 

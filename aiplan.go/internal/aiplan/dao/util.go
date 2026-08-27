@@ -398,6 +398,8 @@ type UserPrivilegesOverIssue struct {
 	IsAuthor      bool
 	IsAssigner    bool
 	IsWatcher     bool
+	// Настройка проекта: участникам разрешено прикреплять вложения к любым задачам
+	MemberAttachmentsAllowed bool
 }
 
 // UserPrivilegesOverDoc
@@ -414,11 +416,12 @@ type UserPrivilegesOverDoc struct {
 
 func GetUserPrivilegesOverIssue(issueId string, userId uuid.UUID, db *gorm.DB) (*UserPrivilegesOverIssue, error) {
 	var priv UserPrivilegesOverIssue
-	if err := db.Raw(`select wm.member_id as "user_id", i.id as "issue_id", wm.role as "workspace_role", pm.role as "project_role", i.created_by_id = ? as "is_author", ia.id is not null as "is_assigner", iw.id is not null as "is_watcher" from issues i
+	if err := db.Raw(`select wm.member_id as "user_id", i.id as "issue_id", wm.role as "workspace_role", pm.role as "project_role", i.created_by_id = ? as "is_author", ia.id is not null as "is_assigner", iw.id is not null as "is_watcher", p.member_attachments_allowed as "member_attachments_allowed" from issues i
 left join issue_assignees ia on i.id = ia.issue_id and ia.assignee_id = ?
 left join issue_watchers iw on i.id = iw.issue_id and iw.watcher_id = ?
 left join workspace_members wm on i.workspace_id = wm.workspace_id and wm.member_id = ?
 left join project_members pm on i.project_id = pm.project_id and pm.member_id = ?
+left join projects p on i.project_id = p.id
 where i.id = ?`, userId, userId, userId, userId, userId, issueId).First(&priv).Error; err != nil {
 		return nil, err
 	}
