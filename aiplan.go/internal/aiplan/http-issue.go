@@ -175,7 +175,7 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 		}
 
-		if priv.ProjectRole == types.GuestRole || (!priv.IsAuthor && !priv.IsAssigner && priv.ProjectRole == types.MemberRole) {
+		if priv.ProjectRole == types.GuestRole || (!priv.IsAuthor && !priv.IsAssigner && priv.ProjectRole == types.MemberRole && !priv.MemberAttachmentsAllowed) {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrNotEnoughRights.TusdError()
 		}
 

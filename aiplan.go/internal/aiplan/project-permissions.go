@@ -216,8 +216,18 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 		if issue.CreatedById == user.ID {
 			// If issue author
 			return true, nil
-		} else {
-			return issue.IsAssignee(user.ID), nil
+		}
+		if issue.IsAssignee(user.ID) {
+			return true, nil
+		}
+
+		// Настройка проекта: участникам разрешено прикреплять вложения к любым задачам
+		if strings.HasSuffix(c.Path(), "/issue-attachments/") && c.Request().Method == http.MethodPost {
+			project := apiContext.GetProject()
+			if apiContext.Error() != nil {
+				return false, apiContext.Error()
+			}
+			return project.MemberAttachmentsAllowed, nil
 		}
 	}
 
