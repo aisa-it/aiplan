@@ -4064,7 +4064,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "\"\"",
-                        "description": "Поле для группировки результатов",
+                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:\u003cuuid шаблона кастомного поля\u003e",
                         "name": "group_by",
                         "in": "query"
                     },
@@ -4197,7 +4197,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "\"\"",
-                        "description": "Поле для группировки результатов",
+                        "description": "Поле для группировки: priority, author, state, labels, assignees, watchers, project или property:\u003cuuid шаблона кастомного поля\u003e",
                         "name": "group_by",
                         "in": "query"
                     },
@@ -4234,6 +4234,13 @@ const docTemplate = `{
                         "default": false,
                         "description": "Вернуть только закрепленные задачи",
                         "name": "only_pinned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Добавить колонки дополнительных параметров задач",
+                        "name": "include_properties",
                         "in": "query"
                     },
                     {
@@ -8618,6 +8625,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/doc/{docId}/move/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "перенос документа",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Docs"
+                ],
+                "summary": "doc: перенос документа",
+                "operationId": "moveDoc",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Id документа",
+                        "name": "docId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "документ перемещен"
+                    },
+                    "400": {
+                        "description": "Некорректные параметры запроса",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Ошибка: не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/forms/": {
             "get": {
                 "security": [
@@ -10878,6 +10957,685 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/dictionaries/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает все справочники проекта с количеством строк в каждом.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: получение списка справочников проекта",
+                "operationId": "getDictionaryList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список справочников",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.Dictionary"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к проекту",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Создает новый справочник проекта. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: создание справочника",
+                "operationId": "createDictionary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные справочника",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateDictionaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Созданный справочник",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Dictionary"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на создание",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/dictionaries/{dictionaryId}/": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет справочник проекта вместе со строками. Справочник, на который ссылаются шаблоны полей, удалить нельзя. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: удаление справочника",
+                "operationId": "deleteDictionary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID справочника",
+                        "name": "dictionaryId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Справочник успешно удален"
+                    },
+                    "403": {
+                        "description": "Нет прав на удаление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Справочник не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "409": {
+                        "description": "Справочник используется полями проекта",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет справочник проекта. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: обновление справочника",
+                "operationId": "updateDictionary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID справочника",
+                        "name": "dictionaryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные для обновления",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateDictionaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленный справочник",
+                        "schema": {
+                            "$ref": "#/definitions/dto.Dictionary"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на обновление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Справочник не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/dictionaries/{dictionaryId}/rows/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает строки справочника с пагинацией и поиском по отображаемому значению. Архивные строки по умолчанию не возвращаются.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: получение строк справочника",
+                "operationId": "getDictionaryRows",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID справочника",
+                        "name": "dictionaryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (по умолчанию 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Количество строк (по умолчанию 100, максимум 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Поиск по отображаемому значению",
+                        "name": "search_query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Включить архивные строки (по умолчанию false)",
+                        "name": "include_archived",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Строки справочника",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/dao.PaginationResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "result": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/dto.DictionaryRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к проекту",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Справочник не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Добавляет строку в справочник. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: создание строки справочника",
+                "operationId": "createDictionaryRow",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID справочника",
+                        "name": "dictionaryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные строки",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateDictionaryRowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Созданная строка",
+                        "schema": {
+                            "$ref": "#/definitions/dto.DictionaryRow"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на создание",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Справочник не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/dictionaries/{dictionaryId}/rows/import/": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Импортирует строки справочника одним запросом (до 10000 строк). При replace=true существующие строки без ссылок из задач удаляются, строки со ссылками архивируются. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: батч-импорт строк",
+                "operationId": "importDictionaryRows",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID справочника",
+                        "name": "dictionaryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Строки для импорта",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ImportDictionaryRowsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Результат импорта",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ImportDictionaryRowsResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные или превышен лимит",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на импорт",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Справочник не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/dictionaries/{dictionaryId}/rows/{rowId}/": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет строку справочника. Строку, на которую ссылаются значения в задачах, удалить нельзя — её следует заархивировать. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: удаление строки справочника",
+                "operationId": "deleteDictionaryRow",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID справочника",
+                        "name": "dictionaryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID строки",
+                        "name": "rowId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Строка успешно удалена"
+                    },
+                    "403": {
+                        "description": "Нет прав на удаление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Справочник или строка не найдены",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "409": {
+                        "description": "На строку ссылаются значения в задачах",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет отображаемое значение, атрибуты или признак архивности строки. Доступно только для админов проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dictionaries"
+                ],
+                "summary": "Справочники: обновление строки справочника",
+                "operationId": "updateDictionaryRow",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID справочника",
+                        "name": "dictionaryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID строки",
+                        "name": "rowId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные для обновления",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateDictionaryRowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленная строка",
+                        "schema": {
+                            "$ref": "#/definitions/dto.DictionaryRow"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на обновление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Справочник или строка не найдены",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -14273,6 +15031,95 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Нет прав на установку",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача или шаблон не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/available-values/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает допустимые значения кастомного поля для задачи с учётом каскадной зависимости и текущего значения родительского поля. Для select - список options, для lookup - строки справочника с пагинацией и поиском.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueProperties"
+                ],
+                "summary": "Свойства задачи: допустимые значения поля",
+                "operationId": "getAvailablePropertyValues",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID шаблона поля",
+                        "name": "templateId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (для lookup, по умолчанию 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Количество строк (для lookup, по умолчанию 100, максимум 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Поиск по отображаемому значению (для lookup)",
+                        "name": "search_query",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Допустимые значения поля",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AvailablePropertyValues"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к задаче",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -19810,6 +20657,16 @@ const docTemplate = `{
                 "auth_require": {
                     "type": "boolean"
                 },
+                "default_issue_priority": {
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
+                },
                 "description": {
                     "type": "string"
                 },
@@ -20171,6 +21028,30 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AvailablePropertyValues": {
+            "type": "object",
+            "properties": {
+                "options": {
+                    "description": "Options - допустимые варианты (для типа select)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "restricted": {
+                    "description": "Restricted - применён ли каскадный фильтр (у поля есть зависимость и родитель заполнен)",
+                    "type": "boolean"
+                },
+                "rows": {
+                    "description": "Rows - допустимые строки справочника с пагинацией (для типа lookup)",
+                    "type": "object",
+                    "x-nullable": true
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.CheckProjectIdentifierAvailabilityResponse": {
             "type": "object",
             "properties": {
@@ -20242,6 +21123,35 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateDictionaryRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                }
+            }
+        },
+        "dto.CreateDictionaryRowRequest": {
+            "type": "object",
+            "required": [
+                "value"
+            ],
+            "properties": {
+                "attrs": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "value": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            }
+        },
         "dto.CreateGitRepositoryRequest": {
             "type": "object",
             "required": [
@@ -20307,6 +21217,18 @@ const docTemplate = `{
                 "type"
             ],
             "properties": {
+                "dependency": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "dictionary_id": {
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 255,
@@ -20330,7 +21252,10 @@ const docTemplate = `{
                         "string",
                         "boolean",
                         "select",
-                        "link"
+                        "link",
+                        "lookup",
+                        "date",
+                        "datetime"
                     ]
                 }
             }
@@ -20343,6 +21268,59 @@ const docTemplate = `{
             "properties": {
                 "name": {
                     "description": "Name - название репозитория (обязательное поле)",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.Dictionary": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "rows_count": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "workspace_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.DictionaryRow": {
+            "type": "object",
+            "properties": {
+                "archived": {
+                    "type": "boolean"
+                },
+                "attrs": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dictionary_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "value": {
                     "type": "string"
                 }
             }
@@ -20583,6 +21561,17 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "default_issue_priority": {
+                    "description": "Приоритет задач, создаваемых из ответов формы",
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
+                },
                 "description": {
                     "type": "string"
                 },
@@ -20722,6 +21711,17 @@ const docTemplate = `{
                 "auth_require": {
                     "type": "boolean"
                 },
+                "default_issue_priority": {
+                    "description": "Приоритет задач, создаваемых из ответов формы",
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "x-nullable": true
+                },
                 "description": {
                     "type": "string"
                 },
@@ -20847,6 +21847,38 @@ const docTemplate = `{
                 },
                 "crated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.ImportDictionaryRowsRequest": {
+            "type": "object",
+            "required": [
+                "rows"
+            ],
+            "properties": {
+                "replace": {
+                    "type": "boolean"
+                },
+                "rows": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/dto.CreateDictionaryRowRequest"
+                    }
+                }
+            }
+        },
+        "dto.ImportDictionaryRowsResult": {
+            "type": "object",
+            "properties": {
+                "archived": {
+                    "type": "integer"
+                },
+                "created": {
+                    "type": "integer"
+                },
+                "deleted": {
+                    "type": "integer"
                 }
             }
         },
@@ -21269,6 +22301,18 @@ const docTemplate = `{
         "dto.IssueProperty": {
             "type": "object",
             "properties": {
+                "dependency": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "dictionary_id": {
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "id": {
                     "type": "string"
                 },
@@ -21287,6 +22331,13 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string"
                 },
+                "reset_properties": {
+                    "description": "ResetProperties - имена зависимых полей, значения которых были сброшены\nустановкой этого значения (только в ответе установки значения)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "template_id": {
                     "type": "string"
                 },
@@ -21294,6 +22345,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "value": {},
+                "value_label": {
+                    "description": "ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника)",
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "workspace_id": {
                     "type": "string"
                 }
@@ -21818,6 +22874,9 @@ const docTemplate = `{
                     "type": "string",
                     "x-nullable": true
                 },
+                "member_attachments_allowed": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -21943,6 +23002,9 @@ const docTemplate = `{
                 "logo": {
                     "type": "string",
                     "x-nullable": true
+                },
+                "member_attachments_allowed": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"
@@ -22152,6 +23214,18 @@ const docTemplate = `{
             "properties": {
                 "created_at": {
                     "type": "string"
+                },
+                "dependency": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "dictionary_id": {
+                    "type": "string",
+                    "x-nullable": true
                 },
                 "id": {
                     "type": "string"
@@ -22811,9 +23885,48 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateDictionaryRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "dto.UpdateDictionaryRowRequest": {
+            "type": "object",
+            "properties": {
+                "archived": {
+                    "type": "boolean",
+                    "x-nullable": true
+                },
+                "attrs": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "x-nullable": true
+                },
+                "value": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
         "dto.UpdatePropertyTemplateRequest": {
             "type": "object",
             "properties": {
+                "dependency": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PropertyDependency"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "dictionary_id": {
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "name": {
                     "type": "string"
                 },
@@ -23283,7 +24396,7 @@ const docTemplate = `{
                 "sprints": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/dto.SprintLight"
+                        "$ref": "#/definitions/dto.SprintFolder"
                     }
                 }
             }
@@ -23816,6 +24929,11 @@ const docTemplate = `{
                 "label": {
                     "type": "string"
                 },
+                "property_template_id": {
+                    "description": "Привязка к шаблону кастомного поля (ProjectPropertyTemplate) целевого проекта:\nзначение ответа записывается в это поле создаваемой задачи",
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "required": {
                     "type": "boolean"
                 },
@@ -24036,6 +25154,33 @@ const docTemplate = `{
                 "notify_before_deadline": {
                     "type": "integer",
                     "x-nullable": true
+                }
+            }
+        },
+        "types.PropertyDependency": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "description": "\"options_map\" или \"row_filter\"",
+                    "type": "string"
+                },
+                "options_map": {
+                    "description": "OptionsMap (режим options_map): значение родителя → допустимые options ребёнка",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "x-nullable": true
+                },
+                "parent_template_id": {
+                    "type": "string"
+                },
+                "row_filter_attr": {
+                    "description": "RowFilterAttr (режим row_filter): имя атрибута строки справочника ребёнка,\nсравниваемого с отображаемым значением родителя (строка или массив строк в attrs)",
+                    "type": "string"
                 }
             }
         },

@@ -18,6 +18,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
@@ -175,13 +176,9 @@ func (s *Services) createForm(c echo.Context) error {
 	}
 	user := apiContext.GetUser()
 
-	var req reqForm
-	if err := c.Bind(&req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormBadRequest)
-	}
-
-	if err := c.Validate(req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormRequestValidate)
+	req, defErr := bindFormRequest(c)
+	if defErr != nil {
+		return EErrorDefined(c, *defErr)
 	}
 
 	form, err := req.toDao(nil, nil)
@@ -198,6 +195,10 @@ func (s *Services) createForm(c echo.Context) error {
 
 	if err := checkFormFields(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
+	}
+
+	if err := s.validateFormPropertyMappings(c, form); err != nil {
+		return EErrorDefined(c, apierrors.ErrFormPropertyMapping.WithFormattedMessage(err.Error()))
 	}
 
 	if err := s.DB(c).Create(&form).Error; err != nil {
@@ -246,13 +247,9 @@ func (s *Services) updateForm(c echo.Context) error {
 
 	oldSnap := tracker.FormToSnapshot(&form)
 
-	var req reqForm
-	if err := c.Bind(&req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormBadRequest)
-	}
-
-	if err := c.Validate(req); err != nil {
-		return EErrorDefined(c, apierrors.ErrFormRequestValidate)
+	req, defErr := bindFormRequest(c)
+	if defErr != nil {
+		return EErrorDefined(c, *defErr)
 	}
 
 	requestMap := StructToJSONMap(req)
@@ -280,6 +277,11 @@ func (s *Services) updateForm(c echo.Context) error {
 
 	if err := checkFormFields(&form.Fields); err != nil {
 		return EErrorDefined(c, apierrors.ErrFormCheckFields.WithFormattedMessage(err.Error()))
+	}
+
+	// Смена fields или target_project_id могла сломать привязки к кастомным полям
+	if err := s.validateFormPropertyMappings(c, newForm); err != nil {
+		return EErrorDefined(c, apierrors.ErrFormPropertyMapping.WithFormattedMessage(err.Error()))
 	}
 
 	updateFields := []string{"updated_by", "workspace_detail"}
@@ -693,6 +695,7 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	issue := &dao.Issue{
 		ID:              dao.GenUUID(),
 		Name:            fmt.Sprintf("Ответ №%d формы \"%s\"", answer.SeqId, form.Title),
+		Priority:        form.DefaultIssuePriority,
 		CreatedById:     systemUser.ID,
 		ProjectId:       form.TargetProjectId.UUID,
 		Project:         form.TargetProject,
@@ -718,6 +721,11 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	if err := s.RawDB().Where("form_id = ?", form.ID).
 		Where("answer_id = ?", answer.ID).
 		Find(&formAttachments).Error; err != nil {
+		return err
+	}
+
+	existingTemplates, err := s.loadFormMappedTemplates(form)
+	if err != nil {
 		return err
 	}
 
@@ -767,6 +775,10 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 			}
 		}
 
+		if err := createAnswerIssueProperties(tx, form, answer, issue, systemUserID, existingTemplates); err != nil {
+			return err
+		}
+
 		return tx.CreateInBatches(&newAssignees, 10).Error
 	}); err != nil {
 		return err
@@ -777,6 +789,61 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 		errStack.GetError(nil, err)
 	}
 
+	return nil
+}
+
+// loadFormMappedTemplates возвращает id живых шаблонов кастомных полей из маппинга формы:
+// параметры проекта могли измениться после сохранения формы, протухшие привязки отсеиваются
+func (s *Services) loadFormMappedTemplates(form *dao.Form) (map[uuid.UUID]struct{}, error) {
+	var mappedTemplateIds []uuid.UUID
+	for _, field := range form.Fields {
+		if field.PropertyTemplateId.Valid {
+			mappedTemplateIds = append(mappedTemplateIds, field.PropertyTemplateId.UUID)
+		}
+	}
+	existingTemplates := make(map[uuid.UUID]struct{}, len(mappedTemplateIds))
+	if len(mappedTemplateIds) == 0 {
+		return existingTemplates, nil
+	}
+	var ids []uuid.UUID
+	if err := s.RawDB().Model(&dao.ProjectPropertyTemplate{}).
+		Where("project_id = ?", form.TargetProjectId.UUID).
+		Where("id IN ?", mappedTemplateIds).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		existingTemplates[id] = struct{}{}
+	}
+	return existingTemplates, nil
+}
+
+// createAnswerIssueProperties записывает значения полей ответа, привязанных к шаблонам
+// кастомных полей целевого проекта, в кастомные поля созданной задачи.
+// existingTemplates — актуальные шаблоны проекта: протухшие привязки пропускаются.
+func createAnswerIssueProperties(tx *gorm.DB, form *dao.Form, answer *dao.FormAnswer, issue *dao.Issue, createdBy uuid.NullUUID, existingTemplates map[uuid.UUID]struct{}) error {
+	for i, field := range form.Fields {
+		if !field.PropertyTemplateId.Valid || i >= len(answer.Fields) || answer.Fields[i].Val == nil {
+			continue
+		}
+		if _, ok := existingTemplates[field.PropertyTemplateId.UUID]; !ok {
+			slog.Warn("Skip stale form property mapping",
+				"formId", form.ID, "templateId", field.PropertyTemplateId.UUID)
+			continue
+		}
+		if err := tx.Create(&dao.IssueProperty{
+			Id:          dao.GenUUID(),
+			CreatedById: createdBy,
+			UpdatedById: createdBy,
+			WorkspaceId: issue.WorkspaceId,
+			ProjectId:   issue.ProjectId,
+			TemplateId:  field.PropertyTemplateId.UUID,
+			IssueId:     issue.ID,
+			Value:       serializePropertyValue(answer.Fields[i].Val),
+		}).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -1205,6 +1272,87 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 	return nil
 }
 
+// bindFormRequest разбирает и валидирует тело запроса создания/обновления формы
+func bindFormRequest(c echo.Context) (reqForm, *apierrors.DefinedError) {
+	var req reqForm
+	if err := c.Bind(&req); err != nil {
+		return req, &apierrors.ErrFormBadRequest
+	}
+	if err := c.Validate(req); err != nil {
+		return req, &apierrors.ErrFormRequestValidate
+	}
+	return req, nil
+}
+
+// formPropertyTypeCompat: тип шаблона кастомного поля → допустимые типы полей формы
+var formPropertyTypeCompat = map[string][]string{
+	"string":  {formFieldInput, formFieldTextarea, formFieldNumeric, formFieldColor},
+	"boolean": {formFieldCheckbox},
+	"select":  {formFieldSelect},
+}
+
+// validateFormPropertyMappings проверяет привязки полей формы к шаблонам кастомных полей
+// целевого проекта: шаблон существует и принадлежит TargetProjectId, типы совместимы,
+// один шаблон не привязан к двум полям, варианты select-поля входят в options шаблона.
+// Вызывать после checkFormFields (он гарантирует непустой Validate).
+func (s *Services) validateFormPropertyMappings(c echo.Context, form *dao.Form) error {
+	used := make(map[uuid.UUID]struct{})
+	for _, field := range form.Fields {
+		if !field.PropertyTemplateId.Valid {
+			continue
+		}
+		templateId := field.PropertyTemplateId.UUID
+
+		if !form.TargetProjectId.Valid {
+			return errors.New("требуется целевой проект формы")
+		}
+		if _, ok := used[templateId]; ok {
+			return fmt.Errorf("параметр %s привязан к нескольким полям", templateId)
+		}
+		used[templateId] = struct{}{}
+
+		if err := s.validateFormPropertyMapping(c, form, field); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateFormPropertyMapping проверяет одну привязку: шаблон принадлежит целевому
+// проекту, типы совместимы, варианты select-поля входят в options шаблона
+func (s *Services) validateFormPropertyMapping(c echo.Context, form *dao.Form, field types2.FormFields) error {
+	templateId := field.PropertyTemplateId.UUID
+
+	var template dao.ProjectPropertyTemplate
+	if err := s.DB(c).Where("id = ? AND project_id = ?", templateId, form.TargetProjectId.UUID).
+		First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("параметр %s не найден в целевом проекте", templateId)
+		}
+		return err
+	}
+
+	if !slices.Contains(formPropertyTypeCompat[template.Type], field.Type) {
+		return fmt.Errorf("тип поля формы «%s» несовместим с типом параметра «%s»", field.Type, template.Type)
+	}
+
+	return checkSelectMappingOptions(template, field)
+}
+
+// checkSelectMappingOptions требует, чтобы варианты select-поля формы входили в options шаблона
+func checkSelectMappingOptions(template dao.ProjectPropertyTemplate, field types2.FormFields) error {
+	if template.Type != "select" || len(template.Options) == 0 || field.Validate == nil {
+		return nil
+	}
+	for _, opt := range field.Validate.Opt {
+		optStr, ok := opt.(string)
+		if !ok || !slices.Contains(template.Options, optStr) {
+			return fmt.Errorf("вариант «%v» отсутствует в options параметра «%s»", opt, template.Name)
+		}
+	}
+	return nil
+}
+
 // ***** REQUEST *****
 
 type reqForm struct {
@@ -1213,12 +1361,13 @@ type reqForm struct {
 	AuthRequire          bool                    `json:"auth_require,omitempty"`
 	EndDate              *types2.TargetDate      `json:"end_date,omitempty" extensions:"x-nullable"`
 	TargetProjectId      *string                 `json:"target_project_id" extensions:"x-nullable"`
+	DefaultIssuePriority *string                 `json:"default_issue_priority" validate:"omitempty,oneof=urgent high medium low" enums:"urgent,high,medium,low" extensions:"x-nullable"`
 	Fields               types2.FormFieldsSlice  `json:"fields,omitempty"`
 	NotificationChannels types2.FormAnswerNotify `json:"notification_channels"`
 }
 
 func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao.Form, error) {
-	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id", "notification_channels"}
+	allowedForm := []string{"title", "description", "auth_require", "end_date", "fields", "target_project_id", "default_issue_priority", "notification_channels"}
 
 	if form == nil {
 		form = &dao.Form{}
@@ -1242,6 +1391,7 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 			projectUUID, _ := uuid.FromString(*rf.TargetProjectId)
 			form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 		}
+		form.DefaultIssuePriority = rf.DefaultIssuePriority
 		form.Fields = rf.Fields
 		form.NotificationChannels = rf.NotificationChannels
 	} else {
@@ -1307,6 +1457,16 @@ func (rf *reqForm) toDao(form *dao.Form, updFields map[string]interface{}) (*dao
 						form.TargetProjectId = uuid.NullUUID{Valid: true, UUID: projectUUID}
 					} else {
 						return nil, fmt.Errorf("target_project_id")
+					}
+				case "default_issue_priority":
+					if value == nil {
+						form.DefaultIssuePriority = nil
+						continue
+					}
+					if priority, ok := value.(string); ok {
+						form.DefaultIssuePriority = &priority
+					} else {
+						return nil, fmt.Errorf("default_issue_priority")
 					}
 				case "notification_channels":
 					if channels, ok := value.(types2.FormAnswerNotify); ok {

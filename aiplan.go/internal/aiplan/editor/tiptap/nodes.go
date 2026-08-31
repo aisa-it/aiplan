@@ -62,6 +62,9 @@ func parseParagraph(node TipTapNode) *edtypes.Paragraph {
 			if d := parseDrawio(child); d != nil {
 				p.Content = append(p.Content, d)
 			}
+		case "docAnchor":
+			// Якорь документа АИДока: невидимая метка для навигации,
+			// текста не несёт и в экспорт не попадает
 		default:
 			slog.Debug("Unknown paragraph child type", "type", child.Type)
 		}

@@ -101,10 +101,13 @@ type Issue struct {
 	Labels    *[]Label     `json:"label_details" gorm:"many2many:issue_labels;foreignKey:id;joinForeignKey:issue_id;References:id;joinReferences:label_id;- :migration" extensions:"x-nullable"`
 	Sprints   *[]Sprint    `json:"sprints,omitempty" gorm:"many2many:sprint_issues;joinForeignKey:IssueId;joinReferences:SprintId"`
 	Links     *[]IssueLink `json:"issue_link" gorm:"foreignKey:issue_id" extensions:"x-nullable"`
-	Author    *User        `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User        `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	Author    *User        `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User        `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	InlineAttachments []FileAsset `json:"issue_inline_attachments" gorm:"foreignKey:IssueId"`
+
+	// Значения кастомных полей с шаблонами; заполняется отдельно перед вызовом Lua-правил
+	Properties []IssueProperty `json:"-" gorm:"-"`
 
 	AssigneeIDs     []uuid.UUID `json:"assignees" gorm:"-"`
 	WatcherIDs      []uuid.UUID `json:"watchers" gorm:"-"`
@@ -409,7 +412,37 @@ func (Issue) FieldsAllowedForAllUpdate() []string {
 	return []string{"state_id", "completed_at", "updated_at", "updated_by_id"}
 }
 
+// FieldsAllowedForRelationsUpdate - список полей, доступных для обновления исполнителю задачи (связи родитель/ребёнок в дополнение к общим полям).
+//
+// Параметры:
+//   - Нет
+//
+// Возвращает:
+//   - []string: список строк, представляющих имена полей, которые можно обновлять.
+func (issue Issue) FieldsAllowedForRelationsUpdate() []string {
+	return append(issue.FieldsAllowedForAllUpdate(), "parent_id", "sort_order")
+}
+
 var issueRefRegexp = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*)-(\d+)$`)
+
+// AuthoredOrAssigned - условие выборки задач, в которых пользователь автор или исполнитель.
+// deleted_at IS NULL обязателен: у IssueAssignee есть gorm.DeletedAt, и хотя сейчас
+// исполнителей везде удаляют через Unscoped, первый же soft-delete вернул бы бывшим
+// исполнителям права на задачу.
+func (Issue) AuthoredOrAssigned(tx *gorm.DB, userID uuid.UUID) *gorm.DB {
+	return tx.Where("issues.created_by_id = ?", userID).
+		Or("issues.id IN (SELECT issue_id FROM issue_assignees WHERE assignee_id = ? AND deleted_at IS NULL)", userID)
+}
+
+// RelationCandidates - условие выборки задач, доступных пользователю для привязки
+// (родитель/подзадача): участнику - авторство или исполнительство, гостю - только
+// собственное авторство (гость по чужим задачам read-only).
+func (i Issue) RelationCandidates(tx *gorm.DB, userID uuid.UUID, role int) *gorm.DB {
+	if role >= types.MemberRole {
+		return i.AuthoredOrAssigned(tx, userID)
+	}
+	return tx.Where("issues.created_by_id = ?", userID)
+}
 
 // FullTextSearch требует JOIN на таблицу projects p в исходном запросе.
 func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
@@ -1112,8 +1145,8 @@ type IssueLink struct {
 
 	Workspace *Workspace `json:"workspace_detail,omitempty" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"project_detail,omitempty" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail,omitempty" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail,omitempty" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 	Issue     *Issue     `json:"-" gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 }
 
@@ -1212,8 +1245,8 @@ type IssueAttachment struct {
 	// workspace_id uuid IS_NULL:NO
 	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid"`
 
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Asset     *FileAsset `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
@@ -1318,9 +1351,7 @@ func (attachment *IssueAttachment) AfterDelete(tx *gorm.DB) error {
 		}
 
 		if del && !attachment.Asset.Id.IsNil() {
-			if err := tx.Where("id = ?", attachment.Asset.Id).Delete(&FileAsset{}).Error; err != nil {
-				return err
-			}
+			return tx.Delete(&attachment.Asset).Error
 		}
 	}
 	return nil
@@ -1346,8 +1377,8 @@ type IssueAssignee struct {
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Assignee  *User      `gorm:"foreignKey:AssigneeId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1387,8 +1418,8 @@ type IssueWatcher struct {
 	Project   *Project   `gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Watcher   *User      `gorm:"foreignKey:WatcherId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1432,8 +1463,8 @@ type IssueBlocker struct {
 	Workspace *Workspace `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Block     *Issue     `json:"blocked_issue_detail" gorm:"foreignKey:BlockId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 	BlockedBy *Issue     `json:"blocker_issue_detail" gorm:"foreignKey:BlockedById" extensions:"x-nullable"`
 }
 
@@ -1493,8 +1524,8 @@ type IssueLabel struct {
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Label     *Label     `json:"label_detail,omitempty" gorm:"foreignKey:LabelId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы, соответствующее текущему типу сущности.
@@ -1537,7 +1568,7 @@ type IssueComment struct {
 	Project   *Project   `json:"-" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Issue     *Issue     `gorm:"foreignKey:IssueId" extensions:"x-nullable"`
 	Actor     *User      `json:"actor_detail" gorm:"foreignKey:ActorId" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	Attachments []FileAsset `json:"comment_attachments" gorm:"foreignKey:CommentId;references:Id"`
 

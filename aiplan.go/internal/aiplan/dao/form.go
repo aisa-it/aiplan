@@ -27,8 +27,8 @@ type Form struct {
 	CreatedById uuid.UUID `json:"created_by" gorm:"type:uuid;index"`
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
-	Author      *User         `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	Author      *User         `json:"author_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy   *User         `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	Slug        string             `json:"slug" gorm:"uniqueIndex;not null"`
 	Title       string             `json:"title" validate:"required"`
@@ -37,6 +37,9 @@ type Form struct {
 
 	TargetProjectId uuid.NullUUID `gorm:"type:uuid"`
 	TargetProject   *Project      `gorm:"foreignKey:TargetProjectId" extensions:"x-nullable"`
+
+	// Приоритет, проставляемый задачам, создаваемым из ответов формы (urgent/high/medium/low, nil — без приоритета)
+	DefaultIssuePriority *string `json:"default_issue_priority" extensions:"x-nullable"`
 
 	EndDate     *types.TargetDate `json:"end_date" gorm:"index" extensions:"x-nullable"`
 	WorkspaceId uuid.UUID         `json:"workspace" gorm:"type:uuid;index"`
@@ -77,17 +80,18 @@ func (f *Form) ToLightDTO() *dto.FormLight {
 	}
 	f.SetUrl()
 	ff := &dto.FormLight{
-		ID:              f.ID,
-		Slug:            f.Slug,
-		Title:           f.Title,
-		Description:     f.Description,
-		AuthRequire:     f.AuthRequire,
-		EndDate:         f.EndDate,
-		TargetProjectId: f.TargetProjectId,
-		WorkspaceId:     f.WorkspaceId,
-		Fields:          f.Fields,
-		Active:          f.Active,
-		Url:             types.JsonURL{f.URL},
+		ID:                   f.ID,
+		Slug:                 f.Slug,
+		Title:                f.Title,
+		Description:          f.Description,
+		AuthRequire:          f.AuthRequire,
+		EndDate:              f.EndDate,
+		TargetProjectId:      f.TargetProjectId,
+		DefaultIssuePriority: f.DefaultIssuePriority,
+		WorkspaceId:          f.WorkspaceId,
+		Fields:               f.Fields,
+		Active:               f.Active,
+		Url:                  types.JsonURL{f.URL},
 	}
 
 	return ff
@@ -228,7 +232,7 @@ type FormAnswer struct {
 
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.NullUUID `json:"created_by_id" gorm:"index;type:uuid"`
-	Responder   *User         `json:"responder" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
+	Responder   *User         `json:"responder" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	WorkspaceId uuid.UUID  `json:"workspace" gorm:"index;type:uuid"`
 	Workspace   *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
@@ -358,8 +362,8 @@ type FormAttachment struct {
 	Workspace *Workspace  `json:"-" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Asset     *FileAsset  `json:"file_details" gorm:"foreignKey:AssetId" extensions:"x-nullable"`
 	Answer    *FormAnswer `json:"answer_detail" gorm:"foreignKey:AnswerId" extensions:"x-nullable"`
-	CreatedBy *User       `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User       `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User       `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User       `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 // TableName возвращает имя таблицы для сущности Form. Используется GORM для определения имени таблицы в базе данных.
@@ -456,10 +460,8 @@ func (attachment *FormAttachment) AfterDelete(tx *gorm.DB) error {
 			return err
 		}
 
-		if del {
-			if err := tx.Delete(attachment.Asset).Error; err != nil {
-				return err
-			}
+		if del && !attachment.Asset.Id.IsNil() {
+			return tx.Delete(attachment.Asset).Error
 		}
 	}
 	return nil

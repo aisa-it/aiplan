@@ -626,26 +626,7 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 
-	if len(c.Request().URL.Query()) == 0 {
-		members, ok := cache.WorkspaceMembersCache.Load(workspace.ID)
-		if ok {
-			if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
-				if hex.EncodeToString(members.Hash) == etag {
-					return c.NoContent(http.StatusNotModified)
-				}
-			}
-
-			c.Response().Header().Set("ETag", hex.EncodeToString(members.Hash))
-			return c.JSON(http.StatusOK, dao.PaginationResponse{
-				Offset: -1,
-				Limit:  1000,
-				Count:  int64(len(members.Members)),
-				Result: members.Members,
-			})
-		}
-	}
-
-	offset := -1
+	offset := 0
 	limit := 1000
 	searchQuery := ""
 	orderBy := ""
@@ -659,6 +640,37 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		Bool("desc", &desc).
 		BindError(); err != nil {
 		return EError(c, err)
+	}
+
+	if limit < 0 {
+		limit = -limit
+	}
+
+	if offset > limit || offset < 0 {
+		offset = 0
+	}
+
+	cMembers, ok := cache.WorkspaceMembersCache.Load(workspace.ID)
+	if ok && searchQuery == "" {
+		fullHash := fmt.Sprintf("%x%d%d%s%t", cMembers.Hash, offset, limit, orderBy, desc)
+
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			if fullHash == etag {
+				return c.NoContent(http.StatusNotModified)
+			}
+		}
+
+		c.Response().Header().Set("ETag", fullHash)
+
+		count := int64(len(cMembers.Members))
+		cMembers.Members = cache.SortWorkspaceMembers(cMembers.Members, offset, limit, orderBy, desc)
+
+		return c.JSON(http.StatusOK, dao.PaginationResponse{
+			Offset: offset,
+			Limit:  limit,
+			Count:  count,
+			Result: cMembers.Members,
+		})
 	}
 
 	switch orderBy {
@@ -688,8 +700,8 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 
 	var members []dao.WorkspaceMember
 	res, err := dao.PaginationRequest(
-		offset,
-		limit,
+		0,
+		1000,
 		query,
 		&members,
 	)
@@ -702,10 +714,11 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 	}
 
 	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
-
-	if len(c.Request().URL.Query()) == 0 {
+	if searchQuery == "" {
 		cache.WorkspaceMembersCache.Store(workspace.ID, res.Result.([]dto.WorkspaceMemberLight))
 	}
+
+	res.Result = res.Result.([]dto.WorkspaceMemberLight)[max(offset, 0):min(offset+limit, len(members))]
 
 	return c.JSON(http.StatusOK, res)
 }
@@ -872,8 +885,8 @@ func (s *Services) updateWorkspaceMember(c echo.Context) error {
 		errStack.GetError(c, err)
 	}
 
-	cache.WorkspaceMembersCache.Update(workspace.ID, requestedMember)
-
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
 	return c.JSON(http.StatusOK, requestedMember.ToLightDTO())
 }
 
@@ -1029,8 +1042,8 @@ func (s *Services) deleteWorkspaceMember(c echo.Context) error {
 		}
 	}
 
-	cache.WorkspaceMembersCache.Delete(workspace.ID, requestedMember)
-
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
 	return c.NoContent(http.StatusNoContent)
 
 }
@@ -1309,8 +1322,8 @@ func (s *Services) addToWorkspace(c echo.Context) error {
 		}
 	}
 
-	cache.WorkspaceMembersCache.Expire(workspace.ID)
-
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "Emails sent successfully",
 	})

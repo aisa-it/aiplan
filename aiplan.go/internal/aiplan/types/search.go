@@ -1,6 +1,8 @@
 package types
 
 import (
+	"strings"
+
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/apierrors"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -8,6 +10,20 @@ import (
 
 // IssueGroupFields - допустимые поля для группировки задач
 var IssueGroupFields = []string{"priority", "author", "state", "labels", "assignees", "watchers", "project"}
+
+// ParsePropertyGroupBy извлекает id шаблона кастомного поля из значения group_by
+// вида "property:<uuid>". ok=false, если параметр имеет другой формат
+func ParsePropertyGroupBy(groupBy string) (uuid.UUID, bool) {
+	idStr, found := strings.CutPrefix(groupBy, "property:")
+	if !found {
+		return uuid.Nil, false
+	}
+	templateId, err := uuid.FromString(idStr)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return templateId, true
+}
 
 // SearchGroupSize - размер группы при группированном поиске
 type SearchGroupSize struct {

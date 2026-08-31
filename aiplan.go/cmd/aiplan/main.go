@@ -15,6 +15,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/gormlogger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 	"gorm.io/driver/postgres"
@@ -25,7 +26,7 @@ import (
 
 var version string = "DEV"
 
-var models = []any{&dao.ActivityEvent{}, &dao.ActivityTelegramMessage{}, &dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Doc{}, &dao.DocAccessRules{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocFavorites{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.ForeignKey{}, &dao.Form{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.JitsiTokenLog{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.NotificationSchedule{}, &dao.NotifyService{}, &dao.Project{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ProjectMemberWithLead{}, &dao.ProjectPropertyTemplate{}, &dao.ReleaseNote{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintFolder{}, &dao.SprintIssue{}, &dao.SprintViews{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserAppNotify{}, &dao.UserFeedback{}, &dao.Workspace{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}, &dao.WorkspaceMemberWithOwner{}}
+var models = []any{&dao.ActivityEvent{}, &dao.ActivityTelegramMessage{}, &dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Dictionary{}, &dao.DictionaryRow{}, &dao.Doc{}, &dao.DocAccessRules{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocFavorites{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.ForeignKey{}, &dao.Form{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.JitsiTokenLog{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.NotificationSchedule{}, &dao.NotifyService{}, &dao.Project{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ProjectMemberWithLead{}, &dao.ProjectPropertyTemplate{}, &dao.ReleaseNote{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintFolder{}, &dao.SprintIssue{}, &dao.SprintViews{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserAppNotify{}, &dao.UserFeedback{}, &dao.Workspace{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}, &dao.WorkspaceMemberWithOwner{}}
 
 //go:embed triggers.sql
 var triggersSQL string
@@ -194,7 +195,13 @@ func main() {
 			slog.Info("No UUID columns need migration, skipping UUID migration steps")
 		}
 
-		// Step 8: AutoMigrate models (в отдельной транзакции)
+		// Step 8: Deduplicate sprint_folders before adding unique index
+		if err := migration.DeduplicateSprintFolders(dbForMigration); err != nil {
+			slog.Error("Sprint folder deduplication failed", "err", err)
+			os.Exit(1)
+		}
+
+		// Step 9: AutoMigrate models (в отдельной транзакции)
 		err = dbForMigration.Transaction(func(tx *gorm.DB) error {
 			slog.Info("Migrate models without relations")
 			tx.DisableForeignKeyConstraintWhenMigrating = true

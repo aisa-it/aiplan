@@ -359,12 +359,34 @@ type FormFields struct {
 	IssueNameField bool                 `json:"issue_name_field"`
 	Validate       *ValidationRule      `json:"validate,omitempty" extensions:"x-nullable"`
 	DependOn       *FormFieldDependency `json:"depend_on,omitempty" extensions:"x-nullable"`
+	// Привязка к шаблону кастомного поля (ProjectPropertyTemplate) целевого проекта:
+	// значение ответа записывается в это поле создаваемой задачи
+	PropertyTemplateId uuid.NullUUID `json:"property_template_id" swaggertype:"string" extensions:"x-nullable"`
 }
 
 type FormFieldDependency struct {
 	FieldIndex    int  `json:"field_index"`                          // Индекс поля от которого зависит
 	OptionIndex   *int `json:"option_index" extensions:"x-nullable"` // Индекс варианта ответа (для select/multiselect)
 	ExpectedValue bool `json:"value"`                                // Ожидаемое значение зависимого поля (или варианта ответа)
+}
+
+// Режимы каскадной зависимости кастомного поля (PropertyDependency.Mode)
+const (
+	PropertyDependencyOptionsMap = "options_map" // select→select: карта «значение родителя → допустимые options»
+	PropertyDependencyRowFilter  = "row_filter"  // ребёнок lookup: фильтр строк справочника по атрибуту
+)
+
+// PropertyDependency - каскадная зависимость шаблона кастомного поля (ProjectPropertyTemplate)
+// от родительского поля того же проекта. Каскад не делает поле обязательным - только
+// сужает допустимые значения при заполненном родителе (пустой родитель не ограничивает)
+type PropertyDependency struct {
+	ParentTemplateId uuid.UUID `json:"parent_template_id" swaggertype:"string"`
+	Mode             string    `json:"mode"` // "options_map" или "row_filter"
+	// OptionsMap (режим options_map): значение родителя → допустимые options ребёнка
+	OptionsMap map[string][]string `json:"options_map,omitempty" extensions:"x-nullable"`
+	// RowFilterAttr (режим row_filter): имя атрибута строки справочника ребёнка,
+	// сравниваемого с отображаемым значением родителя (строка или массив строк в attrs)
+	RowFilterAttr string `json:"row_filter_attr,omitempty"`
 }
 
 type ValidationRule struct {

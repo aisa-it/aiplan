@@ -12,6 +12,15 @@
 //   - BeforeAssigneesChange(ctx, assignees) — перед изменением исполнителей
 //   - BeforeWatchersChange(ctx, watchers) — перед изменением наблюдателей
 //   - BeforeLabelsChange(ctx, labels) — перед изменением меток
+//   - BeforeIssuePropertyChange(ctx, property) — перед изменением кастомного поля задачи;
+//     property — таблица {name, type, old_value, new_value}
+//
+// Первый аргумент хука (ctx/params) содержит таблицы user, status, project, space, issue
+// (включая issue.attachment_count), а также значения кастомных полей задачи:
+// properties (список {name, type, value}) и метод ctx:getProp(name) для доступа
+// к значению по имени поля. Данные берутся из Issue.Properties и
+// Issue.AttachmentCount — вызывающая сторона должна догрузить их заранее
+// (см. EnrichIssue в enrich.go).
 //
 // Скрипты выполняются в песочнице с таймаутом 10 секунд. Опасные функции
 // (os, io, require, debug и др.) отключены для безопасности.
@@ -54,6 +63,39 @@ func BeforeLabelsChange(issuer dao.User, currentIssue dao.Issue, labels []dao.La
 	state := lua.NewState()
 	assigneesTable := getLabels(state, labels)
 	return callEventFunction("BeforeLabelsChange", state, issuer, currentIssue, assigneesTable)
+}
+
+// BeforeIssuePropertyChange вызывает Lua-хук перед изменением значения кастомного поля
+// задачи. currentIssue должен быть обогащён EnrichIssue (старые значения полей).
+// newValue — новое хранимое значение; для lookup вызывающая сторона передаёт
+// отображаемое значение строки справочника, не id
+func BeforeIssuePropertyChange(issuer dao.User, currentIssue dao.Issue, template dao.ProjectPropertyTemplate, newValue string) (LuaResp, []LuaOut, IRulesError) {
+	state := lua.NewState()
+
+	property := state.NewTable()
+	property.RawSetString("name", lua.LString(template.Name))
+	property.RawSetString("type", lua.LString(template.Type))
+	property.RawSetString("old_value", oldPropertyValueToLua(currentIssue.Properties, template))
+	property.RawSetString("new_value", propertyValueToLua(template.Type, newValue))
+
+	return callEventFunction("BeforeIssuePropertyChange", state, issuer, currentIssue, property)
+}
+
+// oldPropertyValueToLua находит текущее значение поля задачи по шаблону и конвертирует
+// его в Lua-значение; для lookup берётся ResolvedValue (см. getPropertiesTables).
+// Значение не найдено (поле не заполнялось) — LNil
+func oldPropertyValueToLua(props []dao.IssueProperty, template dao.ProjectPropertyTemplate) lua.LValue {
+	for _, prop := range props {
+		if prop.TemplateId != template.Id {
+			continue
+		}
+		storedValue := prop.Value
+		if template.Type == "lookup" {
+			storedValue = prop.ResolvedValue
+		}
+		return propertyValueToLua(template.Type, storedValue)
+	}
+	return lua.LNil
 }
 
 func callEventFunction(fnName string, state *lua.LState, issuer dao.User, currentIssue dao.Issue, params ...interface{}) (LuaResp, []LuaOut, IRulesError) {
@@ -254,6 +296,59 @@ func getStructLTable(state *lua.LState, obj interface{}) *lua.LTable {
 	return table
 }
 
+// propertyValueToLua преобразует хранимое строковое значение свойства в Lua-значение
+// по типу шаблона (совместимо с dao.ParsePropertyValue).
+// Для lookup-полей значение - отображаемое значение строки справочника (ResolvedValue),
+// не id строки
+func propertyValueToLua(propType, value string) lua.LValue {
+	switch propType {
+	case "boolean":
+		return lua.LBool(value == "true")
+	case "select", "link", "lookup", "date":
+		if value == "" {
+			return lua.LNil
+		}
+		return lua.LString(value)
+	case "datetime":
+		if value == "" {
+			return lua.LNil
+		}
+		// unix time в секундах — числом, чтобы скрипты сравнивали даты арифметикой
+		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return lua.LNumber(n)
+		}
+		return lua.LString(value)
+	default:
+		return lua.LString(value)
+	}
+}
+
+// getPropertiesTables собирает две таблицы по значениям кастомных полей задачи:
+// массив {name, type, value} и map «имя поля → значение»
+func getPropertiesTables(state *lua.LState, props []dao.IssueProperty) (*lua.LTable, *lua.LTable) {
+	list := state.NewTable()
+	byName := state.NewTable()
+	for _, prop := range props {
+		if prop.Template == nil {
+			continue
+		}
+		storedValue := prop.Value
+		if prop.Template.Type == "lookup" {
+			storedValue = prop.ResolvedValue
+		}
+		value := propertyValueToLua(prop.Template.Type, storedValue)
+
+		entry := state.NewTable()
+		entry.RawSetString("name", lua.LString(prop.Template.Name))
+		entry.RawSetString("type", lua.LString(prop.Template.Type))
+		entry.RawSetString("value", value)
+		list.Append(entry)
+
+		byName.RawSetString(prop.Template.Name, value)
+	}
+	return list, byName
+}
+
 func getCallParams(state *lua.LState, issuer dao.User, currentIssue dao.Issue) *lua.LTable {
 	params := state.NewTable()
 	params.RawSetString("user", getStructLTable(state, issuer))
@@ -262,6 +357,17 @@ func getCallParams(state *lua.LState, issuer dao.User, currentIssue dao.Issue) *
 	params.RawSetString("space", getStructLTable(state, *currentIssue.Workspace))
 	params.RawSetString("issue", getStructLTable(state, currentIssue))
 
+	propsList, propsByName := getPropertiesTables(state, currentIssue.Properties)
+	params.RawSetString("properties", propsList)
+
+	state.SetMetatable(params, newParamsMetaTable(state, propsByName))
+
+	return params
+}
+
+// newParamsMetaTable создает metatable с функциями-хелперами для таблицы params;
+// propsByName — таблица «имя кастомного поля → значение» для getProp
+func newParamsMetaTable(state *lua.LState, propsByName *lua.LTable) *lua.LTable {
 	metaTable := state.NewTable()
 
 	state.SetFuncs(metaTable, map[string]lua.LGFunction{
@@ -295,8 +401,15 @@ func getCallParams(state *lua.LState, issuer dao.User, currentIssue dao.Issue) *
 			return 1
 		},
 	})
-	state.SetField(metaTable, "__index", metaTable)
-	state.SetMetatable(params, metaTable)
+	state.SetFuncs(metaTable, map[string]lua.LGFunction{
+		"getProp": func(L *lua.LState) int {
+			name := L.CheckString(2)
+			L.Push(propsByName.RawGetString(name))
+			return 1
+		},
+	})
 
-	return params
+	state.SetField(metaTable, "__index", metaTable)
+
+	return metaTable
 }

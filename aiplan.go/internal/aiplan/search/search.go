@@ -3,7 +3,9 @@
 package search
 
 import (
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -33,6 +35,21 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 		projectQuery = searchParams.Filters.ProjectIds
 	} else {
 		projectQuery = db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{})
+	}
+
+	// Группировка по значению кастомного поля: group_by=property:<template_id>.
+	// switch ниже такой параметр не матчит; выдача сужается до проекта-владельца шаблона,
+	// пустое/отсутствующее значение схлопывается в группу "" («не заполнено»)
+	if templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam); ok {
+		query = query.
+			Table("issues i").
+			Select(`count(*) as Count, coalesce(ip.value, '') as "Key"`).
+			Joins("left join issue_properties ip on ip.issue_id = i.id and ip.template_id = ?", templateId).
+			Where("i.deleted_at is null").
+			Where("i.project_id in (?)", projectQuery).
+			Where("i.project_id in (?)", db.Select("project_id").Where("id = ?", templateId).Model(&dao.ProjectPropertyTemplate{})).
+			Group(`"Key"`).
+			Order(`"Key"`)
 	}
 
 	switch searchParams.GroupByParam {
@@ -168,6 +185,12 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 // Если nil - результаты собираются в массив и возвращаются целиком
 type StreamCallback func(group dto.IssuesGroupResponse) error
 
+// skippedGroupCount — маркер группы, отсечённой фильтрами: iterFunc вызывается
+// для КАЖДОЙ группы (иначе в groupMap остаются nil-дыры: экспорт падал на nil
+// pointer, а стриминговая отдача навсегда застревала перед дырой), но такие
+// группы в ответ не попадают
+const skippedGroupCount = -1
+
 // fetchIssuesByGroups выполняет поиск задач по группам и вызывает callback для каждой группы
 func fetchIssuesByGroups(
 	db *gorm.DB,
@@ -191,7 +214,18 @@ func fetchIssuesByGroups(
 
 	for i, group := range groupSize {
 		totalCount += group.Count
-		g.Go(func() error {
+		g.Go(func() (err error) {
+			// Паника в горутине errgroup не ловится recover-мидлварью echo и валит
+			// весь процесс — превращаем её в ошибку запроса со стектрейсом в логе
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("panic while fetching issues group",
+						"groupBy", searchParams.GroupByParam, "groupKey", group.Key,
+						"panic", r, "stack", string(debug.Stack()))
+					err = fmt.Errorf("panic while fetching issues group %q: %v", group.Key, r)
+				}
+			}()
+
 			q := groupSelectQuery.Session(&gorm.Session{})
 
 			if group.Count == 0 {
@@ -202,10 +236,20 @@ func fetchIssuesByGroups(
 				})
 			}
 
+			// Группировка по кастомному полю: ключ группы — значение поля, "" — «не заполнено»
+			if templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam); ok {
+				q = q.Where("issues.project_id in (?)", db.Select("project_id").Where("id = ?", templateId).Model(&dao.ProjectPropertyTemplate{}))
+				if group.Key == "" {
+					q = q.Where("not exists (select 1 from issue_properties ip where ip.issue_id = issues.id and ip.template_id = ? and ip.value <> '')", templateId)
+				} else {
+					q = q.Where("exists (select 1 from issue_properties ip where ip.issue_id = issues.id and ip.template_id = ? and ip.value = ?)", templateId, group.Key)
+				}
+			}
+
 			switch searchParams.GroupByParam {
 			case "priority":
 				if len(searchParams.Filters.Priorities) > 0 && !slices.Contains(searchParams.Filters.Priorities, group.Key) {
-					return nil
+					return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 				}
 				if group.Key != "" {
 					q = q.Where("issues.priority = ?", group.Key)
@@ -214,14 +258,14 @@ func fetchIssuesByGroups(
 				}
 			case "author":
 				if len(searchParams.Filters.AuthorIds) > 0 && !slices.Contains(searchParams.Filters.AuthorIds, group.Key) {
-					return nil
+					return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 				}
 				q = q.Where("created_by_id = ?", group.Key)
 			case "state":
 				q = q.Where("state_id in (select id from states where concat(project_id, name, color, \"group\") = ?)", group.Key)
 			case "labels":
 				if !searchParams.Filters.Labels.IsEmpty() && !searchParams.Filters.Labels.Contains(group.Key) {
-					return nil
+					return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 				}
 				if group.Key == "" {
 					q = q.Where("not exists (select 1 from issue_labels where issue_id = issues.id)")
@@ -230,8 +274,7 @@ func fetchIssuesByGroups(
 				}
 			case "assignees":
 				if !searchParams.Filters.AssigneeIds.IsEmpty() && !searchParams.Filters.AssigneeIds.Contains(group.Key) {
-					//fmt.Println(searchParams.Filters.AssigneeIds.Array, group.Key)
-					return nil
+					return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 				}
 				if group.Key == "" {
 					q = q.Where("not exists (select 1 from issue_assignees where issue_id = issues.id)")
@@ -240,7 +283,7 @@ func fetchIssuesByGroups(
 				}
 			case "watchers":
 				if !searchParams.Filters.WatcherIds.IsEmpty() && !searchParams.Filters.WatcherIds.Contains(group.Key) {
-					return nil
+					return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 				}
 				if group.Key == "" {
 					q = q.Where("not exists (select 1 from issue_watchers where issue_id = issues.id)")
@@ -249,7 +292,7 @@ func fetchIssuesByGroups(
 				}
 			case "project":
 				if len(searchParams.Filters.ProjectIds) > 0 && !slices.Contains(searchParams.Filters.ProjectIds, group.Key) {
-					return nil
+					return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 				}
 				q = q.Where("issues.project_id = ?", group.Key)
 			}
@@ -261,7 +304,7 @@ func fetchIssuesByGroups(
 
 			if len(issues) == 0 {
 				slog.Error("Empty search result for not empty group", "groupBy", searchParams.GroupByParam, "groupKey", group.Key, "groupCount", group.Count)
-				return nil
+				return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 			}
 
 			populateAuthors(issues)
@@ -292,6 +335,14 @@ func fetchGroupsEntity(db *gorm.DB, groupBy string, groups []types.SearchGroupSi
 	}
 
 	entityMap := make(map[string]any, len(ids))
+
+	// Для группировки по кастомному полю сущность группы — само значение поля
+	if _, ok := types.ParsePropertyGroupBy(groupBy); ok {
+		for _, value := range ids {
+			entityMap[value] = value
+		}
+		return entityMap, nil
+	}
 
 	switch groupBy {
 	case "priority":

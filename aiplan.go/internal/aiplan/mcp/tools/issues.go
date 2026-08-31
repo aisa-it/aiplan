@@ -5,7 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/url"
-	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/search"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -34,7 +36,7 @@ var issuesTools = []Tool{
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithString("issue_id",
 				mcp.Required(),
-				mcp.Description("Индетификатор задачи. Индетификатор должен быть вида UUID, {workspace.slug}-{project.identifier}-{issue.sequence} или короткой ссылки https://{host}/i/{workspace.slug}/{project.identifier}/{issue.sequence}"),
+				mcp.Description("Индетификатор задачи. Индетификатор должен быть вида UUID, {workspace.slug}-{project.identifier}-{issue.sequence}, короткой ссылки https://{host}/i/{workspace.slug}/{project.identifier}/{issue.sequence} или полной ссылки https://{host}/{workspace}/projects/{project.id}/issues/{issue.sequence}"),
 			),
 		),
 		getIssue,
@@ -379,19 +381,13 @@ func getIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao
 		// uuid id of issue
 		query = query.Where("issues.id = ?", id)
 	} else {
-		var params []string
-		if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
-			params = filepath.SplitList(u.Path)
-		} else {
-			params = strings.Split(issueIdOrSeq, "-")
-		}
-
-		if len(params) != 3 {
+		ref, ok := parseIssueRef(issueIdOrSeq)
+		if !ok {
 			return logger.Error(apierrors.ErrIssueNotFound, "некорректный формат задачи"), nil
 		}
 
 		// sequence id of issue
-		query = query.Where(`"Workspace".slug = ? and "Project".identifier = ? and issues.sequence_id = ?`, params[0], params[1], params[2])
+		query = ref.apply(query)
 	}
 
 	if err := query.
@@ -663,18 +659,12 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	if id, err := uuid.FromString(issueIdOrSeq); err == nil {
 		query = query.Where("issues.id = ?", id)
 	} else {
-		var params []string
-		if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
-			params = filepath.SplitList(u.Path)
-		} else {
-			params = strings.Split(issueIdOrSeq, "-")
-		}
-
-		if len(params) != 3 {
+		ref, ok := parseIssueRef(issueIdOrSeq)
+		if !ok {
 			return logger.Error(apierrors.ErrIssueNotFound, "некорректный формат задачи"), nil
 		}
 
-		query = query.Where(`"Workspace".slug = ? and "Project".identifier = ? and issues.sequence_id = ?`, params[0], params[1], params[2])
+		query = ref.apply(query)
 	}
 
 	if err := query.First(&issue).Error; err != nil {
@@ -693,8 +683,15 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		return logger.Error(err), nil
 	}
 
-	// Определение прав: admin или автор могут менять все поля
+	// Определение прав: admin или автор могут менять все поля,
+	// исполнителю-участнику дополнительно доступны связи (родитель).
+	// issue.IsAssignee здесь бесполезен - loadIssueAndMember не загружает Assignees,
+	// исполнитель проверяется запросом в БД внутри canManageIssueRelations
 	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID
+	canManageRelations, relErr := canManageIssueRelations(db, &issue, &projectMember, user.ID)
+	if relErr != nil {
+		return logger.Error(relErr), nil
+	}
 
 	// Сохраняем снимок старых данных для activity tracking
 	oldIssue := issue
@@ -734,16 +731,30 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		data["priority"] = priority
 	}
 
+	// Смена статуса: как в updateIssue (http-issue.go) — статус только из проекта задачи,
+	// с прогоном Lua-правил проекта
+	var statusChange bool
+	var newState dao.State
 	if stateIdStr, ok := args["state_id"].(string); ok && stateIdStr != "" {
 		stateId, err := uuid.FromString(stateIdStr)
-		if err == nil {
-			issue.StateId = stateId
-			data["state_id"] = stateId
+		if err != nil {
+			return apierrors.ErrProjectStateNotFound.MCPError(), nil
 		}
+		if err := db.Where("id = ?", stateId).
+			Where("project_id = ?", issue.ProjectId).
+			First(&newState).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apierrors.ErrProjectStateNotFound.MCPError(), nil
+			}
+			return logger.Error(err), nil
+		}
+		statusChange = true
+		issue.StateId = stateId
+		data["state_id"] = stateId
 	}
 
 	if parentIdStr, ok := args["parent_id"].(string); ok {
-		if !updateAll {
+		if !canManageRelations {
 			return apierrors.ErrIssueForbidden.MCPError(), nil
 		}
 		if parentIdStr == "" {
@@ -811,6 +822,41 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	issue.UpdatedById = userID
 	issue.LLMContent = true
+
+	var rulesLog []dao.RulesLog
+	defer func() {
+		if err := rules.AddLog(db, rulesLog); err != nil {
+			slog.Error("MCP updateIssue: create rules log", "error", err)
+		}
+	}()
+
+	// Lua-правилам нужны данные, которые стандартная загрузка не даёт:
+	// счётчик вложений и кастомные поля
+	if statusChange && oldIssue.Project != nil && oldIssue.Project.RulesScript != nil {
+		if err := rules.EnrichIssue(db, &oldIssue); err != nil {
+			return logger.Error(err), nil
+		}
+	}
+
+	// Правила проекта на смену статуса — как в updateIssue: админ может всё
+	if statusChange && projectMember.Role != types.AdminRole {
+		res, msg, err := rules.BeforeStatusChange(*user, oldIssue, newState)
+
+		rules.AppendMsg(oldIssue, *user, msg, &rulesLog)
+		rules.AppendError(oldIssue, *user, err, &rulesLog)
+		rules.ResultToLog(oldIssue, *user, res, err, &rulesLog)
+
+		if !res.ClientResult {
+			return err.ClientError().MCPError(), nil
+		}
+	}
+
+	// Check state flow — как в updateIssue: админ может переводить в любой статус
+	if statusChange && projectMember.Role != types.AdminRole &&
+		len(newState.FromStates.Array) > 0 &&
+		!slices.Contains(newState.FromStates.Array, oldIssue.StateId) {
+		return apierrors.ErrForbiddenState.MCPError(), nil
+	}
 
 	// Транзакция: обновление задачи и связей
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -918,6 +964,18 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		slog.Error("MCP updateIssue: track changes failed", "error", err)
 	}
 
+	if statusChange {
+		res, msg, err := rules.AfterStatusChange(*user, oldIssue, newState)
+
+		rules.AppendMsg(oldIssue, *user, msg, &rulesLog)
+		rules.AppendError(oldIssue, *user, err, &rulesLog)
+		rules.ResultToLog(oldIssue, *user, res, err, &rulesLog)
+
+		if !res.ClientResult {
+			return err.ClientError().MCPError(), nil
+		}
+	}
+
 	return mcp.NewToolResultJSON(updatedIssue.ToDTO())
 }
 
@@ -1013,8 +1071,6 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 	// Получаем спринты с задачами для статистики
 	var sprints []dao.Sprint
 	if err := db.
-		Set("issueProgress", true).
-		Preload("Issues.State").
 		Where("workspace_id = ?", workspace.ID).
 		Order("sequence_id DESC").
 		Limit(limit).
@@ -1023,21 +1079,12 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 		return logger.Error(err), nil
 	}
 
-	// Подсчитываем статистику
+	statsBySprint, err := business.GetSprintStatsByWorkspace(db.WithContext(ctx), workspace.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
 	for i := range sprints {
-		sprints[i].Stats.AllIssues = len(sprints[i].Issues)
-		for _, issue := range sprints[i].Issues {
-			switch issue.IssueProgress.Status {
-			case types.InProgress:
-				sprints[i].Stats.InProgress++
-			case types.Pending:
-				sprints[i].Stats.Pending++
-			case types.Cancelled:
-				sprints[i].Stats.Cancelled++
-			case types.Completed:
-				sprints[i].Stats.Completed++
-			}
-		}
+		sprints[i].Stats = statsBySprint[sprints[i].Id]
 	}
 
 	// Преобразуем в DTO
@@ -1518,7 +1565,7 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&attachments, func(ia *dao.IssueAttachment) dto.Attachment { return *ia.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&attachments, func(ia *dao.IssueAttachment) dto.Attachment { return *ia.ToLightDTO() }))
 }
 
 // createIssueComment создаёт комментарий к задаче
@@ -1563,7 +1610,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		First(&lastCommentTime).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return logger.Error(err), nil
 	}
-	if time.Since(lastCommentTime) <= 5*time.Second {
+	if time.Since(lastCommentTime) <= types.CommentsCooldown {
 		return apierrors.ErrTooManyComments.MCPError(), nil
 	}
 
@@ -1604,6 +1651,81 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 	return mcp.NewToolResultJSON(comment.ToDTO())
 }
 
+// issueRef — разобранная ссылка на задачу: пространство, проект и порядковый номер.
+// Пространство и проект хранятся строками, потому что могут быть как slug/identifier,
+// так и UUID (в полной ссылке на задачу) — что именно, решает apply.
+type issueRef struct {
+	Workspace  string
+	Project    string
+	SequenceId int
+}
+
+// apply добавляет к запросу условия поиска задачи по разобранной ссылке.
+func (r issueRef) apply(query *gorm.DB) *gorm.DB {
+	if id, err := uuid.FromString(r.Workspace); err == nil {
+		query = query.Where(`"Workspace".id = ?`, id)
+	} else {
+		query = query.Where(`"Workspace".slug = ?`, r.Workspace)
+	}
+
+	if id, err := uuid.FromString(r.Project); err == nil {
+		query = query.Where(`"Project".id = ?`, id)
+	} else {
+		query = query.Where(`"Project".identifier = ?`, r.Project)
+	}
+
+	return query.Where("issues.sequence_id = ?", r.SequenceId)
+}
+
+// parseIssueRef разбирает идентификатор задачи: строку {workspace.slug}-{project.identifier}-{issue.sequence}
+// или ссылку на задачу (короткую и полную).
+func parseIssueRef(issueIdOrSeq string) (issueRef, bool) {
+	issueIdOrSeq = strings.TrimSpace(issueIdOrSeq)
+
+	if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
+		return parseIssueURL(u)
+	}
+
+	// Slug пространства сам может содержать дефисы, а identifier проекта и sequence — нет,
+	// поэтому строка режется справа: последний сегмент — номер, предпоследний — проект.
+	lastDash := strings.LastIndex(issueIdOrSeq, "-")
+	if lastDash < 0 {
+		return issueRef{}, false
+	}
+	prevDash := strings.LastIndex(issueIdOrSeq[:lastDash], "-")
+	if prevDash < 0 {
+		return issueRef{}, false
+	}
+
+	return newIssueRef(issueIdOrSeq[:prevDash], issueIdOrSeq[prevDash+1:lastDash], issueIdOrSeq[lastDash+1:])
+}
+
+// parseIssueURL разбирает ссылку на задачу: короткую /i/{workspace}/{project}/{sequence}
+// и полную /{workspace}/projects/{projectId}/issues/{sequence}.
+func parseIssueURL(u *url.URL) (issueRef, bool) {
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+
+	if len(parts) == 4 && parts[0] == "i" {
+		return newIssueRef(parts[1], parts[2], parts[3])
+	}
+
+	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "issues" {
+		return newIssueRef(parts[0], parts[2], parts[4])
+	}
+
+	return issueRef{}, false
+}
+
+// newIssueRef собирает issueRef, проверяя, что все сегменты заполнены, а номер задачи — положительное число.
+func newIssueRef(workspace, project, sequence string) (issueRef, bool) {
+	sequenceId, err := strconv.Atoi(sequence)
+	if workspace == "" || project == "" || err != nil || sequenceId <= 0 {
+		return issueRef{}, false
+	}
+
+	return issueRef{Workspace: workspace, Project: project, SequenceId: sequenceId}, true
+}
+
 // findIssueByIdOrSeq — вспомогательная функция для поиска задачи по ID или sequence
 func findIssueByIdOrSeq(db *gorm.DB, issueIdOrSeq string) (*dao.Issue, error) {
 	query := db.Joins("Project").Joins("Workspace")
@@ -1612,18 +1734,12 @@ func findIssueByIdOrSeq(db *gorm.DB, issueIdOrSeq string) (*dao.Issue, error) {
 	if id, err := uuid.FromString(issueIdOrSeq); err == nil {
 		query = query.Where("issues.id = ?", id)
 	} else {
-		var params []string
-		if u, err := url.Parse(issueIdOrSeq); err == nil && u.Scheme != "" && u.Host != "" {
-			params = filepath.SplitList(u.Path)
-		} else {
-			params = strings.Split(issueIdOrSeq, "-")
-		}
-
-		if len(params) != 3 {
+		ref, ok := parseIssueRef(issueIdOrSeq)
+		if !ok {
 			return nil, nil
 		}
 
-		query = query.Where(`"Workspace".slug = ? AND "Project".identifier = ? AND issues.sequence_id = ?`, params[0], params[1], params[2])
+		query = ref.apply(query)
 	}
 
 	if err := query.First(&issue).Error; err != nil {

@@ -248,7 +248,10 @@ func (s *Services) createRootDoc(c echo.Context) error {
 func (s *Services) createDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
-	parentDocPtr := apiContext.GetDoc()
+	// WithDocAccessRules обязателен: персональные списки родителя
+	// (EditorsIDs/ReaderIDs/WatcherIDs) заполняются из doc.AccessRules
+	// в PopulateAccessFields — без Preload наследовать будет нечего.
+	parentDocPtr := apiContext.GetDoc(apicontext.WithDocAccessRules())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
@@ -266,6 +269,18 @@ func (s *Services) createDoc(c echo.Context) error {
 	}
 	if _, ok := fieldMap["reader_role"]; !ok {
 		doc.ReaderRole = parentDoc.ReaderRole
+	}
+	// Дочерний документ наследует персональные права родителя (doc_access_rules),
+	// если соответствующий список не передан в запросе явно. Иначе документ,
+	// закрытый ролью и открытый людям через списки, невидим для них у детей.
+	if _, ok := fieldMap["editor_list"]; !ok {
+		doc.EditorsIDs = parentDoc.EditorsIDs
+	}
+	if _, ok := fieldMap["reader_list"]; !ok {
+		doc.ReaderIDs = parentDoc.ReaderIDs
+	}
+	if _, ok := fieldMap["watcher_list"]; !ok {
+		doc.WatcherIDs = parentDoc.WatcherIDs
 	}
 
 	form, _ := c.MultipartForm()
@@ -342,7 +357,10 @@ func (s *Services) updateDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
 	workspaceMember := apiContext.GetWorkspaceMember()
-	docPtr := apiContext.GetDoc(apicontext.WithDocAccessRules())
+	// WithDocParent обязателен: ниже по коду смена reader_role/editor_role сверяется
+	// с ролями родителя (ErrDocRoleLowerThanParent). Без Preload ParentDoc всегда nil
+	// и проверка молча пропускается.
+	docPtr := apiContext.GetDoc(apicontext.WithDocAccessRules(), apicontext.WithDocParent())
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}

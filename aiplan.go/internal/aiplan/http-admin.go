@@ -795,7 +795,7 @@ func (s *Services) geWorkspaceListByUser(c echo.Context) error {
 
 	var workspaces []dao.Workspace
 
-	query = query.Set("userID", userId).
+	query = query.
 		Order(orderBy)
 
 	if searchQuery != "" {
@@ -819,6 +819,29 @@ func (s *Services) geWorkspaceListByUser(c echo.Context) error {
 	)
 	if err != nil {
 		return EError(c, err)
+	}
+
+	if len(workspaces) > 0 {
+		var memberships []dao.WorkspaceMember
+		if err := s.DB(c).
+			Where("member_id = ?", userId).
+			Where("workspace_id IN ?",
+				utils.SliceToSlice(&workspaces, func(t *dao.Workspace) uuid.UUID {
+					return t.ID
+				})).
+			Find(&memberships).Error; err != nil {
+			return EError(c, err)
+		}
+
+		membershipByWorkspace := make(map[uuid.UUID]*dao.WorkspaceMember, len(memberships))
+		for i := range memberships {
+			m := &memberships[i]
+			membershipByWorkspace[m.WorkspaceId] = m
+		}
+
+		for i := range workspaces {
+			workspaces[i].CurrentUserMembership = membershipByWorkspace[workspaces[i].ID]
+		}
 	}
 
 	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.Workspace), func(w *dao.Workspace) dto.Workspace { return *w.ToDTO() })
@@ -875,7 +898,6 @@ func (s *Services) getProjectListByUser(c echo.Context) error {
 
 	var projects []dao.Project
 	query := s.DB(c).Model(&dao.Project{}).
-		Set("userId", userId).
 		Where("workspace_id = ?", workspaceId).
 		Order("name")
 
@@ -900,7 +922,28 @@ func (s *Services) getProjectListByUser(c echo.Context) error {
 	if err != nil {
 		return EError(c, err)
 	}
+	if len(projects) > 0 {
+		var memberships []dao.ProjectMember
+		if err := s.DB(c).
+			Where("member_id = ?", userId).
+			Where("project_id IN ?",
+				utils.SliceToSlice(&projects, func(t *dao.Project) uuid.UUID {
+					return t.ID
+				})).
+			Find(&memberships).Error; err != nil {
+			return EError(c, err)
+		}
 
+		membershipByProjects := make(map[uuid.UUID]*dao.ProjectMember, len(memberships))
+		for i := range memberships {
+			m := &memberships[i]
+			membershipByProjects[m.ProjectId] = m
+		}
+
+		for i := range projects {
+			projects[i].CurrentUserMembership = membershipByProjects[projects[i].ID]
+		}
+	}
 	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.Project), func(p *dao.Project) dto.ProjectLight { return *p.ToLightDTO() })
 
 	return c.JSON(http.StatusOK, resp)

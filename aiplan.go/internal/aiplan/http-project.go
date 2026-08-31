@@ -212,6 +212,20 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	projectAdminGroup.PATCH("/property-templates/:templateId/", s.updatePropertyTemplate)
 	projectAdminGroup.DELETE("/property-templates/:templateId/", s.deletePropertyTemplate)
 
+	// Dictionaries (справочники проекта)
+	projectGroup.GET("/dictionaries/", s.getDictionaryList)
+	projectAdminGroup.POST("/dictionaries/", s.createDictionary)
+
+	dictionaryGroup := projectGroup.Group("/dictionaries/:dictionaryId", s.DictionariesMiddleware)
+	dictionaryAdminGroup := projectAdminGroup.Group("/dictionaries/:dictionaryId", s.DictionariesMiddleware)
+	dictionaryGroup.GET("/rows/", s.getDictionaryRows)
+	dictionaryAdminGroup.PATCH("/", s.updateDictionary)
+	dictionaryAdminGroup.DELETE("/", s.deleteDictionary)
+	dictionaryAdminGroup.POST("/rows/", s.createDictionaryRow)
+	dictionaryAdminGroup.POST("/rows/import/", s.importDictionaryRows)
+	dictionaryAdminGroup.PATCH("/rows/:rowId/", s.updateDictionaryRow)
+	dictionaryAdminGroup.DELETE("/rows/:rowId/", s.deleteDictionaryRow)
+
 	projectAdminGroup.POST("/archive/", s.archiveProject)
 	projectAdminGroup.POST("/unarchive/", s.unarchiveProject)
 }
@@ -283,7 +297,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
 }
 
-var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow", "issue_deletion_allowed"}
+var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow", "issue_deletion_allowed", "member_attachments_allowed"}
 
 // updateProject godoc
 // @id updateProject
@@ -3620,8 +3634,7 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 	}
 
 	// Валидация типа
-	validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
-	if !validTypes[request.Type] {
+	if !validPropertyTypes[request.Type] {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 	}
 
@@ -3634,17 +3647,29 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		options = request.Options
 	}
 
+	// Для типа lookup требуется справочник проекта
+	dictionaryId, err := s.checkTemplateDictionary(c, project.ID, request.Type, request.DictionaryId)
+	if err != nil {
+		return EError(c, err)
+	}
+
 	template := dao.ProjectPropertyTemplate{
-		Id:          dao.GenUUID(),
-		ProjectId:   project.ID,
-		WorkspaceId: project.WorkspaceId,
-		Name:        strings.TrimSpace(request.Name),
-		Type:        request.Type,
-		Options:     options,
-		OnlyAdmin:   request.OnlyAdmin,
-		SortOrder:   request.SortOrder,
-		CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
-		UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+		Id:           dao.GenUUID(),
+		ProjectId:    project.ID,
+		WorkspaceId:  project.WorkspaceId,
+		Name:         strings.TrimSpace(request.Name),
+		Type:         request.Type,
+		Options:      options,
+		DictionaryId: dictionaryId,
+		Dependency:   request.Dependency,
+		OnlyAdmin:    request.OnlyAdmin,
+		SortOrder:    request.SortOrder,
+		CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
+		UpdatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
+	}
+
+	if err := s.validateTemplateDependency(c, &template); err != nil {
+		return EError(c, err)
 	}
 
 	if err := s.DB(c).Create(&template).Error; err != nil {
@@ -3698,6 +3723,10 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Старая конфигурация — для миграции значений задач при смене типа/справочника
+	oldType := template.Type
+	oldDictionaryId := template.DictionaryId
+
 	// Применяем обновления напрямую к структуре
 	updated := false
 
@@ -3712,8 +3741,7 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 
 	// Определяем тип для валидации options
 	if request.Type != nil {
-		validTypes := map[string]bool{"string": true, "boolean": true, "select": true, "link": true}
-		if !validTypes[*request.Type] {
+		if !validPropertyTypes[*request.Type] {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 		}
 		template.Type = *request.Type
@@ -3733,6 +3761,37 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		}
 	}
 
+	// Обработка справочника: для lookup требуется существующий справочник проекта,
+	// у остальных типов ссылка сбрасывается
+	if request.DictionaryId != nil {
+		template.DictionaryId = uuid.NullUUID{UUID: *request.DictionaryId, Valid: true}
+		updated = true
+	}
+	dictionaryId, err := s.checkTemplateDictionary(c, project.ID, template.Type, template.DictionaryId)
+	if err != nil {
+		return EError(c, err)
+	}
+	template.DictionaryId = dictionaryId
+
+	// Обработка зависимости: нулевой parent_template_id снимает её
+	if request.Dependency != nil {
+		if request.Dependency.ParentTemplateId == uuid.Nil {
+			template.Dependency = nil
+		} else {
+			template.Dependency = request.Dependency
+		}
+		updated = true
+	}
+	// Смена типа делает прежнюю зависимость несовместимой — снимаем её сами,
+	// а не валим PATCH ошибкой валидации
+	typeChanged := template.Type != oldType
+	if typeChanged && request.Dependency == nil && !dependencyModeAllowsChildType(template.Dependency, template.Type) {
+		template.Dependency = nil
+	}
+	if err := s.validateTemplateDependency(c, &template); err != nil {
+		return EError(c, err)
+	}
+
 	if request.OnlyAdmin != nil {
 		template.OnlyAdmin = *request.OnlyAdmin
 		updated = true
@@ -3746,7 +3805,18 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		template.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 		template.UpdatedAt = time.Now()
 
-		if err := s.DB(c).Save(&template).Error; err != nil {
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Save(&template).Error; err != nil {
+				return err
+			}
+			if err := dao.MigratePropertyValuesOnTypeChange(tx, template.Id, oldType, template.Type, oldDictionaryId, template.DictionaryId); err != nil {
+				return err
+			}
+			if !typeChanged {
+				return nil
+			}
+			return s.cleanupIncompatibleDependents(tx, &template)
+		}); err != nil {
 			return EError(c, err)
 		}
 	}
@@ -3806,7 +3876,208 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Снимаем каскадные зависимости полей, ссылавшихся на удалённый шаблон
+	if err := s.DB(c).Model(&dao.ProjectPropertyTemplate{}).
+		Where("project_id = ?", project.ID).
+		Where("dependency->>'parent_template_id' = ?", templateUUID.String()).
+		Update("dependency", nil).Error; err != nil {
+		return EError(c, err)
+	}
+
 	return c.NoContent(http.StatusNoContent)
+}
+
+// validPropertyTypes - допустимые типы шаблонов кастомных полей
+var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "link": true, "lookup": true, "date": true, "datetime": true}
+
+// checkTemplateDictionary валидирует справочник шаблона поля: для типа lookup
+// требуется существующий справочник проекта, у остальных типов ссылка сбрасывается
+func (s *Services) checkTemplateDictionary(c echo.Context, projectId uuid.UUID, propType string, dictionaryId uuid.NullUUID) (uuid.NullUUID, error) {
+	if propType != "lookup" {
+		return uuid.NullUUID{}, nil
+	}
+	if !dictionaryId.Valid {
+		return uuid.NullUUID{}, apierrors.ErrPropertyTemplateDictionaryRequired
+	}
+	var exists bool
+	if err := s.DB(c).Model(&dao.Dictionary{}).
+		Select("count(*) > 0").
+		Where("id = ? AND project_id = ?", dictionaryId.UUID, projectId).
+		Find(&exists).Error; err != nil {
+		return uuid.NullUUID{}, err
+	}
+	if !exists {
+		return uuid.NullUUID{}, apierrors.ErrPropertyTemplateDictionaryRequired
+	}
+	return dictionaryId, nil
+}
+
+// validateTemplateDependency валидирует каскадную зависимость шаблона поля:
+// режим, существование родителя в проекте, отсутствие циклов, совместимость типов
+func (s *Services) validateTemplateDependency(c echo.Context, template *dao.ProjectPropertyTemplate) error {
+	dep := template.Dependency
+	if dep == nil {
+		return nil
+	}
+
+	if dep.ParentTemplateId == template.Id {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("field cannot depend on itself")
+	}
+
+	var parent dao.ProjectPropertyTemplate
+	if err := s.DB(c).Where("id = ? AND project_id = ?", dep.ParentTemplateId, template.ProjectId).
+		First(&parent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("parent template not found in project")
+		}
+		return err
+	}
+
+	if err := s.checkDependencyCycle(c, template.Id, &parent); err != nil {
+		return err
+	}
+
+	switch dep.Mode {
+	case types.PropertyDependencyOptionsMap:
+		return validateOptionsMapDependency(&parent, template)
+	case types.PropertyDependencyRowFilter:
+		return validateRowFilterDependency(&parent, template)
+	default:
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("unknown mode, allowed: options_map, row_filter")
+	}
+}
+
+// checkDependencyCycle поднимается по цепочке родителей и запрещает цикл
+func (s *Services) checkDependencyCycle(c echo.Context, childId uuid.UUID, parent *dao.ProjectPropertyTemplate) error {
+	current := parent
+	for range 100 {
+		if current.Dependency == nil {
+			return nil
+		}
+		if current.Dependency.ParentTemplateId == childId {
+			return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("dependency cycle detected")
+		}
+		var next dao.ProjectPropertyTemplate
+		if err := s.DB(c).Where("id = ? AND project_id = ?", current.Dependency.ParentTemplateId, parent.ProjectId).
+			First(&next).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		current = &next
+	}
+	return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("dependency chain is too deep")
+}
+
+// validateOptionsMapDependency: select→select, ключи карты ⊆ options родителя,
+// значения карты ⊆ options ребёнка
+func validateOptionsMapDependency(parent, child *dao.ProjectPropertyTemplate) error {
+	if parent.Type != "select" || child.Type != "select" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map requires select parent and select child")
+	}
+	if len(child.Dependency.OptionsMap) == 0 {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map is empty")
+	}
+	for parentOption, childOptions := range child.Dependency.OptionsMap {
+		if !slices.Contains(parent.Options, parentOption) {
+			return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map key is not a parent option: " + parentOption)
+		}
+		for _, childOption := range childOptions {
+			if !slices.Contains(child.Options, childOption) {
+				return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map value is not a child option: " + childOption)
+			}
+		}
+	}
+	return nil
+}
+
+// validateRowFilterDependency: ребёнок lookup со справочником, родитель select или
+// lookup, имя атрибута задано
+func validateRowFilterDependency(parent, child *dao.ProjectPropertyTemplate) error {
+	if child.Type != "lookup" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("row_filter requires lookup child")
+	}
+	if parent.Type != "select" && parent.Type != "lookup" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("row_filter requires select or lookup parent")
+	}
+	if strings.TrimSpace(child.Dependency.RowFilterAttr) == "" {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("row_filter_attr is required")
+	}
+	return nil
+}
+
+// dependencyModeAllowsChildType: режим зависимости допускает такой тип поля-ребёнка
+// (правила — как в validateOptionsMapDependency/validateRowFilterDependency)
+func dependencyModeAllowsChildType(dep *types.PropertyDependency, childType string) bool {
+	if dep == nil {
+		return true
+	}
+	if dep.Mode == types.PropertyDependencyOptionsMap {
+		return childType == "select"
+	}
+	return childType == "lookup"
+}
+
+// dependencyModeAllowsParentType: режим зависимости допускает такой тип поля-родителя
+func dependencyModeAllowsParentType(dep *types.PropertyDependency, parentType string) bool {
+	if dep == nil {
+		return true
+	}
+	if dep.Mode == types.PropertyDependencyOptionsMap {
+		return parentType == "select"
+	}
+	return parentType == "select" || parentType == "lookup"
+}
+
+// cleanupIncompatibleDependents после смены типа шаблона снимает зависимость у
+// полей-детей с несовместимым режимом и отвязывает шаблон от несовместимых полей форм
+func (s *Services) cleanupIncompatibleDependents(tx *gorm.DB, template *dao.ProjectPropertyTemplate) error {
+	var children []dao.ProjectPropertyTemplate
+	if err := tx.Where("project_id = ? AND dependency->>'parent_template_id' = ?", template.ProjectId, template.Id.String()).
+		Find(&children).Error; err != nil {
+		return err
+	}
+	for i := range children {
+		if dependencyModeAllowsParentType(children[i].Dependency, template.Type) {
+			continue
+		}
+		if err := tx.Model(&children[i]).Update("dependency", nil).Error; err != nil {
+			return err
+		}
+	}
+	return cleanupIncompatibleFormMappings(tx, template)
+}
+
+// cleanupIncompatibleFormMappings отвязывает шаблон от полей форм целевого проекта,
+// тип которых несовместим с новым типом шаблона (привязка перестала проходить
+// валидацию формы и отображалась бы голым uuid)
+func cleanupIncompatibleFormMappings(tx *gorm.DB, template *dao.ProjectPropertyTemplate) error {
+	var forms []dao.Form
+	if err := tx.Where("target_project_id = ?", template.ProjectId).Find(&forms).Error; err != nil {
+		return err
+	}
+	for i := range forms {
+		changed := false
+		for j := range forms[i].Fields {
+			field := &forms[i].Fields[j]
+			if !field.PropertyTemplateId.Valid || field.PropertyTemplateId.UUID != template.Id {
+				continue
+			}
+			if slices.Contains(formPropertyTypeCompat[template.Type], field.Type) {
+				continue
+			}
+			field.PropertyTemplateId = uuid.NullUUID{}
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		if err := tx.Model(&forms[i]).Update("fields", forms[i].Fields).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // archiveProject godoc

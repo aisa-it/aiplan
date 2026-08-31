@@ -408,7 +408,18 @@ func GetIssueListData(
 	streamCallback StreamCallback,
 ) (any, error) {
 	if searchParams.GroupByParam != "" && !slices.Contains(types.IssueGroupFields, searchParams.GroupByParam) {
-		return nil, apierrors.ErrUnsupportedGroup
+		templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam)
+		if !ok {
+			return nil, apierrors.ErrUnsupportedGroup
+		}
+		var templateExists bool
+		if err := db.Model(&dao.ProjectPropertyTemplate{}).Select("count(*) > 0").
+			Where("id = ?", templateId).Find(&templateExists).Error; err != nil {
+			return nil, err
+		}
+		if !templateExists {
+			return nil, apierrors.ErrPropertyTemplateNotFound
+		}
 	}
 
 	// OnlyCount - особый случай, считаем через SearchIssuesList
@@ -454,8 +465,12 @@ func GetIssueListData(
 
 				groupMap[group.SortId] = &group
 				for i < len(groupMap) && groupMap[i] != nil {
-					if err := streamCallback(*groupMap[i]); err != nil {
-						return err
+					// отсечённые фильтрами группы (skippedGroupCount) в поток не отдаём,
+					// но указатель продвигаем — иначе отдача навсегда встаёт перед ними
+					if groupMap[i].Count != skippedGroupCount {
+						if err := streamCallback(*groupMap[i]); err != nil {
+							return err
+						}
 					}
 					i++
 				}
@@ -470,6 +485,15 @@ func GetIssueListData(
 			return nil, nil
 		}
 
+		// Отсечённые фильтрами группы (skippedGroupCount) в ответ не попадают
+		issuesGroups := make([]*dto.IssuesGroupResponse, 0, len(groupMap))
+		for _, gr := range groupMap {
+			if gr == nil || gr.Count == skippedGroupCount {
+				continue
+			}
+			issuesGroups = append(issuesGroups, gr)
+		}
+
 		return dto.IssuesGroupedResponse{
 			PaginationMeta: dto.PaginationMeta{
 				Count:  totalCount,
@@ -477,7 +501,7 @@ func GetIssueListData(
 				Limit:  searchParams.Limit,
 			},
 			GroupBy: searchParams.GroupByParam,
-			Issues:  groupMap,
+			Issues:  issuesGroups,
 		}, nil
 	}
 

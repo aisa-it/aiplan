@@ -70,6 +70,21 @@ func (s *Services) SearchFiltersMiddleware(next echo.HandlerFunc) echo.HandlerFu
 	}
 }
 
+// DictionariesMiddleware - guard существования справочника проекта; сама загрузка
+// лениво в ручке через apicontext.GetDictionary()
+func (s *Services) DictionariesMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		exists, err := dao.IsDictionaryExists(s.DB(c), c.Param("dictionaryId"))
+		if err != nil {
+			return EError(c, err)
+		}
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrDictionaryNotFound)
+		}
+		return next(c)
+	}
+}
+
 func NewSPACacheMiddleware(config middleware.StaticConfig) func(echo.HandlerFunc) echo.HandlerFunc {
 	formatRegexp := regexp.MustCompile(`\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)`)
 

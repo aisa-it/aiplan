@@ -1,6 +1,7 @@
 package apicontext
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
@@ -46,6 +47,7 @@ type APIContext struct {
 
 	searchFilter *dao.SearchFilter
 	releaseNote  *dao.ReleaseNote
+	dictionary   *dao.Dictionary
 
 	error error
 }
@@ -460,6 +462,38 @@ func (a *APIContext) GetSearchFilter() *dao.SearchFilter {
 
 	a.searchFilter = &filter
 	return a.searchFilter
+}
+
+// GetDictionary лениво загружает справочник проекта по параметру :dictionaryId
+// с проверкой принадлежности текущему проекту
+func (a *APIContext) GetDictionary() *dao.Dictionary {
+	if a.dictionary != nil {
+		return a.dictionary
+	}
+
+	id, err := uuid.FromString(a.Param("dictionaryId"))
+	if err != nil {
+		a.error = apierrors.ErrDictionaryNotFound
+		return nil
+	}
+
+	project := a.GetProject()
+	if a.error != nil {
+		return nil
+	}
+
+	var dictionary dao.Dictionary
+	if err := a.db.Where("id = ? AND project_id = ?", id, project.ID).First(&dictionary).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			a.error = apierrors.ErrDictionaryNotFound
+			return nil
+		}
+		a.error = err
+		return nil
+	}
+
+	a.dictionary = &dictionary
+	return a.dictionary
 }
 
 func (a *APIContext) GetReleaseNote() *dao.ReleaseNote {

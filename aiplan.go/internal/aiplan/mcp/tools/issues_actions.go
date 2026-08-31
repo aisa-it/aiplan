@@ -15,6 +15,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/mcp/logger"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
@@ -377,7 +378,7 @@ var issuesActionsTools = []Tool{
 	{
 		mcp.NewTool(
 			"set_issue_property",
-			mcp.WithDescription("Установка значения кастомного свойства задачи. OnlyAdmin шаблоны может ставить только админ. Значение проходит JSON Schema валидацию"),
+			mcp.WithDescription("Установка значения кастомного свойства задачи. OnlyAdmin шаблоны может ставить только админ. Значение проходит JSON Schema валидацию. Изменение может быть отклонено Lua-сценарием проекта (для не-админов)"),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithString("issue_id",
@@ -390,7 +391,7 @@ var issuesActionsTools = []Tool{
 			),
 			mcp.WithObject("value",
 				mcp.Required(),
-				mcp.Description("Значение: строка для string/select, bool для boolean, объект {url,title} для link"),
+				mcp.Description("Значение: строка для string/select, bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime"),
 			),
 		),
 		setIssueProperty,
@@ -414,6 +415,26 @@ func loadIssueAndMember(db *gorm.DB, userID uuid.UUID, issueIdOrSeq string) (*da
 		return nil, nil, logger.Error(err)
 	}
 	return issue, &pm, nil
+}
+
+// canManageIssueRelations: связями задачи (родитель, связанные задачи) управляет админ,
+// автор или исполнитель-участник (как в HTTP hasIssuePermissions). Гость-исполнитель
+// прав не получает - гость по чужим задачам read-only. Исполнитель проверяется
+// запросом в БД — loadIssueAndMember не загружает Assignees.
+func canManageIssueRelations(db *gorm.DB, issue *dao.Issue, pm *dao.ProjectMember, userID uuid.UUID) (bool, error) {
+	if pm.Role == types.AdminRole || issue.CreatedById == userID {
+		return true, nil
+	}
+	if pm.Role != types.MemberRole {
+		return false, nil
+	}
+	var isAssignee bool
+	err := db.Model(&dao.IssueAssignee{}).
+		Select("count(*) > 0").
+		Where("issue_id = ?", issue.ID).
+		Where("assignee_id = ?", userID).
+		Find(&isAssignee).Error
+	return isAssignee, err
 }
 
 func deleteIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -473,7 +494,7 @@ func getAvailableStates(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
 }
 
 func getSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -521,7 +542,7 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 
 	rawIDs, ok := args["sub_issue_ids"].([]interface{})
 	if !ok || len(rawIDs) == 0 {
-		return mcp.NewToolResultJSON([]dto.IssueLight{})
+		return listResult([]dto.IssueLight{})
 	}
 
 	parentIssue, pm, errRes := loadIssueAndMember(db, user.ID, issueIdOrSeq)
@@ -548,16 +569,17 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		}
 	}
 	if len(candidateIDs) == 0 {
-		return mcp.NewToolResultJSON([]dto.IssueLight{})
+		return listResult([]dto.IssueLight{})
 	}
 
 	query := db.
 		Preload("Project").
+		Preload("Assignees").
 		Where("project_id = ?", parentIssue.ProjectId).
 		Where("parent_id is null").
 		Where("id in ?", candidateIDs)
 	if pm.Role < types.AdminRole {
-		query = query.Where("created_by_id = ?", user.ID)
+		query = query.Where(dao.Issue{}.RelationCandidates(db, user.ID, pm.Role))
 	}
 
 	var subIssues []dao.Issue
@@ -582,7 +604,8 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	parentNullID := uuid.NullUUID{UUID: parentIssue.ID, Valid: true}
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	for i := range subIssues {
-		if pm.Role != types.AdminRole && subIssues[i].CreatedById != user.ID {
+		if pm.Role != types.AdminRole && subIssues[i].CreatedById != user.ID &&
+			!(pm.Role >= types.MemberRole && subIssues[i].IsAssignee(user.ID)) {
 			return apierrors.ErrPermissionParentIssue.MCPError(), nil
 		}
 		subIssues[i].ParentId = parentNullID
@@ -590,7 +613,10 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		subIssues[i].SortOrder = i + maxSortOrder + 1
 	}
 
-	if err := db.Save(&subIssues).Error; err != nil {
+	// Omit(clause.Associations) обязателен: Assignees загружены Preload'ом для
+	// проверки IsAssignee, а автосохранение many2many пишет в issue_assignees
+	// без id (join-таблица не через SetupJoinTable) и валит запрос
+	if err := db.Omit(clause.Associations).Save(&subIssues).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
@@ -602,7 +628,7 @@ func addSubIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		}
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
 }
 
 func getRootAncestorIDMCP(tx *gorm.DB, issueID uuid.UUID) (string, error) {
@@ -643,7 +669,7 @@ func getLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&issues, func(il *dao.Issue) dto.Issue { return *il.ToDTO() }))
+	return listResult(utils.SliceToSlice(&issues, func(il *dao.Issue) dto.Issue { return *il.ToDTO() }))
 }
 
 func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -667,9 +693,17 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 		newIDs = append(newIDs, newID)
 	}
 
-	issue, _, errRes := loadIssueAndMember(db, user.ID, issueIdOrSeq)
+	issue, pm, errRes := loadIssueAndMember(db, user.ID, issueIdOrSeq)
 	if errRes != nil {
 		return errRes, nil
+	}
+
+	allowed, err := canManageIssueRelations(db, issue, pm, user.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+	if !allowed {
+		return apierrors.ErrIssueForbidden.MCPError(), nil
 	}
 
 	if err := issue.FetchLinkedIssues(db); err != nil {
@@ -700,7 +734,7 @@ func setLinkedIssues(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	if err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
 		slog.Error("MCP issue action: track changes failed", "error", err)
 	}
-	return mcp.NewToolResultJSON(utils.SliceToSlice(&issues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
+	return listResult(utils.SliceToSlice(&issues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
 }
 
 func createIssueLink(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1200,7 +1234,7 @@ func getAvailableIssuesForRelation(ctx context.Context, db *gorm.DB, bl *busines
 		})
 
 	if pm.Role < types.AdminRole && (relationType == relationParent || relationType == relationSub) {
-		query = query.Where("issues.created_by_id = ?", user.ID)
+		query = query.Where(dao.Issue{}.RelationCandidates(db, user.ID, pm.Role))
 	}
 
 	switch relationType {
@@ -1253,8 +1287,11 @@ func getAvailableIssuesForRelation(ctx context.Context, db *gorm.DB, bl *busines
 				Model(&dao.IssueBlocker{}),
 		)
 	case relationLinked:
-		authorMatch := currentIssue.Author != nil && currentIssue.Author.ID == user.ID
-		if pm.Role == types.GuestRole || (pm.Role == types.MemberRole && !authorMatch) {
+		allowed, err := canManageIssueRelations(db, currentIssue, pm, user.ID)
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if !allowed {
 			query = query.Where("1 = 0")
 		}
 	}
@@ -1424,49 +1461,12 @@ func getIssueProperties(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return errRes, nil
 	}
 
-	var templates []dao.ProjectPropertyTemplate
-	if err := db.Where("project_id = ?", issue.ProjectId).
-		Where("only_admin = ? OR only_admin = ?", false, pm.Role == types.AdminRole).
-		Order("sort_order, created_at").
-		Find(&templates).Error; err != nil {
+	result, err := dao.ListIssuePropertiesDTO(db, issue, pm.Role == types.AdminRole)
+	if err != nil {
 		return logger.Error(err), nil
 	}
 
-	var existingProps []dao.IssueProperty
-	if err := db.Where("issue_id = ?", issue.ID).Find(&existingProps).Error; err != nil {
-		return logger.Error(err), nil
-	}
-
-	propsMap := make(map[uuid.UUID]dao.IssueProperty, len(existingProps))
-	for _, p := range existingProps {
-		propsMap[p.TemplateId] = p
-	}
-
-	result := make([]dto.IssueProperty, 0, len(templates))
-	for _, tmpl := range templates {
-		if tmpl.OnlyAdmin && pm.Role < types.AdminRole {
-			continue
-		}
-		prop := dto.IssueProperty{
-			TemplateId:  tmpl.Id,
-			IssueId:     issue.ID,
-			ProjectId:   issue.ProjectId,
-			WorkspaceId: issue.WorkspaceId,
-			Name:        tmpl.Name,
-			Type:        tmpl.Type,
-			Value:       defaultPropertyValueMCP(tmpl.Type),
-		}
-		if tmpl.Type == "select" {
-			prop.Options = tmpl.Options
-		}
-		if existing, ok := propsMap[tmpl.Id]; ok {
-			prop.Id = existing.Id
-			prop.Value = parsePropertyValueMCP(tmpl.Type, existing.Value)
-		}
-		result = append(result, prop)
-	}
-
-	return mcp.NewToolResultJSON(result)
+	return listResult(result)
 }
 
 func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1506,6 +1506,38 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	valueStr := serializePropertyValueMCP(value)
+
+	// Для lookup-полей значение - id строки справочника: строка должна существовать
+	// в справочнике шаблона и быть не архивной
+	var lookupRow *dao.DictionaryRow
+	if template.Type == "lookup" {
+		lookupRow, err = dao.CheckLookupValue(db, template, valueStr)
+		switch {
+		case errors.Is(err, dao.ErrLookupRowNotFound):
+			return apierrors.ErrDictionaryRowNotFound.MCPError(), nil
+		case errors.Is(err, dao.ErrLookupRowArchived):
+			return apierrors.ErrPropertyValueValidationFailed.MCPError(), nil
+		case err != nil:
+			return logger.Error(err), nil
+		}
+	}
+
+	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
+	if err := dao.CheckDependencyValue(db, template, issue.ID, valueStr, lookupRow); err != nil {
+		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
+			return apierrors.ErrPropertyValueIncompatible.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	// Lua-сценарий проекта может запретить изменение поля.
+	// На админов сценарии не распространяются (канон продукта, как в HTTP setIssueProperty)
+	if issue.Project != nil && issue.Project.RulesScript != nil && pm.Role != types.AdminRole {
+		if errRes := runPropertyChangeRulesMCP(db, user, issue, template, valueStr, lookupRow); errRes != nil {
+			return errRes, nil
+		}
+	}
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 
 	var existing dao.IssueProperty
@@ -1534,42 +1566,61 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		}
 	}
 
+	// Смена значения родителя каскада: сбрасываем ставшие недопустимыми значения детей
+	resetProperties, err := dao.ResetIncompatibleChildren(db, template, issue.ID, valueStr, user.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+
 	existing.Template = &template
-	return mcp.NewToolResultJSON(existing.ToDTO())
+	resp := existing.ToDTO()
+	if lookupRow != nil {
+		resp.ValueLabel = &lookupRow.Value
+	}
+	resp.ResetProperties = resetProperties
+	return mcp.NewToolResultJSON(resp)
 }
 
-func defaultPropertyValueMCP(propType string) any {
-	switch propType {
-	case "string":
-		return ""
-	case "boolean":
-		return false
-	default:
-		return nil
+// runPropertyChangeRulesMCP вызывает Lua-хук BeforeIssuePropertyChange проекта
+// (как HTTP setIssueProperty / отказ BeforeStatusChange в MCP updateIssue).
+// Не-nil результат — отказ сценария, значение поля не записывается
+func runPropertyChangeRulesMCP(db *gorm.DB, user *dao.User, issue *dao.Issue, template dao.ProjectPropertyTemplate, valueStr string, lookupRow *dao.DictionaryRow) *mcp.CallToolResult {
+	// findIssueByIdOrSeq грузит Project/Workspace, но не State, а getCallParams
+	// в rules разыменовывает *issue.State — догружаем статус вручную
+	var state dao.State
+	if err := db.Where("id = ?", issue.StateId).First(&state).Error; err != nil {
+		return logger.Error(err)
 	}
-}
+	issue.State = &state
 
-func parsePropertyValueMCP(propType, value string) any {
-	switch propType {
-	case "boolean":
-		return value == "true"
-	case "select":
-		if value == "" {
-			return nil
-		}
-		return value
-	case "link":
-		if value == "" {
-			return nil
-		}
-		var m json.RawMessage
-		if err := json.Unmarshal([]byte(value), &m); err != nil {
-			return value
-		}
-		return m
-	default:
-		return value
+	// Старые значения полей задачи — для old_value хука и params.properties
+	if err := rules.EnrichIssue(db, issue); err != nil {
+		return logger.Error(err)
 	}
+
+	// Для lookup хук получает отображаемое значение строки справочника, не id
+	hookValue := valueStr
+	if lookupRow != nil {
+		hookValue = lookupRow.Value
+	}
+
+	var rulesLog []dao.RulesLog
+	defer func() {
+		if err := rules.AddLog(db, rulesLog); err != nil {
+			slog.Error("MCP setIssueProperty: create rules log", "error", err)
+		}
+	}()
+
+	res, msg, rerr := rules.BeforeIssuePropertyChange(*user, *issue, template, hookValue)
+
+	rules.AppendMsg(*issue, *user, msg, &rulesLog)
+	rules.AppendError(*issue, *user, rerr, &rulesLog)
+	rules.ResultToLog(*issue, *user, res, rerr, &rulesLog)
+
+	if !res.ClientResult {
+		return rerr.ClientError().MCPError()
+	}
+	return nil
 }
 
 func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) error {
@@ -1582,7 +1633,14 @@ func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) e
 	if err != nil {
 		return err
 	}
-	return sch.Validate(value)
+	if err := sch.Validate(value); err != nil {
+		return err
+	}
+	// Семантика дат: JSON Schema паттерном не поймать 2026-13-45 или unix вне диапазона
+	if !types.CheckDateValue(template.Type, value) {
+		return apierrors.ErrPropertyValueValidationFailed
+	}
+	return nil
 }
 
 func serializePropertyValueMCP(value any) string {

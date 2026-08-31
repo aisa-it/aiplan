@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +16,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-const spaceMembersTTL = time.Hour
+const (
+	spaceMembersTTL = time.Hour
+
+	workspaceMembersNotifyChannel = "workspace_members_changes"
+)
 
 var (
 	WorkspaceMembersCache workspaceMembersCache = workspaceMembersCache{m: make(map[uuid.UUID]workspaceMembersEntry)}
@@ -38,6 +43,24 @@ type workspaceMembersEntry struct {
 	expire time.Time
 
 	Members []dto.WorkspaceMemberLight
+}
+
+// InitWorkspaceMembersCache подписывает кеш на изменения таблицы workspace_members.
+// Инвалидация приходит из БД, поэтому состав участников обновляется независимо от
+// того, каким путём он изменён: приглашение, админ-панель, импорт или прямой SQL.
+func InitWorkspaceMembersCache() {
+	dao.NotifiSubscription.Subscribe(workspaceMembersNotifyChannel, WorkspaceMembersCache.notifyHandler)
+}
+
+// notifyHandler сбрасывает кеш пространства: список перечитается из БД при
+// следующем запросе, точечно доставлять изменение из payload не требуется.
+func (c *workspaceMembersCache) notifyHandler(payload string) {
+	workspaceId, err := uuid.FromString(payload)
+	if err != nil {
+		slog.Warn("WORKSPACE MEMBERS CACHE invalid payload", "payload", payload, "err", err)
+		return
+	}
+	c.Expire(workspaceId)
 }
 
 func (c *workspaceMembersCache) Load(workspaceId uuid.UUID) (*workspaceMembersEntry, bool) {
@@ -74,12 +97,22 @@ func (c *workspaceMembersCache) Load(workspaceId uuid.UUID) (*workspaceMembersEn
 func (c *workspaceMembersCache) Store(workspaceId uuid.UUID, members []dto.WorkspaceMemberLight) {
 	c.rw.Lock()
 	defer c.rw.Unlock()
-	entry := workspaceMembersEntry{
-		Members: members,
-		expire:  time.Now().Add(spaceMembersTTL),
+
+	// Deep copy array without members
+	cleanMembers := make([]dto.WorkspaceMemberLight, 0, len(members))
+	for _, m := range members {
+		cleanMembers = append(cleanMembers, dto.WorkspaceMemberLight{
+			ID:              m.ID,
+			Role:            m.Role,
+			EditableByAdmin: m.EditableByAdmin,
+			MemberId:        m.MemberId,
+			WorkspaceId:     m.WorkspaceId,
+		})
 	}
-	for i := range entry.Members {
-		entry.Members[i].Member = nil
+
+	entry := workspaceMembersEntry{
+		Members: cleanMembers,
+		expire:  time.Now().Add(spaceMembersTTL),
 	}
 	c.m[workspaceId] = entry
 }
@@ -90,33 +123,23 @@ func (c *workspaceMembersCache) Expire(workspaceId uuid.UUID) {
 	delete(c.m, workspaceId)
 }
 
-func (c *workspaceMembersCache) Update(workspaceId uuid.UUID, updMember dao.WorkspaceMember) {
-	c.rw.Lock()
-	defer c.rw.Unlock()
-	entry, ok := c.m[workspaceId]
-	if !ok {
-		return
-	}
-	for i, member := range entry.Members {
-		if updMember.ID == member.ID {
-			entry.Members[i] = *updMember.ToLightDTO()
+func SortWorkspaceMembers(members []dto.WorkspaceMemberLight, offset, limit int, orderBy string, desc bool) []dto.WorkspaceMemberLight {
+	slices.SortFunc(members, func(a dto.WorkspaceMemberLight, b dto.WorkspaceMemberLight) int {
+		var res int
+		switch orderBy {
+		case "email":
+			res = strings.Compare(strings.ToLower(a.Member.Email), strings.ToLower(b.Member.Email))
+		case "role":
+			res = a.Role - b.Role
+		default:
+			res = strings.Compare(strings.ToLower(a.Member.LastName), strings.ToLower(b.Member.LastName))
 		}
-	}
-}
 
-func (c *workspaceMembersCache) Delete(workspaceId uuid.UUID, dltMember dao.WorkspaceMember) {
-	c.rw.Lock()
-	defer c.rw.Unlock()
-	entry, ok := c.m[workspaceId]
-	if !ok {
-		return
-	}
-	new := make([]dto.WorkspaceMemberLight, 0, len(entry.Members)-1)
-	for _, member := range entry.Members {
-		if dltMember.ID != member.ID {
-			new = append(new, member)
+		if desc {
+			res = res * -1
 		}
-	}
-	entry.Members = new
-	c.m[workspaceId] = entry
+
+		return res
+	})
+	return members[max(offset, 0):min(offset+limit, len(members))]
 }
