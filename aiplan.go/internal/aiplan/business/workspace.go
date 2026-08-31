@@ -27,6 +27,12 @@ func (b *Business) DeleteWorkspace(user *dao.User, workspace *dao.Workspace) err
 			return err
 		}
 
+		// delete notification schedules
+		if err := b.db.Where("workspace_id = ?", workspace.ID).
+			Unscoped().Delete(&dao.NotificationSchedule{}).Error; err != nil {
+			return err
+		}
+
 		if err := b.db.Where("workspace_id = ?", workspace.ID).
 			Unscoped().Delete(&dao.UserAppNotify{}).Error; err != nil {
 			return err

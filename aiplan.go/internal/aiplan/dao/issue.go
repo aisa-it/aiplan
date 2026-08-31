@@ -741,6 +741,11 @@ func (issue *Issue) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
+	// Delete notification schedules
+	if err := tx.Where("issue_id = ?", issue.ID).Delete(&NotificationSchedule{}).Error; err != nil {
+		return err
+	}
+
 	// Delete sprintIssues
 	if err := tx.Where("issue_id = ?", issue.ID).Delete(&SprintIssue{}).Error; err != nil {
 		return err

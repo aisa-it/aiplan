@@ -258,6 +258,11 @@ func (workspace *Workspace) BeforeDelete(tx *gorm.DB) error {
 		return err
 	}
 
+	// delete notification schedules
+	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&NotificationSchedule{}).Error; err != nil {
+		return err
+	}
+
 	// delete UserNotifications
 	if err := tx.Unscoped().Where("workspace_id = ?", workspace.ID).Delete(&UserAppNotify{}).Error; err != nil {
 		return err

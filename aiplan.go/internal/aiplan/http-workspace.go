@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -27,6 +26,7 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/deferred"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/sethvargo/go-password/password"
@@ -1113,59 +1113,17 @@ func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
 		req.SendAt = time.Now()
 	}
 
-	var members []dao.WorkspaceMember
-	var notificationSentAt []dao.DeferredNotifications
-
-	query := s.DB(c).Preload("Member").Where("workspace_id = ?", workspace.ID)
-
-	if len(req.Members) > 0 {
-		query = query.Where("id IN (?)", req.Members)
+	memberIDs := make([]uuid.UUID, 0, len(req.Members))
+	for _, m := range req.Members {
+		id, err := uuid.FromString(m)
+		if err != nil {
+			continue
+		}
+		memberIDs = append(memberIDs, id)
 	}
-	if err := query.Find(&members).Error; err != nil {
+
+	if err := deferred.CreateWorkspaceMessage(s.DB(c), workspace.ID, user.ID, req.Title, req.Msg, req.SendAt, memberIDs); err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
-	}
-	if len(members) > 0 {
-		for _, member := range members {
-			payload := map[string]interface{}{
-				"id":        dao.GenID(),
-				"title":     req.Title,
-				"msg":       req.Msg,
-				"author_id": user.ID,
-			}
-			payloadBytes, err := json.Marshal(payload)
-			if err != nil {
-				return EErrorDefined(c, apierrors.ErrGeneric)
-			}
-			tmpNotify := dao.DeferredNotifications{
-				ID: dao.GenUUID(),
-
-				UserID: member.MemberId,
-				User:   member.Member,
-
-				WorkspaceID:         uuid.NullUUID{UUID: workspace.ID, Valid: true},
-				Workspace:           workspace,
-				NotificationType:    "message",
-				DeliveryMethod:      "telegram",
-				AttemptCount:        0,
-				LastAttemptAt:       time.Time{},
-				TimeSend:            &req.SendAt,
-				NotificationPayload: payloadBytes,
-			}
-
-			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenUUID()
-			tmpNotify.DeliveryMethod = "email"
-			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenUUID()
-			tmpNotify.DeliveryMethod = "app"
-			notificationSentAt = append(notificationSentAt, tmpNotify)
-		}
-	}
-
-	if len(notificationSentAt) > 0 {
-		if err := s.DB(c).Omit(clause.Associations).Create(&notificationSentAt).Error; err != nil {
-			return EErrorDefined(c, apierrors.ErrGeneric)
-		}
 	}
 	return c.NoContent(http.StatusOK)
 }

@@ -32,17 +32,19 @@
                 style="height: 8px;padding-top: 0;padding-bottom: 0;padding-left: 0;padding-right: 0;"></td>
         </tr>
 
-        <div class="mail-footer" style="width: 100%;border-collapse: collapse;font-size: 14px;margin-top: 24px;">
-            <table class="message"
-                   style="background-color: #f0f4ff;border-radius: 8px;width: 100%;font-size: 16px;line-height: 18px;letter-spacing: 0.75px;">
-                <tr>
-                    <td align="center" valign="middle" style="padding: 0;vertical-align: middle;height: 4em;">
-                        <span class="message_title" style="color: #3f76ff;">{{.TitleMsg}}</span><br>
-                        <span class="message-text" style="font-weight: 500;" inert>{{.Msg}}</span>
-                    </td>
-                </tr>
-            </table>
-        </div>
+        <tr>
+            <td colspan="3" style="padding: 0;">
+                <table class="message"
+                       style="background-color: #f0f4ff;border-radius: 8px;width: 100%;font-size: 16px;line-height: 18px;letter-spacing: 0.75px;">
+                    <tr>
+                        <td align="center" valign="middle" style="padding: 16px 10px;vertical-align: middle;">
+                            <span class="message_title" style="color: #3f76ff;">{{.TitleMsg}}</span><br>
+                            <span class="message-text" style="font-weight: 500;" inert>{{.Msg}}</span>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
     </table>
     <br>
     <a class="btn" href="{{.WebUrl}}"

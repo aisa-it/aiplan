@@ -41,6 +41,7 @@ func New(db *gorm.DB) *Migration {
 			NewMigrateActivityFieldsUpdate(db),
 			NewMigrateActivityTargetDateUpdate(db),
 			NewMigrateActivitiesToOneTable(db),
+			NewMigrateDeferredNotificationsToSchedule(db),
 		},
 	}
 }

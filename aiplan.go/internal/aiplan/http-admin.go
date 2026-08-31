@@ -26,6 +26,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/deferred"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -929,58 +930,18 @@ func (s *Services) createMessageForMember(c echo.Context) error {
 		req.SendAt = time.Now()
 	}
 
-	var members []dao.User
-	var notificationSentAt []dao.DeferredNotifications
-
-	query := s.db
-
-	if len(req.Members) > 0 {
-		query = query.Where("id IN (?)", req.Members)
+	userIDs := make([]uuid.UUID, 0, len(req.Members))
+	for _, m := range req.Members {
+		id, err := uuid.FromString(m)
+		if err != nil {
+			continue
+		}
+		userIDs = append(userIDs, id)
 	}
-	if err := query.Find(&members).Error; err != nil {
+
+	if err := deferred.CreateServiceMessage(s.DB(c), req.Title, req.Msg, req.SendAt, userIDs); err != nil {
 		return EErrorDefined(c, apierrors.ErrGeneric)
 	}
-	if len(members) > 0 {
-		for _, member := range members {
-			payload := map[string]interface{}{
-				"id":    dao.GenID(),
-				"title": req.Title,
-				"msg":   req.Msg,
-			}
-			payloadBytes, err := json.Marshal(payload)
-			if err != nil {
-				return EErrorDefined(c, apierrors.ErrGeneric)
-			}
-			tmpNotify := dao.DeferredNotifications{
-				ID: dao.GenUUID(),
-
-				UserID: member.ID,
-				User:   &member,
-
-				NotificationType:    "service_message",
-				DeliveryMethod:      "telegram",
-				AttemptCount:        0,
-				LastAttemptAt:       time.Time{},
-				TimeSend:            &req.SendAt,
-				NotificationPayload: payloadBytes,
-			}
-
-			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenUUID()
-			tmpNotify.DeliveryMethod = "email"
-			notificationSentAt = append(notificationSentAt, tmpNotify)
-			tmpNotify.ID = dao.GenUUID()
-			tmpNotify.DeliveryMethod = "app"
-			notificationSentAt = append(notificationSentAt, tmpNotify)
-		}
-	}
-
-	if len(notificationSentAt) > 0 {
-		if err := s.DB(c).Omit(clause.Associations).CreateInBatches(&notificationSentAt, 10).Error; err != nil {
-			return err
-		}
-	}
-
 	return c.NoContent(http.StatusOK)
 }
 
