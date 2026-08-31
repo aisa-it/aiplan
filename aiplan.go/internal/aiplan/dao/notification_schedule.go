@@ -15,7 +15,7 @@ type NotificationSchedule struct {
 	NotificationType string `gorm:"type:varchar(50);not null;index:idx_ns_poll_type,where:status = 'pending';index:idx_ns_poll_issue_pending,where:status = 'pending';index:idx_ns_issue_type_created,priority:2" json:"notification_type"`
 
 	AuthorID    uuid.NullUUID `gorm:"type:uuid" json:"author_id"`
-	Author      *User         `gorm:"foreignKey:AuthorID" json:"author,omitempty" extensions:"x-nullable"`
+	Author      *User         `gorm:"foreignKey:AuthorID;references:ID;belongsTo" json:"author,omitempty" extensions:"x-nullable"`
 	WorkspaceID uuid.NullUUID `gorm:"type:uuid;index;index:idx_ns_poll_workspace,where:status = 'pending'" json:"workspace_id"`
 	Workspace   *Workspace    `gorm:"foreignKey:WorkspaceID" json:"workspace,omitempty" extensions:"x-nullable"`
 	ProjectID   uuid.NullUUID `gorm:"type:uuid;index" json:"project_id"`
