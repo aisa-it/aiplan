@@ -1863,7 +1863,7 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 // deleteSearchFilter godoc
 // @id deleteSearchFilter
 // @Summary Фильтры: удаление фильтра поиска
-// @Description Удаляет фильтр поиска по его ID для текущего пользователя или суперпользователя
+// @Description Удаляет фильтр поиска по его ID: автор и суперпользователь удаляют фильтр полностью, остальные — только из своего списка
 // @Tags Search Filters
 // @Security ApiKeyAuth
 // @Param filterId path string true "ID фильтра поиска"
@@ -1881,7 +1881,10 @@ func (s *Services) deleteSearchFilter(c echo.Context) error {
 	}
 
 	if filter.AuthorID != user.ID && !user.IsSuperuser {
-		return EErrorDefined(c, apierrors.ErrNotOwnFilter)
+		if err := s.DB(c).Model(user).Association("SearchFilters").Delete(filter); err != nil {
+			return EError(c, err)
+		}
+		return c.NoContent(http.StatusOK)
 	}
 
 	if err := s.DB(c).Select(clause.Associations).Delete(filter).Error; err != nil {
@@ -1906,13 +1909,13 @@ func (s *Services) getMySearchFilterList(c echo.Context) error {
 	user := apicontext.GetContext(c).GetUser()
 
 	var filters []dao.SearchFilter
-	if err := s.DB(c).Model(&user).Association("SearchFilters").Find(&filters); err != nil {
+	if err := s.DB(c).Preload("Author").Model(&user).Association("SearchFilters").Find(&filters); err != nil {
 		return EError(c, err)
 	}
 
-	filtersDTO := make([]dto.SearchFilterLight, 0)
+	filtersDTO := make([]dto.SearchFilterFull, 0)
 	for _, filter := range filters {
-		filtersDTO = append(filtersDTO, *filter.ToLightDTO())
+		filtersDTO = append(filtersDTO, *filter.ToFullDTO())
 	}
 
 	return c.JSON(http.StatusOK, filtersDTO)
