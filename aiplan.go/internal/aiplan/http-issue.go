@@ -1189,7 +1189,7 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, issue.ToDTO())
+	return c.JSON(http.StatusOK, updatedIssue.ToDTO())
 }
 
 // deleteIssue godoc

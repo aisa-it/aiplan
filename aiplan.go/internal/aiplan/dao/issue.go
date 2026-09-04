@@ -92,7 +92,11 @@ type Issue struct {
 	LinkedIssuesCount int64 `json:"linked_issues_count" gorm:"->"`
 	CommentsCount     int64 `json:"comments_count" gorm:"->"`
 
-	Parent    *Issue       `json:"parent_detail" gorm:"foreignKey:ParentId" extensions:"x-nullable"`
+	// belongsTo обязателен: без него gorm на обёртках, эмбеддящих Issue (IssueWithCount в списках),
+	// разворачивает самоссылку в has_one (issues.parent_id = <id этой задачи>) и в parent_detail
+	// попадает случайная подзадача либо nil. На чистой Issue guess даёт belongs_to, поэтому в GET
+	// задачи баг не виден. Проверка: schema.Parse(&IssueWithCount{}) -> Relations["Parent"].Type.
+	Parent    *Issue       `json:"parent_detail" gorm:"foreignKey:ParentId;references:ID;belongsTo" extensions:"x-nullable"`
 	Workspace *Workspace   `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	State     *State       `json:"state_detail" gorm:"foreignKey:StateId" extensions:"x-nullable"`
 	Project   *Project     `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
