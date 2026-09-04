@@ -27,7 +27,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	deferred "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/deferred"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 
@@ -1851,15 +1851,9 @@ func (s *Services) createIssue(c echo.Context) error {
 		if err := dao.CreateIssue(tx, &issueNew); err != nil {
 			return err
 		}
-		if issueNew.TargetDate != nil && (len(issue.AssigneesList) != 0 || len(issue.WatchersList) != 0) {
-			dateStr, err := notifications.FormatDate(issueNew.TargetDate.Time.String(), "2006-01-02", nil)
-			if err != nil {
-				return err
-			}
-			userIds := issue.WatchersList
-			userIds = append(userIds, issue.AssigneesList...)
-
-			if err := notifications.CreateDeadlineNotification(tx, &issueNew, &dateStr, userIds); err != nil {
+		if issueNew.TargetDate != nil {
+			targetDateStr := issueNew.TargetDate.Time.Format("2006-01-02")
+			if err := deferred.CreateDeadlineNotification(tx, &issueNew, &targetDateStr); err != nil {
 				return err
 			}
 		}

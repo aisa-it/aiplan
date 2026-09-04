@@ -56,10 +56,12 @@ type MessageNotifyCtx struct {
 	TextButton string
 }
 
-func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, subj string, ctx MessageNotifyCtx) error {
+func (es *EmailService) MessageNotify(to string, subj string, ctx MessageNotifyCtx) error {
 	subject := subj
 	if ctx.WebUrl != "" {
 		ctx.WebUrl = fmt.Sprintf("%s/%s", es.cfg.WebURL, ctx.WebUrl)
+	} else {
+		ctx.WebUrl = es.cfg.WebURL.String()
 	}
 
 	var template dao.Template
@@ -79,7 +81,7 @@ func (es *EmailService) MessageNotify(notification dao.DeferredNotifications, su
 
 	textContent := htmlStripPolicy.Sanitize(content)
 	mailSend := EmailMessage{
-		To:          notification.User.Email,
+		To:          to,
 		Subject:     subject,
 		Content:     content,
 		TextContent: textContent,
@@ -94,16 +96,16 @@ type MessageDeadlineCtx struct {
 	TimeSend time.Time
 }
 
-func (es *EmailService) DeadlineMessageNotify(user dao.User, notification dao.DeferredNotifications, nd MessageDeadlineCtx) error {
-	subject := fmt.Sprintf("Уведомление об истечении срока выполнения задачи: %s", notification.Issue.FullIssueName())
+func (es *EmailService) DeadlineMessageNotify(user dao.User, issue *dao.Issue, nd MessageDeadlineCtx) error {
+	subject := fmt.Sprintf("Уведомление об истечении срока выполнения задачи: %s", issue.FullIssueName())
 
 	loc := time.Location(user.UserTimezone)
 	date := nd.Deadline.In(&loc)
 	context := MessageDeadlineCtx{
-		WebUrl:   notification.Issue.URL,
+		WebUrl:   issue.URL,
 		Msg:      nd.Msg,
 		Deadline: date,
-		TimeSend: *notification.TimeSend,
+		TimeSend: nd.TimeSend,
 	}
 
 	var template dao.Template
@@ -116,7 +118,7 @@ func (es *EmailService) DeadlineMessageNotify(user dao.User, notification dao.De
 		return err
 	}
 
-	content, err := es.getHTMLWithParams(subject, buf.String(), notification.Issue, nil, 0, 0)
+	content, err := es.getHTMLWithParams(subject, buf.String(), issue, nil, 0, 0)
 	if err != nil {
 		return err
 	}

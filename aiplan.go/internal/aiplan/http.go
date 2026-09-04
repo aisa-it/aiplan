@@ -73,6 +73,7 @@ import (
 	issues_import "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/issues-import"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/maintenance"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	deferred "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/deferred"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo-contrib/echoprometheus"
@@ -240,7 +241,7 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		os.Exit(1)
 	}
 	ns := notifications.NewNotificationService(cfg, db, bl)
-	np := notifications.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
+	npV2 := deferred.NewNotificationProcessor(db, ns.Tg, es, ns.Ws)
 
 	cache.InitUsersCache(db)
 	cache.InitWorkspaceSummaryCache(db)
@@ -264,14 +265,22 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 	migration.New(db).Run()
 
 	jobRegistry := cronmanager.JobRegistry{
-		"notification_processing": cronmanager.Job{
-			Func:     np.ProcessNotifications,
-			Schedule: "*/1 * * * *", // every minute
-		},
 
 		"email_processing": cronmanager.Job{
 			Func:     es.EmailActivity,
 			Schedule: fmt.Sprintf("*/%d * * * *", cfg.NotificationsSleep),
+		},
+		"notification_processing_v2": cronmanager.Job{
+			Func:     npV2.ProcessScheduled,
+			Schedule: "*/1 * * * *", // раз в минуту
+		},
+		"notification_schedule_clean": cronmanager.Job{
+			Func:     deferred.NewNotificationScheduleCleaner(db).Clean,
+			Schedule: "30 3 1 * *", // 1-го числа каждого месяца в 03:30
+		},
+		"notification_schedule_reactivate": cronmanager.Job{
+			Func:     npV2.ReactivateDeadlineSchedules,
+			Schedule: "*/5 * * * *", // каждые 5 минут
 		},
 		/*"delete_inactive_users": cronmanager.Job{
 			Func:     maintenance.NewUserCleaner(db).DeleteInactiveUsers,
@@ -378,7 +387,6 @@ func Server(db *gorm.DB, c *config.Config, version string) {
 		}
 
 		cronManager.Stop()
-		np.Stop()
 		es.Stop()
 		ns.Tg.Stop()
 		e.Shutdown(shutdownCtx)

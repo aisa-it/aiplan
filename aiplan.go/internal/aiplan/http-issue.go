@@ -44,6 +44,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications"
+	deferred "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/notifications/deferred"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -1091,53 +1092,29 @@ func (s *Services) updateIssue(c echo.Context) error {
 			}
 		}
 
-		if targetDateOk || issue.TargetDate != nil {
-			if targetDateOk || assigneesOk || watchersOk {
-				assigneeIds := &issue.AssigneeIDs
-				watcherIds := &issue.WatcherIDs
-				var notifyUserIds []uuid.UUID
-
-				if targetDateOk {
-					notifyUserIds = issue.AssigneeIDs
-					notifyUserIds = append(notifyUserIds, issue.WatcherIDs...)
-				}
-
-				if assigneesOk || watchersOk {
-					dateStr, err := notifications.FormatDate(issue.TargetDate.Time.String(), "2006-01-02", nil)
-					if err != nil {
-						return EErrorDefined(c, apierrors.ErrGeneric)
-					}
-
-					if assigneesOk {
-						notifyUserIds = []uuid.UUID{}
-						for _, v := range assignees {
-							if str, ok := v.(uuid.UUID); ok {
-								notifyUserIds = append(notifyUserIds, str)
-							}
-						}
-						notifyUserIds = append(notifyUserIds, *watcherIds...)
-					}
-					if watchersOk {
-						notifyUserIds = []uuid.UUID{}
-
-						for _, v := range watchers {
-							if str, ok := v.(uuid.UUID); ok {
-								notifyUserIds = append(notifyUserIds, str)
-							}
-						}
-						notifyUserIds = append(notifyUserIds, *assigneeIds...)
-					}
-
-					targetDate = &dateStr
-				}
-				notifyUserIds = append(notifyUserIds, issue.Author.ID)
-
-				err := notifications.CreateDeadlineNotification(tx, issue, targetDate, notifyUserIds)
-				if err != nil {
-					return err
-				}
+		// Дедлайн изменился/установлен/снят в запросе — полный сброс: удаляем старые
+		// расписания и создаём новое с пустой delivery-картой (все получатели уведомятся заново).
+		var deadlineChanged bool
+		if targetDateOk {
+			if targetDate == nil {
+				deadlineChanged = oldIssue.TargetDate != nil
+			} else if newT, err := utils.FormatDate(*targetDate); err != nil {
+				deadlineChanged = true
+			} else {
+				deadlineChanged = oldIssue.TargetDate == nil || !oldIssue.TargetDate.Time.Equal(newT)
 			}
+		}
 
+		if targetDateOk && deadlineChanged {
+			if err := deferred.CreateDeadlineNotification(tx, issue, targetDate); err != nil {
+				return err
+			}
+		} else if issue.TargetDate != nil && (assigneesOk || watchersOk) {
+			// Дедлайн не менялся, но менялись assignee/watcher: delivery-карту не трогаем —
+			// старым получателям повторно не шлём, новый получатель подхватится poll-циклом.
+			if err := deferred.ActivateDeadlineSchedule(tx, issue); err != nil {
+				return err
+			}
 		}
 
 		issue.UpdatedAt = time.Now()

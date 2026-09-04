@@ -29,6 +29,12 @@ func (b *Business) DeleteProject(user *dao.User, project *dao.Project, workspace
 			return err
 		}
 
+		// delete notification schedules
+		if err := b.db.Where("project_id = ?", project.ID).
+			Unscoped().Delete(&dao.NotificationSchedule{}).Error; err != nil {
+			return err
+		}
+
 		query := b.db.
 			Where("entity_type IN (?)", []types.EntityLayer{types.LayerProject, types.LayerIssue}).
 			Where("project_id = ?", project.ID)

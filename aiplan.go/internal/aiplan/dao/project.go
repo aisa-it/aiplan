@@ -444,6 +444,9 @@ func (project *Project) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&DeferredNotifications{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&NotificationSchedule{}).Error; err != nil {
+		return err
+	}
 	return tx.Unscoped().Where("project_id = ?", project.ID).Delete(&IssueProperty{}).Error
 }
 
