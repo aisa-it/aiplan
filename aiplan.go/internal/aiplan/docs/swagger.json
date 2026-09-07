@@ -4110,6 +4110,13 @@
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Подкачать в задачи значения дополнительных параметров (properties) для колонок таблицы",
+                        "name": "include_properties",
+                        "in": "query"
+                    },
+                    {
                         "description": "Фильтры для поиска задач",
                         "name": "filters",
                         "in": "body",
@@ -22530,6 +22537,13 @@
                         }
                     ],
                     "x-nullable": true
+                },
+                "properties": {
+                    "description": "Properties - значения дополнительных параметров задачи; заполняются только\nпо запросу списка с include_properties=true (колонки таблицы)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.IssueProperty"
+                    }
                 },
                 "sequence_id": {
                     "type": "integer"

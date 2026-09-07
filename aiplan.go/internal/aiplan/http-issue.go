@@ -373,6 +373,7 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 // @Param only_active query bool false "Вернуть только активные задачи" default(false)
 // @Param only_pinned query bool false "Вернуть только закрепленные задачи" default(false)
 // @Param stream query bool false "Ответ ввиде стриминга json сгруппированных таблиц, работает только при группировке" default(false)
+// @Param include_properties query bool false "Подкачать в задачи значения дополнительных параметров (properties) для колонок таблицы" default(false)
 // @Param filters body types.IssuesListFilters false "Фильтры для поиска задач"
 // @Success 200 {object} dto.IssueSearchResult "Результат поиска задач"
 // @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"

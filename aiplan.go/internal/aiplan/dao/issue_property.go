@@ -6,7 +6,12 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/types"
+	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
 	"github.com/gofrs/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 )
 
@@ -274,4 +279,146 @@ func (t ProjectPropertyTemplate) GenSchema() types.IssuePropertySchema {
 		},
 		AdditionalProperties: true,
 	}
+}
+
+// FillIssuesProperties батчем подкачивает значения дополнительных параметров в
+// задачи списка (колонки таблицы): шаблоны проектов выдачи + значения по id задач
+// двумя запросами вместо N вызовов ListIssuePropertiesDTO. OnlyAdmin-поля попадают
+// только в задачи проектов, где пользователь админ. Options/Dependency в список
+// осознанно не кладутся — колонка только показывает значение
+func FillIssuesProperties(db *gorm.DB, user *User, issues []dto.IssueWithCount) (err error) {
+	if len(issues) == 0 || user == nil {
+		return nil
+	}
+
+	// Дочерний спан под спаном запроса; контекст со спаном возвращаем в db,
+	// чтобы SQL-спаны gorm-плагина трассировки легли под него
+	ctx, span := otel.Tracer("aiplan/dao").Start(db.Statement.Context, "dao.FillIssuesProperties")
+	defer func() { endSpan(span, err) }()
+	db = db.WithContext(ctx)
+	span.SetAttributes(attribute.Int("issues.count", len(issues)))
+
+	issueIds := make([]uuid.UUID, 0, len(issues))
+	projectSet := make(map[uuid.UUID]struct{})
+	for _, issue := range issues {
+		issueIds = append(issueIds, issue.Id)
+		projectSet[issue.ProjectId] = struct{}{}
+	}
+
+	span.SetAttributes(attribute.Int("projects.count", len(projectSet)))
+
+	templatesByProject, err := visiblePropertyTemplatesByProject(db, user.ID, utils.SetToSlice(projectSet))
+	if err != nil || len(templatesByProject) == 0 {
+		return err
+	}
+
+	valuesByIssue, err := issuePropertyValuesByIssue(db, issueIds)
+	if err != nil {
+		return err
+	}
+
+	// Собираем в один плоский срез, чтобы резолвить lookup-подписи одним запросом,
+	// а задачам раздаём подсрезы (общий backing array)
+	all := make([]dto.IssueProperty, 0, len(issues))
+	ranges := make([][2]int, len(issues))
+	for i, issue := range issues {
+		start := len(all)
+		for _, tmpl := range templatesByProject[issue.ProjectId] {
+			all = append(all, buildIssuePropertyDTO(issue, tmpl, valuesByIssue[issue.Id]))
+		}
+		ranges[i] = [2]int{start, len(all)}
+	}
+
+	span.SetAttributes(attribute.Int("properties.count", len(all)))
+
+	if err = FillLookupValueLabels(db, all); err != nil {
+		return err
+	}
+	assignIssuesProperties(issues, all, ranges)
+	return nil
+}
+
+// assignIssuesProperties раздаёт задачам их подсрезы плоского списка полей
+// (cap ограничен концом диапазона — append в один подсрез не затрёт соседний)
+func assignIssuesProperties(issues []dto.IssueWithCount, all []dto.IssueProperty, ranges [][2]int) {
+	for i := range issues {
+		if ranges[i][0] == ranges[i][1] {
+			continue
+		}
+		issues[i].Properties = all[ranges[i][0]:ranges[i][1]:ranges[i][1]]
+	}
+}
+
+// endSpan закрывает спан, помечая его ошибкой при err != nil
+func endSpan(span trace.Span, err error) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+}
+
+// visiblePropertyTemplatesByProject - шаблоны полей проектов, доступные пользователю:
+// OnlyAdmin-шаблоны только там, где он админ проекта
+func visiblePropertyTemplatesByProject(db *gorm.DB, userId uuid.UUID, projectIds []uuid.UUID) (map[uuid.UUID][]ProjectPropertyTemplate, error) {
+	var adminProjects []uuid.UUID
+	if err := db.Model(&ProjectMember{}).Select("project_id").
+		Where("member_id = ? AND role = ? AND project_id IN (?)", userId, types.AdminRole, projectIds).
+		Find(&adminProjects).Error; err != nil {
+		return nil, err
+	}
+	adminSet := make(map[uuid.UUID]struct{}, len(adminProjects))
+	for _, id := range adminProjects {
+		adminSet[id] = struct{}{}
+	}
+
+	var templates []ProjectPropertyTemplate
+	if err := db.Where("project_id IN (?)", projectIds).
+		Order("sort_order, created_at").
+		Find(&templates).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[uuid.UUID][]ProjectPropertyTemplate, len(projectIds))
+	for _, tmpl := range templates {
+		if _, isAdmin := adminSet[tmpl.ProjectId]; tmpl.OnlyAdmin && !isAdmin {
+			continue
+		}
+		result[tmpl.ProjectId] = append(result[tmpl.ProjectId], tmpl)
+	}
+	return result, nil
+}
+
+// issuePropertyValuesByIssue - сохранённые значения полей задач: issue id → template id → значение
+func issuePropertyValuesByIssue(db *gorm.DB, issueIds []uuid.UUID) (map[uuid.UUID]map[uuid.UUID]IssueProperty, error) {
+	var values []IssueProperty
+	if err := db.Where("issue_id IN (?)", issueIds).Find(&values).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[uuid.UUID]map[uuid.UUID]IssueProperty, len(issueIds))
+	for _, v := range values {
+		if result[v.IssueId] == nil {
+			result[v.IssueId] = make(map[uuid.UUID]IssueProperty)
+		}
+		result[v.IssueId][v.TemplateId] = v
+	}
+	return result, nil
+}
+
+// buildIssuePropertyDTO - DTO поля задачи по шаблону и (если есть) сохранённому значению
+func buildIssuePropertyDTO(issue dto.IssueWithCount, tmpl ProjectPropertyTemplate, values map[uuid.UUID]IssueProperty) dto.IssueProperty {
+	prop := dto.IssueProperty{
+		TemplateId:   tmpl.Id,
+		IssueId:      issue.Id,
+		ProjectId:    issue.ProjectId,
+		WorkspaceId:  issue.WorkspaceId,
+		Name:         tmpl.Name,
+		Type:         tmpl.Type,
+		DictionaryId: tmpl.DictionaryId,
+		Value:        DefaultPropertyValue(tmpl.Type),
+	}
+	if existing, ok := values[tmpl.Id]; ok {
+		prop.Id = existing.Id
+		prop.Value = ParsePropertyValue(tmpl.Type, existing.Value)
+	}
+	return prop
 }

@@ -132,6 +132,10 @@ type IssueWithCount struct {
 
 	NameHighlighted string `json:"name_highlighted,omitempty"`
 	DescHighlighted string `json:"desc_highlighted,omitempty"`
+
+	// Properties - значения дополнительных параметров задачи; заполняются только
+	// по запросу списка с include_properties=true (колонки таблицы)
+	Properties []IssueProperty `json:"properties,omitempty"`
 }
 
 type IssueBlockerLight struct {
