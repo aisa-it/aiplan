@@ -69,7 +69,9 @@ type Project struct {
 	IssueDeletionAllowed bool             `json:"issue_deletion_allowed" gorm:"default:true"`
 	// Участники (не гости) могут прикреплять вложения к любым задачам проекта, а не только к своим/назначенным
 	MemberAttachmentsAllowed bool `json:"member_attachments_allowed" gorm:"default:false"`
-	Archived                 bool `gorm:"default:false;index"`
+	// Участники (не гости) могут редактировать дополнительные параметры в любых задачах проекта, а не только в своих/назначенных
+	MemberPropertiesAllowed bool `json:"member_properties_allowed" gorm:"default:false"`
+	Archived                bool `gorm:"default:false;index"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
@@ -153,6 +155,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		CurrentUserMembership:    project.CurrentUserMembership.ToLightDTO(),
 		IssueDeletionAllowed:     project.IssueDeletionAllowed,
 		MemberAttachmentsAllowed: project.MemberAttachmentsAllowed,
+		MemberPropertiesAllowed:  project.MemberPropertiesAllowed,
 	}
 }
 
