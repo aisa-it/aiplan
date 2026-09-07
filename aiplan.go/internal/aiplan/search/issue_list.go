@@ -446,6 +446,7 @@ func GetIssueListData(
 		var streamMu sync.Mutex
 		totalCount, err := fetchIssuesByGroups(
 			db,
+			&user,
 			groupSize,
 			query.Session(&gorm.Session{}),
 			searchParams,
@@ -524,10 +525,24 @@ func GetIssueListData(
 		}, nil
 	}
 
+	dtoIssues := utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() })
+	if err := attachIssuesProperties(db, &user, searchParams, dtoIssues); err != nil {
+		return nil, err
+	}
+
 	return dto.IssuesSearchResponse{
 		PaginationMeta: paginationMeta,
-		Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
+		Issues:         dtoIssues,
 	}, nil
+}
+
+// attachIssuesProperties подкачивает значения дополнительных параметров в задачи
+// списка по флагу include_properties (колонки таблицы). Light-выдачу не трогает
+func attachIssuesProperties(db *gorm.DB, user *dao.User, searchParams *types.SearchParams, issues []dto.IssueWithCount) error {
+	if !searchParams.IncludeProperties || searchParams.LightSearch {
+		return nil
+	}
+	return dao.FillIssuesProperties(db, user, issues)
 }
 
 // FormatIssuesToMarkdownTable форматирует список задач в расширенную Markdown таблицу

@@ -44,6 +44,9 @@ type SearchParams struct {
 	OnlyActive    bool
 	OnlyPinned    bool
 	Stream        bool
+	// IncludeProperties - подкачать в задачи списка значения дополнительных
+	// параметров (колонки таблицы); по умолчанию выключено
+	IncludeProperties bool
 
 	Filters IssuesListFilters
 }
@@ -83,6 +86,7 @@ func ParseSearchParams(c echo.Context) (*SearchParams, error) {
 		Bool("only_active", &sp.OnlyActive).
 		Bool("only_pinned", &sp.OnlyPinned).
 		Bool("stream", &sp.Stream).
+		Bool("include_properties", &sp.IncludeProperties).
 		BindError(); err != nil {
 		return nil, err
 	}
