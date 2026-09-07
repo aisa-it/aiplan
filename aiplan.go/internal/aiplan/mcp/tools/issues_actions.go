@@ -437,6 +437,29 @@ func canManageIssueRelations(db *gorm.DB, issue *dao.Issue, pm *dao.ProjectMembe
 	return isAssignee, err
 }
 
+// canSetIssueProperty: дополнительные параметры задачи меняет админ, автор или
+// исполнитель-участник (как в HTTP hasIssuePermissions), а также любой участник,
+// если в проекте включена настройка member_properties_allowed. Гость — read-only.
+// Исполнитель проверяется запросом в БД — loadIssueAndMember не загружает Assignees.
+func canSetIssueProperty(db *gorm.DB, issue *dao.Issue, pm *dao.ProjectMember, userID uuid.UUID) (bool, error) {
+	if pm.Role == types.AdminRole || issue.CreatedById == userID {
+		return true, nil
+	}
+	if pm.Role != types.MemberRole {
+		return false, nil
+	}
+	if issue.Project != nil && issue.Project.MemberPropertiesAllowed {
+		return true, nil
+	}
+	var isAssignee bool
+	err := db.Model(&dao.IssueAssignee{}).
+		Select("count(*) > 0").
+		Where("issue_id = ?", issue.ID).
+		Where("assignee_id = ?", userID).
+		Find(&isAssignee).Error
+	return isAssignee, err
+}
+
 func deleteIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
 	if !ok || issueIdOrSeq == "" {
@@ -1495,6 +1518,16 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 			return apierrors.ErrPropertyTemplateNotFound.MCPError(), nil
 		}
 		return logger.Error(err), nil
+	}
+
+	// Гейт прав (симметрия с HTTP hasIssuePermissions): гость и участник-неавтор/неисполнитель
+	// без настройки проекта менять поля чужих задач не могут
+	canSet, err := canSetIssueProperty(db, issue, pm, user.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+	if !canSet {
+		return apierrors.ErrIssueForbidden.MCPError(), nil
 	}
 
 	if template.OnlyAdmin && pm.Role < types.AdminRole {
