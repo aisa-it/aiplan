@@ -3584,14 +3584,20 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 func (s *Services) getPropertyTemplateList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	project := apiContext.GetProject()
+	projectMember := apiContext.GetProjectMember()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
 
+	// OnlyAdmin-шаблоны не-админу не отдаём: список задач и карточка их всё
+	// равно фильтруют, а в колонках/группировке они висели пустыми (BUGS-1303)
+	query := s.DB(c).Where("project_id = ?", project.ID)
+	if projectMember.Role != types.AdminRole {
+		query = query.Where("only_admin = ?", false)
+	}
+
 	var templates []dao.ProjectPropertyTemplate
-	if err := s.DB(c).Where("project_id = ?", project.ID).
-		Order("sort_order, created_at").
-		Find(&templates).Error; err != nil {
+	if err := query.Order("sort_order, created_at").Find(&templates).Error; err != nil {
 		return EError(c, err)
 	}
 
