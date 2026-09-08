@@ -1286,9 +1286,10 @@ func bindFormRequest(c echo.Context) (reqForm, *apierrors.DefinedError) {
 
 // formPropertyTypeCompat: тип шаблона кастомного поля → допустимые типы полей формы
 var formPropertyTypeCompat = map[string][]string{
-	"string":  {formFieldInput, formFieldTextarea, formFieldNumeric, formFieldColor},
-	"boolean": {formFieldCheckbox},
-	"select":  {formFieldSelect},
+	"string":      {formFieldInput, formFieldTextarea, formFieldNumeric, formFieldColor},
+	"boolean":     {formFieldCheckbox},
+	"select":      {formFieldSelect},
+	"multiselect": {formFieldMultiselect},
 }
 
 // validateFormPropertyMappings проверяет привязки полей формы к шаблонам кастомных полей
@@ -1339,9 +1340,10 @@ func (s *Services) validateFormPropertyMapping(c echo.Context, form *dao.Form, f
 	return checkSelectMappingOptions(template, field)
 }
 
-// checkSelectMappingOptions требует, чтобы варианты select-поля формы входили в options шаблона
+// checkSelectMappingOptions требует, чтобы варианты select/multiselect-поля формы
+// входили в options шаблона
 func checkSelectMappingOptions(template dao.ProjectPropertyTemplate, field types2.FormFields) error {
-	if template.Type != "select" || len(template.Options) == 0 || field.Validate == nil {
+	if !dao.IsOptionsPropertyType(template.Type) || len(template.Options) == 0 || field.Validate == nil {
 		return nil
 	}
 	for _, opt := range field.Validate.Opt {

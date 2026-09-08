@@ -89,11 +89,21 @@ func CurrentParentDisplay(db *gorm.DB, template ProjectPropertyTemplate, issueId
 }
 
 // dependencyAllowsValue проверяет допустимость значения ребёнка при отображаемом
-// значении родителя. lookupRow - строка справочника значения (для режима row_filter)
-func dependencyAllowsValue(dep *types.PropertyDependency, parentDisplay string, valueStr string, lookupRow *DictionaryRow) bool {
+// значении родителя. lookupRow - строка справочника значения (для режима row_filter).
+// Для ребёнка multiselect (значение - JSON-массив) допустимым должен быть каждый элемент
+func dependencyAllowsValue(dep *types.PropertyDependency, childType string, parentDisplay string, valueStr string, lookupRow *DictionaryRow) bool {
 	switch dep.Mode {
 	case types.PropertyDependencyOptionsMap:
-		return slices.Contains(dep.OptionsMap[parentDisplay], valueStr)
+		allowed := dep.OptionsMap[parentDisplay]
+		if childType == "multiselect" {
+			for _, item := range ParseMultiselectValue(valueStr) {
+				if !slices.Contains(allowed, item) {
+					return false
+				}
+			}
+			return true
+		}
+		return slices.Contains(allowed, valueStr)
 	case types.PropertyDependencyRowFilter:
 		if lookupRow == nil {
 			return false
@@ -125,7 +135,7 @@ func CheckDependencyValue(db *gorm.DB, template ProjectPropertyTemplate, issueId
 		return nil
 	}
 
-	if !dependencyAllowsValue(template.Dependency, parentDisplay, valueStr, lookupRow) {
+	if !dependencyAllowsValue(template.Dependency, template.Type, parentDisplay, valueStr, lookupRow) {
 		return ErrDependencyValueIncompatible
 	}
 	return nil
@@ -149,7 +159,7 @@ func childValueCompatible(db *gorm.DB, child ProjectPropertyTemplate, childValue
 			return false, err
 		}
 	}
-	return dependencyAllowsValue(child.Dependency, parentDisplay, childValue, lookupRow), nil
+	return dependencyAllowsValue(child.Dependency, child.Type, parentDisplay, childValue, lookupRow), nil
 }
 
 // ResetIncompatibleChildren сбрасывает значения зависимых полей задачи, ставшие

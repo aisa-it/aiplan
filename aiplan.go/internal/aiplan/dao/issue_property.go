@@ -2,6 +2,7 @@ package dao
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
@@ -27,10 +28,13 @@ type ProjectPropertyTemplate struct {
 	ProjectId   uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:2;type:uuid"`
 
 	Name      string   `gorm:"not null"`
-	Type      string   `gorm:"not null"` // "string", "boolean", "select", "link", "lookup", "date", "datetime"
+	Type      string   `gorm:"not null"` // "string", "boolean", "select", "multiselect", "link", "lookup", "date", "datetime"
 	Options   []string `gorm:"serializer:json"`
 	OnlyAdmin bool     `gorm:"default:false"`
 	SortOrder int      `gorm:"default:0"`
+
+	// UniqueValues - для типа "multiselect": значения в списке не должны повторяться
+	UniqueValues bool `gorm:"default:false"`
 
 	// DictionaryId - справочник для типа "lookup" (значение поля - id строки справочника)
 	DictionaryId uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
@@ -62,6 +66,7 @@ func (t *ProjectPropertyTemplate) ToDTO() *dto.ProjectPropertyTemplate {
 		DictionaryId: t.DictionaryId,
 		Dependency:   t.Dependency,
 		OnlyAdmin:    t.OnlyAdmin,
+		UniqueValues: t.UniqueValues,
 		SortOrder:    t.SortOrder,
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
@@ -118,6 +123,7 @@ func (p *IssueProperty) ToDTO() *dto.IssueProperty {
 		result.Options = p.Template.Options
 		result.DictionaryId = p.Template.DictionaryId
 		result.Dependency = p.Template.Dependency
+		result.UniqueValues = p.Template.UniqueValues
 	}
 
 	return result
@@ -130,9 +136,58 @@ func DefaultPropertyValue(propType string) any {
 		return ""
 	case "boolean":
 		return false
+	case "multiselect":
+		return []string{}
 	default:
 		return nil
 	}
+}
+
+// IsOptionsPropertyType: тип поля с фиксированным набором вариантов (Options)
+func IsOptionsPropertyType(propType string) bool {
+	return propType == "select" || propType == "multiselect"
+}
+
+// ParseMultiselectValue разбирает хранимое значение multiselect-поля (JSON-массив
+// строк). Пустое или некорректное значение - пустой список
+func ParseMultiselectValue(value string) []string {
+	if value == "" {
+		return []string{}
+	}
+	var items []string
+	if err := json.Unmarshal([]byte(value), &items); err != nil || items == nil {
+		return []string{}
+	}
+	return items
+}
+
+// SerializePropertyValue сериализует значение поля в строку для хранения в БД:
+// nil - пустая строка, объект (link) и массив (multiselect) - JSON, пустой массив -
+// пустая строка (= не заполнено), остальное - fmt.Sprint
+func SerializePropertyValue(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case map[string]any:
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+	case []any:
+		if len(v) == 0 {
+			return ""
+		}
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+	case []string:
+		if len(v) == 0 {
+			return ""
+		}
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+	}
+	return fmt.Sprint(value)
 }
 
 // ParsePropertyValue преобразует хранимое строковое значение поля в типизированное для DTO
@@ -145,6 +200,8 @@ func ParsePropertyValue(propType, value string) any {
 			return nil
 		}
 		return value
+	case "multiselect":
+		return ParseMultiselectValue(value)
 	case "link":
 		if value == "" {
 			return nil
@@ -196,9 +253,10 @@ func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.Issu
 			Type:         tmpl.Type,
 			DictionaryId: tmpl.DictionaryId,
 			Dependency:   tmpl.Dependency,
+			UniqueValues: tmpl.UniqueValues,
 			Value:        DefaultPropertyValue(tmpl.Type),
 		}
-		if tmpl.Type == "select" {
+		if IsOptionsPropertyType(tmpl.Type) {
 			prop.Options = tmpl.Options
 		}
 		if existing, ok := propsMap[tmpl.Id]; ok {
@@ -228,6 +286,9 @@ func MigratePropertyValuesOnTypeChange(tx *gorm.DB, templateId uuid.UUID, oldTyp
 	if oldType == "lookup" && newType == "string" && oldDictionaryId.Valid {
 		return convertLookupValuesToStrings(tx, templateId, oldDictionaryId.UUID)
 	}
+	if converted, err := convertSelectMultiselectValues(tx, templateId, oldType, newType); converted {
+		return err
+	}
 	if !typeValuesNeedReset(oldType, newType) {
 		return nil
 	}
@@ -236,11 +297,32 @@ func MigratePropertyValuesOnTypeChange(tx *gorm.DB, templateId uuid.UUID, oldTyp
 		Update("value", "").Error
 }
 
+// convertSelectMultiselectValues конвертирует значения при смене select ↔ multiselect:
+// select → multiselect оборачивает значение в список из одного элемента,
+// multiselect → select оставляет первый элемент списка (битый JSON — сброс).
+// converted=false — смена не из этих двух, значения не тронуты
+func convertSelectMultiselectValues(tx *gorm.DB, templateId uuid.UUID, oldType, newType string) (bool, error) {
+	switch {
+	case oldType == "select" && newType == "multiselect":
+		return true, tx.Exec(`UPDATE issue_properties SET value = jsonb_build_array(value)::text
+			WHERE template_id = ? AND value <> ''`, templateId).Error
+	case oldType == "multiselect" && newType == "select":
+		return true, tx.Exec(`UPDATE issue_properties
+			SET value = CASE WHEN value ~ '^\[' THEN coalesce(value::jsonb->>0, '') ELSE '' END
+			WHERE template_id = ? AND value <> ''`, templateId).Error
+	}
+	return false, nil
+}
+
 // typeValuesNeedReset: старые значения невалидны для нового типа — в смене участвует
-// lookup (значение — id строки справочника), link (значение — JSON-ссылка) либо
-// date/datetime (форматы дат несовместимы со свободным текстом и друг с другом)
+// lookup (значение — id строки справочника), link (значение — JSON-ссылка),
+// multiselect (значение — JSON-массив; конвертации select↔multiselect обработаны
+// выше) либо date/datetime (форматы дат несовместимы со свободным текстом и друг с другом)
 func typeValuesNeedReset(oldType, newType string) bool {
 	if oldType == "lookup" || newType == "lookup" {
+		return true
+	}
+	if oldType == "multiselect" || newType == "multiselect" {
 		return true
 	}
 	if oldType == "link" || newType == "link" {
@@ -414,6 +496,7 @@ func buildIssuePropertyDTO(issue dto.IssueWithCount, tmpl ProjectPropertyTemplat
 		Name:         tmpl.Name,
 		Type:         tmpl.Type,
 		DictionaryId: tmpl.DictionaryId,
+		UniqueValues: tmpl.UniqueValues,
 		Value:        DefaultPropertyValue(tmpl.Type),
 	}
 	if existing, ok := values[tmpl.Id]; ok {

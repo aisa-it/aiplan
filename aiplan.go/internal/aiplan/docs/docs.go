@@ -21039,7 +21039,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "options": {
-                    "description": "Options - допустимые варианты (для типа select)",
+                    "description": "Options - допустимые варианты (для типов select и multiselect)",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -21259,11 +21259,16 @@ const docTemplate = `{
                         "string",
                         "boolean",
                         "select",
+                        "multiselect",
                         "link",
                         "lookup",
                         "date",
                         "datetime"
                     ]
+                },
+                "unique_values": {
+                    "description": "UniqueValues - для multiselect: запрет повторяющихся значений в списке",
+                    "type": "boolean"
                 }
             }
         },
@@ -22351,6 +22356,10 @@ const docTemplate = `{
                 "type": {
                     "type": "string"
                 },
+                "unique_values": {
+                    "description": "UniqueValues - для multiselect: значения в списке не должны повторяться",
+                    "type": "boolean"
+                },
                 "value": {},
                 "value_label": {
                     "description": "ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника)",
@@ -23271,6 +23280,10 @@ const docTemplate = `{
                 "type": {
                     "type": "string"
                 },
+                "unique_values": {
+                    "description": "UniqueValues - для multiselect: значения в списке не должны повторяться",
+                    "type": "boolean"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -23964,6 +23977,9 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                },
+                "unique_values": {
+                    "type": "boolean"
                 }
             }
         },

@@ -309,6 +309,8 @@ func propertyValueToLua(propType, value string) lua.LValue {
 			return lua.LNil
 		}
 		return lua.LString(value)
+	case "multiselect":
+		return multiselectValueToLua(value)
 	case "datetime":
 		if value == "" {
 			return lua.LNil
@@ -321,6 +323,20 @@ func propertyValueToLua(propType, value string) lua.LValue {
 	default:
 		return lua.LString(value)
 	}
+}
+
+// multiselectValueToLua — список выбранных вариантов Lua-таблицей строк
+// (пустой список — nil, как у незаполненного select)
+func multiselectValueToLua(value string) lua.LValue {
+	items := dao.ParseMultiselectValue(value)
+	if len(items) == 0 {
+		return lua.LNil
+	}
+	table := &lua.LTable{}
+	for _, item := range items {
+		table.Append(lua.LString(item))
+	}
+	return table
 }
 
 // getPropertiesTables собирает две таблицы по значениям кастомных полей задачи:
