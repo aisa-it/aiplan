@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -391,7 +390,7 @@ var issuesActionsTools = []Tool{
 			),
 			mcp.WithObject("value",
 				mcp.Required(),
-				mcp.Description("Значение: строка для string/select, bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime"),
+				mcp.Description("Значение: строка для string/select, массив строк из options для multiselect (пустой массив - сброс; при unique_values шаблона без повторов), bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime"),
 			),
 		),
 		setIssueProperty,
@@ -1537,6 +1536,10 @@ func setIssueProperty(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	if err := validatePropertyValueMCP(template, value); err != nil {
 		return apierrors.ErrPropertyValueValidationFailed.MCPError(), nil
 	}
+	// Настройка шаблона multiselect: значения в списке не повторяются
+	if !types.CheckUniqueValues(template.Type, template.UniqueValues, value) {
+		return apierrors.ErrPropertyValuesNotUnique.MCPError(), nil
+	}
 
 	valueStr := serializePropertyValueMCP(value)
 
@@ -1676,16 +1679,8 @@ func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) e
 	return nil
 }
 
+// serializePropertyValueMCP сериализует значение в строку для хранения в БД
+// (объект link и массив multiselect - JSON, см. dao.SerializePropertyValue)
 func serializePropertyValueMCP(value any) string {
-	if value == nil {
-		return ""
-	}
-	if m, ok := value.(map[string]any); ok {
-		b, err := json.Marshal(m)
-		if err != nil {
-			return fmt.Sprint(value)
-		}
-		return string(b)
-	}
-	return fmt.Sprint(value)
+	return dao.SerializePropertyValue(value)
 }

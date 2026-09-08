@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -32,16 +33,9 @@ func GenValueSchema(propType string, options []string) map[string]any {
 	case "boolean":
 		return map[string]any{"type": "boolean"}
 	case "select":
-		if len(options) == 0 {
-			return map[string]any{"type": []any{"string", "null"}}
-		}
-		// Конвертируем []string в []any и добавляем nil для возможности сброса значения
-		enumValues := make([]any, len(options)+1)
-		for i, opt := range options {
-			enumValues[i] = opt
-		}
-		enumValues[len(options)] = nil
-		return map[string]any{"type": []any{"string", "null"}, "enum": enumValues}
+		return genSelectValueSchema(options)
+	case "multiselect":
+		return genMultiselectValueSchema(options)
 	case "lookup":
 		// Значение - id строки справочника (или null для сброса); существование
 		// строки проверяется отдельным запросом в БД, схема проверяет только форму
@@ -67,6 +61,35 @@ func GenValueSchema(propType string, options []string) map[string]any {
 	default:
 		return map[string]any{}
 	}
+}
+
+// genSelectValueSchema - строка из options или null (сброс значения)
+func genSelectValueSchema(options []string) map[string]any {
+	if len(options) == 0 {
+		return map[string]any{"type": []any{"string", "null"}}
+	}
+	// Конвертируем []string в []any и добавляем nil для возможности сброса значения
+	enumValues := make([]any, len(options)+1)
+	for i, opt := range options {
+		enumValues[i] = opt
+	}
+	enumValues[len(options)] = nil
+	return map[string]any{"type": []any{"string", "null"}, "enum": enumValues}
+}
+
+// genMultiselectValueSchema - массив строк из options (пустой массив или null -
+// сброс значения). Уникальность элементов проверяется отдельно (CheckUniqueValues):
+// это настройка шаблона, а не форма значения
+func genMultiselectValueSchema(options []string) map[string]any {
+	items := map[string]any{"type": "string"}
+	if len(options) > 0 {
+		enumValues := make([]any, len(options))
+		for i, opt := range options {
+			enumValues[i] = opt
+		}
+		items["enum"] = enumValues
+	}
+	return map[string]any{"type": []any{"array", "null"}, "items": items}
 }
 
 // genDateValueSchema - схемы значений полей date/datetime; null или пустая строка -
@@ -99,6 +122,28 @@ func CheckDateValue(propType string, value any) bool {
 	case "datetime":
 		n, err := strconv.ParseInt(s, 10, 64)
 		return err == nil && n >= 0 && n <= maxDatetimeUnix
+	}
+	return true
+}
+
+// CheckUniqueValues проверяет настройку уникальности multiselect-поля: при
+// uniqueValues элементы массива не должны повторяться. Для остальных типов,
+// nil и не-массивов - true (форму значения проверяет JSON Schema)
+func CheckUniqueValues(propType string, uniqueValues bool, value any) bool {
+	if propType != "multiselect" || !uniqueValues {
+		return true
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return true
+	}
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		key := fmt.Sprint(item)
+		if _, dup := seen[key]; dup {
+			return false
+		}
+		seen[key] = struct{}{}
 	}
 	return true
 }

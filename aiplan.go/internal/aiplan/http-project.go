@@ -3603,7 +3603,7 @@ func (s *Services) getPropertyTemplateList(c echo.Context) error {
 
 	result := make([]dto.ProjectPropertyTemplate, 0, len(templates))
 	for _, t := range templates {
-		if t.Type != "select" {
+		if !dao.IsOptionsPropertyType(t.Type) {
 			t.Options = nil
 		}
 		result = append(result, *t.ToDTO())
@@ -3650,9 +3650,9 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateTypeInvalid)
 	}
 
-	// Для типа select требуются опции
+	// Для типов select/multiselect требуются опции
 	var options []string
-	if request.Type == "select" {
+	if dao.IsOptionsPropertyType(request.Type) {
 		if len(request.Options) == 0 {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
 		}
@@ -3675,6 +3675,7 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		DictionaryId: dictionaryId,
 		Dependency:   request.Dependency,
 		OnlyAdmin:    request.OnlyAdmin,
+		UniqueValues: request.Type == "multiselect" && request.UniqueValues,
 		SortOrder:    request.SortOrder,
 		CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
 		UpdatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -3766,8 +3767,8 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		updated = true
 	}
 
-	// Для типа select проверяем наличие options
-	if template.Type == "select" {
+	// Для типов select/multiselect проверяем наличие options
+	if dao.IsOptionsPropertyType(template.Type) {
 		if len(template.Options) == 0 {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
 		}
@@ -3806,6 +3807,15 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 
 	if request.OnlyAdmin != nil {
 		template.OnlyAdmin = *request.OnlyAdmin
+		updated = true
+	}
+	if request.UniqueValues != nil {
+		template.UniqueValues = *request.UniqueValues
+		updated = true
+	}
+	// Уникальность значений имеет смысл только у multiselect
+	if template.Type != "multiselect" && template.UniqueValues {
+		template.UniqueValues = false
 		updated = true
 	}
 	if request.SortOrder != nil {
@@ -3900,7 +3910,7 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 }
 
 // validPropertyTypes - допустимые типы шаблонов кастомных полей
-var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "link": true, "lookup": true, "date": true, "datetime": true}
+var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "multiselect": true, "link": true, "lookup": true, "date": true, "datetime": true}
 
 // checkTemplateDictionary валидирует справочник шаблона поля: для типа lookup
 // требуется существующий справочник проекта, у остальных типов ссылка сбрасывается
@@ -3982,11 +3992,12 @@ func (s *Services) checkDependencyCycle(c echo.Context, childId uuid.UUID, paren
 	return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("dependency chain is too deep")
 }
 
-// validateOptionsMapDependency: select→select, ключи карты ⊆ options родителя,
-// значения карты ⊆ options ребёнка
+// validateOptionsMapDependency: родитель select, ребёнок select или multiselect,
+// ключи карты ⊆ options родителя, значения карты ⊆ options ребёнка. Родитель
+// multiselect не поддерживается: у него нет одного отображаемого значения
 func validateOptionsMapDependency(parent, child *dao.ProjectPropertyTemplate) error {
-	if parent.Type != "select" || child.Type != "select" {
-		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map requires select parent and select child")
+	if parent.Type != "select" || !dao.IsOptionsPropertyType(child.Type) {
+		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map requires select parent and select or multiselect child")
 	}
 	if len(child.Dependency.OptionsMap) == 0 {
 		return apierrors.ErrPropertyDependencyInvalid.WithFormattedMessage("options_map is empty")
@@ -4026,7 +4037,7 @@ func dependencyModeAllowsChildType(dep *types.PropertyDependency, childType stri
 		return true
 	}
 	if dep.Mode == types.PropertyDependencyOptionsMap {
-		return childType == "select"
+		return dao.IsOptionsPropertyType(childType)
 	}
 	return childType == "lookup"
 }

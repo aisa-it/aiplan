@@ -180,7 +180,9 @@ type IssueProperty struct {
 	Options      []string                  `json:"options,omitempty"`
 	DictionaryId uuid.NullUUID             `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
-	Value        any                       `json:"value"`
+	// UniqueValues - для multiselect: значения в списке не должны повторяться
+	UniqueValues bool `json:"unique_values,omitempty"`
+	Value        any  `json:"value"`
 	// ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника)
 	ValueLabel *string `json:"value_label,omitempty" extensions:"x-nullable"`
 	// ResetProperties - имена зависимых полей, значения которых были сброшены
@@ -199,20 +201,24 @@ type ProjectPropertyTemplate struct {
 	DictionaryId uuid.NullUUID             `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
 	OnlyAdmin    bool                      `json:"only_admin"`
-	SortOrder    int                       `json:"sort_order"`
-	CreatedAt    time.Time                 `json:"created_at"`
-	UpdatedAt    time.Time                 `json:"updated_at"`
+	// UniqueValues - для multiselect: значения в списке не должны повторяться
+	UniqueValues bool      `json:"unique_values"`
+	SortOrder    int       `json:"sort_order"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // CreatePropertyTemplateRequest - запрос на создание шаблона поля
 type CreatePropertyTemplateRequest struct {
 	Name         string                    `json:"name" validate:"required,min=1,max=255"`
-	Type         string                    `json:"type" validate:"required,oneof=string boolean select link lookup date datetime"`
+	Type         string                    `json:"type" validate:"required,oneof=string boolean select multiselect link lookup date datetime"`
 	Options      []string                  `json:"options,omitempty"`
 	DictionaryId uuid.NullUUID             `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
 	OnlyAdmin    bool                      `json:"only_admin"`
-	SortOrder    int                       `json:"sort_order"`
+	// UniqueValues - для multiselect: запрет повторяющихся значений в списке
+	UniqueValues bool `json:"unique_values"`
+	SortOrder    int  `json:"sort_order"`
 }
 
 // UpdatePropertyTemplateRequest - запрос на обновление шаблона поля.
@@ -224,6 +230,7 @@ type UpdatePropertyTemplateRequest struct {
 	DictionaryId *uuid.UUID                `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
 	OnlyAdmin    *bool                     `json:"only_admin,omitempty"`
+	UniqueValues *bool                     `json:"unique_values,omitempty"`
 	SortOrder    *int                      `json:"sort_order,omitempty"`
 }
 
@@ -233,7 +240,7 @@ type AvailablePropertyValues struct {
 	Type string `json:"type"`
 	// Restricted - применён ли каскадный фильтр (у поля есть зависимость и родитель заполнен)
 	Restricted bool `json:"restricted"`
-	// Options - допустимые варианты (для типа select)
+	// Options - допустимые варианты (для типов select и multiselect)
 	Options []string `json:"options,omitempty"`
 	// Rows - допустимые строки справочника с пагинацией (для типа lookup)
 	Rows any `json:"rows,omitempty" swaggertype:"object" extensions:"x-nullable"`

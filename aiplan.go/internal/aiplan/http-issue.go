@@ -3767,6 +3767,10 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	if err := validatePropertyValue(c.Request().Context(), template, request.Value); err != nil {
 		return EErrorDefined(c, apierrors.ErrPropertyValueValidationFailed)
 	}
+	// Настройка шаблона multiselect: значения в списке не повторяются
+	if !types.CheckUniqueValues(template.Type, template.UniqueValues, request.Value) {
+		return EErrorDefined(c, apierrors.ErrPropertyValuesNotUnique)
+	}
 
 	// Сериализуем значение для хранения
 	valueStr := serializePropertyValue(request.Value)
@@ -3946,7 +3950,7 @@ func (s *Services) getAvailablePropertyValues(c echo.Context) error {
 
 	resp := dto.AvailablePropertyValues{Type: template.Type, Restricted: restricted}
 	switch template.Type {
-	case "select":
+	case "select", "multiselect":
 		resp.Options = template.Options
 		if restricted && template.Dependency.Mode == types.PropertyDependencyOptionsMap {
 			resp.Options = template.Dependency.OptionsMap[parentDisplay]
@@ -4033,18 +4037,9 @@ func validatePropertyValue(ctx context.Context, template dao.ProjectPropertyTemp
 }
 
 // serializePropertyValue сериализует значение в строку для хранения в БД
+// (объект link и массив multiselect - JSON, см. dao.SerializePropertyValue)
 func serializePropertyValue(value any) string {
-	if value == nil {
-		return ""
-	}
-	if m, ok := value.(map[string]any); ok {
-		b, err := json.Marshal(m)
-		if err != nil {
-			return fmt.Sprint(value)
-		}
-		return string(b)
-	}
-	return fmt.Sprint(value)
+	return dao.SerializePropertyValue(value)
 }
 
 // LinkedIssuesIds представляет собой структуру для передачи связанных задач
@@ -4299,7 +4294,31 @@ func (s *Services) loadExportProperties(c echo.Context, result any) (*exportProp
 		return nil, err
 	}
 	resolveDatetimeExportValues(data)
+	resolveMultiselectExportValues(data)
 	return data, nil
+}
+
+// resolveMultiselectExportValues разворачивает значения multiselect-полей
+// (JSON-массив строк) в список через запятую — выгрузка предназначена для чтения людьми
+func resolveMultiselectExportValues(data *exportPropertiesData) {
+	multiTemplates := make(map[uuid.UUID]struct{})
+	for _, t := range data.templates {
+		if t.Type == "multiselect" {
+			multiTemplates[t.Id] = struct{}{}
+		}
+	}
+	if len(multiTemplates) == 0 {
+		return
+	}
+
+	for _, issueValues := range data.values {
+		for templateId, value := range issueValues {
+			if _, ok := multiTemplates[templateId]; !ok || value == "" {
+				continue
+			}
+			issueValues[templateId] = strings.Join(dao.ParseMultiselectValue(value), ", ")
+		}
+	}
 }
 
 // resolveDatetimeExportValues конвертирует значения datetime-полей (unix time
