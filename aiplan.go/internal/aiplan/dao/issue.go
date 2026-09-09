@@ -459,8 +459,11 @@ func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
 
 	splitQ := SplitTSQuery(q)
 
+	// normalize_fts_text (triggers.sql) — та же нормализация, что при генерации issues.tokens:
+	// дефис перед цифрой → пробел, иначе «68584» не найдёт «#151-68584» (парсер даёт лексему '-68584').
+	// Вектор и запрос ОБЯЗАНЫ проходить одну функцию.
 	return tx.Or(
-		"issues.tokens @@ (websearch_to_tsquery('simple', ?) || websearch_to_tsquery('russian', ?) || websearch_to_tsquery('english', ?))",
+		"issues.tokens @@ (websearch_to_tsquery('simple', normalize_fts_text(?)) || websearch_to_tsquery('russian', normalize_fts_text(?)) || websearch_to_tsquery('english', normalize_fts_text(?)))",
 		q, q, q,
 	).Or(
 		"issues.tokens @@ (to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?))",
