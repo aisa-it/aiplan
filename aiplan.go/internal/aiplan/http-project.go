@@ -3612,6 +3612,19 @@ func (s *Services) getPropertyTemplateList(c echo.Context) error {
 	return c.JSON(http.StatusOK, result)
 }
 
+// normalizePropertyOptions обрезает пробелы и отбрасывает пустые варианты
+// select/multiselect-шаблона. Клиентская блокировка кнопки «Сохранить»
+// не спасает от прямого запроса с options: [""] (BAK-372).
+func normalizePropertyOptions(options []string) []string {
+	result := make([]string, 0, len(options))
+	for _, opt := range options {
+		if trimmed := strings.TrimSpace(opt); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
 // createPropertyTemplate godoc
 // @id createPropertyTemplate
 // @Summary Шаблоны полей: создание
@@ -3653,10 +3666,10 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 	// Для типов select/multiselect требуются опции
 	var options []string
 	if dao.IsOptionsPropertyType(request.Type) {
-		if len(request.Options) == 0 {
+		options = normalizePropertyOptions(request.Options)
+		if len(options) == 0 {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
 		}
-		options = request.Options
 	}
 
 	// Для типа lookup требуется справочник проекта
@@ -3768,7 +3781,9 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 	}
 
 	// Для типов select/multiselect проверяем наличие options
+	// (пустые/пробельные варианты отбрасываются)
 	if dao.IsOptionsPropertyType(template.Type) {
+		template.Options = normalizePropertyOptions(template.Options)
 		if len(template.Options) == 0 {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateOptionsRequired)
 		}

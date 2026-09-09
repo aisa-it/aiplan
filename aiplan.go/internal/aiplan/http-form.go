@@ -1153,6 +1153,22 @@ func formAnswer(answers types2.FormFieldsSlice, form *dao.Form) (types2.FormFiel
 	return resultAnswer, nil
 }
 
+// checkFormSelectOptions проверяет варианты ответа поля select/multiselect:
+// список не пуст, каждый вариант - непустая строка. Без этого форма с полем
+// без вариантов сохранялась, а фронт потом падал на validate.opt (BAK-372).
+func checkFormSelectOptions(opts []any) error {
+	if len(opts) == 0 {
+		return fmt.Errorf("select field requires options")
+	}
+	for _, opt := range opts {
+		str, ok := opt.(string)
+		if !ok || strings.TrimSpace(str) == "" {
+			return fmt.Errorf("select field option must be a non-empty string")
+		}
+	}
+	return nil
+}
+
 func checkFormFields(fields *types2.FormFieldsSlice) error {
 	validator := FormValidator()
 	var checkIssueNameField bool
@@ -1243,6 +1259,12 @@ func checkFormFields(fields *types2.FormFieldsSlice) error {
 			(*fields)[i].Validate.ValueType = "select"
 		case formFieldMultiselect:
 			(*fields)[i].Validate.ValueType = "multiselect"
+		}
+
+		if field.Type == formFieldSelect || field.Type == formFieldMultiselect {
+			if err := checkFormSelectOptions((*fields)[i].Validate.Opt); err != nil {
+				return err
+			}
 		}
 
 		if field.DependOn != nil { // проверка корректности конфигурации depend_on при создании/обновлении формы
