@@ -76,20 +76,25 @@ DO $$
     END $$;
 
 
+-- Нормализация текста перед полнотекстовым разбором.
+CREATE OR REPLACE FUNCTION normalize_fts_text(t text) RETURNS text AS $$
+SELECT regexp_replace(coalesce(t, ''), '-(\d)', ' \1', 'g')
+$$ LANGUAGE sql IMMUTABLE;
+
 -- Function for tsvector generation
 CREATE OR REPLACE FUNCTION to_tsvector_multilang(name text, description text) RETURNS tsvector AS $$
-SELECT setweight(to_tsvector('simple', name || ' ' || coalesce(description, '' )), 'A') ||
-       setweight(to_tsvector('russian', name), 'B') ||
-       setweight(to_tsvector('russian', coalesce(description, '' )), 'B') ||
-       setweight(to_tsvector('english', name), 'C') ||
-       setweight(to_tsvector('english', coalesce(description, '' )), 'C')
+SELECT setweight(to_tsvector('simple', normalize_fts_text(name || ' ' || coalesce(description, '' ))), 'A') ||
+       setweight(to_tsvector('russian', normalize_fts_text(name)), 'B') ||
+       setweight(to_tsvector('russian', normalize_fts_text(description)), 'B') ||
+       setweight(to_tsvector('english', normalize_fts_text(name)), 'C') ||
+       setweight(to_tsvector('english', normalize_fts_text(description)), 'C')
 $$ LANGUAGE sql IMMUTABLE;
 
 -- Function for rank calculation
 CREATE OR REPLACE FUNCTION calc_rank(tokens tsvector, project_identifier text, sequence_id real, search_query text)
     RETURNS real
 AS $$
-SELECT coalesce(ts_rank(tokens, websearch_to_tsquery('simple', search_query)) + ts_rank(tokens, websearch_to_tsquery('russian', search_query)) + ts_rank(tokens, websearch_to_tsquery('english', search_query)), 0) +
+SELECT coalesce(ts_rank(tokens, websearch_to_tsquery('simple', normalize_fts_text(search_query))) + ts_rank(tokens, websearch_to_tsquery('russian', normalize_fts_text(search_query))) + ts_rank(tokens, websearch_to_tsquery('english', normalize_fts_text(search_query))), 0) +
        CASE
            WHEN CONCAT(project_identifier, '-', sequence_id) = search_query THEN 50
            ELSE 0
