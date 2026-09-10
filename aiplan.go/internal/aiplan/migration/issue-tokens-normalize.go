@@ -7,13 +7,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// MigrateIssueTokensNormalize пересчитывает issues.tokens после смены формулы to_tsvector_multilang
-// (нормализация normalize_fts_text в triggers.sql: дефис перед цифрой → пробел).
-// Триггер gen_issue_vectors пересчитывает вектор только при смене name/description_stripped,
-// поэтому старые задачи новую формулу сами не получат.
-//
-// Признак «старого» вектора — лексема, начинающаяся с '-': после нормализации парсер знаковых целых
-// вида '-68584' не производит. Проверка идемпотентна: после пересчёта таких лексем нет и миграция молчит.
+// MigrateIssueTokensNormalize пересчитывает issues.tokens после появления normalize_fts_text:
+// триггер обновляет вектор только при смене текста задачи. Признак старого вектора — лексема
+// с ведущим '-' (после нормализации таких нет), поэтому проверка идемпотентна.
 type MigrateIssueTokensNormalize struct {
 	db *gorm.DB
 }
@@ -42,8 +38,7 @@ func (m *MigrateIssueTokensNormalize) CheckMigrate() (bool, error) {
 	return exists, nil
 }
 
-// Execute пересчитывает вектор только у задач со «старыми» лексемами, батчами по id —
-// один UPDATE на всю таблицу держал бы длинную блокировку и раздувал WAL.
+// Execute обновляет только задачи со старыми лексемами, батчами (без долгой блокировки всей таблицы).
 func (m *MigrateIssueTokensNormalize) Execute() error {
 	const batchSize = 2000
 	total := 0
