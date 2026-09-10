@@ -451,6 +451,8 @@ type FormSnapshot struct {
 	EndDate       opt.Field[*types.TargetDate] `act:"field:end_date;kind:scalar"`
 	TargetProject opt.Field[EntityRef]         `act:"field:target_project;kind:scalar;preserve_id:true"`
 	Fields        opt.Field[string]            `act:"field:fields;kind:scalar"` // JSON string
+
+	DefaultIssuePriority opt.Field[*string] `act:"field:default_issue_priority;kind:scalar"`
 }
 
 func (f FormSnapshot) GetName() string {
@@ -482,13 +484,14 @@ func FormToSnapshot(form *dao.Form) FormSnapshot {
 		endDate = &normalized
 	}
 	return FormSnapshot{
-		ID:            form.ID,
-		Title:         opt.Some(form.Title),
-		Description:   opt.Some(form.Description.String()),
-		AuthRequire:   opt.Some(form.AuthRequire),
-		EndDate:       opt.Some(endDate),
-		TargetProject: opt.Some(daoToEntityRef(form.TargetProject)),
-		Fields:        opt.Some(fieldsStr)}
+		ID:                   form.ID,
+		Title:                opt.Some(form.Title),
+		Description:          opt.Some(form.Description.String()),
+		AuthRequire:          opt.Some(form.AuthRequire),
+		EndDate:              opt.Some(endDate),
+		TargetProject:        opt.Some(daoToEntityRef(form.TargetProject)),
+		Fields:               opt.Some(fieldsStr),
+		DefaultIssuePriority: opt.Some(form.DefaultIssuePriority)}
 }
 
 // ------ FormAnswerSnapshot -------

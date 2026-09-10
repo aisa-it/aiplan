@@ -36,9 +36,11 @@ type ProjectLight struct {
 	DefaultAssigneesDetails []ProjectMemberLight `json:"default_assignees_details"`
 	DefaultWatchersDetails  []ProjectMemberLight `json:"default_watchers_details"`
 
-	IssueDeletionAllowed bool   `json:"issue_deletion_allowed"`
-	TotalMembers         int    `json:"total_members,omitempty"`
-	NameHighlighted      string `json:"name_highlighted,omitempty"`
+	IssueDeletionAllowed     bool   `json:"issue_deletion_allowed"`
+	MemberAttachmentsAllowed bool   `json:"member_attachments_allowed"`
+	MemberPropertiesAllowed  bool   `json:"member_properties_allowed"`
+	TotalMembers             int    `json:"total_members,omitempty"`
+	NameHighlighted          string `json:"name_highlighted,omitempty"`
 }
 
 type Project struct {

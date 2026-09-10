@@ -216,9 +216,42 @@ func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
 		if issue.CreatedById == user.ID {
 			// If issue author
 			return true, nil
-		} else {
-			return issue.IsAssignee(user.ID), nil
 		}
+		if issue.IsAssignee(user.ID) {
+			return true, nil
+		}
+
+		return memberProjectSettingAllows(c, apiContext)
+	}
+
+	return false, nil
+}
+
+// memberProjectSettingAllows — настройки проекта, расширяющие права участника (не гостя)
+// на чужие задачи: прикрепление вложений (member_attachments_allowed) и редактирование
+// дополнительных параметров (member_properties_allowed). Проект грузится лениво только
+// здесь — остальным веткам hasIssuePermissions он не нужен.
+func memberProjectSettingAllows(c echo.Context, apiContext *apicontext.APIContext) (bool, error) {
+	if c.Request().Method != http.MethodPost {
+		return false, nil
+	}
+
+	switch {
+	// Участникам разрешено прикреплять вложения к любым задачам
+	case strings.HasSuffix(c.Path(), "/issue-attachments/"):
+		project := apiContext.GetProject()
+		if apiContext.Error() != nil {
+			return false, apiContext.Error()
+		}
+		return project.MemberAttachmentsAllowed, nil
+	// Участникам разрешено редактировать дополнительные параметры в любых задачах
+	// (роут issueGroup.POST("/properties/:templateId/", setIssueProperty))
+	case strings.HasSuffix(c.Path(), "/properties/:templateId/"):
+		project := apiContext.GetProject()
+		if apiContext.Error() != nil {
+			return false, apiContext.Error()
+		}
+		return project.MemberPropertiesAllowed, nil
 	}
 
 	return false, nil

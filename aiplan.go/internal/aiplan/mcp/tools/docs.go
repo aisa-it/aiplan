@@ -92,10 +92,14 @@ var docsTools = []Tool{
 	},
 }
 
-// GetDocsTools возвращает список MCP инструментов для работы с документами.
+// GetDocsTools возвращает список MCP инструментов для работы с документами и их комментариями.
 func GetDocsTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
-	result := make([]server.ServerTool, 0, len(docsTools))
-	for _, t := range docsTools {
+	allTools := make([]Tool, 0, len(docsTools)+len(docCommentsTools))
+	allTools = append(allTools, docsTools...)
+	allTools = append(allTools, docCommentsTools...)
+
+	result := make([]server.ServerTool, 0, len(allTools))
+	for _, t := range allTools {
 		result = append(result, server.ServerTool{
 			Tool:    t.Tool,
 			Handler: WrapTool(db, bl, t.Handler),

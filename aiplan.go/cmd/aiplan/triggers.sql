@@ -26,7 +26,11 @@ SELECT (extract(epoch from ($1 - 'epoch'::timestamptz)) * 1000)::bigint::text;
 $$ LANGUAGE sql IMMUTABLE STRICT;
 
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, logo_id::text, slug, owner_id::text, integration_token, (deleted_at is null)::text)) STORED;
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, public::text, identifier, project_lead_id::text, emoji::text, coalesce(cover_image, ''), coalesce(estimate_id, ''), coalesce(rules_script, ''), (deleted_at is null)::text)) STORED;
+-- Хеш проекта питает ETag/304 в ProjectMiddleware: поле, отдаваемое клиенту, но не входящее
+-- в формулу, после PATCH «не сохраняется» — БД обновлена, а клиент вечно получает 304 со
+-- старым кешем. Новое клиентское поле проекта ОБЯЗАНО попадать в этот список (BAK-371).
+ALTER TABLE projects DROP COLUMN IF EXISTS "hash";
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, public::text, identifier, project_lead_id::text, emoji::text, coalesce(cover_image, ''), coalesce(estimate_id, ''), coalesce(rules_script, ''), issue_deletion_allowed::text, member_attachments_allowed::text, member_properties_allowed::text, (deleted_at is null)::text)) STORED;
 
 ALTER TABLE states DROP COLUMN IF EXISTS "hash";
 ALTER TABLE states ADD COLUMN IF NOT EXISTS "hash" bytea GENERATED ALWAYS AS (row_hash(name, description, color, "group", "default"::text, sequence::text, COALESCE(immutable_array_to_string(from_states::text[], ','), ''))) STORED;
@@ -72,20 +76,27 @@ DO $$
     END $$;
 
 
+-- Нормализация текста для FTS: дефис перед цифрой → пробел (парсер даёт '-123' вместо '123').
+-- Единый источник правила для вектора (to_tsvector_multilang, calc_rank) и запроса (dao.Issue.FullTextSearch).
+-- При смене формулы нужен пересчёт tokens (migration.MigrateIssueTokensNormalize).
+CREATE OR REPLACE FUNCTION normalize_fts_text(t text) RETURNS text AS $$
+SELECT regexp_replace(coalesce(t, ''), '-(\d)', ' \1', 'g')
+$$ LANGUAGE sql IMMUTABLE;
+
 -- Function for tsvector generation
 CREATE OR REPLACE FUNCTION to_tsvector_multilang(name text, description text) RETURNS tsvector AS $$
-SELECT setweight(to_tsvector('simple', name || ' ' || coalesce(description, '' )), 'A') ||
-       setweight(to_tsvector('russian', name), 'B') ||
-       setweight(to_tsvector('russian', coalesce(description, '' )), 'B') ||
-       setweight(to_tsvector('english', name), 'C') ||
-       setweight(to_tsvector('english', coalesce(description, '' )), 'C')
+SELECT setweight(to_tsvector('simple', normalize_fts_text(name || ' ' || coalesce(description, '' ))), 'A') ||
+       setweight(to_tsvector('russian', normalize_fts_text(name)), 'B') ||
+       setweight(to_tsvector('russian', normalize_fts_text(description)), 'B') ||
+       setweight(to_tsvector('english', normalize_fts_text(name)), 'C') ||
+       setweight(to_tsvector('english', normalize_fts_text(description)), 'C')
 $$ LANGUAGE sql IMMUTABLE;
 
 -- Function for rank calculation
 CREATE OR REPLACE FUNCTION calc_rank(tokens tsvector, project_identifier text, sequence_id real, search_query text)
     RETURNS real
 AS $$
-SELECT coalesce(ts_rank(tokens, websearch_to_tsquery('simple', search_query)) + ts_rank(tokens, websearch_to_tsquery('russian', search_query)) + ts_rank(tokens, websearch_to_tsquery('english', search_query)), 0) +
+SELECT coalesce(ts_rank(tokens, websearch_to_tsquery('simple', normalize_fts_text(search_query))) + ts_rank(tokens, websearch_to_tsquery('russian', normalize_fts_text(search_query))) + ts_rank(tokens, websearch_to_tsquery('english', normalize_fts_text(search_query))), 0) +
        CASE
            WHEN CONCAT(project_identifier, '-', sequence_id) = search_query THEN 50
            ELSE 0
@@ -793,3 +804,42 @@ CREATE OR REPLACE TRIGGER issue_sprint_stats_workspace_summary_notify
     ON issues
     FOR EACH ROW
     EXECUTE FUNCTION notify_workspace_summary_changes_issue_sprint_stats();
+
+-- ============================================================================
+-- Уведомление об изменении состава участников пространства:
+-- отправляет workspace_id в канал workspace_members_changes
+-- при добавлении/удалении участника и смене его роли.
+-- Кеш участников (cache.WorkspaceMembersCache) сбрасывается по этому каналу,
+-- поэтому изменения подхватываются независимо от источника: приглашение,
+-- админ-панель, импорт или прямой SQL.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION notify_workspace_members_changes()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+DECLARE
+    ws_id uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        ws_id := OLD.workspace_id;
+    ELSE
+        ws_id := NEW.workspace_id;
+
+        -- Смена пространства у членства: старое тоже потеряло участника
+        IF TG_OP = 'UPDATE' AND OLD.workspace_id IS DISTINCT FROM NEW.workspace_id THEN
+            PERFORM pg_notify('workspace_members_changes', OLD.workspace_id::text);
+        END IF;
+    END IF;
+
+    PERFORM pg_notify('workspace_members_changes', ws_id::text);
+    RETURN NULL;
+END;
+$$;
+
+-- UPDATE только по полям, которые попадают в кеш: настройки уведомлений
+-- участника меняются часто и сбрасывать из-за них весь список незачем.
+CREATE OR REPLACE TRIGGER workspace_members_notify
+    AFTER INSERT OR DELETE OR UPDATE OF role, member_id, workspace_id
+    ON workspace_members
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_workspace_members_changes();

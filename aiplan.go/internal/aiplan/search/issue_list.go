@@ -408,7 +408,18 @@ func GetIssueListData(
 	streamCallback StreamCallback,
 ) (any, error) {
 	if searchParams.GroupByParam != "" && !slices.Contains(types.IssueGroupFields, searchParams.GroupByParam) {
-		return nil, apierrors.ErrUnsupportedGroup
+		templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam)
+		if !ok {
+			return nil, apierrors.ErrUnsupportedGroup
+		}
+		var templateExists bool
+		if err := db.Model(&dao.ProjectPropertyTemplate{}).Select("count(*) > 0").
+			Where("id = ?", templateId).Find(&templateExists).Error; err != nil {
+			return nil, err
+		}
+		if !templateExists {
+			return nil, apierrors.ErrPropertyTemplateNotFound
+		}
 	}
 
 	// OnlyCount - особый случай, считаем через SearchIssuesList
@@ -435,6 +446,7 @@ func GetIssueListData(
 		var streamMu sync.Mutex
 		totalCount, err := fetchIssuesByGroups(
 			db,
+			&user,
 			groupSize,
 			query.Session(&gorm.Session{}),
 			searchParams,
@@ -454,8 +466,12 @@ func GetIssueListData(
 
 				groupMap[group.SortId] = &group
 				for i < len(groupMap) && groupMap[i] != nil {
-					if err := streamCallback(*groupMap[i]); err != nil {
-						return err
+					// отсечённые фильтрами группы (skippedGroupCount) в поток не отдаём,
+					// но указатель продвигаем — иначе отдача навсегда встаёт перед ними
+					if groupMap[i].Count != skippedGroupCount {
+						if err := streamCallback(*groupMap[i]); err != nil {
+							return err
+						}
 					}
 					i++
 				}
@@ -470,6 +486,15 @@ func GetIssueListData(
 			return nil, nil
 		}
 
+		// Отсечённые фильтрами группы (skippedGroupCount) в ответ не попадают
+		issuesGroups := make([]*dto.IssuesGroupResponse, 0, len(groupMap))
+		for _, gr := range groupMap {
+			if gr == nil || gr.Count == skippedGroupCount {
+				continue
+			}
+			issuesGroups = append(issuesGroups, gr)
+		}
+
 		return dto.IssuesGroupedResponse{
 			PaginationMeta: dto.PaginationMeta{
 				Count:  totalCount,
@@ -477,7 +502,7 @@ func GetIssueListData(
 				Limit:  searchParams.Limit,
 			},
 			GroupBy: searchParams.GroupByParam,
-			Issues:  groupMap,
+			Issues:  issuesGroups,
 		}, nil
 	}
 
@@ -500,10 +525,24 @@ func GetIssueListData(
 		}, nil
 	}
 
+	dtoIssues := utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() })
+	if err := attachIssuesProperties(db, &user, searchParams, dtoIssues); err != nil {
+		return nil, err
+	}
+
 	return dto.IssuesSearchResponse{
 		PaginationMeta: paginationMeta,
-		Issues:         utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
+		Issues:         dtoIssues,
 	}, nil
+}
+
+// attachIssuesProperties подкачивает значения дополнительных параметров в задачи
+// списка по флагу include_properties (колонки таблицы). Light-выдачу не трогает
+func attachIssuesProperties(db *gorm.DB, user *dao.User, searchParams *types.SearchParams, issues []dto.IssueWithCount) error {
+	if !searchParams.IncludeProperties || searchParams.LightSearch {
+		return nil
+	}
+	return dao.FillIssuesProperties(db, user, issues)
 }
 
 // FormatIssuesToMarkdownTable форматирует список задач в расширенную Markdown таблицу

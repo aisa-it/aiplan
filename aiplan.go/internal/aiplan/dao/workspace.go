@@ -58,8 +58,8 @@ type Workspace struct {
 	URL *url.URL `json:"-" gorm:"-"`
 
 	Owner     *User `json:"owner,omitempty" gorm:"foreignKey:OwnerId" extensions:"x-nullable"`
-	CreatedBy *User `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;" extensions:"x-nullable"`
+	CreatedBy *User `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo;belongsTo" extensions:"x-nullable"`
 
 	CurrentUserMembership *WorkspaceMember `json:"current_user_membership,omitempty" gorm:"-" extensions:"x-nullable"`
 	LogoAsset             *FileAsset       `json:"logo_details" gorm:"foreignKey:LogoId" extensions:"x-nullable"`
@@ -344,8 +344,8 @@ type WorkspaceMember struct {
 
 	Workspace *Workspace `json:"workspace" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	Member    *User      `json:"member" gorm:"foreignKey:MemberId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 
 	NotificationSettingsApp         types.WorkspaceMemberNS `json:"notification_settings_app" gorm:"type:jsonb"`
 	NotificationAuthorSettingsApp   types.WorkspaceMemberNS `json:"notification_author_settings_app" gorm:"type:jsonb"`
@@ -591,8 +591,8 @@ type WorkspaceFavorites struct {
 	UserId uuid.UUID `json:"user_id" gorm:"type:uuid;uniqueIndex:workspace_favorites_idx,priority:2"`
 
 	Workspace *Workspace `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
-	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID" extensions:"x-nullable"`
-	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID" extensions:"x-nullable"`
+	CreatedBy *User      `json:"created_by_detail" gorm:"foreignKey:CreatedById;references:ID;belongsTo" extensions:"x-nullable"`
+	UpdatedBy *User      `json:"updated_by_detail" gorm:"foreignKey:UpdatedById;references:ID;belongsTo" extensions:"x-nullable"`
 }
 
 func (WorkspaceFavorites) TableName() string {
