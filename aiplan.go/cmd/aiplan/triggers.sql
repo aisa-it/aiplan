@@ -76,7 +76,9 @@ DO $$
     END $$;
 
 
--- Нормализация текста перед полнотекстовым разбором.
+-- Нормализация текста для FTS: дефис перед цифрой → пробел (парсер даёт '-123' вместо '123').
+-- Единый источник правила для вектора (to_tsvector_multilang, calc_rank) и запроса (dao.Issue.FullTextSearch).
+-- При смене формулы нужен пересчёт tokens (migration.MigrateIssueTokensNormalize).
 CREATE OR REPLACE FUNCTION normalize_fts_text(t text) RETURNS text AS $$
 SELECT regexp_replace(coalesce(t, ''), '-(\d)', ' \1', 'g')
 $$ LANGUAGE sql IMMUTABLE;

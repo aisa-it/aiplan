@@ -275,12 +275,10 @@ func UpdateUserLastActivityTime(tx *gorm.DB, user *User) error {
 	return tx.Omit(clause.Associations).Model(user).UpdateColumn("last_active", time.Now()).Error
 }
 
-// Всё, что не буква и не цифра (Unicode). Раньше было `[^\d|\w]`: в Go `\w` — только ASCII,
-// кириллица целиком заменялась пробелами и префиксный поиск («Прикреп» → «Прикрепление») для русского не работал.
+// Не буква и не цифра (Unicode; `\w` в Go — только ASCII, кириллицу бы стёр).
 var filterRegexp = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 
-// SplitTSQuery строит префиксный tsquery вида `word:* | word2:*` из произвольной строки.
-// Дефисы уходят в разделители, поэтому «151-68584» даёт `151:* | 68584:*` — согласовано с normalize_fts_text.
+// SplitTSQuery строит префиксный tsquery `word:* | word2:*`; дефисы — разделители (согласовано с normalize_fts_text).
 func SplitTSQuery(searchQuery string) string {
 	searchQuery = strings.TrimSpace(searchQuery)
 	if searchQuery == "" {
