@@ -191,18 +191,47 @@ func GenPasswordHash(password string) string {
 	)
 }
 
-func GetMentionedUsersLimitProject(db *gorm.DB, text types.RedactorHTML, projectID uuid.UUID) ([]User, error) {
-	reg := regexp.MustCompile(`@(\w+)`)
+var (
+	// Нода упоминания редактора: <span class="mention" data-type="mention" data-id="username" ...>@username</span>.
+	mentionSpanRegexp   = regexp.MustCompile(`<span\b[^>]*\bdata-type="mention"[^>]*>`)
+	mentionDataIdRegexp = regexp.MustCompile(`\bdata-id="([^"]+)"`)
+	// Фолбэк для контента без ноды: логины содержат точки и дефисы, \w их не покрывает;
+	// @ внутри e-mail (буква перед ним) не считается упоминанием.
+	mentionTextRegexp = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_.\-])@([\p{L}\p{N}_][\p{L}\p{N}_.\-]*)`)
+)
 
-	res := reg.FindAllStringSubmatch(text.Body, -1)
-
-	if len(res) == 0 {
-		return nil, nil
+// ExtractMentionedUsernames возвращает уникальные логины, упомянутые в HTML редактора.
+// Основной источник — data-id ноды упоминания; текстовые @логины — запасной путь.
+func ExtractMentionedUsernames(html string) []string {
+	seen := make(map[string]struct{})
+	var usernames []string
+	add := func(name string) {
+		name = strings.TrimRight(name, ".")
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		usernames = append(usernames, name)
 	}
 
-	usernames := make([]string, len(res))
-	for i, r := range res {
-		usernames[i] = r[1]
+	for _, span := range mentionSpanRegexp.FindAllString(html, -1) {
+		if m := mentionDataIdRegexp.FindStringSubmatch(span); m != nil {
+			add(m[1])
+		}
+	}
+	for _, m := range mentionTextRegexp.FindAllStringSubmatch(html, -1) {
+		add(m[1])
+	}
+	return usernames
+}
+
+func GetMentionedUsersLimitProject(db *gorm.DB, text types.RedactorHTML, projectID uuid.UUID) ([]User, error) {
+	usernames := ExtractMentionedUsernames(text.Body)
+	if len(usernames) == 0 {
+		return nil, nil
 	}
 
 	var users []User
