@@ -34,7 +34,7 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 	} else if len(searchParams.Filters.ProjectIds) > 0 {
 		projectQuery = searchParams.Filters.ProjectIds
 	} else {
-		projectQuery = db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{})
+		projectQuery = memberProjectsQuery(db, user, searchParams)
 	}
 
 	// Группировка по значению кастомного поля: group_by=property:<template_id>.
@@ -67,7 +67,7 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 			Joins("LEFT JOIN issues i on project_members.member_id = i.created_by_id and i.project_id in (?) and i.deleted_at is null", projectQuery).
 			Joins("LEFT JOIN users u on u.id = i.created_by_id").
 			Where("project_members.project_id in (?)", projectQuery).
-			Select("count(i.created_by_id) as Count, project_members.member_id as \"Key\", coalesce((u.first_name || ' ' || u.last_name), u.email) as sub").
+			Select("count(distinct i.id) as Count, project_members.member_id as \"Key\", coalesce((u.first_name || ' ' || u.last_name), u.email) as sub").
 			Group(`"Key", sub`).
 			Order("sub")
 	case "state":
@@ -179,6 +179,25 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 		return nil, err
 	}
 	return count, nil
+}
+
+// memberProjectsQuery — проекты пользователя для подсчёта групп в глобальном поиске,
+// суженные фильтрами по пространствам. Без сужения группы считаются по всем проектам
+// пользователя: при группировке по статусу это сотни групп (ключ включает project_id),
+// на каждую — отдельная выборка задач, и запрос упирается в таймаут, а count врёт.
+func memberProjectsQuery(db *gorm.DB, user *dao.User, searchParams *types.SearchParams) *gorm.DB {
+	query := db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{})
+
+	if len(searchParams.Filters.WorkspaceIds) > 0 {
+		query = query.Where("project_id in (?)", db.Select("id").Model(&dao.Project{}).
+			Where("workspace_id in (?)", searchParams.Filters.WorkspaceIds))
+	}
+	if len(searchParams.Filters.WorkspaceSlugs) > 0 {
+		query = query.Where("project_id in (?)", db.Select("id").Model(&dao.Project{}).
+			Where("workspace_id in (?)", db.Select("id").Model(&dao.Workspace{}).
+				Where("slug in (?)", searchParams.Filters.WorkspaceSlugs)))
+	}
+	return query
 }
 
 // StreamCallback - callback для streaming группированных результатов
