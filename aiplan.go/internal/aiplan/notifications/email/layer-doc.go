@@ -87,9 +87,10 @@ func (d DocProcessor) BuildRecipients(tx *gorm.DB, acts []dao.ActivityEvent, ent
 	}
 
 	ctx := EmailContext{
-		Plan:     d.plan,
-		Settings: member_role.FromWorkspace(),
-		Steps:    steps,
+		Plan:           d.plan,
+		Settings:       member_role.FromWorkspace(),
+		Steps:          steps,
+		CustomRoleFunc: []func(act dao.ActivityEvent) []member_role.UsersStep{mentionedInComment},
 	}
 
 	return BuildRecipientsFromActivities(tx, acts, &ctx)

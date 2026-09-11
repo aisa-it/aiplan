@@ -2,7 +2,6 @@ package member_role
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
@@ -347,25 +346,24 @@ func AddUsers(from []dao.User, r Role) UsersStep {
 	}
 }
 
-func AddCommentMentionedUsers[R dao.IRedactorHTML](comment *R) UsersStep {
+// AddCommentMentionedUsers добавляет упомянутых в комментарии участников проекта (для задач)
+// или пространства (для документов). Получатель, уже собранный другими шагами без ограничения
+// по активностям, ограничение не получает — иначе автор/наблюдатель потерял бы остальные
+// изменения дайджеста.
+func AddCommentMentionedUsers[R dao.IRedactorHTML](comment *R, opts ...MemberOption) UsersStep {
 	config := &memberConfig{}
+	for _, opt := range opts {
+		opt(config)
+	}
 
 	return func(tx *gorm.DB, users UserRegistry) error {
 		if comment == nil {
 			return nil
 		}
 
-		reg := regexp.MustCompile(`@(\w+)`)
-
-		res := reg.FindAllStringSubmatch((*comment).GetRedactorHtml().Body, -1)
-
-		if len(res) == 0 {
+		usernames := dao.ExtractMentionedUsernames((*comment).GetRedactorHtml().Body)
+		if len(usernames) == 0 {
 			return nil
-		}
-
-		usernames := make([]string, len(res))
-		for i, r := range res {
-			usernames[i] = r[1]
 		}
 
 		var us []dao.User
@@ -378,9 +376,15 @@ func AddCommentMentionedUsers[R dao.IRedactorHTML](comment *R) UsersStep {
 			query = query.Where("id IN (SELECT member_id FROM workspace_members WHERE workspace_id = ?)", c.WorkspaceId)
 		}
 
-		query.Find(&us)
+		if err := query.Find(&us).Error; err != nil {
+			return fmt.Errorf("get mentioned users: %v", err)
+		}
 		for _, u := range us {
-			users.AddUser(&u, config, CommentMentioned)
+			conf := config
+			if m, ok := users[u.ID]; ok && len(m.customIdActivities) == 0 {
+				conf = nil
+			}
+			users.AddUser(&u, conf, CommentMentioned)
 		}
 		return nil
 	}

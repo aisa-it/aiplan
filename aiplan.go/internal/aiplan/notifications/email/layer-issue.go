@@ -121,12 +121,28 @@ func (i IssueProcessor) BuildRecipients(tx *gorm.DB, acts []dao.ActivityEvent, e
 	}
 
 	ctx := EmailContext{
-		Plan:     i.plan,
-		Settings: member_role.FromProject(),
-		Steps:    steps,
+		Plan:           i.plan,
+		Settings:       member_role.FromProject(),
+		Steps:          steps,
+		CustomRoleFunc: []func(act dao.ActivityEvent) []member_role.UsersStep{mentionedInComment},
 	}
 
 	return BuildRecipientsFromActivities(tx, acts, &ctx)
+}
+
+// mentionedInComment добавляет упомянутых в комментарии как получателей только этой активности:
+// пользователь может быть не привязан к задаче, но письмо об упоминании получить обязан.
+func mentionedInComment(act dao.ActivityEvent) []member_role.UsersStep {
+	if act.Field != actField.Comment.Field {
+		return nil
+	}
+	switch {
+	case act.NewIssueComment != nil:
+		return []member_role.UsersStep{member_role.AddCommentMentionedUsers(act.NewIssueComment, member_role.WithActivityId(act.ID))}
+	case act.NewDocComment != nil:
+		return []member_role.UsersStep{member_role.AddCommentMentionedUsers(act.NewDocComment, member_role.WithActivityId(act.ID))}
+	}
+	return nil
 }
 
 func (i IssueProcessor) BuildDigest(tx *gorm.DB, templates *EmailTemplates, acts []dao.ActivityEvent, entity dao.IDaoAct) (map[string]FieldPrerender, int) {

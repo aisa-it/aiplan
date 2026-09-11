@@ -3283,8 +3283,10 @@ func (s *Services) downloadIssueAttachments(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrTooHeavyAttachmentsZip)
 	}
 
+	fileName := fmt.Sprintf("%s_attachments_%s.zip", issue.GetString(), time.Now().Format("2006-01-02_15-04-05"))
+
 	c.Response().Header().Set(echo.HeaderContentType, "application/zip")
-	c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf("attachment; filename=\"%s_attachments.zip\"", issue.GetString()))
+	c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf("attachment; filename=\"%s\"", fileName))
 	c.Response().WriteHeader(http.StatusOK)
 
 	w := zip.NewWriter(c.Response())
