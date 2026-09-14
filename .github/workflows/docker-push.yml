@@ -93,7 +93,7 @@ jobs:
         run: |
           cd aiplan-api-ts
           git checkout main
-          npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/internal/aiplan/docs/swagger.json -o ./src/ -n aiplan-api.ts
+          npx swagger-typescript-api generate --axios --modular --module-name-first-tag -p ../aiplan.go/pkg/server/docs/swagger.json -o ./src/ -n aiplan-api.ts
           git add .
           if git diff --cached --quiet; then
             echo "No API changes detected, skipping commit"

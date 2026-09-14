@@ -1,0 +1,1393 @@
+// Содержит определения различных типов данных, используемых в приложении.  Включает типы для работы с датами, временными зонами, настройками темы, формами, фильтрами, URL, векторами, уведомлениями и JSON URL-ами.  Предоставляет методы для сериализации, десериализации и валидации данных в различных форматах и для различных целей.
+//
+// Основные возможности:
+//   - Работа с датами и временем.
+//   - Обработка JSON данных.
+//   - Преобразование типов данных.
+//   - Работа с URL.
+//   - Фильтрация и настройка данных.
+package types
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	policy "github.com/aisa-it/aiplan/aiplan.go/pkg/redactor-policy"
+	actField "github.com/aisa-it/aiplan/aiplan.go/pkg/types/activities"
+	"github.com/gofrs/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+type TimeValuer interface {
+	GetTime() time.Time
+}
+
+// TargetDate type
+type TargetDate struct {
+	Time time.Time
+}
+
+func (d *TargetDate) UnmarshalJSON(b []byte) error {
+	str := string(b)
+	if str != "" && str[0] == '"' && str[len(str)-1] == '"' {
+		str = str[1 : len(str)-1]
+	}
+	if strings.Contains(str, "T") {
+		str = strings.Split(str, "T")[0]
+	}
+	t, err := time.Parse("2006-01-02", str)
+	if err != nil {
+		return err
+	}
+	*d = TargetDate{t}
+	return nil
+}
+
+func (d *TargetDate) MarshalJSON() ([]byte, error) {
+	return []byte(d.Time.Format("\"2006-01-02\"")), nil
+}
+
+func (d *TargetDate) Value() (driver.Value, error) {
+	if d == nil {
+		return nil, nil
+	}
+	return d.Time, nil
+}
+
+func (d *TargetDate) Scan(value interface{}) error {
+	t, ok := value.(time.Time)
+	if !ok {
+		return fmt.Errorf("error unmarshal time: %v", value)
+	}
+	*d = TargetDate{t}
+	return nil
+}
+
+func (d TargetDate) String() string {
+	return d.Time.Format("2006-01-02T15:04:05Z")
+}
+
+func (td *TargetDate) ToNullTime() sql.NullTime {
+	if td == nil {
+		return sql.NullTime{Valid: false}
+	}
+	return sql.NullTime{
+		Time:  td.Time,
+		Valid: true,
+	}
+}
+func (d *TargetDate) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
+}
+
+// TargetDateTimeZ type
+type TargetDateTimeZ struct {
+	Time time.Time
+}
+
+func (d *TargetDateTimeZ) UnmarshalJSON(b []byte) error {
+	str := string(b)
+	if str != "" && str[0] == '"' && str[len(str)-1] == '"' {
+		str = str[1 : len(str)-1]
+	}
+	date, err := formatDate(str)
+	if err != nil {
+		return err
+	}
+	*d = TargetDateTimeZ{date}
+	return nil
+}
+
+func (d *TargetDateTimeZ) MarshalJSON() ([]byte, error) {
+	if d == nil {
+		return []byte("null"), nil
+	}
+	return []byte(`"` + d.Time.Format(time.RFC3339) + `"`), nil
+}
+
+func (d *TargetDateTimeZ) Value() (driver.Value, error) {
+	if d == nil {
+		return nil, nil
+	}
+	return d.Time, nil
+}
+
+func (d *TargetDateTimeZ) Scan(value interface{}) error {
+	t, ok := value.(time.Time)
+	if !ok {
+		return fmt.Errorf("error unmarshal time: %v", value)
+	}
+	*d = TargetDateTimeZ{t}
+	return nil
+}
+
+func (d TargetDateTimeZ) String() string {
+	return d.Time.String()
+}
+
+func (d *TargetDateTimeZ) GetTime() time.Time {
+	if d == nil {
+		return time.Time{}
+	}
+	return d.Time
+}
+
+// TimeZone type
+type TimeZone time.Location
+
+func (tz *TimeZone) Scan(value interface{}) error {
+	str, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("failed to unmarshal timezone value: %v", value)
+	}
+
+	if str == "" {
+		str = "Europe/Moscow"
+	}
+
+	loc, err := time.LoadLocation(str)
+	if err != nil {
+		return err
+	}
+	*tz = TimeZone(*loc)
+	return nil
+}
+
+func (tz TimeZone) Value() (driver.Value, error) {
+	return tz.String(), nil
+}
+
+func (tz TimeZone) String() string {
+	loc := time.Location(tz)
+	return (&loc).String()
+}
+
+func (TimeZone) GormDataType() string {
+	return "text"
+}
+
+func (tz TimeZone) MarshalJSON() ([]byte, error) {
+	loc := time.Location(tz)
+	return []byte(fmt.Sprintf("\"%s\"", &loc)), nil
+}
+
+func (tz *TimeZone) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	if str == "" {
+		str = "Europe/Moscow"
+	}
+	loc, err := time.LoadLocation(str)
+	if err != nil {
+		return err
+	}
+	*tz = TimeZone(*loc)
+	return nil
+}
+
+// Theme type
+type Theme struct {
+	System    *bool `json:"system,omitempty" extensions:"x-nullable"`
+	Dark      *bool `json:"dark,omitempty" extensions:"x-nullable"`
+	Contrast  *bool `json:"contrast,omitempty" extensions:"x-nullable"`
+	OpenInNew *bool `json:"open_in_new,omitempty" extensions:"x-nullable"`
+}
+
+func (theme Theme) Value() (driver.Value, error) {
+	b, err := json.Marshal(theme)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (theme *Theme) Scan(value interface{}) error {
+	if value == nil {
+		*theme = Theme{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	return json.Unmarshal(bytes, theme)
+}
+
+// UserSettings type
+type UserSettings struct {
+	DeadlineNotification  time.Duration `json:"deadline_notification"`
+	TgNotificationMute    bool          `json:"telegram_notification_mute"`
+	EmailNotificationMute bool          `json:"email_notification_mute"`
+	AppNotificationMute   bool          `json:"app_notification_mute"`
+}
+
+func (us UserSettings) Value() (driver.Value, error) {
+	b, err := json.Marshal(us)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (us *UserSettings) Scan(value interface{}) error {
+	if value == nil {
+		*us = UserSettings{}
+		return nil
+	}
+
+	var res []byte
+	switch v := value.(type) {
+	case []byte:
+		res = v
+	case string:
+		res = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	return json.Unmarshal(res, us)
+}
+func (us UserSettings) IsEmpty() bool {
+	b, _ := json.Marshal(us)
+	return string(b) == "{}"
+}
+
+// RedactorHTML type
+type RedactorHTML struct {
+	Body             string
+	stripped         string
+	AlreadySanitized bool
+}
+
+func (r RedactorHTML) Value() (driver.Value, error) {
+	if !r.AlreadySanitized {
+		return policy.UgcPolicy.Sanitize(r.Body), nil
+	}
+	return r.Body, nil
+}
+
+func (r *RedactorHTML) Scan(value interface{}) error {
+	if s, ok := value.(string); ok {
+		r.Body = s
+		return nil
+	}
+	return errors.New("unsupported type")
+}
+
+func (r RedactorHTML) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(r.Body); err != nil {
+		return nil, err
+	}
+
+	return bytes.TrimSpace(buf.Bytes()), nil
+}
+
+func (r *RedactorHTML) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &r.Body); err != nil {
+		return err
+	}
+	r.Body = policy.UgcPolicy.Sanitize(r.Body)
+	r.Body = RemoveInvisibleChars(r.Body)
+	r.AlreadySanitized = true
+
+	return nil
+}
+
+func (r *RedactorHTML) StripTags() string {
+	if r.stripped == "" {
+		r.stripped = policy.StripTagsPolicy.Sanitize(r.Body)
+		r.Body = RemoveInvisibleChars(r.Body)
+	}
+	return r.stripped
+}
+
+func (r RedactorHTML) String() string {
+	return r.Body
+}
+
+func (RedactorHTML) GormDataType() string {
+	return "text"
+}
+
+func RemoveInvisibleChars(s string) string {
+	invisible := []string{
+		"\u200B",
+		"\u200C",
+		"\u200D",
+		"\uFEFF",
+	}
+
+	for _, ch := range invisible {
+		s = strings.ReplaceAll(s, ch, "")
+	}
+	return s
+}
+
+// FormFieldsSlice type
+type FormFieldsSlice []FormFields
+
+type FormFields struct {
+	Type           string               `json:"type"`
+	Label          string               `json:"label,omitempty"`
+	Val            interface{}          `json:"value"`
+	Required       bool                 `json:"required"`
+	IssueNameField bool                 `json:"issue_name_field"`
+	Validate       *ValidationRule      `json:"validate,omitempty" extensions:"x-nullable"`
+	DependOn       *FormFieldDependency `json:"depend_on,omitempty" extensions:"x-nullable"`
+	// Привязка к шаблону кастомного поля (ProjectPropertyTemplate) целевого проекта:
+	// значение ответа записывается в это поле создаваемой задачи
+	PropertyTemplateId uuid.NullUUID `json:"property_template_id" swaggertype:"string" extensions:"x-nullable"`
+}
+
+type FormFieldDependency struct {
+	FieldIndex    int  `json:"field_index"`                          // Индекс поля от которого зависит
+	OptionIndex   *int `json:"option_index" extensions:"x-nullable"` // Индекс варианта ответа (для select/multiselect)
+	ExpectedValue bool `json:"value"`                                // Ожидаемое значение зависимого поля (или варианта ответа)
+}
+
+// Режимы каскадной зависимости кастомного поля (PropertyDependency.Mode)
+const (
+	PropertyDependencyOptionsMap = "options_map" // select→select: карта «значение родителя → допустимые options»
+	PropertyDependencyRowFilter  = "row_filter"  // ребёнок lookup: фильтр строк справочника по атрибуту
+)
+
+// PropertyDependency - каскадная зависимость шаблона кастомного поля (ProjectPropertyTemplate)
+// от родительского поля того же проекта. Каскад не делает поле обязательным - только
+// сужает допустимые значения при заполненном родителе (пустой родитель не ограничивает)
+type PropertyDependency struct {
+	ParentTemplateId uuid.UUID `json:"parent_template_id" swaggertype:"string"`
+	Mode             string    `json:"mode"` // "options_map" или "row_filter"
+	// OptionsMap (режим options_map): значение родителя → допустимые options ребёнка
+	OptionsMap map[string][]string `json:"options_map,omitempty" extensions:"x-nullable"`
+	// RowFilterAttr (режим row_filter): имя атрибута строки справочника ребёнка,
+	// сравниваемого с отображаемым значением родителя (строка или массив строк в attrs)
+	RowFilterAttr string `json:"row_filter_attr,omitempty"`
+}
+
+type ValidationRule struct {
+	ValidationType string        `json:"validation_type"`
+	ValueType      string        `json:"value_type,omitempty"`
+	Opt            []interface{} `json:"opt,omitempty"`
+}
+
+func (f FormFieldsSlice) Value() (driver.Value, error) {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (f *FormFieldsSlice) Scan(value interface{}) error {
+	if value == nil {
+		*f = FormFieldsSlice{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, f); err != nil {
+		return err
+	}
+	return nil
+}
+
+// HideFields type
+type HideFields []string
+
+func (f HideFields) Value() (driver.Value, error) {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (f *HideFields) Scan(value interface{}) error {
+	if value == nil {
+		*f = HideFields{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, f); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f HideFields) MarshalJSON() ([]byte, error) {
+	if f == nil {
+		return []byte("[]"), nil
+	}
+	type hf HideFields
+	return json.Marshal(hf(f))
+}
+
+// FilterUUIDs представляет фильтр для работы с массивом UUID.
+// Используется для фильтрации по списку идентификаторов с поддержкой пустых значений.
+// Поля:
+//   - Array: основной массив UUID для фильтрации
+//   - IncludeEmpty: флаг, указывающий на необходимость включения пустых значений (например, NULL в базе данных)
+//
+// Методы типа обеспечивают сериализацию/десериализацию в JSON, работу с базой данных и проверку наличия значений.
+type FilterUUIDs struct {
+	Array        []uuid.UUID
+	IncludeEmpty bool
+}
+
+func (fa *FilterUUIDs) UnmarshalJSON(data []byte) error {
+	var ids []string
+	if err := json.Unmarshal(data, &ids); err != nil {
+		return err
+	}
+
+	fa.Array = make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			fa.IncludeEmpty = true
+			continue
+		}
+		parsedId, err := uuid.FromString(id)
+		if err != nil {
+			return err
+		}
+		fa.Array = append(fa.Array, parsedId)
+	}
+	return nil
+}
+
+func (fa FilterUUIDs) MarshalJSON() ([]byte, error) {
+	ss := make([]string, 0, len(fa.Array)+1)
+	if fa.IncludeEmpty {
+		ss = append(ss, "")
+	}
+	for _, id := range fa.Array {
+		ss = append(ss, id.String())
+	}
+	return json.Marshal(ss)
+}
+
+func (fa FilterUUIDs) IsEmpty() bool {
+	return len(fa.Array) == 0 && !fa.IncludeEmpty
+}
+
+func (filter *FilterUUIDs) Scan(value any) error {
+	if value == nil {
+		*filter = FilterUUIDs{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	return json.Unmarshal(bytes, filter)
+}
+
+func (filter *FilterUUIDs) Contains(str string) bool {
+	for _, id := range filter.Array {
+		if id.String() == str {
+			return true
+		}
+	}
+	return false
+}
+
+// IssuesListFilters type
+type IssuesListFilters struct {
+	AuthorIds   []string    `json:"authors"`
+	AssigneeIds FilterUUIDs `json:"assignees"`
+	WatcherIds  FilterUUIDs `json:"watchers"`
+
+	StateIds       []uuid.UUID `json:"states"`
+	Priorities     []string    `json:"priorities"`
+	Labels         FilterUUIDs `json:"labels"`
+	WorkspaceIds   []string    `json:"workspaces"`
+	WorkspaceSlugs []string    `json:"workspace_slugs"`
+	ProjectIds     []string    `json:"projects"`
+	SprintIds      []string    `json:"sprints"`
+
+	OnlyActive   bool `json:"only_active"`
+	AssignedToMe bool `json:"assigned_to_me"`
+	WatchedByMe  bool `json:"watched_by_me"`
+	AuthoredByMe bool `json:"authored_by_me"`
+
+	CreatedAtFrom   JSONTime `json:"created_at_from"`
+	CreatedAtTo     JSONTime `json:"created_at_to"`
+	UpdatedAtFrom   JSONTime `json:"updated_at_from"`
+	UpdatedAtTo     JSONTime `json:"updated_at_to"`
+	StartDateFrom   JSONTime `json:"start_date_from"`
+	StartDateTo     JSONTime `json:"start_date_to"`
+	TargetDateFrom  JSONTime `json:"target_date_from"`
+	TargetDateTo    JSONTime `json:"target_date_to"`
+	CompletedAtFrom JSONTime `json:"completed_at_from"`
+	CompletedAtTo   JSONTime `json:"completed_at_to"`
+
+	SearchQuery string `json:"search_query"`
+}
+
+func (filter *IssuesListFilters) Scan(value any) error {
+	if value == nil {
+		*filter = IssuesListFilters{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	return json.Unmarshal(bytes, filter)
+}
+
+// NullDomain type
+type NullDomain struct {
+	URL   *url.URL
+	Valid bool
+}
+
+func (d *NullDomain) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	raw, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("failed unmarshal domain url: %v", value)
+	}
+
+	if raw == "" {
+		return nil
+	}
+
+	u, err := url.ParseRequestURI(raw)
+	if err != nil {
+		return fmt.Errorf("failed unmarshal domain url: %w", err)
+	}
+	d.URL = u
+	d.Valid = true
+	return nil
+}
+
+func (d NullDomain) Value() (driver.Value, error) {
+	if !d.Valid {
+		return nil, nil
+	}
+	return d.URL.Scheme + "://" + d.URL.Host, nil
+}
+
+func (d *NullDomain) String() string {
+	if !d.Valid {
+		return ""
+	}
+	return d.URL.Scheme + "://" + d.URL.Host
+}
+
+// TsVector Postgres tsvector type
+type TsVector struct {
+	Vector string
+}
+
+func (TsVector) GormDataType() string {
+	return "tsvector"
+}
+
+func (ts TsVector) GormValue(ctx context.Context, db *gorm.DB) clause.Expr {
+	return clause.Expr{
+		SQL:  "to_tsvector('russian', ?)",
+		Vars: []interface{}{ts.Vector},
+	}
+}
+
+func (ts *TsVector) Scan(v interface{}) error {
+	if str, ok := v.(string); ok {
+		*ts = TsVector{str}
+		return nil
+	}
+	return errors.New("incorrect type of tsvector")
+}
+
+func (ts *TsVector) String() string {
+	return ts.Vector
+}
+
+// JSONField generic field
+type JSONField[T any] struct {
+	Value   *T
+	Defined bool
+}
+
+func (j *JSONField[T]) UnmarshalJSON(data []byte) error {
+	j.Defined = true
+
+	if string(data) == "null" {
+		j.Value = nil
+		return nil
+	}
+
+	var value T
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("invalid value for type %T: %s", value, err.Error())
+	}
+	j.Value = &value
+	return nil
+}
+
+func (j JSONField[T]) MarshalJSON() ([]byte, error) {
+	if !j.Defined {
+		return []byte("null"), nil
+	}
+	if j.Value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*j.Value)
+}
+
+func (j JSONField[T]) String() string {
+	if j.Value == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%v", *j.Value)
+}
+
+func (j JSONField[T]) IsDefined() bool {
+	return j.Defined
+}
+
+func (j JSONField[T]) IsNull() bool {
+	return j.Defined && j.Value == nil
+}
+
+func (j JSONField[T]) GetValue() (*T, bool) {
+	return j.Value, j.Defined
+}
+
+// ProjectMemberNS type
+type ProjectMemberNS struct {
+	DisableName          bool `json:"disable_name"`
+	DisableDesc          bool `json:"disable_desc"`
+	DisableState         bool `json:"disable_state"`
+	DisableAssignees     bool `json:"disable_assignees"`
+	DisableWatchers      bool `json:"disable_watchers"`
+	DisablePriority      bool `json:"disable_priority"`
+	DisableParent        bool `json:"disable_parent"`
+	DisableBlocks        bool `json:"disable_blocks"`
+	DisableBlockedBy     bool `json:"disable_blockedBy"`
+	DisableTargetDate    bool `json:"disable_targetDate"`
+	DisableLabels        bool `json:"disable_labels"`
+	DisableLinks         bool `json:"disable_links"`
+	DisableComments      bool `json:"disable_comments"`
+	DisableAttachments   bool `json:"disable_attachments"`
+	DisableDeadline      bool `json:"disable_deadline"`
+	DisableLinked        bool `json:"disable_linked"`
+	DisableSubIssue      bool `json:"disable_sub_issue"`
+	NotifyBeforeDeadline *int `json:"notify_before_deadline" extensions:"x-nullable"`
+	DisableIssueTransfer bool `json:"disable_issue_transfer"`
+	DisableIssueNew      bool `json:"disable_issue_new"`
+	DisableIssueSprint   bool `json:"disable_issue_sprint"`
+
+	DisableProjectName            bool `json:"disable_project_name"`
+	DisableProjectPublic          bool `json:"disable_project_public"`
+	DisableProjectIdentifier      bool `json:"disable_project_identifier"`
+	DisableProjectDefaultAssignee bool `json:"disable_project_default_assignee"`
+	DisableProjectDefaultWatcher  bool `json:"disable_project_default_watcher"`
+	DisableProjectMember          bool `json:"disable_project_member"`
+	DisableProjectOwner           bool `json:"disable_project_owner"`
+	DisableProjectRole            bool `json:"disable_project_role"`
+	DisableProjectStatus          bool `json:"disable_project_status"`
+	DisableProjectLabel           bool `json:"disable_project_label"`
+	DisableProjectLogo            bool `json:"disable_project_logo"`
+	DisableProjectTemplate        bool `json:"disable_project_template"`
+}
+
+func (ns ProjectMemberNS) Value() (driver.Value, error) {
+	b, err := json.Marshal(ns)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (ns *ProjectMemberNS) Scan(value interface{}) error {
+	if value == nil {
+		*ns = ProjectMemberNS{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, ns); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ns ProjectMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
+
+	isIssue := entity == LayerIssue
+	isProject := entity == LayerProject
+	isPrAdmin := entity == LayerProject && role == AdminRole
+
+	switch field {
+	case actField.Name.Field:
+		if isIssue {
+			return !ns.DisableName
+		}
+		if isPrAdmin {
+			return !ns.DisableProjectName
+		}
+
+	case actField.Issue.Field:
+		if isProject {
+			return !ns.DisableIssueNew
+		}
+
+		if isIssue {
+			return !ns.DisableIssueTransfer
+		}
+	case
+		actField.Logo.Field,
+		actField.Emoj.Field:
+		if isProject {
+			return !ns.DisableProjectLogo
+		}
+
+	case actField.Parent.Field:
+		if isIssue {
+			return !ns.DisableParent
+		}
+	case actField.Priority.Field:
+		if isIssue {
+			return !ns.DisablePriority
+		}
+	case actField.Status.Field:
+		if isIssue {
+			return !ns.DisableState
+		}
+		if isPrAdmin {
+			return !ns.DisableProjectStatus
+		}
+	case actField.Description.Field:
+		if isIssue {
+			return !ns.DisableDesc
+		}
+	case actField.TargetDate.Field:
+		if isIssue {
+			return !ns.DisableTargetDate
+		}
+	case actField.Label.Field:
+		if isIssue {
+			return !ns.DisableLabels
+		}
+		if isPrAdmin {
+			return !ns.DisableProjectLabel
+		}
+	case actField.Assignees.Field:
+		if isIssue {
+			return !ns.DisableAssignees
+		}
+	case actField.Watchers.Field:
+		if isIssue {
+			return !ns.DisableWatchers
+		}
+	case actField.Blocks.Field:
+		if isIssue {
+			return !ns.DisableBlocks
+		}
+	case actField.Blocking.Field:
+		if isIssue {
+			return !ns.DisableBlockedBy
+		}
+	case
+		actField.Link.Field,
+		actField.LinkTitle.Field,
+		actField.LinkUrl.Field:
+		if isIssue {
+			return !ns.DisableLinks
+		}
+	case actField.Comment.Field:
+		if isIssue {
+			return !ns.DisableComments
+		}
+	case actField.Attachment.Field:
+		if isIssue {
+			return !ns.DisableAttachments
+		}
+	case actField.Linked.Field:
+		if isIssue {
+			return !ns.DisableLinked
+		}
+	case actField.SubIssue.Field:
+		if isIssue {
+			return !ns.DisableSubIssue
+		}
+	case actField.Deadline.Field:
+		if isIssue {
+			return !ns.DisableDeadline
+		}
+	case actField.Project.Field:
+		if isIssue {
+			return !ns.DisableIssueTransfer
+		}
+	case actField.Public.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectPublic
+		}
+	case actField.Identifier.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectIdentifier
+		}
+	case actField.DefaultAssignees.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectDefaultAssignee
+		}
+	case actField.DefaultWatchers.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectDefaultWatcher
+		}
+	case actField.Member.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectMember
+		}
+	case actField.ProjectLead.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectOwner
+		}
+	case actField.Role.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectRole
+		}
+	case
+		actField.StatusDefault.Field,
+		actField.StatusName.Field,
+		actField.StatusColor.Field,
+		actField.StatusDescription.Field,
+		actField.StatusGroup.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectStatus
+		}
+	case actField.LabelName.Field, actField.LabelColor.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectLabel
+		}
+	case
+		actField.Template.Field,
+		actField.TemplateTemplate.Field,
+		actField.TemplateName.Field:
+		if isPrAdmin {
+			return !ns.DisableProjectTemplate
+		}
+	case actField.Sprint.Field:
+		if isIssue {
+			return !ns.DisableIssueSprint
+		}
+
+	}
+	return false
+}
+
+// WorkspaceMemberNS type
+type WorkspaceMemberNS struct {
+	DisableDocTitle      bool `json:"disable_doc_title"`
+	DisableDocDesc       bool `json:"disable_doc_desc"`
+	DisableDocRole       bool `json:"disable_doc_role"`
+	DisableDocAttachment bool `json:"disable_doc_attachment"`
+	DisableDocComment    bool `json:"disable_doc_comment"`
+
+	DisableDocWatchers bool `json:"disable_doc_watchers"`
+	DisableDocCreate   bool `json:"disable_doc_create"`
+	DisableDocDelete   bool `json:"disable_doc_delete"`
+	DisableDocMove     bool `json:"disable_doc_move"`
+
+	DisableWorkspaceProject     bool `json:"disable_workspace_project"`
+	DisableWorkspaceForm        bool `json:"disable_workspace_form"`
+	DisableWorkspaceDoc         bool `json:"disable_workspace_doc"`
+	DisableWorkspaceName        bool `json:"disable_workspace_name"`
+	DisableWorkspaceDesc        bool `json:"disable_workspace_desc"`
+	DisableWorkspaceToken       bool `json:"disable_workspace_token"`
+	DisableWorkspaceLogo        bool `json:"disable_workspace_logo"`
+	DisableWorkspaceMember      bool `json:"disable_workspace_member"`
+	DisableWorkspaceRole        bool `json:"disable_workspace_role"`
+	DisableWorkspaceIntegration bool `json:"disable_workspace_integration"`
+	DisableWorkspaceSprint      bool `json:"disable_workspace_sprint"`
+
+	DisableSprintName        bool `json:"disable_sprint_name"`
+	DisableSprintDescription bool `json:"disable_sprint_description"`
+	DisableSprintIssueList   bool `json:"disable_sprint_issue_list"`
+	DisableSprintWatcherList bool `json:"disable_sprint_watcher_list"`
+	DisableSprintDate        bool `json:"disable_sprint_date"`
+}
+
+func (ns WorkspaceMemberNS) Value() (driver.Value, error) {
+	b, err := json.Marshal(ns)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (ns *WorkspaceMemberNS) Scan(value interface{}) error {
+	if value == nil {
+		*ns = WorkspaceMemberNS{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, ns); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ns WorkspaceMemberNS) IsNotify(field actField.ActivityField, entity EntityLayer, verb string, role int) bool {
+
+	isSprint := entity == LayerSprint
+	isDoc := entity == LayerDoc
+	isWorkspace := entity == LayerWorkspace
+	isWorkspaceAdmin := entity == LayerWorkspace && role == AdminRole
+
+	switch field {
+	case actField.Title.Field:
+		if isDoc {
+			return !ns.DisableDocTitle
+		}
+	case actField.Description.Field:
+		if isSprint {
+			return !ns.DisableSprintDescription
+		}
+		if isDoc {
+			return !ns.DisableDocDesc
+		}
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceDesc
+		}
+	case
+		actField.ReaderRole.Field,
+		actField.EditorRole.Field,
+		actField.Editors.Field,
+		actField.Readers.Field:
+		if isDoc {
+			return !ns.DisableDocRole
+		}
+	case actField.Attachment.Field:
+		if isDoc {
+			return !ns.DisableDocAttachment
+		}
+	case actField.Comment.Field:
+		if isDoc {
+			return !ns.DisableDocComment
+		}
+	case actField.Watchers.Field:
+		if isSprint {
+			return !ns.DisableSprintWatcherList
+		}
+		if isDoc {
+			return !ns.DisableDocWatchers
+		}
+	case actField.Doc.Field:
+		if isDoc {
+			switch verb {
+			case "created":
+				return !ns.DisableDocCreate
+			case "deleted":
+				return !ns.DisableDocDelete
+			case "move_workspace_to_doc", "move_doc_to_workspace", "move_doc_to_doc", "added", "removed":
+				return !ns.DisableDocMove
+			}
+		}
+		if isWorkspace {
+			switch verb {
+			case "created":
+				return !ns.DisableDocCreate
+			case "added", "removed":
+				return !ns.DisableDocMove
+			case "deleted":
+				return !ns.DisableDocDelete
+			}
+
+		}
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceDoc
+		}
+	case actField.Project.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceProject
+		}
+	case actField.Form.Field:
+		if isWorkspaceAdmin {
+			return false // TODO disabled BAK-317
+			//return !ns.DisableWorkspaceForm
+		}
+	case actField.Name.Field:
+		if isSprint {
+			return !ns.DisableSprintName
+		}
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceName
+		}
+	case actField.Token.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceToken
+		}
+	case actField.Logo.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceLogo
+		}
+	case actField.Member.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceMember
+		}
+	case actField.Role.Field,
+		actField.WorkspaceOwner.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceRole
+		}
+	case actField.Integration.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceIntegration
+		}
+	case actField.Issue.Field:
+		if isSprint {
+			return !ns.DisableSprintIssueList
+		}
+	case actField.StartDate.Field, actField.EndDate.Field:
+		if isSprint {
+			return !ns.DisableSprintDate
+		}
+	case actField.Sprint.Field:
+		if isWorkspaceAdmin {
+			return !ns.DisableWorkspaceSprint
+		}
+	}
+
+	return false
+}
+
+// FormAnswerNotify type
+type FormAnswerNotify struct {
+	Email    bool `json:"email"`
+	Telegram bool `json:"telegram"`
+	App      bool `json:"app"`
+}
+
+func (fn FormAnswerNotify) Value() (driver.Value, error) {
+	b, err := json.Marshal(fn)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (fn *FormAnswerNotify) Scan(value interface{}) error {
+	if value == nil {
+		*fn = FormAnswerNotify{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", value))
+	}
+
+	if err := json.Unmarshal(bytes, fn); err != nil {
+		return err
+	}
+	return nil
+}
+
+type JsonURL struct {
+	URL *url.URL `swaggertype:"string" format:"uri"`
+}
+
+func (u JsonURL) MarshalJSON() ([]byte, error) {
+	if u.URL == nil {
+		return []byte("null"), nil
+	}
+	return []byte("\"" + u.URL.String() + "\""), nil
+}
+
+func (u JsonURL) String() string {
+	return u.URL.String()
+}
+
+func (d *JsonURL) UnmarshalJSON(b []byte) error {
+	rawUrl := string(b)
+	if rawUrl == "null" || rawUrl == "" {
+		*d = JsonURL{}
+		return nil
+	}
+
+	u, err := url.Parse(rawUrl[1 : len(b)-1])
+	if err != nil {
+		return fmt.Errorf("unmarshal json url: %e", err)
+	}
+	*d = JsonURL{u}
+	return nil
+}
+
+type IssueStatus int
+
+const (
+	Pending IssueStatus = iota
+	InProgress
+	Completed
+	Cancelled
+)
+
+func (is IssueStatus) String() string {
+	return [...]string{"Pending", "InProgress", "Completed", "Cancelled"}[is]
+}
+
+type IssueProcess struct {
+	Status  IssueStatus `json:"status"`
+	Overdue bool        `json:"overdue"`
+}
+
+type SprintStats struct {
+	AllIssues  int `json:"all_issues"`
+	Pending    int `json:"pending"`
+	InProgress int `json:"in_progress"`
+	Completed  int `json:"completed"`
+	Cancelled  int `json:"cancelled"`
+}
+
+// -----
+func formatDateStr(dateStr, outFormat string, tz *TimeZone) (string, error) {
+	date, err := formatDate(dateStr)
+	if err != nil {
+		return "", err
+	}
+
+	if tz != nil {
+		date = date.In((*time.Location)(tz))
+	}
+	return date.Format(outFormat), nil
+
+}
+
+func formatDate(dateStr string) (time.Time, error) {
+	if dateStr == "" {
+		return time.Time{}, fmt.Errorf("empty date string")
+	}
+
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05 +0000 UTC",
+		"2006-01-02",
+		"02.01.2006 15:04 MST",
+		"02.01.2006 15:04 -0700",
+		"02.01.2006",
+	}
+
+	var t time.Time
+	var err error
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, dateStr)
+		if err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsuported date format")
+}
+
+// JSONTime time in unix seconds
+type JSONTime time.Time
+
+func (d *JSONTime) UnmarshalJSON(b []byte) error {
+	msFloat, err := strconv.ParseFloat(string(b), 64)
+	if err != nil {
+		return err
+	}
+	*d = JSONTime(time.Unix(int64(msFloat), 0))
+	return nil
+}
+
+func (d JSONTime) MarshalJSON() ([]byte, error) {
+	return fmt.Append([]byte{}, time.Time(d).Unix()), nil
+}
+
+func (d JSONTime) Value() (driver.Value, error) {
+	return time.Time(d), nil
+}
+
+func (d *JSONTime) Scan(value any) error {
+	t, ok := value.(time.Time)
+	if !ok {
+		return fmt.Errorf("error unmarshal time: %v", value)
+	}
+	*d = JSONTime(t)
+	return nil
+}
+
+func (d *JSONTime) IsNil() bool {
+	return d == nil || time.Time(*d).IsZero()
+}
+
+func (d JSONTime) Time() time.Time {
+	return time.Time(d)
+}
+
+// FilterQuery добавляет условие фильтрации по времени к запросу GORM.
+// Если время d не является нулевым, добавляется условие сравнения с полем field.
+// Параметр bigger определяет направление сравнения:
+//   - если bigger == true, добавляется условие field >= d (больше или равно)
+//   - если bigger == false, добавляется условие field <= d (меньше или равно)
+//
+// Если время d нулевое, запрос возвращается без изменений.
+func (d JSONTime) FilterQuery(query *gorm.DB, field string, bigger bool) *gorm.DB {
+	if !d.IsNil() {
+		s := ">="
+		if !bigger {
+			s = "<="
+		}
+		return query.Where(fmt.Sprintf("%s %s ?", field, s), d)
+	}
+	return query
+}
+
+type EntityLayer int16
+
+func (e EntityLayer) String() string {
+	switch e {
+	case 0:
+		return "root"
+	case 1:
+		return "workspace"
+	case 2:
+		return "project"
+	case 3:
+		return "issue"
+	case 4:
+		return "doc"
+	case 5:
+		return "form"
+	case 6:
+		return "sprint"
+	}
+	return "unknown"
+}
+
+type NotifyChannel int
+
+type UUIDArray struct {
+	Array []uuid.UUID
+}
+
+func (a UUIDArray) Value() (driver.Value, error) {
+	if len(a.Array) == 0 {
+		return "{}", nil
+	}
+	var b strings.Builder
+	b.Grow(1 + len(a.Array) + 36*len(a.Array)) // {} + len(a)-1 commas + len(a) ids
+	b.WriteString("{")
+	b.WriteString(a.Array[0].String())
+	for _, id := range a.Array[1:] {
+		b.WriteString(",")
+		b.WriteString(id.String())
+	}
+	b.WriteString("}")
+	return b.String(), nil
+}
+
+func (a *UUIDArray) Scan(value any) (err error) {
+	rawArray, ok := value.(string)
+	if !ok {
+		return errors.New("unsupported value type")
+	}
+	if rawArray == "" || rawArray == "{}" {
+		return nil
+	}
+	aa := strings.Split(rawArray[1:len(rawArray)-1], ",")
+	a.Array = make([]uuid.UUID, len(aa))
+	for i, id := range aa {
+		a.Array[i], err = uuid.FromString(id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (UUIDArray) GormDataType() string {
+	return "uuid[]"
+}

@@ -1,0 +1,63 @@
+package tools
+
+import (
+	"context"
+	"errors"
+
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/gofrs/uuid"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+	"gorm.io/gorm"
+)
+
+var ErrInvalidArgType = errors.New("invalid mcp arg type")
+
+// ToolHandler определяет сигнатуру функции-обработчика MCP инструмента.
+// Получает контекст, соединение с БД, business слой, текущего пользователя и параметры запроса.
+type ToolHandler func(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error)
+
+// Tool представляет MCP инструмент с его обработчиком.
+type Tool struct {
+	Tool    mcp.Tool
+	Handler ToolHandler
+}
+
+// WrapTool оборачивает обработчик инструмента, извлекая пользователя из контекста.
+func WrapTool(db *gorm.DB, bl *business.Business, handler ToolHandler) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		userRaw := ctx.Value("user")
+		if userRaw == nil {
+			return nil, errors.New("user not provided")
+		}
+		user := userRaw.(*dao.User)
+		return handler(ctx, db, bl, user, request)
+	}
+}
+
+// listResult оборачивает список в объект {count, result}.
+// По спецификации MCP structuredContent обязан быть объектом: массив верхнего
+// уровня клиенты с валидацией схемы (например, Claude Code) отбрасывают целиком.
+// nil-слайс нормализуется в пустой, чтобы в JSON попал [], а не null.
+func listResult[T any](items []T) (*mcp.CallToolResult, error) {
+	if items == nil {
+		items = make([]T, 0)
+	}
+	return mcp.NewToolResultJSON(map[string]any{
+		"count":  len(items),
+		"result": items,
+	})
+}
+
+func GetUUIDArg(args map[string]any, argName string) (uuid.UUID, error) {
+	raw, ok := args[argName]
+	if !ok {
+		return uuid.Nil, nil
+	}
+	rawStr, ok := raw.(string)
+	if !ok {
+		return uuid.Nil, ErrInvalidArgType
+	}
+	return uuid.FromString(rawStr)
+}

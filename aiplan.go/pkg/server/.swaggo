@@ -1,0 +1,6 @@
+replace time.Duration int64
+replace github.com/aisa-it/aiplan/aiplan.go/pkg/types.JsonURL string
+replace github.com/aisa-it/aiplan/aiplan.go/pkg/types.TargetDate string
+replace github.com/aisa-it/aiplan/aiplan.go/pkg/types.RedactorHTML string
+replace github.com/aisa-it/aiplan/aiplan.go/pkg/types.TargetDateTimeZ string
+replace github.com/aisa-it/aiplan/aiplan.go/pkg/types.JSONTime number

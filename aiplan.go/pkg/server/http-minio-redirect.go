@@ -1,0 +1,179 @@
+// Пакет предоставляет функциональность для перенаправления пользователя на файл, хранящийся в MinIO, по имени файла или ID.  Используется для интеграции с внешними сервисами, хранящими файлы в MinIO.
+//
+// Основные возможности:
+//   - Перенаправление по имени файла или ID.
+//   - Обработка ошибок, включая отсутствие файла и внутренние ошибки сервера.
+//   - Использование gorm для работы с базой данных и поиска файлов.
+package server
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
+
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
+	"github.com/gofrs/uuid"
+	"github.com/labstack/echo/v4"
+	"github.com/minio/minio-go/v7"
+)
+
+// inlineSafeContentTypes — типы, которые безопасно отдавать браузеру inline
+// (растровые картинки, не исполняющие скрипты). Всё остальное (в т.ч. text/html
+// и image/svg+xml, способный нести JS) отдаётся как attachment, чтобы загруженный
+// файл нельзя было использовать для stored-XSS в origin приложения.
+var inlineSafeContentTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/jpg":  true,
+	"image/gif":  true,
+	"image/webp": true,
+	"image/bmp":  true,
+	// PDF рендерится в песочнице-вьюере браузера (не как HTML в origin) —
+	// inline-превью допустимо. text/html и image/svg+xml сюда НЕ добавлять.
+	"application/pdf": true,
+	// text/plain браузер всегда рендерит как обычный текст, без парсинга
+	// разметки и исполнения скриптов — safe для inline вне зависимости
+	// от содержимого файла.
+	"text/plain": true,
+}
+
+const (
+	selectFileWithPermissionCheck = `
+SELECT
+    f.id,
+    f.content_type,
+    f.name,
+    (f.workspace_id IS NULL OR wm.role IS NOT NULL)
+    AND (
+        (f.comment_id IS NULL AND f.issue_id IS NULL AND f.doc_comment_id IS NULL)
+        OR pm.role IS NOT NULL
+    )
+    AND (
+        f.doc_id IS NULL
+        OR wm.role >= d.reader_role
+        OR dar.id IS NOT NULL
+    ) AS allowed
+FROM file_assets f
+LEFT JOIN workspace_members wm
+    ON wm.workspace_id = f.workspace_id
+    AND wm.member_id = ?
+LEFT JOIN project_members pm
+    ON pm.workspace_id = f.workspace_id
+    AND pm.member_id = ?
+    AND (
+        pm.project_id IN (SELECT project_id FROM issues WHERE id = f.issue_id)
+        OR pm.project_id IN (SELECT project_id FROM issue_comments WHERE id = f.comment_id)
+        OR pm.project_id IN (SELECT project_id FROM doc_comments WHERE id = f.doc_comment_id)
+    )
+LEFT JOIN docs d
+    ON d.id = f.doc_id
+LEFT JOIN doc_access_rules dar
+    ON dar.doc_id = f.doc_id
+    AND dar.member_id = ?
+`
+)
+
+// assetsHandler godoc
+// @id assetsHandler
+// @Summary Получение файла
+// @Description Эндпоинт для получения файла из MinIO хранилища. Проверяет права доступа пользователя к файлу и возвращает файл по его имени или идентификатору
+// @Tags Integrations
+// @Security ApiKeyAuth
+// @Accept */*
+// @Produce */*
+// @Param fileName path string true "Имя файла или ID файла"
+// @Success 200 "Успешный ответ с содержимым файла"
+// @Failure 404 {object} apierrors.DefinedError "Файл не найден"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/file/{fileName} [get]
+func (s *Services) assetsHandler(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+	name := c.Param("fileName")
+
+	query := selectFileWithPermissionCheck
+	if _, err := uuid.FromString(name); err == nil {
+		query += " WHERE f.id = ?"
+	} else {
+		query += " WHERE f.name = ?"
+	}
+
+	var asset struct {
+		dao.FileAsset
+		Allowed bool
+	}
+	if err := s.DB(c).Raw(query, user.ID, user.ID, user.ID, name).Find(&asset).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if asset.Id.IsNil() {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	stats, err := s.storage.GetFileInfo(asset.Id)
+	if err != nil {
+		errResponse := minio.ToErrorResponse(err)
+		if errResponse.Code == "NoSuchKey" || errors.Is(err, os.ErrNotExist) {
+			return c.NoContent(http.StatusNotFound)
+		}
+		return EError(c, err)
+	}
+
+	// Запрещаем браузеру угадывать тип контента по содержимому вместо
+	// заявленного Content-Type — иначе список inlineSafeContentTypes можно
+	// обойти MIME-sniffing'ом в старых браузерах.
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+
+	r, err := s.storage.LoadReader(asset.Id)
+	if err != nil {
+		return EError(c, err)
+	}
+	defer r.Close()
+
+	if asset.ContentType == "" {
+		slog.Warn("Asset with empty content-type", "assetId", asset.Id)
+		info, err := s.storage.GetFileInfo(asset.Id)
+		if err != nil {
+			slog.Error("Get asset file info", "assetId", asset.Id)
+		} else {
+			asset.ContentType = utils.ResolveContentType(asset.Name, info.ContentType)
+			if err := s.db.Model(&asset).UpdateColumn("content_type", asset.ContentType).Error; err != nil {
+				slog.Error("Update asset file info", "assetId", asset.Id, "err", err)
+			}
+		}
+	}
+
+	// Небезопасные для inline типы (text/html, svg и пр.) форсим на скачивание,
+	// чтобы исключить stored-XSS через загруженный файл. Имя файла —
+	// пользовательский ввод, поэтому percent-кодируем (RFC 5987) во избежание
+	// инъекции в заголовок.
+	disposition := "attachment"
+	if inlineSafeContentTypes[asset.ContentType] {
+		disposition = "inline"
+	}
+	c.Response().Header().Set("Content-Disposition",
+		fmt.Sprintf("%s; filename*=UTF-8''%s", disposition, url.PathEscape(asset.Name)))
+
+	// ETag обязан быть в кавычках (RFC 7232) — без них ServeContent молча
+	// игнорирует If-None-Match/If-Range и условное кеширование отваливается.
+	if stats.ETag != "" {
+		c.Response().Header().Set("ETag", `"`+stats.ETag+`"`)
+	}
+	// Content-Type ставим до ServeContent: при выставленном заголовке он его
+	// уважает, при пустом — угадывает по расширению/содержимому. Угадывание
+	// безопасно только потому, что неизвестные типы уже ушли в attachment.
+	if asset.ContentType != "" {
+		c.Response().Header().Set("Content-Type", asset.ContentType)
+	}
+
+	// ServeContent разбирает Range/If-Range/If-None-Match/If-Modified-Since,
+	// отвечает 206/304, ставит Accept-Ranges и Content-Length. Seek по
+	// minio.Object транслируется в ranged GET к MinIO — перемотка медиа
+	// стоит один запрос куска, а не перекачку файла целиком.
+	http.ServeContent(c.Response(), c.Request(), asset.Name, stats.CreatedAt, r)
+	return nil
+}

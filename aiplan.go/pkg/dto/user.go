@@ -1,0 +1,160 @@
+// Содержит структуры данных (DTO) для представления пользователей, уведомлений, отзывов и фильтров поиска в приложении.
+// Используется для обмена данными между слоями приложения и обеспечения структурированного представления информации.
+//
+// Основные возможности:
+//   - Представление информации о пользователях (с возможностью хранения nullable полей).
+//   - Обработка уведомлений пользователей с детальной информацией.
+//   - Сбор и хранение отзывов пользователей.
+//   - Фильтрация данных для поиска по различным критериям.
+package dto
+
+import (
+	"crypto/md5"
+	"fmt"
+	"io"
+	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
+	"github.com/gofrs/uuid"
+)
+
+type UserLight struct {
+	ID            uuid.UUID      `json:"id"`
+	Username      *string        `json:"username,omitempty" extensions:"x-nullable"`
+	Email         string         `json:"email"`
+	FirstName     string         `json:"first_name"`
+	LastName      string         `json:"last_name"`
+	Avatar        string         `json:"avatar"`
+	AvatarId      uuid.NullUUID  `json:"avatar_id" extensions:"x-nullable" swaggertype:"string"`
+	UserTimezone  types.TimeZone `json:"user_timezone" swaggertype:"string"`
+	LastActive    *time.Time     `json:"last_active" extensions:"x-nullable"`
+	TelegramId    *int64         `json:"telegram_id,omitempty" extensions:"x-nullable"`
+	StatusEmoji   *string        `json:"status_emoji" extensions:"x-nullable"`
+	Status        *string        `json:"status" extensions:"x-nullable"`
+	StatusEndDate *time.Time     `json:"status_end_date" extensions:"x-nullable"`
+	CreatedAt     time.Time      `json:"created_at"`
+
+	IsSuperuser   bool       `json:"is_superuser"`
+	IsActive      bool       `json:"is_active"`
+	BlockedUntil  *time.Time `json:"blocked_until"`
+	IsOnboarded   bool       `json:"is_onboarded"`
+	IsBot         bool       `json:"is_bot"`
+	IsIntegration bool       `json:"is_integration"`
+}
+
+func (u *UserLight) GetName() string {
+	if u.FirstName != "" && u.LastName != "" {
+		return fmt.Sprintf("%s %s", u.FirstName, u.LastName)
+	}
+	return u.Email
+}
+
+func (u *UserLight) Hash() []byte {
+	h := md5.New()
+	io.WriteString(h, u.ID.String())
+	if u.Username != nil {
+		io.WriteString(h, *u.Username)
+	}
+	io.WriteString(h, u.Email)
+	io.WriteString(h, u.FirstName)
+	io.WriteString(h, u.LastName)
+	io.WriteString(h, u.Avatar)
+	io.WriteString(h, u.AvatarId.UUID.String())
+	if u.TelegramId != nil {
+		fmt.Fprintf(h, "%d", *u.TelegramId)
+	}
+	if u.StatusEmoji != nil && u.Status != nil {
+		io.WriteString(h, *u.StatusEmoji)
+		io.WriteString(h, *u.Status)
+	}
+	if u.StatusEndDate != nil {
+		io.WriteString(h, u.StatusEndDate.String())
+	}
+	io.WriteString(h, u.CreatedAt.String())
+	fmt.Fprintf(h, "%t", u.IsSuperuser)
+	fmt.Fprintf(h, "%t", u.IsActive)
+	if u.BlockedUntil != nil {
+		io.WriteString(h, u.BlockedUntil.String())
+	}
+	fmt.Fprintf(h, "%t", u.IsOnboarded)
+	fmt.Fprintf(h, "%t", u.IsBot)
+	fmt.Fprintf(h, "%t", u.IsIntegration)
+	return h.Sum(nil)
+}
+
+type User struct {
+	UserLight
+
+	Theme     types.Theme        `json:"theme"`
+	ViewProps types.ViewProps    `json:"view_props"`
+	Settings  types.UserSettings `json:"settings"`
+	Tutorial  int                `json:"tutorial"`
+
+	LastWorkspaceId   uuid.NullUUID `json:"last_workspace_id"  extensions:"x-nullable"`
+	LastWorkspaceSlug *string       `json:"last_workspace_slug"  extensions:"x-nullable"`
+	NotificationCount int           `json:"notification_count,omitempty"`
+	AttachmentsAllow  *bool         `json:"attachments_allow,omitempty"  extensions:"x-nullable"`
+}
+
+type UserNotificationsLight struct {
+	ID     uuid.UUID `json:"id"`
+	UserId uuid.UUID `json:"user_id"`
+	Type   string    `json:"type"`
+	Viewed bool      `json:"viewed"`
+
+	Title    string        `json:"title,omitempty"`
+	Msg      string        `json:"msg,omitempty"`
+	AuthorId uuid.NullUUID `json:"author_id"  extensions:"x-nullable" swaggertype:"string"`
+
+	EntityActivityId uuid.NullUUID `json:"entity_activity,omitempty"  extensions:"x-nullable"`
+	CommentId        uuid.NullUUID `json:"comment_id,omitempty"  extensions:"x-nullable"`
+	WorkspaceId      uuid.NullUUID `json:"workspace_id,omitempty"  extensions:"x-nullable"`
+	IssueId          uuid.NullUUID `json:"issue_id,omitempty"  extensions:"x-nullable" swaggertype:"string"`
+}
+
+type UserNotificationsFull struct {
+	UserNotificationsLight
+	User       *UserLight         `json:"user_detail,omitempty"  extensions:"x-nullable"`
+	Comment    *IssueCommentLight `json:"comment,omitempty"  extensions:"x-nullable"`
+	Workspace  *WorkspaceLight    `json:"workspace,omitempty"  extensions:"x-nullable"`
+	Issue      *IssueLight        `json:"issue,omitempty"  extensions:"x-nullable"`
+	Doc        *DocLight          `json:"doc,omitempty"  extensions:"x-nullable"`
+	Author     *UserLight         `json:"author,omitempty"  extensions:"x-nullable"`
+	TargetUser *UserLight         `json:"target_user,omitempty"  extensions:"x-nullable"`
+}
+
+type UserFeedback struct {
+	UserID uuid.UUID `json:"user_id"`
+
+	Stars    int    `json:"stars"`
+	Feedback string `json:"feedback"`
+
+	User UserLight `json:"user_detail"`
+}
+
+// searchFilter
+
+type SearchFilterLight struct {
+	ID          uuid.UUID               `json:"id"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description"`
+	Public      bool                    `json:"public"`
+	Filter      types.IssuesListFilters `json:"filter"`
+	Url         types.JsonURL           `json:"url,omitempty"`
+	ShortUrl    types.JsonURL           `json:"short_url,omitempty"`
+}
+
+type SearchFilterFull struct {
+	SearchFilterLight
+	AuthorID uuid.UUID  `json:"author_id"`
+	Author   *UserLight `json:"author_detail"  extensions:"x-nullable"`
+}
+
+type PasswordResponse struct {
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+}
+
+type NotificationIdResponse struct {
+	Count int `json:"count"`
+}

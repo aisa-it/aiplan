@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/gofrs/uuid"
 )
 
