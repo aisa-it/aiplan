@@ -11,13 +11,13 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dao"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/gormlogger"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/migration"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/utils"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/config"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/gormlogger"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/migration"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/server"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -25,11 +25,6 @@ import (
 )
 
 var version string = "DEV"
-
-var models = []any{&dao.ActivityEvent{}, &dao.ActivityTelegramMessage{}, &dao.CommentReaction{}, &dao.DeferredNotifications{}, &dao.Dictionary{}, &dao.DictionaryRow{}, &dao.Doc{}, &dao.DocAccessRules{}, &dao.DocAttachment{}, &dao.DocComment{}, &dao.DocCommentReaction{}, &dao.DocFavorites{}, &dao.Estimate{}, &dao.EstimatePoint{}, &dao.FileAsset{}, &dao.ForeignKey{}, &dao.Form{}, &dao.FormAnswer{}, &dao.FormAttachment{}, &dao.ImportedProject{}, &dao.Issue{}, &dao.IssueAssignee{}, &dao.IssueAttachment{}, &dao.IssueBlocker{}, &dao.IssueComment{}, &dao.IssueDescriptionLock{}, &dao.IssueLabel{}, &dao.IssueLink{}, &dao.IssueProperty{}, &dao.IssueTemplate{}, &dao.IssueWatcher{}, &dao.JitsiTokenLog{}, &dao.Label{}, &dao.LinkedIssues{}, &dao.NotifyService{}, &dao.Project{}, &dao.ProjectFavorites{}, &dao.ProjectMember{}, &dao.ProjectMemberWithLead{}, &dao.ProjectPropertyTemplate{}, &dao.ReleaseNote{}, &dao.RulesLog{}, &dao.SearchFilter{}, &dao.SessionsReset{}, &dao.Sprint{}, &dao.SprintFolder{}, &dao.SprintIssue{}, &dao.SprintViews{}, &dao.SprintWatcher{}, &dao.State{}, &dao.Team{}, &dao.TeamMembers{}, &dao.Template{}, &dao.User{}, &dao.UserAppNotify{}, &dao.UserFeedback{}, &dao.Workspace{}, &dao.WorkspaceBackup{}, &dao.WorkspaceFavorites{}, &dao.WorkspaceMember{}, &dao.WorkspaceMemberWithOwner{}}
-
-//go:embed triggers.sql
-var triggersSQL string
 
 // main - Основная функция приложения, отвечающая за запуск приложения, инициализацию базы данных, миграцию моделей, создание триггеров и запуск основного сервера приложения. Также содержит логику для работы с Atlas.
 // Функция принимает флаги командной строки для настройки поведения приложения.
@@ -48,7 +43,7 @@ func main() {
 	PrintBanner()
 
 	cfg := config.ReadConfig(*configPath)
-	dao.Config = cfg
+	dao.SetConfig(cfg)
 
 	if *trace {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
@@ -88,7 +83,7 @@ func main() {
 		slog.Info("Starting UUID migration in single transaction")
 
 		// Auto-generate UUID columns from DAO models
-		allColumns := utils.GetUUIDColumnsFromModels(models)
+		allColumns := utils.GetUUIDColumnsFromModels(dao.Models())
 		slog.Info("Auto-detected UUID columns from models", "count", len(allColumns))
 
 		// Add many2many fields migration
@@ -205,13 +200,13 @@ func main() {
 		err = dbForMigration.Transaction(func(tx *gorm.DB) error {
 			slog.Info("Migrate models without relations")
 			tx.DisableForeignKeyConstraintWhenMigrating = true
-			if err := tx.AutoMigrate(models...); err != nil {
+			if err := tx.AutoMigrate(dao.Models()...); err != nil {
 				return fmt.Errorf("failed to auto-migrate models without relations: %w", err)
 			}
 			tx.DisableForeignKeyConstraintWhenMigrating = false
 
 			slog.Info("Migrate models with relations")
-			if err := tx.AutoMigrate(models...); err != nil {
+			if err := tx.AutoMigrate(dao.Models()...); err != nil {
 				return fmt.Errorf("failed to auto-migrate models with relations: %w", err)
 			}
 			slog.Info("All models migrated successfully")
@@ -261,7 +256,7 @@ func main() {
 	sqlDB.SetConnMaxLifetime(time.Minute * 10)
 	sqlDB.SetConnMaxIdleTime(time.Minute * 5)
 
-	if err := CreateTriggers(db); err != nil {
+	if err := migration.CreateTriggers(db); err != nil {
 		slog.Error("Fail create DB triggers", "err", err)
 		os.Exit(1)
 	}
@@ -281,7 +276,21 @@ func main() {
 		dao.AddDefaultUser(db, cfg.DefaultUserEmail)
 	}
 
-	aiplan.Server(db, cfg, version)
+	srv, err := server.New(server.Options{
+		Config:       cfg,
+		DB:           db,
+		Version:      version,
+		RunMigration: true,
+	})
+	if err != nil {
+		slog.Error("Fail init server", "err", err)
+		os.Exit(1)
+	}
+
+	if err := srv.Run(context.Background()); err != nil {
+		slog.Error("Server fail", "err", err)
+		os.Exit(1)
+	}
 }
 
 // PrintBanner выводит заголовок приложения с версией и ссылкой на сайт. Использует переменные окружения и версию приложения для формирования текста заголовка. Не принимает параметров и не возвращает значений.
@@ -360,16 +369,4 @@ func AtlasMigration(cfg *config.Config) error {
 	}
 
 	return nil
-}
-
-// CreateTriggers Создает триггеры в базе данных на основе SQL-скрипта.
-//
-// Парамметры:
-//   - db: Указатель на объект базы данных GORM.
-//
-// Возвращает:
-//   - error: Ошибка, если возникли проблемы при выполнении SQL-скрипта.
-func CreateTriggers(db *gorm.DB) error {
-	slog.Info("Create DB triggers")
-	return db.Exec(triggersSQL).Error
 }

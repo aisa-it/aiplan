@@ -3,8 +3,8 @@ package limiter
 import (
 	"log/slog"
 
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/config"
-	"github.com/aisa-it/aiplan/aiplan.go/internal/aiplan/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/config"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/gofrs/uuid"
 )
 
@@ -30,6 +30,16 @@ func Init(cfg *config.Config) {
 		return
 	}
 	Limiter = NewExternalLimiter(cfg.ExternalLimiter.URL)
+}
+
+// SetLimiter подставляет собственную реализацию лимитов — для сборок,
+// которые считают лимиты по своим правилам и не используют внешний сервис.
+// Вызывать до старта сервера.
+func SetLimiter(l LimiterInt) {
+	if l == nil {
+		return
+	}
+	Limiter = l
 }
 
 type CommunityLimiter struct{}

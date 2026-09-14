@@ -33,7 +33,7 @@ func (m *Aiplan) GoBuildEnv(source *dagger.Directory, spa *dagger.Directory) *da
 	return dag.Container().
 		From(goVersion).
 		WithDirectory("/src", source.Directory("aiplan.go/")).
-		WithDirectory("/src/internal/aiplan/spa", spa).
+		WithDirectory("/src/pkg/server/spa", spa).
 		WithWorkdir("/src").
 		WithEnvVariable("GOOS", "linux").
 		WithMountedCache("/go/pkg/mod", goCache).

@@ -1,0 +1,124 @@
+// Пакет предоставляет middleware для проверки прав доступа к документам в AIPlan.
+//
+//	Проверяет, имеет ли пользователь права на чтение, редактирование или просмотр документа, основываясь на его роли и правах пользователя.
+//	Поддерживает различные сценарии доступа, включая права автора, суперпользователя, администратора и права на чтение/редактирование.
+//
+// Основные возможности:
+//   - Проверка прав доступа к документам.
+//   - Поддержка различных ролей пользователей.
+//   - Разграничение прав на чтение, редактирование и просмотр.
+//   - Обработка различных HTTP-методов (GET, OPTIONS, HEAD).
+package server
+
+import (
+	"net/http"
+	"strings"
+
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
+	"github.com/gofrs/uuid"
+	"github.com/labstack/echo/v4"
+)
+
+func (s *Services) DocPermissionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		has, err := s.hasDocPermissions(c)
+		if err != nil {
+			return EError(c, err)
+		}
+		if !has {
+			return EErrorDefined(c, apierrors.ErrDocForbidden)
+		}
+		return next(c)
+	}
+}
+
+func (s *Services) hasDocPermissions(c echo.Context) (bool, error) {
+	apiContext := apicontext.GetContext(c)
+	workspaceMember := apiContext.GetWorkspaceMember()
+	// WithDocAccessRules обязателен: персональные права (readers/editors/watchers)
+	// заполняются из doc.AccessRules в PopulateAccessFields, без Preload множества
+	// ниже всегда пустые и доступ считается только по ролевым порогам документа.
+	docPtr := apiContext.GetDoc(apicontext.WithDocAccessRules())
+	if apiContext.Error() != nil {
+		return false, apiContext.Error()
+	}
+	doc := *docPtr
+	user := apiContext.GetUser()
+
+	// Allow Author
+	if user.ID == doc.CreatedById {
+		return true, nil
+	}
+
+	if user.IsSuperuser {
+		return true, nil
+	}
+
+	// Allow workspace admin all
+	if workspaceMember.Role == types.AdminRole {
+		return true, nil
+	}
+
+	readerSet := utils.SliceToSet(doc.ReaderIDs)
+	editorSet := utils.SliceToSet(doc.EditorsIDs)
+	watcherSet := utils.SliceToSet(doc.WatcherIDs)
+
+	if onlyReadMethod(c) {
+		if hasReadAccess(user.ID, workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	if strings.Contains(c.Path(), "/comments/") {
+		if hasReadAccess(user.ID, workspaceMember.Role, &doc, readerSet, editorSet, watcherSet) {
+			return true, nil
+		}
+	}
+
+	if hasEditAccess(user.ID, workspaceMember.Role, &doc, editorSet) {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func onlyReadMethod(c echo.Context) bool {
+	switch c.Request().Method {
+	case http.MethodGet, http.MethodOptions, http.MethodHead:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasReadAccess(userID uuid.UUID, role int, doc *dao.Doc, readers, editors, watchers map[uuid.UUID]struct{}) bool {
+	if role >= doc.ReaderRole || role >= doc.EditorRole {
+		return true
+	}
+	userIDStr := userID
+	if _, ok := readers[userIDStr]; ok {
+		return true
+	}
+	if _, ok := editors[userIDStr]; ok {
+		return true
+	}
+	if _, ok := watchers[userIDStr]; ok {
+		return true
+	}
+	return false
+}
+
+func hasEditAccess(userID uuid.UUID, role int, doc *dao.Doc, editors map[uuid.UUID]struct{}) bool {
+	if role >= doc.EditorRole {
+		return true
+	}
+	if _, ok := editors[userID]; ok {
+		return true
+	}
+	return false
+}
