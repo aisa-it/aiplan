@@ -44,6 +44,13 @@ const (
 	ActionIssueSetProperty  Action = "issue.property.set"
 	ActionIssueSetParent    Action = "issue.parent.set"
 	ActionIssueSetSprint    Action = "issue.sprint.set"
+
+	// Связи, изменяемые вместе с задачей. Отличаются от
+	// issue.relation.manage: то — отдельные ручки управления связями,
+	// а это правка состава связей в теле запроса на изменение задачи.
+	ActionIssueSetBlockers  Action = "issue.blockers.set"
+	ActionIssueSetLinked    Action = "issue.linked.set"
+	ActionIssueSetSubIssues Action = "issue.subissues.set"
 )
 
 // Задача: вложенные сущности.

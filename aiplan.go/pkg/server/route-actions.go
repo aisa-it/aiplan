@@ -39,9 +39,28 @@ func (s *Services) route(
 	// Путь запоминается только чтобы проверить полноту разметки при старте;
 	// после проверки набор очищается и в памяти не остаётся.
 	if s.mappedRoutes == nil {
-		s.mappedRoutes = map[string]struct{}{}
+		s.mappedRoutes = map[string]engine.Action{}
 	}
-	s.mappedRoutes[r.Method+" "+r.Path] = struct{}{}
+	s.mappedRoutes[r.Method+" "+r.Path] = action
+}
+
+// issueRoute регистрирует роут задачи: действие плюс проверка прав.
+//
+// Проверка навешивается на роут, а не на группу, потому что она читает
+// действие из контекста запроса, а групповые middleware выполняются
+// раньше роутовых. Групповые guard'ы (пространство, проект, поиск задачи)
+// при этом по-прежнему отрабатывают до неё.
+//
+//nolint:unparam // mw пока не используется размеченными роутами
+func (s *Services) issueRoute(
+	g *echo.Group,
+	method, path string,
+	action engine.Action,
+	h echo.HandlerFunc,
+	mw ...echo.MiddlewareFunc,
+) {
+	all := append([]echo.MiddlewareFunc{s.IssuePermissionMiddleware}, mw...)
+	s.route(g, method, path, action, h, all...)
 }
 
 // withAction кладёт действие роута в контекст запроса.

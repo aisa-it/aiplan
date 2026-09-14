@@ -25,6 +25,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/migration"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications/email"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/tracer"
 
 	"github.com/labstack/echo/v4"
@@ -151,6 +152,15 @@ func New(opts Options) (*Server, error) {
 		return nil, err
 	}
 
+	// Движок ядра — запасной: к нему уходят решения, которых подключённый
+	// движок не принял, и все решения, если он правами не управляет.
+	fallback := defaultengine.New()
+	if err := fallback.Init(context.Background(), core); err != nil {
+		return nil, err
+	}
+	primary, _ := eng.(engine.Authorizer)
+	enforcer := policy.New(primary, fallback)
+
 	cache.InitUsersCache(db)
 	cache.InitWorkspaceSummaryCache(db)
 	cache.InitWorkspaceMembersCache()
@@ -191,6 +201,7 @@ func New(opts Options) (*Server, error) {
 		AuthProvider:         ldapProvider,
 		NotificationsService: ns,
 		Business:             bl,
+		Policy:               enforcer,
 	})
 	if err != nil {
 		return nil, err
