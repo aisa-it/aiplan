@@ -140,119 +140,27 @@ func (s *Services) hasProjectAdminPermissions(c echo.Context) (bool, error) {
 	return false, nil
 }
 
+// IssuePermissionMiddleware проверяет право на действие роута.
+//
+// Действие берётся из контекста, куда его кладёт регистрация роута,
+// поэтому middleware обязан быть роутовым: групповые выполняются раньше
+// и действия не увидят. Неразмеченный роут отклоняется — молча пропустить
+// запрос без проверки нельзя.
 func (s *Services) IssuePermissionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		has, err := s.hasIssuePermissions(c)
-		if err != nil {
-			return EError(c, err)
-		}
-		if !has {
+		action, ok := ActionOf(c)
+		if !ok {
 			return EErrorDefined(c, apierrors.ErrIssueForbidden)
+		}
+
+		apiContext := apicontext.GetContext(c)
+		if apiContext == nil {
+			return EError(c, errors.New("wrong context"))
+		}
+
+		if err := s.policy.Authorize(c.Request().Context(), action, apiContext); err != nil {
+			return EError(c, err)
 		}
 		return next(c)
 	}
-}
-
-func (s *Services) hasIssuePermissions(c echo.Context) (bool, error) {
-	apiContext := apicontext.GetContext(c)
-	if apiContext == nil {
-		return false, errors.New("wrong context")
-	}
-
-	// Lightweight checks without load
-	{
-		//Safe methods
-		switch c.Request().Method {
-		case
-			http.MethodGet,
-			http.MethodOptions,
-			http.MethodHead:
-			return true, nil
-		}
-	}
-
-	workspaceMember := apiContext.GetWorkspaceMember()
-	projectMember := apiContext.GetProjectMember()
-	issue := apiContext.GetIssue(apicontext.WithAssignees())
-	if apiContext.Error() != nil {
-		return false, apiContext.Error()
-	}
-	user := apiContext.GetUser()
-
-	if user.ID == issue.CreatedById {
-		return true, nil
-	}
-	// Allow workspace admin all
-	if workspaceMember.Role == types.AdminRole {
-		return true, nil
-	}
-
-	if strings.HasSuffix(c.Path(), "/issue-labels/") && c.Request().Method == http.MethodPost {
-		if issue.CreatedById == user.ID {
-			return true, nil
-		}
-		for _, assignee := range *issue.Assignees {
-			if assignee.ID == user.ID {
-				return true, nil
-			}
-		}
-		return false, nil
-	}
-
-	switch projectMember.Role {
-	case types.AdminRole:
-		return true, nil
-	case types.MemberRole:
-		// Allow all edits to issue
-		if c.Path() == "/api/auth/workspaces/:workspaceSlug/projects/:projectId/issues/:issueIdOrSeq/" {
-			return true, nil
-		}
-
-		// Allow all comments operations
-		if strings.Contains(c.Path(), "/comments/") {
-			return true, nil
-		}
-
-		if issue.CreatedById == user.ID {
-			// If issue author
-			return true, nil
-		}
-		if issue.IsAssignee(user.ID) {
-			return true, nil
-		}
-
-		return memberProjectSettingAllows(c, apiContext)
-	}
-
-	return false, nil
-}
-
-// memberProjectSettingAllows — настройки проекта, расширяющие права участника (не гостя)
-// на чужие задачи: прикрепление вложений (member_attachments_allowed) и редактирование
-// дополнительных параметров (member_properties_allowed). Проект грузится лениво только
-// здесь — остальным веткам hasIssuePermissions он не нужен.
-func memberProjectSettingAllows(c echo.Context, apiContext *apicontext.APIContext) (bool, error) {
-	if c.Request().Method != http.MethodPost {
-		return false, nil
-	}
-
-	switch {
-	// Участникам разрешено прикреплять вложения к любым задачам
-	case strings.HasSuffix(c.Path(), "/issue-attachments/"):
-		project := apiContext.GetProject()
-		if apiContext.Error() != nil {
-			return false, apiContext.Error()
-		}
-		return project.MemberAttachmentsAllowed, nil
-	// Участникам разрешено редактировать дополнительные параметры в любых задачах
-	// (роут issueGroup.POST("/properties/:templateId/", setIssueProperty))
-	case strings.HasSuffix(c.Path(), "/properties/:templateId/"):
-		project := apiContext.GetProject()
-		if apiContext.Error() != nil {
-			return false, apiContext.Error()
-		}
-		return project.MemberPropertiesAllowed, nil
-	}
-
-	return false, nil
 }

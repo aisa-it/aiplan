@@ -49,6 +49,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -71,70 +72,69 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 		s.ProjectMiddleware,
 		s.ProjectArchivedMiddleware,
 		s.FindIssueByIdOrSeqMiddleware,
-		s.IssuePermissionMiddleware,
 	)
 
 	s.route(g, http.MethodPost, "issues/search/", engine.ActionIssueSearch, s.getIssueList)
 	s.route(g, http.MethodPost, "issues/search/export/", engine.ActionIssueExport, s.exportIssueList)
 
-	s.route(issueGroup, http.MethodGet, "/", engine.ActionIssueView, s.getIssue)
-	s.route(issueGroup, http.MethodPatch, "/", engine.ActionIssueUpdate, s.updateIssue)
-	s.route(issueGroup, http.MethodDelete, "/", engine.ActionIssueDelete, s.deleteIssue)
+	s.issueRoute(issueGroup, http.MethodGet, "/", engine.ActionIssueView, s.getIssue)
+	s.issueRoute(issueGroup, http.MethodPatch, "/", engine.ActionIssueUpdate, s.updateIssue)
+	s.issueRoute(issueGroup, http.MethodDelete, "/", engine.ActionIssueDelete, s.deleteIssue)
 
-	s.route(issueGroup, http.MethodGet, "/available-states/", engine.ActionIssueView, s.getAvailableStates)
+	s.issueRoute(issueGroup, http.MethodGet, "/available-states/", engine.ActionIssueView, s.getAvailableStates)
 
-	s.route(issueGroup, http.MethodGet, "/sub-issues/", engine.ActionIssueView, s.getSubIssueList)
-	s.route(issueGroup, http.MethodPost, "/sub-issues/", engine.ActionIssueRelationManage, s.addSubIssueList)
-	s.route(issueGroup, http.MethodPost, "/sub-issues/:subIssueId/up/", engine.ActionIssueRelationManage, s.moveSubIssueUp)
-	s.route(issueGroup, http.MethodPost, "/sub-issues/:subIssueId/down/", engine.ActionIssueRelationManage, s.moveSubIssueDown)
+	s.issueRoute(issueGroup, http.MethodGet, "/sub-issues/", engine.ActionIssueView, s.getSubIssueList)
+	s.issueRoute(issueGroup, http.MethodPost, "/sub-issues/", engine.ActionIssueRelationManage, s.addSubIssueList)
+	s.issueRoute(issueGroup, http.MethodPost, "/sub-issues/:subIssueId/up/", engine.ActionIssueRelationManage, s.moveSubIssueUp)
+	s.issueRoute(issueGroup, http.MethodPost, "/sub-issues/:subIssueId/down/", engine.ActionIssueRelationManage, s.moveSubIssueDown)
 
-	s.route(issueGroup, http.MethodGet, "/sub-issues/available/", engine.ActionIssueView, s.getAvailableSubIssueList)
-	s.route(issueGroup, http.MethodGet, "/parent-issues/available/", engine.ActionIssueView, s.getAvailableParentIssueList)
-	s.route(issueGroup, http.MethodGet, "/blocks-issues/available/", engine.ActionIssueView, s.getAvailableBlocksIssueList)
-	s.route(issueGroup, http.MethodGet, "/blockers-issues/available/", engine.ActionIssueView, s.getAvailableBlockersIssueList)
-	s.route(issueGroup, http.MethodGet, "/linked-issues/available/", engine.ActionIssueView, s.getAvailableLinkedIssueList)
+	s.issueRoute(issueGroup, http.MethodGet, "/sub-issues/available/", engine.ActionIssueView, s.getAvailableSubIssueList)
+	s.issueRoute(issueGroup, http.MethodGet, "/parent-issues/available/", engine.ActionIssueView, s.getAvailableParentIssueList)
+	s.issueRoute(issueGroup, http.MethodGet, "/blocks-issues/available/", engine.ActionIssueView, s.getAvailableBlocksIssueList)
+	s.issueRoute(issueGroup, http.MethodGet, "/blockers-issues/available/", engine.ActionIssueView, s.getAvailableBlockersIssueList)
+	s.issueRoute(issueGroup, http.MethodGet, "/linked-issues/available/", engine.ActionIssueView, s.getAvailableLinkedIssueList)
 
-	s.route(issueGroup, http.MethodGet, "/issue-links/", engine.ActionIssueView, s.getIssueLinkList)
-	s.route(issueGroup, http.MethodPost, "/issue-links/", engine.ActionIssueLinkManage, s.createIssueLink)
-	s.route(issueGroup, http.MethodPatch, "/issue-links/:linkId/", engine.ActionIssueLinkManage, s.updateIssueLink)
-	s.route(issueGroup, http.MethodDelete, "/issue-links/:linkId/", engine.ActionIssueLinkManage, s.deleteIssueLink)
+	s.issueRoute(issueGroup, http.MethodGet, "/issue-links/", engine.ActionIssueView, s.getIssueLinkList)
+	s.issueRoute(issueGroup, http.MethodPost, "/issue-links/", engine.ActionIssueLinkManage, s.createIssueLink)
+	s.issueRoute(issueGroup, http.MethodPatch, "/issue-links/:linkId/", engine.ActionIssueLinkManage, s.updateIssueLink)
+	s.issueRoute(issueGroup, http.MethodDelete, "/issue-links/:linkId/", engine.ActionIssueLinkManage, s.deleteIssueLink)
 
-	s.route(issueGroup, http.MethodGet, "/history/", engine.ActionIssueViewActivity, s.getIssueHistoryList)
+	s.issueRoute(issueGroup, http.MethodGet, "/history/", engine.ActionIssueViewActivity, s.getIssueHistoryList)
 
-	s.route(issueGroup, http.MethodGet, "/comments/", engine.ActionIssueCommentView, s.getIssueCommentList)
-	s.route(issueGroup, http.MethodPost, "/comments/", engine.ActionIssueCommentCreate, s.createIssueComment)
-	s.route(issueGroup, http.MethodGet, "/comments/:commentId/", engine.ActionIssueCommentView, s.getIssueComment)
-	s.route(issueGroup, http.MethodGet, "/comments/:commentId/history/", engine.ActionIssueCommentView, s.getIssueCommentUpdateList)
-	s.route(issueGroup, http.MethodPatch, "/comments/:commentId/", engine.ActionIssueCommentUpdate, s.updateIssueComment)
-	s.route(issueGroup, http.MethodDelete, "/comments/:commentId/", engine.ActionIssueCommentDelete, s.deleteIssueComment)
+	s.issueRoute(issueGroup, http.MethodGet, "/comments/", engine.ActionIssueCommentView, s.getIssueCommentList)
+	s.issueRoute(issueGroup, http.MethodPost, "/comments/", engine.ActionIssueCommentCreate, s.createIssueComment)
+	s.issueRoute(issueGroup, http.MethodGet, "/comments/:commentId/", engine.ActionIssueCommentView, s.getIssueComment)
+	s.issueRoute(issueGroup, http.MethodGet, "/comments/:commentId/history/", engine.ActionIssueCommentView, s.getIssueCommentUpdateList)
+	s.issueRoute(issueGroup, http.MethodPatch, "/comments/:commentId/", engine.ActionIssueCommentUpdate, s.updateIssueComment)
+	s.issueRoute(issueGroup, http.MethodDelete, "/comments/:commentId/", engine.ActionIssueCommentDelete, s.deleteIssueComment)
 
-	s.route(issueGroup, http.MethodPost, "/comments/:commentId/reactions/", engine.ActionIssueCommentReact, s.addCommentReaction)
-	s.route(issueGroup, http.MethodDelete, "/comments/:commentId/reactions/:reaction", engine.ActionIssueCommentReact, s.removeCommentReaction)
+	s.issueRoute(issueGroup, http.MethodPost, "/comments/:commentId/reactions/", engine.ActionIssueCommentReact, s.addCommentReaction)
+	s.issueRoute(issueGroup, http.MethodDelete, "/comments/:commentId/reactions/:reaction", engine.ActionIssueCommentReact, s.removeCommentReaction)
 
-	s.route(issueGroup, http.MethodGet, "/activities/", engine.ActionIssueViewActivity, s.getIssueActivityList)
+	s.issueRoute(issueGroup, http.MethodGet, "/activities/", engine.ActionIssueViewActivity, s.getIssueActivityList)
 
-	s.route(issueGroup, http.MethodGet, "/issue-attachments/", engine.ActionIssueAttachmentView, s.getIssueAttachmentList)
-	s.route(issueGroup, http.MethodPost, "/issue-attachments/", engine.ActionIssueAttachmentAdd, s.createIssueAttachments)
-	s.route(issueGroup, http.MethodGet, "/issue-attachments/all/", engine.ActionIssueExport, s.downloadIssueAttachments)
-	s.route(issueGroup, http.MethodDelete, "/issue-attachments/:attachmentId/", engine.ActionIssueAttachmentDelete, s.deleteIssueAttachment)
+	s.issueRoute(issueGroup, http.MethodGet, "/issue-attachments/", engine.ActionIssueAttachmentView, s.getIssueAttachmentList)
+	s.issueRoute(issueGroup, http.MethodPost, "/issue-attachments/", engine.ActionIssueAttachmentAdd, s.createIssueAttachments)
+	s.issueRoute(issueGroup, http.MethodGet, "/issue-attachments/all/", engine.ActionIssueExport, s.downloadIssueAttachments)
+	s.issueRoute(issueGroup, http.MethodDelete, "/issue-attachments/:attachmentId/", engine.ActionIssueAttachmentDelete, s.deleteIssueAttachment)
 
-	s.route(issueGroup, http.MethodGet, "/linked-issues/", engine.ActionIssueView, s.getIssueLinkedIssueList)
-	s.route(issueGroup, http.MethodPost, "/linked-issues/", engine.ActionIssueRelationManage, s.addIssueLinkedIssueList)
+	s.issueRoute(issueGroup, http.MethodGet, "/linked-issues/", engine.ActionIssueView, s.getIssueLinkedIssueList)
+	s.issueRoute(issueGroup, http.MethodPost, "/linked-issues/", engine.ActionIssueRelationManage, s.addIssueLinkedIssueList)
 
-	s.route(issueGroup, http.MethodGet, "/pdf/", engine.ActionIssueExport, s.getIssuePdf)
+	s.issueRoute(issueGroup, http.MethodGet, "/pdf/", engine.ActionIssueExport, s.getIssuePdf)
 
-	s.route(issueGroup, http.MethodPost, "/description-lock/", engine.ActionIssueDescriptionLock, s.issueDescriptionLock)
-	s.route(issueGroup, http.MethodPost, "/description-unlock/", engine.ActionIssueDescriptionLock, s.issueDescriptionUnlock)
+	s.issueRoute(issueGroup, http.MethodPost, "/description-lock/", engine.ActionIssueDescriptionLock, s.issueDescriptionLock)
+	s.issueRoute(issueGroup, http.MethodPost, "/description-unlock/", engine.ActionIssueDescriptionLock, s.issueDescriptionUnlock)
 
-	s.route(issueGroup, http.MethodPost, "/pin/", engine.ActionIssuePin, s.issuePin)
-	s.route(issueGroup, http.MethodPost, "/unpin/", engine.ActionIssuePin, s.issueUnpin)
+	s.issueRoute(issueGroup, http.MethodPost, "/pin/", engine.ActionIssuePin, s.issuePin)
+	s.issueRoute(issueGroup, http.MethodPost, "/unpin/", engine.ActionIssuePin, s.issueUnpin)
 
 	g.Any("attachments/tus/*", s.storage.GetTUSHandler(cfg, "/api/auth/attachments/tus/", s.attachmentsUploadValidator, s.attachmentsPostUploadHook))
 
 	// Issue Properties (значения полей задачи)
-	s.route(issueGroup, http.MethodGet, "/properties/", engine.ActionIssueView, s.getIssueProperties)
-	s.route(issueGroup, http.MethodPost, "/properties/:templateId/", engine.ActionIssueSetProperty, s.setIssueProperty)
-	s.route(issueGroup, http.MethodGet, "/properties/:templateId/available-values/", engine.ActionIssueView, s.getAvailablePropertyValues)
+	s.issueRoute(issueGroup, http.MethodGet, "/properties/", engine.ActionIssueView, s.getIssueProperties)
+	s.issueRoute(issueGroup, http.MethodPost, "/properties/:templateId/", engine.ActionIssueSetProperty, s.setIssueProperty)
+	s.issueRoute(issueGroup, http.MethodGet, "/properties/:templateId/available-values/", engine.ActionIssueView, s.getAvailablePropertyValues)
 }
 
 func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error) {
@@ -644,6 +644,17 @@ func (s *Services) updateIssue(c echo.Context) error {
 		if !limiter.Limiter.CanAddAttachment(project.WorkspaceId) {
 			return EErrorDefined(c, apierrors.ErrAssetsLimitExceed)
 		}
+	}
+
+	// Права на отдельные поля. Действие роута разрешает правку задачи вообще,
+	// но смена статуса, исполнителей или связей — самостоятельные права:
+	// проверяются по составу тела запроса, до применения изменений.
+	if err := s.policy.AuthorizeAll(
+		c.Request().Context(),
+		actionsForIssueFields(data),
+		apiCtx,
+	); err != nil {
+		return EError(c, err)
 	}
 
 	if val, ok := data["description_html"]; ok {
@@ -1214,16 +1225,20 @@ func (s *Services) updateIssue(c echo.Context) error {
 func (s *Services) deleteIssue(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	project := apiContext.GetProject()
-	projectMember := apiContext.GetProjectMember()
 	issue := apiContext.GetIssue(apicontext.WithAll())
 	if apiContext.Error() != nil || issue == nil {
 		return EError(c, apiContext.Error())
 	}
 	user := apiContext.GetUser()
-	//currentInst := StructToJSONMap(issue)
-	isAdmin := projectMember.Role == types.AdminRole
 
-	if !isAdmin && (issue.CreatedById != user.ID || !project.IssueDeletionAllowed) {
+	// Право на удаление зависит от самой задачи и настроек проекта,
+	// поэтому проверяется с объектом действия.
+	if err := s.policy.Authorize(
+		c.Request().Context(),
+		engine.ActionIssueDelete,
+		apiContext,
+		policy.On(issue),
+	); err != nil {
 		return EErrorDefined(c, apierrors.ErrDeleteIssueForbidden)
 	}
 	oldSnapshot := tracker.IssueToSnapshot(*issue)
@@ -2691,7 +2706,14 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
+	// Править комментарий может только его автор — это правило зависит
+	// от самого комментария, поэтому проверяется с объектом действия.
+	if err := s.policy.Authorize(
+		c.Request().Context(),
+		engine.ActionIssueCommentUpdate,
+		apiCtx,
+		policy.On(&commentOld),
+	); err != nil {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 	oldSnapshot = tracker.CommentToSnapshot(&commentOld)
@@ -2855,7 +2877,6 @@ func (s *Services) updateIssueComment(c echo.Context) error {
 func (s *Services) deleteIssueComment(c echo.Context) error {
 	apiCtx := apicontext.GetContext(c)
 	project := apiCtx.GetProject()
-	projectMember := apiCtx.GetProjectMember()
 	issue := apiCtx.GetIssue()
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
@@ -2875,7 +2896,12 @@ func (s *Services) deleteIssueComment(c echo.Context) error {
 
 	oldSnapshot := tracker.CommentToSnapshot(&comment)
 
-	if projectMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
+	if err := s.policy.Authorize(
+		c.Request().Context(),
+		engine.ActionIssueCommentDelete,
+		apiCtx,
+		policy.On(&comment),
+	); err != nil {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 

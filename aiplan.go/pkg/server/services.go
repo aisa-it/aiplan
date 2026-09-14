@@ -8,12 +8,14 @@ import (
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/pkg/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/config"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/integrations"
 	issues_import "github.com/aisa-it/aiplan/aiplan.go/pkg/issues-import"
 	jitsi_token "github.com/aisa-it/aiplan/aiplan.go/pkg/jitsi-token"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications/email"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/pkg/tokens-cache"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
@@ -42,9 +44,12 @@ type Services struct {
 	cfg     *config.Config
 	version string
 
-	// mappedRoutes — размеченные роуты; заполняется при регистрации и
-	// очищается после стартовой проверки.
-	mappedRoutes map[string]struct{}
+	// mappedRoutes — размеченные роуты и их действия; заполняется при
+	// регистрации и очищается после стартовой проверки.
+	mappedRoutes map[string]engine.Action
+
+	// policy — применитель правил подключённого движка.
+	policy *policy.Enforcer
 }
 
 // Deps — внешние зависимости для сборки Services.
@@ -65,6 +70,9 @@ type Deps struct {
 	NotificationsService *notifications.Notification
 	Business             *business.Business
 	TokensCache          *tokenscache.TokensCache
+
+	// Policy — применитель правил движка. Обязателен.
+	Policy *policy.Enforcer
 }
 
 // NewServices собирает набор зависимостей HTTP-слоя.
@@ -74,6 +82,9 @@ func NewServices(d Deps) (*Services, error) {
 	}
 	if d.Config == nil {
 		return nil, fmt.Errorf("services: Config is required")
+	}
+	if d.Policy == nil {
+		return nil, fmt.Errorf("services: Policy is required")
 	}
 	if d.TokensCache == nil {
 		d.TokensCache = tokenscache.NewTokensCache()
@@ -85,6 +96,7 @@ func NewServices(d Deps) (*Services, error) {
 	appVersion = d.Version
 
 	return &Services{
+		policy:               d.Policy,
 		db:                   d.DB,
 		snapshotTracker:      d.SnapshotTracker,
 		storage:              d.Storage,

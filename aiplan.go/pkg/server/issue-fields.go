@@ -33,11 +33,13 @@ var issueFieldActions = map[string]engine.Action{
 	"parent_id":            engine.ActionIssueSetParent, // второе написание родителя
 	actField.Sprint.Req:    engine.ActionIssueSetSprint,
 
-	// Связи между задачами: блокировки в обе стороны, связанные и подзадачи.
-	actField.Blocks.Req:   engine.ActionIssueRelationManage,
-	actField.Blocking.Req: engine.ActionIssueRelationManage,
-	actField.Linked.Req:   engine.ActionIssueRelationManage,
-	actField.Issues.Req:   engine.ActionIssueRelationManage,
+	// Связи между задачами. Права отличаются от отдельных ручек управления
+	// связями: через изменение задачи участник правит связи любой задачи,
+	// через ручки — только своих и назначенных.
+	actField.Blocks.Req:   engine.ActionIssueSetBlockers,
+	actField.Blocking.Req: engine.ActionIssueSetBlockers,
+	actField.Linked.Req:   engine.ActionIssueSetLinked,
+	actField.Issues.Req:   engine.ActionIssueSetSubIssues,
 }
 
 // actionsForIssueFields возвращает права, которых требует изменение

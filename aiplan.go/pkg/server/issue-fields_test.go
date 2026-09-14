@@ -34,7 +34,7 @@ func TestActionsForIssueFields(t *testing.T) {
 		{
 			name: "блокировки в обе стороны — одно право",
 			data: map[string]any{"blockers_list": nil, "blocks_list": nil},
-			want: []engine.Action{engine.ActionIssueRelationManage},
+			want: []engine.Action{engine.ActionIssueSetBlockers},
 		},
 		{
 			name: "смешанный запрос: каждое поле приносит своё право",
