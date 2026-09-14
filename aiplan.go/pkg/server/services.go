@@ -41,6 +41,10 @@ type Services struct {
 
 	cfg     *config.Config
 	version string
+
+	// mappedRoutes — размеченные роуты; заполняется при регистрации и
+	// очищается после стартовой проверки.
+	mappedRoutes map[string]struct{}
 }
 
 // Deps — внешние зависимости для сборки Services.

@@ -219,6 +219,12 @@ func New(opts Options) (*Server, error) {
 	srv.setupMiddlewares()
 	srv.registerRoutes()
 
+	// Разметка роутов проверяется до старта: неразмеченный роут иначе
+	// молча получит отказ в доступе уже на проде.
+	if err := services.checkRouteActions(e); err != nil {
+		return nil, err
+	}
+
 	return srv, nil
 }
 
