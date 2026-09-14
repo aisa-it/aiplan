@@ -27,6 +27,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -61,8 +62,8 @@ type ErrClause struct {
 }
 
 func (s *Services) AddIssueMigrationServices(g *echo.Group) {
-	g.POST("workspaces/:workspaceSlug/issues/migrate/", s.migrateIssues)
-	g.POST("workspaces/:workspaceSlug/issues/migrate/byLabel/", s.migrateIssuesByLabel)
+	s.route(g, http.MethodPost, "workspaces/:workspaceSlug/issues/migrate/", engine.ActionIssueMigrate, s.migrateIssues)
+	s.route(g, http.MethodPost, "workspaces/:workspaceSlug/issues/migrate/byLabel/", engine.ActionIssueMigrate, s.migrateIssuesByLabel)
 }
 
 // migrateIssues godoc

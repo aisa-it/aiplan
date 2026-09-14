@@ -47,6 +47,7 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/pkg/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/gofrs/uuid"
@@ -73,67 +74,67 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 		s.IssuePermissionMiddleware,
 	)
 
-	g.POST("issues/search/", s.getIssueList)
-	g.POST("issues/search/export/", s.exportIssueList)
+	s.route(g, http.MethodPost, "issues/search/", engine.ActionIssueSearch, s.getIssueList)
+	s.route(g, http.MethodPost, "issues/search/export/", engine.ActionIssueExport, s.exportIssueList)
 
-	issueGroup.GET("/", s.getIssue)
-	issueGroup.PATCH("/", s.updateIssue)
-	issueGroup.DELETE("/", s.deleteIssue)
+	s.route(issueGroup, http.MethodGet, "/", engine.ActionIssueView, s.getIssue)
+	s.route(issueGroup, http.MethodPatch, "/", engine.ActionIssueUpdate, s.updateIssue)
+	s.route(issueGroup, http.MethodDelete, "/", engine.ActionIssueDelete, s.deleteIssue)
 
-	issueGroup.GET("/available-states/", s.getAvailableStates)
+	s.route(issueGroup, http.MethodGet, "/available-states/", engine.ActionIssueView, s.getAvailableStates)
 
-	issueGroup.GET("/sub-issues/", s.getSubIssueList)
-	issueGroup.POST("/sub-issues/", s.addSubIssueList)
-	issueGroup.POST("/sub-issues/:subIssueId/up/", s.moveSubIssueUp)
-	issueGroup.POST("/sub-issues/:subIssueId/down/", s.moveSubIssueDown)
+	s.route(issueGroup, http.MethodGet, "/sub-issues/", engine.ActionIssueView, s.getSubIssueList)
+	s.route(issueGroup, http.MethodPost, "/sub-issues/", engine.ActionIssueRelationManage, s.addSubIssueList)
+	s.route(issueGroup, http.MethodPost, "/sub-issues/:subIssueId/up/", engine.ActionIssueRelationManage, s.moveSubIssueUp)
+	s.route(issueGroup, http.MethodPost, "/sub-issues/:subIssueId/down/", engine.ActionIssueRelationManage, s.moveSubIssueDown)
 
-	issueGroup.GET("/sub-issues/available/", s.getAvailableSubIssueList)
-	issueGroup.GET("/parent-issues/available/", s.getAvailableParentIssueList)
-	issueGroup.GET("/blocks-issues/available/", s.getAvailableBlocksIssueList)
-	issueGroup.GET("/blockers-issues/available/", s.getAvailableBlockersIssueList)
-	issueGroup.GET("/linked-issues/available/", s.getAvailableLinkedIssueList)
+	s.route(issueGroup, http.MethodGet, "/sub-issues/available/", engine.ActionIssueView, s.getAvailableSubIssueList)
+	s.route(issueGroup, http.MethodGet, "/parent-issues/available/", engine.ActionIssueView, s.getAvailableParentIssueList)
+	s.route(issueGroup, http.MethodGet, "/blocks-issues/available/", engine.ActionIssueView, s.getAvailableBlocksIssueList)
+	s.route(issueGroup, http.MethodGet, "/blockers-issues/available/", engine.ActionIssueView, s.getAvailableBlockersIssueList)
+	s.route(issueGroup, http.MethodGet, "/linked-issues/available/", engine.ActionIssueView, s.getAvailableLinkedIssueList)
 
-	issueGroup.GET("/issue-links/", s.getIssueLinkList)
-	issueGroup.POST("/issue-links/", s.createIssueLink)
-	issueGroup.PATCH("/issue-links/:linkId/", s.updateIssueLink)
-	issueGroup.DELETE("/issue-links/:linkId/", s.deleteIssueLink)
+	s.route(issueGroup, http.MethodGet, "/issue-links/", engine.ActionIssueView, s.getIssueLinkList)
+	s.route(issueGroup, http.MethodPost, "/issue-links/", engine.ActionIssueLinkManage, s.createIssueLink)
+	s.route(issueGroup, http.MethodPatch, "/issue-links/:linkId/", engine.ActionIssueLinkManage, s.updateIssueLink)
+	s.route(issueGroup, http.MethodDelete, "/issue-links/:linkId/", engine.ActionIssueLinkManage, s.deleteIssueLink)
 
-	issueGroup.GET("/history/", s.getIssueHistoryList)
+	s.route(issueGroup, http.MethodGet, "/history/", engine.ActionIssueViewActivity, s.getIssueHistoryList)
 
-	issueGroup.GET("/comments/", s.getIssueCommentList)
-	issueGroup.POST("/comments/", s.createIssueComment)
-	issueGroup.GET("/comments/:commentId/", s.getIssueComment)
-	issueGroup.GET("/comments/:commentId/history/", s.getIssueCommentUpdateList)
-	issueGroup.PATCH("/comments/:commentId/", s.updateIssueComment)
-	issueGroup.DELETE("/comments/:commentId/", s.deleteIssueComment)
+	s.route(issueGroup, http.MethodGet, "/comments/", engine.ActionIssueCommentView, s.getIssueCommentList)
+	s.route(issueGroup, http.MethodPost, "/comments/", engine.ActionIssueCommentCreate, s.createIssueComment)
+	s.route(issueGroup, http.MethodGet, "/comments/:commentId/", engine.ActionIssueCommentView, s.getIssueComment)
+	s.route(issueGroup, http.MethodGet, "/comments/:commentId/history/", engine.ActionIssueCommentView, s.getIssueCommentUpdateList)
+	s.route(issueGroup, http.MethodPatch, "/comments/:commentId/", engine.ActionIssueCommentUpdate, s.updateIssueComment)
+	s.route(issueGroup, http.MethodDelete, "/comments/:commentId/", engine.ActionIssueCommentDelete, s.deleteIssueComment)
 
-	issueGroup.POST("/comments/:commentId/reactions/", s.addCommentReaction)
-	issueGroup.DELETE("/comments/:commentId/reactions/:reaction", s.removeCommentReaction)
+	s.route(issueGroup, http.MethodPost, "/comments/:commentId/reactions/", engine.ActionIssueCommentReact, s.addCommentReaction)
+	s.route(issueGroup, http.MethodDelete, "/comments/:commentId/reactions/:reaction", engine.ActionIssueCommentReact, s.removeCommentReaction)
 
-	issueGroup.GET("/activities/", s.getIssueActivityList)
+	s.route(issueGroup, http.MethodGet, "/activities/", engine.ActionIssueViewActivity, s.getIssueActivityList)
 
-	issueGroup.GET("/issue-attachments/", s.getIssueAttachmentList)
-	issueGroup.POST("/issue-attachments/", s.createIssueAttachments)
-	issueGroup.GET("/issue-attachments/all/", s.downloadIssueAttachments)
-	issueGroup.DELETE("/issue-attachments/:attachmentId/", s.deleteIssueAttachment)
+	s.route(issueGroup, http.MethodGet, "/issue-attachments/", engine.ActionIssueAttachmentView, s.getIssueAttachmentList)
+	s.route(issueGroup, http.MethodPost, "/issue-attachments/", engine.ActionIssueAttachmentAdd, s.createIssueAttachments)
+	s.route(issueGroup, http.MethodGet, "/issue-attachments/all/", engine.ActionIssueExport, s.downloadIssueAttachments)
+	s.route(issueGroup, http.MethodDelete, "/issue-attachments/:attachmentId/", engine.ActionIssueAttachmentDelete, s.deleteIssueAttachment)
 
-	issueGroup.GET("/linked-issues/", s.getIssueLinkedIssueList)
-	issueGroup.POST("/linked-issues/", s.addIssueLinkedIssueList)
+	s.route(issueGroup, http.MethodGet, "/linked-issues/", engine.ActionIssueView, s.getIssueLinkedIssueList)
+	s.route(issueGroup, http.MethodPost, "/linked-issues/", engine.ActionIssueRelationManage, s.addIssueLinkedIssueList)
 
-	issueGroup.GET("/pdf/", s.getIssuePdf)
+	s.route(issueGroup, http.MethodGet, "/pdf/", engine.ActionIssueExport, s.getIssuePdf)
 
-	issueGroup.POST("/description-lock/", s.issueDescriptionLock)
-	issueGroup.POST("/description-unlock/", s.issueDescriptionUnlock)
+	s.route(issueGroup, http.MethodPost, "/description-lock/", engine.ActionIssueDescriptionLock, s.issueDescriptionLock)
+	s.route(issueGroup, http.MethodPost, "/description-unlock/", engine.ActionIssueDescriptionLock, s.issueDescriptionUnlock)
 
-	issueGroup.POST("/pin/", s.issuePin)
-	issueGroup.POST("/unpin/", s.issueUnpin)
+	s.route(issueGroup, http.MethodPost, "/pin/", engine.ActionIssuePin, s.issuePin)
+	s.route(issueGroup, http.MethodPost, "/unpin/", engine.ActionIssuePin, s.issueUnpin)
 
 	g.Any("attachments/tus/*", s.storage.GetTUSHandler(cfg, "/api/auth/attachments/tus/", s.attachmentsUploadValidator, s.attachmentsPostUploadHook))
 
 	// Issue Properties (значения полей задачи)
-	issueGroup.GET("/properties/", s.getIssueProperties)
-	issueGroup.POST("/properties/:templateId/", s.setIssueProperty)
-	issueGroup.GET("/properties/:templateId/available-values/", s.getAvailablePropertyValues)
+	s.route(issueGroup, http.MethodGet, "/properties/", engine.ActionIssueView, s.getIssueProperties)
+	s.route(issueGroup, http.MethodPost, "/properties/:templateId/", engine.ActionIssueSetProperty, s.setIssueProperty)
+	s.route(issueGroup, http.MethodGet, "/properties/:templateId/available-values/", engine.ActionIssueView, s.getAvailablePropertyValues)
 }
 
 func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error) {
