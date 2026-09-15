@@ -9,10 +9,13 @@ import (
 	"time"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/pkg/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine/defaultengine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
@@ -505,11 +508,21 @@ func getAvailableStates(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return errRes, nil
 	}
 
-	query := db.Where("project_id = ?", issue.ProjectId).Order("sequence")
-	if pm.Role != types.AdminRole {
-		query = query.Where(db.Where("array_length(from_states, 1) IS NULL").
-			Or("? = any(from_states)", issue.StateId))
-	}
+	// Список доступных статусов сужает тот же движок, что проверяет переход.
+	subject := apicontext.NewSubject(apicontext.Prefilled{
+		User:          user,
+		ProjectMember: pm,
+		Issue:         issue,
+	})
+	query := defaultengine.New().ScopeAvailableStates(
+		ctx,
+		engine.StateScopeRequest{
+			Subject:   subject,
+			ProjectID: issue.ProjectId,
+			Issue:     issue,
+		},
+		db.Where("project_id = ?", issue.ProjectId).Order("sequence"),
+	)
 
 	var states []dao.State
 	if err := query.Find(&states).Error; err != nil {

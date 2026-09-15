@@ -9,6 +9,7 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
+	"gorm.io/gorm"
 )
 
 // Enforcer применяет правила подключённого движка, подставляя поведение
@@ -16,6 +17,9 @@ import (
 type Enforcer struct {
 	primary  engine.Authorizer
 	fallback engine.Authorizer
+
+	states         engine.StatePolicy
+	statesFallback engine.StatePolicy
 }
 
 // New собирает применитель правил.
@@ -24,7 +28,14 @@ type Enforcer struct {
 // движок вернул DecisionDefault, и все действия, если основной движок
 // правами не управляет вовсе.
 func New(primary, fallback engine.Authorizer) *Enforcer {
-	return &Enforcer{primary: primary, fallback: fallback}
+	e := &Enforcer{primary: primary, fallback: fallback}
+	if sp, ok := primary.(engine.StatePolicy); ok {
+		e.states = sp
+	}
+	if sp, ok := fallback.(engine.StatePolicy); ok {
+		e.statesFallback = sp
+	}
+	return e
 }
 
 // Option уточняет запрос на проверку права.
@@ -100,4 +111,45 @@ func verdictResult(v engine.Verdict) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+// CheckTransition проверяет допустимость перевода задачи в новый статус.
+// Возвращает nil, если переход разрешён.
+func (p *Enforcer) CheckTransition(ctx context.Context, req engine.StateTransition) error {
+	if p.states != nil {
+		v, err := p.states.CanTransition(ctx, req)
+		if err != nil {
+			return err
+		}
+		if decided, e := verdictResult(v); decided {
+			return e
+		}
+	}
+
+	if p.statesFallback != nil {
+		v, err := p.statesFallback.CanTransition(ctx, req)
+		if err != nil {
+			return err
+		}
+		if decided, e := verdictResult(v); decided {
+			return e
+		}
+	}
+
+	return apierrors.ErrForbiddenState
+}
+
+// ScopeStates сужает запрос по статусам проекта до доступных пользователю.
+//
+// Это та же проверка, что и CheckTransition, но выраженная условием запроса:
+// список доступных статусов обязан совпадать с тем, что примет CheckTransition.
+func (p *Enforcer) ScopeStates(ctx context.Context, req engine.StateScopeRequest, q *gorm.DB) *gorm.DB {
+	if p.states != nil {
+		return p.states.ScopeAvailableStates(ctx, req, q)
+	}
+	if p.statesFallback != nil {
+		return p.statesFallback.ScopeAvailableStates(ctx, req, q)
+	}
+	// Политики нет — показывать нечего: пустая выдача безопаснее полной.
+	return q.Where("1 = 0")
 }

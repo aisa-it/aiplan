@@ -86,6 +86,13 @@ func NewPrefilled(c echo.Context, p Prefilled) *APIContext {
 	return a
 }
 
+// NewSubject собирает контекст без HTTP-запроса — для вызывающих вне
+// обработчиков: MCP-инструментов и хуков загрузки файлов. Сущности должны
+// быть подставлены целиком: обращений к БД и к echo.Context не происходит.
+func NewSubject(p Prefilled) *APIContext {
+	return NewPrefilled(nil, p)
+}
+
 // SetPrefilledContext кладёт prefilled-контекст в echo.Context под общим ключом.
 func SetPrefilledContext(c echo.Context, p Prefilled) *APIContext {
 	a := NewPrefilled(c, p)

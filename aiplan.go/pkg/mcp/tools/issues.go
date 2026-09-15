@@ -5,16 +5,18 @@ import (
 	"errors"
 	"log/slog"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/pkg/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine/defaultengine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/search"
@@ -851,11 +853,26 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		}
 	}
 
-	// Check state flow — как в updateIssue: админ может переводить в любой статус
-	if statusChange && projectMember.Role != types.AdminRole &&
-		len(newState.FromStates.Array) > 0 &&
-		!slices.Contains(newState.FromStates.Array, oldIssue.StateId) {
-		return apierrors.ErrForbiddenState.MCPError(), nil
+	// Допустимость перехода определяет движок — тот же, что и в HTTP.
+	// Пока MCP не получает подключённый движок, применяется движок ядра.
+	if statusChange {
+		subject := apicontext.NewSubject(apicontext.Prefilled{
+			User:          user,
+			Project:       issue.Project,
+			ProjectMember: &projectMember,
+			Issue:         &oldIssue,
+		})
+		verdict, err := defaultengine.New().CanTransition(ctx, engine.StateTransition{
+			Subject: subject,
+			Issue:   &oldIssue,
+			To:      newState,
+		})
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if verdict.Decision == engine.DecisionDeny {
+			return apierrors.ErrForbiddenState.MCPError(), nil
+		}
 	}
 
 	// Транзакция: обновление задачи и связей
