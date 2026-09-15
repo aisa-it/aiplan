@@ -141,7 +141,7 @@ func (s *Services) assetsHandler(c echo.Context) error {
 			slog.Error("Get asset file info", "assetId", asset.Id)
 		} else {
 			asset.ContentType = utils.ResolveContentType(asset.Name, info.ContentType)
-			if err := s.db.Model(&asset).UpdateColumn("content_type", asset.ContentType).Error; err != nil {
+			if err := s.db.Model(&dao.FileAsset{}).Where("id = ?", asset.Id).UpdateColumn("content_type", asset.ContentType).Error; err != nil {
 				slog.Error("Update asset file info", "assetId", asset.Id, "err", err)
 			}
 		}
