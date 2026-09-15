@@ -50,7 +50,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
@@ -616,13 +615,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 	oldIssue := *issue
 	oldSnapshot := tracker.IssueToSnapshot(*issue)
 
-	// Lua-правилам нужны данные, которые WithAll не загружает: счётчик вложений и кастомные поля
-	if project.RulesScript != nil {
-		if err := rules.EnrichIssue(s.DB(c), &oldIssue); err != nil {
-			return EError(c, err)
-		}
-	}
-
 	var data map[string]interface{}
 	form, _ := c.MultipartForm()
 
@@ -745,13 +737,6 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 		data["parent_id"] = parentId
 	}
-	var rulesLog []dao.RulesLog
-	defer func() {
-		if err := rules.AddLog(s.db, rulesLog); err != nil {
-			slog.ErrorContext(c.Request().Context(), "Create rules log", "err", err)
-		}
-	}()
-
 	// State change
 	var statusChange bool
 	var newState dao.State
@@ -794,25 +779,12 @@ func (s *Services) updateIssue(c echo.Context) error {
 			data["completed_at"] = issue.CompletedAt
 		}
 
-		if projectMember.Role != types.AdminRole {
-			res, msg, err := rules.BeforeStatusChange(*user, oldIssue, newState)
-
-			rules.AppendMsg(*issue, *user, msg, &rulesLog)
-			rules.AppendError(*issue, *user, err, &rulesLog)
-			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
-
-			if !res.ClientResult {
-				return EError(c, err.ClientError())
-			}
+		// Сначала хуки движка, затем допустимость перехода — прежний порядок.
+		transition := engine.StateTransition{Subject: apiCtx, Issue: &oldIssue, To: newState}
+		if err := s.policy.BeforeStateChange(c.Request().Context(), transition); err != nil {
+			return EError(c, err)
 		}
-
-		// Допустимость перехода определяет движок: правило может зависеть
-		// не только от настройки states_flow, но и от роли на переходе.
-		if err := s.policy.CheckTransition(c.Request().Context(), engine.StateTransition{
-			Subject: apiCtx,
-			Issue:   &oldIssue,
-			To:      newState,
-		}); err != nil {
+		if err := s.policy.CheckTransition(c.Request().Context(), transition); err != nil {
 			return EError(c, err)
 		}
 
@@ -886,35 +858,24 @@ func (s *Services) updateIssue(c echo.Context) error {
 		data["sort_order"] = sortOrder + 1
 	}
 
-	// Pre rules hooks
+	// Хуки движка на смену исполнителей, наблюдателей и меток
 	{
-		if assigneesOk && projectMember.Role != types.AdminRole {
+		ctx := c.Request().Context()
+		if assigneesOk {
 			assigneesUser := dao.GetUserFromProjectMember(allProjectMembers, assignees)
-			res, msg, err := rules.BeforeAssigneesChange(*user, oldIssue, assigneesUser)
-
-			rules.AppendMsg(*issue, *user, msg, &rulesLog)
-			rules.AppendError(*issue, *user, err, &rulesLog)
-			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
-
-			if !res.ClientResult {
-				return EError(c, err.ClientError())
+			if err := s.policy.BeforeAssigneesChange(ctx, apiCtx, oldIssue, assigneesUser); err != nil {
+				return EError(c, err)
 			}
 		}
 
-		if watchersOk && projectMember.Role != types.AdminRole {
+		if watchersOk {
 			watchersUser := dao.GetUserFromProjectMember(allProjectMembers, watchers)
-			res, msg, err := rules.BeforeWatchersChange(*user, oldIssue, watchersUser)
-
-			rules.AppendMsg(*issue, *user, msg, &rulesLog)
-			rules.AppendError(*issue, *user, err, &rulesLog)
-			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
-
-			if !res.ClientResult {
-				return EError(c, err.ClientError())
+			if err := s.policy.BeforeWatchersChange(ctx, apiCtx, oldIssue, watchersUser); err != nil {
+				return EError(c, err)
 			}
 		}
 
-		if labelsOk && projectMember.Role != types.AdminRole {
+		if labelsOk {
 			var currentLabels []dao.Label
 			for _, daoLabel := range allProjectLabels {
 				for _, label := range labels {
@@ -923,14 +884,8 @@ func (s *Services) updateIssue(c echo.Context) error {
 					}
 				}
 			}
-			res, msg, err := rules.BeforeLabelsChange(*user, oldIssue, currentLabels)
-
-			rules.AppendMsg(*issue, *user, msg, &rulesLog)
-			rules.AppendError(*issue, *user, err, &rulesLog)
-			rules.ResultToLog(*issue, *user, res, err, &rulesLog)
-
-			if !res.ClientResult {
-				return EError(c, err.ClientError())
+			if err := s.policy.BeforeLabelsChange(ctx, apiCtx, oldIssue, currentLabels); err != nil {
+				return EError(c, err)
 			}
 		}
 	}
@@ -1194,14 +1149,11 @@ func (s *Services) updateIssue(c echo.Context) error {
 		return EError(c, err)
 	}
 	if statusChange {
-		res, msg, err := rules.AfterStatusChange(*user, oldIssue, newState)
-
-		rules.AppendMsg(*issue, *user, msg, &rulesLog)
-		rules.AppendError(*issue, *user, err, &rulesLog)
-		rules.ResultToLog(*issue, *user, res, err, &rulesLog)
-
-		if !res.ClientResult {
-			return EError(c, err.ClientError())
+		// Изменение уже сохранено: after-хук его не отменяет, отказ — только в лог.
+		if err := s.policy.AfterStateChange(c.Request().Context(), engine.StateTransition{
+			Subject: apiCtx, Issue: &oldIssue, To: newState,
+		}); err != nil {
+			slog.ErrorContext(c.Request().Context(), "After state change hook", "err", err)
 		}
 	}
 
@@ -3835,21 +3787,13 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Lua-сценарий проекта может запретить изменение поля.
-	// На админов сценарии не распространяются (канон продукта)
-	if issue.Project != nil && issue.Project.RulesScript != nil && projectMember.Role != types.AdminRole {
-		// Старые значения полей задачи — для old_value хука и params.properties
-		if err := rules.EnrichIssue(s.DB(c), issue); err != nil {
-			return EError(c, err)
-		}
-		// Для lookup хук получает отображаемое значение строки справочника, не id
-		hookValue := valueStr
-		if lookupRow != nil {
-			hookValue = lookupRow.Value
-		}
-		if err := s.runPropertyChangeRules(c, issue, user, template, hookValue); err != nil {
-			return EError(c, err)
-		}
+	// Для lookup хук получает отображаемое значение строки справочника, не id
+	hookValue := valueStr
+	if lookupRow != nil {
+		hookValue = lookupRow.Value
+	}
+	if err := s.policy.BeforePropertyChange(c.Request().Context(), apiCtx, *issue, template, hookValue); err != nil {
+		return EError(c, err)
 	}
 
 	// Проверяем существование значения
@@ -3904,29 +3848,6 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	resp.ResetProperties = resetProperties
 
 	return c.JSON(status, resp)
-}
-
-// runPropertyChangeRules вызывает Lua-хук BeforeIssuePropertyChange проекта
-// (канонический порядок — как rules-блок в updateIssue). Возврат ошибки — отказ
-// сценария, значение поля не записывается
-func (s *Services) runPropertyChangeRules(c echo.Context, issue *dao.Issue, user *dao.User, template dao.ProjectPropertyTemplate, newValue string) error {
-	var rulesLog []dao.RulesLog
-	defer func() {
-		if err := rules.AddLog(s.db, rulesLog); err != nil {
-			slog.ErrorContext(c.Request().Context(), "Create rules log", "err", err)
-		}
-	}()
-
-	res, msg, rerr := rules.BeforeIssuePropertyChange(*user, *issue, template, newValue)
-
-	rules.AppendMsg(*issue, *user, msg, &rulesLog)
-	rules.AppendError(*issue, *user, rerr, &rulesLog)
-	rules.ResultToLog(*issue, *user, res, rerr, &rulesLog)
-
-	if !res.ClientResult {
-		return rerr.ClientError()
-	}
-	return nil
 }
 
 // getAvailablePropertyValues godoc

@@ -6,6 +6,7 @@ package policy
 
 import (
 	"context"
+	"errors"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
@@ -24,6 +25,9 @@ type Enforcer struct {
 
 	visibility         engine.VisibilityPolicy
 	visibilityFallback engine.VisibilityPolicy
+
+	hooks         engine.IssueHooks
+	hooksFallback engine.IssueHooks
 }
 
 // New собирает применитель правил.
@@ -44,6 +48,12 @@ func New(primary, fallback engine.Authorizer) *Enforcer {
 	}
 	if vp, ok := fallback.(engine.VisibilityPolicy); ok {
 		e.visibilityFallback = vp
+	}
+	if h, ok := primary.(engine.IssueHooks); ok {
+		e.hooks = h
+	}
+	if h, ok := fallback.(engine.IssueHooks); ok {
+		e.hooksFallback = h
 	}
 	return e
 }
@@ -208,4 +218,72 @@ func (p *Enforcer) CanViewIssue(ctx context.Context, s engine.Subject, issue *da
 		}
 	}
 	return apierrors.ErrIssueForbidden
+}
+
+// Хуки изменения задачи.
+//
+// Before-хуки — реакции, а не права: подключённый движок решает первым,
+// DecisionDefault отдаёт слово движку ядра (Lua-скриптам проекта), а
+// отсутствие решения у обоих ничего не запрещает. Ошибка отказа — та,
+// что вернул движок.
+
+func (p *Enforcer) BeforeStateChange(ctx context.Context, ev engine.StateTransition) error {
+	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+		return h.BeforeStateChange(ctx, ev)
+	})
+}
+
+func (p *Enforcer) BeforeAssigneesChange(ctx context.Context, s engine.Subject, issue dao.Issue, users []dao.User) error {
+	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+		return h.BeforeAssigneesChange(ctx, s, issue, users)
+	})
+}
+
+func (p *Enforcer) BeforeWatchersChange(ctx context.Context, s engine.Subject, issue dao.Issue, users []dao.User) error {
+	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+		return h.BeforeWatchersChange(ctx, s, issue, users)
+	})
+}
+
+func (p *Enforcer) BeforeLabelsChange(ctx context.Context, s engine.Subject, issue dao.Issue, labels []dao.Label) error {
+	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+		return h.BeforeLabelsChange(ctx, s, issue, labels)
+	})
+}
+
+func (p *Enforcer) BeforePropertyChange(ctx context.Context, s engine.Subject, issue dao.Issue, tpl dao.ProjectPropertyTemplate, newValue string) error {
+	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+		return h.BeforePropertyChange(ctx, s, issue, tpl, newValue)
+	})
+}
+
+// AfterStateChange уведомляет оба движка: изменение уже сохранено, и отменить
+// его хук не может. Ошибки собираются и возвращаются вызывающему для лога.
+func (p *Enforcer) AfterStateChange(ctx context.Context, ev engine.StateTransition) error {
+	var errs []error
+	for _, h := range []engine.IssueHooks{p.hooks, p.hooksFallback} {
+		if h == nil {
+			continue
+		}
+		if err := h.AfterStateChange(ctx, ev); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (p *Enforcer) hookVerdict(call func(engine.IssueHooks) (engine.Verdict, error)) error {
+	for _, h := range []engine.IssueHooks{p.hooks, p.hooksFallback} {
+		if h == nil {
+			continue
+		}
+		v, err := call(h)
+		if err != nil {
+			return err
+		}
+		if decided, e := verdictResult(v); decided {
+			return e
+		}
+	}
+	return nil
 }
