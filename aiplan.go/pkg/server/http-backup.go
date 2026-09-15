@@ -12,6 +12,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/gob"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -58,19 +59,15 @@ type WorkspaceBackup struct {
 }
 
 func (s *Services) AddBackupServices(g *echo.Group) {
-	workspaceGroup := g.Group("workspaces/:workspaceSlug",
+	workspaceGroup := g.Group(workspaceScopePrefix,
 		s.WorkspaceMiddleware,
 		s.LastVisitedWorkspaceMiddleware,
-		s.WorkspacePermissionMiddleware,
 	)
 
-	workspaceGroup.GET("/backups/", s.getWorkspaceBackupList)
-	workspaceGroup.POST("/export/", s.exportWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/backups/", engine.ActionWorkspaceBackupView, s.getWorkspaceBackupList)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/export/", engine.ActionWorkspaceBackup, s.exportWorkspace)
 	g.POST("workspaces/importMinio/", s.importWorkspaceMinio)
 	g.POST("workspaces/import/", s.importWorkspaceFile)
-
-	gob.Register([]interface{}{})
-	gob.Register(map[string]interface{}{})
 }
 
 // getWorkspaceBackupList godoc

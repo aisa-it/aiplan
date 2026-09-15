@@ -11,19 +11,16 @@ import (
 // По остальным действиям он обязан вернуть DecisionDefault — отказ здесь
 // выглядел бы как запрет, хотя правила просто нет, и ядро не смогло бы
 // применить своё поведение.
+// TestAuthorizeSkipsForeignActions: по действиям, которых движок ядра не
+// ведёт, он обязан отказаться от решения до обращения к сущностям запроса.
+// Права на проект, пространство, спринт и документ движок решает
+// (эталон — pkg/server/testdata/authz_scopes.golden), здесь их нет.
 func TestAuthorizeSkipsForeignActions(t *testing.T) {
 	foreign := []engine.Action{
-		engine.ActionProjectView, engine.ActionProjectUpdate, engine.ActionProjectAdmin,
-		engine.ActionProjectStateManage, engine.ActionProjectRulesManage,
-		engine.ActionWorkspaceView, engine.ActionWorkspaceAdmin, engine.ActionWorkspaceInvite,
-		engine.ActionSprintView, engine.ActionSprintUpdate,
-		engine.ActionDocView, engine.ActionDocUpdate,
-		engine.ActionFormView, engine.ActionFormAnswer,
-
-		// Выполняются до того, как задача известна: ограничиваются
-		// правилами видимости, а не правами на задачу.
-		engine.ActionIssueSearch,
-		engine.ActionIssueCreate,
+		engine.ActionIssueMigrate,
+		engine.ActionWorkspaceCreate,
+		engine.ActionFormAnswer,
+		engine.ActionFormAttachmentAdd,
 	}
 
 	e := New()
@@ -36,8 +33,7 @@ func TestAuthorizeSkipsForeignActions(t *testing.T) {
 				t.Fatalf("ошибка вместо отказа от решения: %v", err)
 			}
 			if v.Decision != engine.DecisionDefault {
-				t.Errorf("решение %d, ожидалось DecisionDefault: движок взялся "+
-					"за действие вне своей области", v.Decision)
+				t.Errorf("решение %d, ожидалось DecisionDefault", v.Decision)
 			}
 		})
 	}

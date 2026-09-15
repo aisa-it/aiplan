@@ -35,8 +35,9 @@ func (a *APIContext) ProjectMember() *dao.ProjectMember { return a.GetProjectMem
 // Sprint возвращает спринт запроса.
 func (a *APIContext) Sprint() *dao.Sprint { return a.GetSprint() }
 
-// Doc возвращает документ запроса.
-func (a *APIContext) Doc() *dao.Doc { return a.GetDoc() }
+// Doc возвращает документ запроса вместе с персональными правами доступа:
+// без них списки читателей и редакторов пусты и решение движка неверно.
+func (a *APIContext) Doc() *dao.Doc { return a.GetDoc(WithDocAccessRules()) }
 
 // Issue возвращает задачу запроса вместе с исполнителями: движку они
 // нужны почти всегда, а повторное обращение берётся из кеша контекста.

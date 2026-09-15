@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"maps"
 	"net/http"
 	"slices"
@@ -43,37 +44,32 @@ func (s *Services) SprintMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func (s *Services) AddSprintServices(g *echo.Group) {
-	workspaceGroup := g.Group("workspaces/:workspaceSlug", s.WorkspaceMiddleware)
+	workspaceGroup := g.Group(workspaceScopePrefix, s.WorkspaceMiddleware)
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
-	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
 
 	sprintGroup := workspaceGroup.Group("/sprints/:sprintId", s.SprintMiddleware)
-	sprintGroup.Use(s.SprintPermissionMiddleware)
 
-	sprintAdminGroup := sprintGroup.Group("", s.SprintAdminPermissionMiddleware)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/sprints/", engine.ActionSprintList, s.getSprintList)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/sprints/", engine.ActionSprintCreate, s.createSprint)
 
-	workspaceGroup.GET("/sprints/", s.getSprintList)
-	workspaceGroup.POST("/sprints/", s.createSprint)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/sprints-folder/", engine.ActionSprintFolderManage, s.addSprintFolders)
+	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/sprints-folder/:sprintFolderId", engine.ActionSprintFolderManage, s.updateSprintFolders)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/sprints-folder/:sprintFolderId", engine.ActionSprintFolderManage, s.deleteSprintFolders)
 
-	workspaceGroup.POST("/sprints-folder/", s.addSprintFolders)
+	s.sprintRoute(sprintGroup, http.MethodPatch, "/", engine.ActionSprintUpdate, s.updateSprint)
+	s.sprintRoute(sprintGroup, http.MethodDelete, "/", engine.ActionSprintDelete, s.deleteSprint)
 
-	workspaceGroup.PATCH("/sprints-folder/:sprintFolderId", s.updateSprintFolders)
-	workspaceGroup.DELETE("/sprints-folder/:sprintFolderId", s.deleteSprintFolders)
+	s.sprintRoute(sprintGroup, http.MethodPost, "/issues/", engine.ActionSprintIssueManage, s.sprintIssuesUpdate)
+	s.sprintRoute(sprintGroup, http.MethodPost, "/watchers/", engine.ActionSprintWatchManage, s.sprintWatchersUpdate)
 
-	sprintAdminGroup.PATCH("/", s.updateSprint)
-	sprintAdminGroup.DELETE("/", s.deleteSprint)
+	s.sprintRoute(sprintGroup, http.MethodGet, "/activities/", engine.ActionSprintActivity, s.getSpringActivityList)
+	s.sprintRoute(sprintGroup, http.MethodGet, "/", engine.ActionSprintView, s.GetSprint)
 
-	sprintAdminGroup.POST("/issues/", s.sprintIssuesUpdate)
-	sprintAdminGroup.POST("/watchers/", s.sprintWatchersUpdate)
+	s.sprintRoute(sprintGroup, http.MethodPost, "/sprint-view/", engine.ActionSprintViewManage, s.updateSprintView)
 
-	sprintGroup.GET("/activities/", s.getSpringActivityList)
-	sprintGroup.GET("/", s.GetSprint)
+	s.sprintRoute(sprintGroup, http.MethodPost, "/issues/search/", engine.ActionSprintSearchIssues, s.getIssueList)
 
-	sprintGroup.POST("/sprint-view/", s.updateSprintView)
-
-	sprintGroup.POST("/issues/search/", s.getIssueList)
-
-	sprintGroup.GET("/states/", s.getSprintStates)
+	s.sprintRoute(sprintGroup, http.MethodGet, "/states/", engine.ActionSprintView, s.getSprintStates)
 }
 
 // getSprintList godoc

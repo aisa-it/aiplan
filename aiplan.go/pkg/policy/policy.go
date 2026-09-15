@@ -7,6 +7,7 @@ package policy
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
@@ -286,4 +287,92 @@ func (p *Enforcer) hookVerdict(call func(engine.IssueHooks) (engine.Verdict, err
 		}
 	}
 	return nil
+}
+
+// Permissions считает решения по набору действий для одного субъекта.
+//
+// Порядок тот же, что у Authorize: подключённый движок, затем движок ядра;
+// действие, по которому никто не решил, — запрет. Движок с BulkAuthorizer
+// отвечает одним вызовом, остальные опрашиваются по действию — Subject
+// кеширует загруженное, поэтому в БД это один поход за ролями.
+func (p *Enforcer) Permissions(
+	ctx context.Context,
+	s engine.Subject,
+	actions []engine.Action,
+	opts ...Option,
+) (engine.PermissionSet, error) {
+	base := engine.AuthzRequest{Subject: s}
+	for _, opt := range opts {
+		opt(&base)
+	}
+
+	result := make(engine.PermissionSet, len(actions))
+	remaining := actions
+	for _, a := range []engine.Authorizer{p.primary, p.fallback} {
+		if a == nil || len(remaining) == 0 {
+			continue
+		}
+		decided, err := decidePermissions(ctx, a, base, remaining)
+		if err != nil {
+			return nil, err
+		}
+		undecided := remaining[:0:0]
+		for _, action := range remaining {
+			v, ok := decided[action]
+			if !ok {
+				undecided = append(undecided, action)
+				continue
+			}
+			result[action] = v
+		}
+		remaining = undecided
+	}
+	for _, action := range remaining {
+		result[action] = false
+	}
+	return result, nil
+}
+
+// decidePermissions — решения одного движка; недосказанные действия в наборе отсутствуют.
+func decidePermissions(
+	ctx context.Context,
+	a engine.Authorizer,
+	base engine.AuthzRequest,
+	actions []engine.Action,
+) (engine.PermissionSet, error) {
+	if bulk, ok := a.(engine.BulkAuthorizer); ok {
+		return bulk.Permissions(ctx, engine.PermissionsRequest{
+			Subject: base.Subject, Actions: actions, Target: base.Target,
+		})
+	}
+
+	set := make(engine.PermissionSet, len(actions))
+	for _, action := range actions {
+		req := base
+		req.Action = action
+		v, err := a.Authorize(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		switch v.Decision {
+		case engine.DecisionAllow:
+			set[action] = true
+		case engine.DecisionDeny:
+			set[action] = false
+		}
+	}
+	return set, nil
+}
+
+// IssuePermissions — набор прав субъекта на задачу для выдачи наружу:
+// все действия области задачи, кроме зависящих от объекта
+// (engine.ObjectActions), с самой задачей в роли объекта. HTTP и MCP
+// обязаны отдавать права этим методом: иначе «показано» и «разрешено»
+// разойдутся.
+func (p *Enforcer) IssuePermissions(ctx context.Context, s engine.Subject, issue *dao.Issue) (engine.PermissionSet, error) {
+	actions := slices.DeleteFunc(engine.ActionsFor(engine.AreaIssue), func(a engine.Action) bool {
+		_, byObject := engine.ObjectActions[a]
+		return byObject
+	})
+	return p.Permissions(ctx, s, actions, On(issue))
 }

@@ -401,8 +401,8 @@ func getIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolR
 	}
 
 	// Видимость задачи решает движок — тот же, что и в поиске.
-	subject := apicontext.NewSubject(apicontext.Prefilled{DB: d.DB, User: user})
-	if err := d.Policy.CanViewIssue(ctx, subject, &issue); err != nil {
+	viewer := apicontext.NewSubject(apicontext.Prefilled{DB: d.DB, User: user})
+	if err := d.Policy.CanViewIssue(ctx, viewer, &issue); err != nil {
 		return mcpError(err), nil
 	}
 
@@ -411,7 +411,18 @@ func getIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolR
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(issue.ToDTO())
+	// Права на задачу — тем же набором, что отдаёт HTTP.
+	subject, err := apicontext.LoadIssueSubject(d.DB, user, &issue)
+	if err != nil {
+		return mcpError(err), nil
+	}
+	permissions, err := d.Policy.IssuePermissions(ctx, subject, &issue)
+	if err != nil {
+		return mcpError(err), nil
+	}
+	result := issue.ToDTO()
+	result.Permissions = permissions.Strings()
+	return mcp.NewToolResultJSON(result)
 }
 
 func searchIssues(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

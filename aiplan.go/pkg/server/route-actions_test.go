@@ -100,15 +100,22 @@ func TestCheckRouteActionsFindsUnmapped(t *testing.T) {
 
 // TestCheckRouteActionsIgnoresNonIssue: роуты вне скоупа задачи проверку не
 // затрагивают — разметка обязательна пока только для них.
-func TestCheckRouteActionsIgnoresNonIssue(t *testing.T) {
+// TestCheckRouteActionsCoversWorkspaceScope: проверка полноты разметки
+// покрывает все роуты внутри пространства (проекты, спринты, документы,
+// формы), а роуты вне него не трогает.
+func TestCheckRouteActionsCoversWorkspaceScope(t *testing.T) {
 	e := echo.New()
 	s := newTestServices()
-
-	e.GET("/api/auth/workspaces/:workspaceSlug/projects/:projectId/", noop)
 	e.POST("/api/auth/users/me/", noop)
-
 	if err := s.checkRouteActions(e); err != nil {
-		t.Fatalf("проверка сработала на роутах вне скоупа задачи: %v", err)
+		t.Fatalf("проверка сработала на роуте вне пространства: %v", err)
+	}
+
+	e = echo.New()
+	s = newTestServices()
+	e.GET("/api/auth/workspaces/:workspaceSlug/projects/:projectId/", noop)
+	if err := s.checkRouteActions(e); err == nil {
+		t.Fatal("неразмеченный роут проекта прошёл проверку")
 	}
 }
 

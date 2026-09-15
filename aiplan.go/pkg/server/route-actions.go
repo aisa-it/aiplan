@@ -1,11 +1,14 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/labstack/echo/v4"
 )
@@ -63,6 +66,71 @@ func (s *Services) issueRoute(
 	s.route(g, method, path, action, h, all...)
 }
 
+// scopedRoute регистрирует роут области: действие плюс проверка прав.
+// forbidden — ошибка отказа этой области (коды ошибок у областей свои).
+func (s *Services) scopedRoute(
+	g *echo.Group,
+	method, path string,
+	action engine.Action,
+	forbidden apierrors.DefinedError,
+	h echo.HandlerFunc,
+	mw ...echo.MiddlewareFunc,
+) {
+	all := append([]echo.MiddlewareFunc{s.permissionMiddleware(forbidden)}, mw...)
+	s.route(g, method, path, action, h, all...)
+}
+
+func (s *Services) workspaceRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc, mw ...echo.MiddlewareFunc) {
+	s.scopedRoute(g, method, path, action, apierrors.ErrWorkspaceForbidden, h, mw...)
+}
+
+func (s *Services) projectRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc) {
+	s.scopedRoute(g, method, path, action, apierrors.ErrProjectForbidden, h)
+}
+
+func (s *Services) sprintRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc) {
+	s.scopedRoute(g, method, path, action, apierrors.ErrSprintForbidden, h)
+}
+
+func (s *Services) docRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc) {
+	s.scopedRoute(g, method, path, action, apierrors.ErrDocForbidden, h)
+}
+
+func (s *Services) formRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc) {
+	s.scopedRoute(g, method, path, action, apierrors.ErrFormForbidden, h)
+}
+
+// permissionMiddleware проверяет право на действие роута через движок.
+//
+// Действие берётся из контекста, куда его кладёт регистрация роута,
+// поэтому middleware обязан быть роутовым: групповые выполняются раньше
+// и действия не увидят. Неразмеченный роут отклоняется — молча пропустить
+// запрос без проверки нельзя. Общий отказ движка переводится в ошибку
+// области; ошибку, назначенную движком, клиент получает как есть.
+func (s *Services) permissionMiddleware(forbidden apierrors.DefinedError) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			action, ok := ActionOf(c)
+			if !ok {
+				return EErrorDefined(c, forbidden)
+			}
+
+			apiContext := apicontext.GetContext(c)
+			if apiContext == nil {
+				return EError(c, errors.New("wrong context"))
+			}
+
+			if err := s.policy.Authorize(c.Request().Context(), action, apiContext); err != nil {
+				if errors.Is(err, apierrors.ErrIssueForbidden) {
+					return EErrorDefined(c, forbidden)
+				}
+				return EError(c, err)
+			}
+			return next(c)
+		}
+	}
+}
+
 // withAction кладёт действие роута в контекст запроса.
 func withAction(action engine.Action) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -84,6 +152,10 @@ func ActionOf(c echo.Context) (engine.Action, bool) {
 // issueScopePrefix — префикс роутов, работающих с конкретной задачей.
 const issueScopePrefix = "/issues/:issueIdOrSeq"
 
+// workspaceScopePrefix — префикс всех роутов, живущих внутри пространства.
+// Каждый из них обязан быть размечен действием.
+const workspaceScopePrefix = "workspaces/:workspaceSlug"
+
 // httpMethods — методы, которые обслуживают обработчики.
 //
 // echo добавляет группам служебные записи с псевдометодом
@@ -99,12 +171,18 @@ var httpMethods = map[string]struct{}{
 
 // unmappedIssueRoutes возвращает issue-роуты, зарегистрированные в обход route.
 func (s *Services) unmappedIssueRoutes(e *echo.Echo) []string {
+	return s.unmappedRoutes(e, issueScopePrefix)
+}
+
+// unmappedRoutes возвращает роуты с данным фрагментом пути, зарегистрированные
+// в обход route.
+func (s *Services) unmappedRoutes(e *echo.Echo, pathPart string) []string {
 	var missing []string
 	for _, r := range e.Routes() {
 		if _, ok := httpMethods[r.Method]; !ok {
 			continue
 		}
-		if !strings.Contains(r.Path, issueScopePrefix) {
+		if !strings.Contains(r.Path, pathPart) {
 			continue
 		}
 		key := r.Method + " " + r.Path
@@ -116,14 +194,15 @@ func (s *Services) unmappedIssueRoutes(e *echo.Echo) []string {
 	return missing
 }
 
-// checkRouteActions проверяет полноту разметки issue-роутов и освобождает
-// вспомогательный набор: дальше он не нужен.
+// checkRouteActions проверяет полноту разметки роутов пространства (задачи,
+// проекты, спринты, документы, формы, бэкапы) и освобождает вспомогательный
+// набор: дальше он не нужен.
 //
 // Роут без разметки не получит действия в контексте, то есть окажется без
 // проверки прав. Такую ошибку нельзя откладывать до прода — сервер не
 // должен стартовать.
 func (s *Services) checkRouteActions(e *echo.Echo) error {
-	missing := s.unmappedIssueRoutes(e)
+	missing := s.unmappedRoutes(e, workspaceScopePrefix)
 	s.mappedRoutes = nil
 	if len(missing) == 0 {
 		return nil

@@ -11,10 +11,11 @@ import (
 
 // isIssueScopeAction сообщает, относится ли действие к конкретной задаче.
 //
-// Поиск задач сюда не входит: он выполняется до того, как задача известна,
-// и ограничивается правилами видимости, а не правами на задачу.
+// Поиск, создание, массовое удаление и миграция задач сюда не входят: они
+// выполняются до того, как задача известна, и решаются правилами проекта.
 func isIssueScopeAction(a engine.Action) bool {
-	if a == engine.ActionIssueSearch || a == engine.ActionIssueCreate {
+	switch a {
+	case engine.ActionIssueSearch, engine.ActionIssueCreate, engine.ActionIssueBulkEdit, engine.ActionIssueMigrate:
 		return false
 	}
 	return strings.HasPrefix(string(a), issueActionPrefix)
@@ -70,10 +71,7 @@ var memberFreeActions = map[engine.Action]struct{}{
 // то, что разрешено настройками проекта.
 func (e *Engine) Authorize(_ context.Context, req engine.AuthzRequest) (engine.Verdict, error) {
 	if !isIssueScopeAction(req.Action) {
-		// Права на проект, пространство, спринт и документы движок пока
-		// не ведёт: решение остаётся за ядром. Молчаливый отказ здесь
-		// выглядел бы как запрет, а не как отсутствие правила.
-		return engine.Default, nil
+		return e.authorizeArea(req)
 	}
 
 	// Правила по конкретной сущности точнее общих: если объект действия

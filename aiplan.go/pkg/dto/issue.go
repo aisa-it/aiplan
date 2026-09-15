@@ -50,6 +50,12 @@ type Issue struct {
 
 	SequenceId int `json:"sequence_id"`
 
+	// Permissions — разрешённые текущему пользователю действия над задачей
+	// ({"issue.update": true, ...}). Заполняется при получении одной задачи.
+	// Действия, зависящие от объекта (правка чужого комментария), отсутствуют:
+	// решаются при обращении.
+	Permissions map[string]bool `json:"permissions,omitempty" extensions:"x-nullable"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

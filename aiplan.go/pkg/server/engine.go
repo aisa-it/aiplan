@@ -81,6 +81,13 @@ func (c *coreAdapter) RegisterRoutes(fn func(api, auth *echo.Group)) {
 	c.routeFns = append(c.routeFns, fn)
 }
 
+func (c *coreAdapter) RegisterActions(area engine.Area, actions ...engine.Action) {
+	if c.rejectAfterInit("actions") {
+		return
+	}
+	engine.RegisterActions(area, actions...)
+}
+
 func (c *coreAdapter) RegisterMCPTools(tools ...mcpserver.ServerTool) {
 	if c.rejectAfterInit("mcp tools") {
 		return

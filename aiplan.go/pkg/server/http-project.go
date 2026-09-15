@@ -117,118 +117,106 @@ func (s *Services) ProjectArchivedMiddleware(next echo.HandlerFunc) echo.Handler
 }
 
 func (s *Services) AddProjectServices(g *echo.Group) {
-	workspaceGroup := g.Group("workspaces/:workspaceSlug", s.WorkspaceMiddleware)
+	workspaceGroup := g.Group(workspaceScopePrefix, s.WorkspaceMiddleware)
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
 
 	projectGroup := workspaceGroup.Group("/projects/:projectId",
 		s.ProjectMiddleware,
-		s.ProjectArchivedMiddleware,
-		s.ProjectPermissionMiddleware)
+		s.ProjectArchivedMiddleware)
 
-	projectAdminGroup := projectGroup.Group("", s.ProjectAdminPermissionMiddleware)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/projects/", engine.ActionWorkspaceView, s.getProjectList)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/projects/", engine.ActionProjectCreate, s.createProject)
 
-	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
+	s.projectRoute(projectGroup, http.MethodGet, "/", engine.ActionProjectView, s.getProject)
+	s.projectRoute(projectGroup, http.MethodPatch, "/", engine.ActionProjectUpdate, s.updateProject)
+	s.projectRoute(projectGroup, http.MethodDelete, "/", engine.ActionProjectDelete, s.deleteProject)
 
-	workspaceGroup.GET("/projects/", s.getProjectList)
-	workspaceGroup.POST("/projects/", s.createProject)
+	s.projectRoute(projectGroup, http.MethodGet, "/activities/", engine.ActionProjectActivity, s.getProjectActivityList)
 
-	projectGroup.GET("/", s.getProject)
-	projectGroup.PATCH("/", s.updateProject)
-	projectGroup.DELETE("/", s.deleteProject)
+	s.projectRoute(projectGroup, http.MethodPost, "/logo/", engine.ActionProjectUpdate, s.updateProjectLogo)
+	s.projectRoute(projectGroup, http.MethodDelete, "/logo/", engine.ActionProjectUpdate, s.deleteProjectLogo)
 
-	projectGroup.GET("/activities/", s.getProjectActivityList)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/project-identifiers/", engine.ActionWorkspaceView, s.checkProjectIdentifierAvailability)
 
-	projectGroup.POST("/logo/", s.updateProjectLogo)
-	projectGroup.DELETE("/logo/", s.deleteProjectLogo)
+	s.projectRoute(projectGroup, http.MethodGet, "/members/", engine.ActionProjectMemberView, s.getProjectMemberList)
+	s.projectRoute(projectGroup, http.MethodGet, "/members/me/", engine.ActionProjectMemberView, s.getProjectCurrentMembership)
+	s.projectRoute(projectGroup, http.MethodGet, "/members/:memberId/", engine.ActionProjectMemberView, s.getProjectMember)
+	s.projectRoute(projectGroup, http.MethodPatch, "/members/:memberId/", engine.ActionProjectMemberManage, s.updateProjectMember)
+	s.projectRoute(projectGroup, http.MethodDelete, "/members/:memberId/", engine.ActionProjectMemberManage, s.deleteProjectMember)
+	s.projectRoute(projectGroup, http.MethodPost, "/members/add/", engine.ActionProjectMemberManage, s.addMemberToProject)
 
-	workspaceGroup.GET("/project-identifiers/", s.checkProjectIdentifierAvailability)
+	s.projectRoute(projectGroup, http.MethodPost, "/me/notifications/", engine.ActionProjectSelfSettings, s.updateMyNotifications)
 
-	projectGroup.GET("/members/", s.getProjectMemberList)
-	projectGroup.GET("/members/me/", s.getProjectCurrentMembership)
-	projectGroup.GET("/members/:memberId/", s.getProjectMember)
-	projectGroup.PATCH("/members/:memberId/", s.updateProjectMember)
-	projectGroup.DELETE("/members/:memberId/", s.deleteProjectMember)
-	projectGroup.POST("/members/add/", s.addMemberToProject)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/projects/join/", engine.ActionProjectJoin, s.joinProjects)
 
-	projectGroup.POST("/me/notifications/", s.updateMyNotifications)
+	s.projectRoute(projectGroup, http.MethodPost, "/project-views/", engine.ActionProjectViewManage, s.updateProjectView)
 
-	workspaceGroup.POST("/projects/join/", s.joinProjects)
+	s.projectRoute(projectGroup, http.MethodGet, "/project-members/me/", engine.ActionProjectMemberView, s.getProjectMemberMe) // Legacy TODO: delete after front
 
-	projectGroup.POST("/project-views/", s.updateProjectView)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/user-favorite-projects/", engine.ActionWorkspaceSelfSettings, s.getFavoriteProjects)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/user-favorite-projects/", engine.ActionWorkspaceSelfSettings, s.addProjectToFavorites)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/user-favorite-projects/:projectId/", engine.ActionWorkspaceSelfSettings, s.removeProjectFromFavorites)
 
-	projectGroup.GET("/project-members/me/", s.getProjectMemberMe) // Legacy TODO: delete after front
+	s.projectRoute(projectGroup, http.MethodGet, "/project-estimates/", engine.ActionProjectView, s.getProjectEstimatePointsList)
 
-	workspaceGroup.GET("/user-favorite-projects/", s.getFavoriteProjects)
-	workspaceGroup.POST("/user-favorite-projects/", s.addProjectToFavorites)
-	workspaceGroup.DELETE("/user-favorite-projects/:projectId/", s.removeProjectFromFavorites)
+	s.projectRoute(projectGroup, http.MethodGet, "/estimates/", engine.ActionProjectView, s.getProjectEstimatesList)
+	s.projectRoute(projectGroup, http.MethodPost, "/estimates/", engine.ActionProjectEstimateManage, s.createProjectEstimate)
 
-	projectGroup.GET("/project-estimates/", s.getProjectEstimatePointsList)
+	s.projectRoute(projectGroup, http.MethodGet, "/estimates/:estimateId/", engine.ActionProjectView, s.getProjectEstimate)
+	s.projectRoute(projectGroup, http.MethodPatch, "/estimates/:estimateId/", engine.ActionProjectEstimateManage, s.updateProjectEstimate)
+	s.projectRoute(projectGroup, http.MethodDelete, "/estimates/:estimateId/", engine.ActionProjectEstimateManage, s.deleteProjectEstimate)
 
-	projectGroup.GET("/estimates/", s.getProjectEstimatesList)
-	projectGroup.POST("/estimates/", s.createProjectEstimate)
+	s.projectRoute(projectGroup, http.MethodPost, "/issues/", engine.ActionIssueCreate, s.createIssue)
+	s.projectRoute(projectGroup, http.MethodPost, "/issues/search/", engine.ActionIssueSearch, s.getIssueList)
 
-	projectGroup.GET("/estimates/:estimateId/", s.getProjectEstimate)
-	projectGroup.PATCH("/estimates/:estimateId/", s.updateProjectEstimate)
-	projectGroup.DELETE("/estimates/:estimateId/", s.deleteProjectEstimate)
+	s.projectRoute(projectGroup, http.MethodGet, "/issue-labels/", engine.ActionProjectView, s.getIssueLabelList)
+	s.projectRoute(projectGroup, http.MethodPost, "/issue-labels/", engine.ActionProjectLabelManage, s.createIssueLabel)
+	s.projectRoute(projectGroup, http.MethodGet, "/issue-labels/:labelId/", engine.ActionProjectView, s.getIssueLabel)
+	s.projectRoute(projectGroup, http.MethodPatch, "/issue-labels/:labelId/", engine.ActionProjectLabelManage, s.updateIssueLabel)
+	s.projectRoute(projectGroup, http.MethodDelete, "/issue-labels/:labelId/", engine.ActionProjectLabelManage, s.deleteIssueLabel)
 
-	projectGroup.POST("/issues/", s.createIssue)
-	projectGroup.POST("/issues/search/", s.getIssueList)
+	s.projectRoute(projectGroup, http.MethodDelete, "/bulk-delete-issues/", engine.ActionIssueBulkEdit, s.deleteIssuesBulk)
 
-	// Labels
-	projectGroup.GET("/issue-labels/", s.getIssueLabelList)
-	projectGroup.POST("/issue-labels/", s.createIssueLabel)
-	projectGroup.GET("/issue-labels/:labelId/", s.getIssueLabel)
-	projectGroup.PATCH("/issue-labels/:labelId/", s.updateIssueLabel)
-	projectGroup.DELETE("/issue-labels/:labelId/", s.deleteIssueLabel)
+	s.projectRoute(projectGroup, http.MethodGet, "/states/", engine.ActionProjectView, s.getStateList)
+	s.projectRoute(projectGroup, http.MethodPost, "/states/", engine.ActionProjectStateManage, s.createState)
+	s.projectRoute(projectGroup, http.MethodGet, "/states/:stateId/", engine.ActionProjectView, s.getState)
+	s.projectRoute(projectGroup, http.MethodPatch, "/states/:stateId/", engine.ActionProjectStateManage, s.updateState)
+	s.projectRoute(projectGroup, http.MethodDelete, "/states/:stateId/", engine.ActionProjectStateManage, s.deleteState)
+	s.projectRoute(projectGroup, http.MethodGet, "/start-states/", engine.ActionProjectView, s.getProjectStartStates)
 
-	projectGroup.DELETE("/bulk-delete-issues/", s.deleteIssuesBulk)
+	s.projectRoute(projectGroup, http.MethodPost, "/rules-log/", engine.ActionProjectRulesLogView, s.getRulesLog)
 
-	// States
-	projectGroup.GET("/states/", s.getStateList)
-	projectGroup.POST("/states/", s.createState)
-	projectGroup.GET("/states/:stateId/", s.getState)
-	projectGroup.PATCH("/states/:stateId/", s.updateState)
-	projectGroup.DELETE("/states/:stateId/", s.deleteState)
-	projectGroup.GET("/start-states/", s.getProjectStartStates)
+	s.projectRoute(projectGroup, http.MethodGet, "/rules-script/", engine.ActionProjectRulesManage, s.getProjectRulesScript)
+	s.projectRoute(projectGroup, http.MethodPut, "/rules-script/", engine.ActionProjectRulesManage, s.updateProjectRulesScript)
+	s.projectRoute(projectGroup, http.MethodDelete, "/rules-script/", engine.ActionProjectRulesManage, s.deleteProjectRulesScript)
 
-	projectGroup.POST("/rules-log/", s.getRulesLog)
+	s.projectRoute(projectGroup, http.MethodGet, "/templates/", engine.ActionProjectView, s.getProjectIssueTemplates)
+	s.projectRoute(projectGroup, http.MethodPost, "/templates/", engine.ActionProjectTemplateManage, s.createIssueTemplate)
+	s.projectRoute(projectGroup, http.MethodGet, "/templates/:templateId/", engine.ActionProjectView, s.getIssueTemplate)
+	s.projectRoute(projectGroup, http.MethodPatch, "/templates/:templateId/", engine.ActionProjectTemplateManage, s.updateIssueTemplate)
+	s.projectRoute(projectGroup, http.MethodDelete, "/templates/:templateId/", engine.ActionProjectTemplateManage, s.deleteIssueTemplate)
 
-	// Rules Script (только для админов проекта)
-	projectAdminGroup.GET("/rules-script/", s.getProjectRulesScript)
-	projectAdminGroup.PUT("/rules-script/", s.updateProjectRulesScript)
-	projectAdminGroup.DELETE("/rules-script/", s.deleteProjectRulesScript)
+	s.projectRoute(projectGroup, http.MethodGet, "/stats/", engine.ActionProjectStats, s.getProjectStats)
 
-	// Issue Templates
-	projectGroup.GET("/templates/", s.getProjectIssueTemplates)
-	projectAdminGroup.POST("/templates/", s.createIssueTemplate)
-	projectGroup.GET("/templates/:templateId/", s.getIssueTemplate)
-	projectAdminGroup.PATCH("/templates/:templateId/", s.updateIssueTemplate)
-	projectAdminGroup.DELETE("/templates/:templateId/", s.deleteIssueTemplate)
+	s.projectRoute(projectGroup, http.MethodGet, "/property-templates/", engine.ActionProjectView, s.getPropertyTemplateList)
+	s.projectRoute(projectGroup, http.MethodPost, "/property-templates/", engine.ActionProjectPropertyManage, s.createPropertyTemplate)
+	s.projectRoute(projectGroup, http.MethodPatch, "/property-templates/:templateId/", engine.ActionProjectPropertyManage, s.updatePropertyTemplate)
+	s.projectRoute(projectGroup, http.MethodDelete, "/property-templates/:templateId/", engine.ActionProjectPropertyManage, s.deletePropertyTemplate)
 
-	projectGroup.GET("/stats/", s.getProjectStats)
-
-	// Property Templates (шаблоны полей проекта)
-	projectGroup.GET("/property-templates/", s.getPropertyTemplateList)
-	projectAdminGroup.POST("/property-templates/", s.createPropertyTemplate)
-	projectAdminGroup.PATCH("/property-templates/:templateId/", s.updatePropertyTemplate)
-	projectAdminGroup.DELETE("/property-templates/:templateId/", s.deletePropertyTemplate)
-
-	// Dictionaries (справочники проекта)
-	projectGroup.GET("/dictionaries/", s.getDictionaryList)
-	projectAdminGroup.POST("/dictionaries/", s.createDictionary)
+	s.projectRoute(projectGroup, http.MethodGet, "/dictionaries/", engine.ActionProjectDictionaryView, s.getDictionaryList)
+	s.projectRoute(projectGroup, http.MethodPost, "/dictionaries/", engine.ActionProjectDictionaryManage, s.createDictionary)
 
 	dictionaryGroup := projectGroup.Group("/dictionaries/:dictionaryId", s.DictionariesMiddleware)
-	dictionaryAdminGroup := projectAdminGroup.Group("/dictionaries/:dictionaryId", s.DictionariesMiddleware)
-	dictionaryGroup.GET("/rows/", s.getDictionaryRows)
-	dictionaryAdminGroup.PATCH("/", s.updateDictionary)
-	dictionaryAdminGroup.DELETE("/", s.deleteDictionary)
-	dictionaryAdminGroup.POST("/rows/", s.createDictionaryRow)
-	dictionaryAdminGroup.POST("/rows/import/", s.importDictionaryRows)
-	dictionaryAdminGroup.PATCH("/rows/:rowId/", s.updateDictionaryRow)
-	dictionaryAdminGroup.DELETE("/rows/:rowId/", s.deleteDictionaryRow)
+	s.projectRoute(dictionaryGroup, http.MethodGet, "/rows/", engine.ActionProjectDictionaryView, s.getDictionaryRows)
+	s.projectRoute(dictionaryGroup, http.MethodPatch, "/", engine.ActionProjectDictionaryManage, s.updateDictionary)
+	s.projectRoute(dictionaryGroup, http.MethodDelete, "/", engine.ActionProjectDictionaryManage, s.deleteDictionary)
+	s.projectRoute(dictionaryGroup, http.MethodPost, "/rows/", engine.ActionProjectDictionaryManage, s.createDictionaryRow)
+	s.projectRoute(dictionaryGroup, http.MethodPost, "/rows/import/", engine.ActionProjectDictionaryManage, s.importDictionaryRows)
+	s.projectRoute(dictionaryGroup, http.MethodPatch, "/rows/:rowId/", engine.ActionProjectDictionaryManage, s.updateDictionaryRow)
+	s.projectRoute(dictionaryGroup, http.MethodDelete, "/rows/:rowId/", engine.ActionProjectDictionaryManage, s.deleteDictionaryRow)
 
-	projectAdminGroup.POST("/archive/", s.archiveProject)
-	projectAdminGroup.POST("/unarchive/", s.unarchiveProject)
+	s.projectRoute(projectGroup, http.MethodPost, "/archive/", engine.ActionProjectArchive, s.archiveProject)
+	s.projectRoute(projectGroup, http.MethodPost, "/unarchive/", engine.ActionProjectArchive, s.unarchiveProject)
 }
 
 // getProjectList godoc
