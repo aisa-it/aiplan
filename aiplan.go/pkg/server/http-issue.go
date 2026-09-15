@@ -383,32 +383,28 @@ func (s *Services) FindIssueByIdOrSeqMiddleware(next echo.HandlerFunc) echo.Hand
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/issues/search [post]
 func (s *Services) getIssueList(c echo.Context) error {
-	globalSearch := false
 	apiContext := apicontext.GetContext(c)
-	user := apiContext.GetUser()
-	var projectMember dao.ProjectMember
-	var sprint *dao.Sprint
+	scope := engine.IssueScope{Subject: apiContext, Kind: engine.ScopeGlobal}
 
-	if c.Param("projectId") != "" {
-		pm := apiContext.GetProjectMember()
-		if apiContext.Error() != nil {
-			return EError(c, apiContext.Error())
-		}
-		projectMember = *pm
-	} else if c.Param("sprintId") != "" {
-		sprint = apiContext.GetSprint(apicontext.WithSprintIssues())
-		if apiContext.Error() != nil {
-			return EError(c, apiContext.Error())
-		}
-		globalSearch = true
-	} else {
-		globalSearch = true
+	// Сущности режима загружаются заранее: ошибка загрузки должна вернуться
+	// клиенту, а спринт движку нужен вместе с задачами.
+	switch {
+	case c.Param("projectId") != "":
+		scope.Kind = engine.ScopeProject
+		apiContext.GetProjectMember()
+	case c.Param("sprintId") != "":
+		scope.Kind = engine.ScopeSprint
+		apiContext.GetSprint(apicontext.WithSprintIssues())
+	}
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
 	}
 
 	searchParams, err := types.ParseSearchParams(c)
 	if err != nil {
 		return EError(c, err)
 	}
+	scope.Params = searchParams
 
 	// Для streaming режима создаем callback
 	var streamCallback search.StreamCallback
@@ -431,7 +427,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrLimitTooHigh)
 	}
 
-	result, err := search.GetIssueListData(s.DB(c), *user, projectMember, sprint, globalSearch, searchParams, streamCallback)
+	result, err := s.search.GetIssueListData(c.Request().Context(), s.DB(c), scope, streamCallback)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
 			return EErrorDefined(c, definedErr)
@@ -472,7 +468,7 @@ func (s *Services) getIssueList(c echo.Context) error {
 // @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
 // @Router /api/auth/issues/search/export/ [post]
 func (s *Services) exportIssueList(c echo.Context) error {
-	user := apicontext.GetContext(c).GetUser()
+	apiContext := apicontext.GetContext(c)
 
 	searchParams, err := types.ParseSearchParams(c)
 	if err != nil {
@@ -487,7 +483,11 @@ func (s *Services) exportIssueList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	result, err := search.GetIssueListData(s.DB(c), *user, dao.ProjectMember{}, nil, true, searchParams, nil)
+	result, err := s.search.GetIssueListData(c.Request().Context(), s.DB(c), engine.IssueScope{
+		Subject: apiContext,
+		Kind:    engine.ScopeGlobal,
+		Params:  searchParams,
+	}, nil)
 	if err != nil {
 		if definedErr, ok := err.(apierrors.DefinedError); ok {
 			return EErrorDefined(c, definedErr)

@@ -419,15 +419,13 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		return mcp.NewToolResultError("группировка не поддерживается в MCP search_issues"), nil
 	}
 
-	// Получаем сырые данные из БД напрямую через BuildIssueListQuery
-	issues, count, err := search.SearchIssuesList(
-		db,
-		*user,
-		dao.ProjectMember{}, // пустой - глобальный поиск
-		nil,                 // без спринта
-		true,                // globalSearch = true
-		searchParams,
-	)
+	// Видимость задач ограничивает движок ядра — тот же, что и в HTTP.
+	// Пока MCP не получает подключённый движок, применяется движок ядра.
+	issues, count, err := search.New(defaultengine.New()).SearchIssuesList(ctx, db, engine.IssueScope{
+		Subject: apicontext.NewSubject(apicontext.Prefilled{User: user}),
+		Kind:    engine.ScopeGlobal,
+		Params:  searchParams,
+	})
 	if err != nil {
 		return logger.Error(err), nil
 	}

@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/cache"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
 	"github.com/gofrs/uuid"
@@ -17,6 +19,75 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// Visibility — что поиску нужно от политики видимости движка.
+// Реализуется *policy.Enforcer и движком ядра.
+type Visibility interface {
+	VisibleProjects(ctx context.Context, req engine.IssueScope, db *gorm.DB) *gorm.DB
+	ScopeIssues(ctx context.Context, req engine.IssueScope, q *gorm.DB) *gorm.DB
+}
+
+// Searcher выполняет поиск задач. Ручка поиска доступна любому участнику,
+// и разграничение держится только на условиях запроса, поэтому политика
+// видимости обязательна и подставляется явно.
+type Searcher struct {
+	visibility Visibility
+}
+
+// New создаёт поиск с политикой видимости. nil недопустим: поиск без
+// ограничения видимости отдаёт чужие задачи.
+func New(visibility Visibility) *Searcher {
+	if visibility == nil {
+		panic("search: visibility policy is required")
+	}
+	return &Searcher{visibility: visibility}
+}
+
+// resolveScope загружает сущности субъекта, нужные режиму, и отказывает
+// до похода в БД: без пользователя или при ошибке загрузки запрос не
+// выполняется вовсе. Вызывается до параллельных запросов: ленивые геттеры
+// не потокобезопасны, а после загрузки отдают кеш.
+func resolveScope(scope engine.IssueScope) error {
+	if scope.Subject == nil || scope.Subject.User() == nil {
+		return apierrors.ErrIssueForbidden
+	}
+	scopeSprint(scope)
+	scopeProjectID(scope)
+	return scope.Subject.Err()
+}
+
+// scopeIssues навешивает ограничение видимости. Страховка построителя:
+// публичные методы отказывают раньше через resolveScope, но сам запрос без
+// ограничения существовать не должен — тогда он пустой, а не полный.
+func (s *Searcher) scopeIssues(ctx context.Context, scope engine.IssueScope, q *gorm.DB) *gorm.DB {
+	if scope.Subject == nil || scope.Subject.User() == nil {
+		return q.Where("1 = 0")
+	}
+	q = s.visibility.ScopeIssues(ctx, scope, q)
+	if scope.Subject.Err() != nil {
+		return q.Where("1 = 0")
+	}
+	return q
+}
+
+// scopeSprint — спринт запроса в режиме ScopeSprint, иначе nil.
+func scopeSprint(scope engine.IssueScope) *dao.Sprint {
+	if scope.Kind != engine.ScopeSprint {
+		return nil
+	}
+	return scope.Subject.Sprint()
+}
+
+// scopeProjectID — проект запроса в режиме ScopeProject, иначе uuid.Nil.
+func scopeProjectID(scope engine.IssueScope) uuid.UUID {
+	if scope.Kind != engine.ScopeProject {
+		return uuid.Nil
+	}
+	if pm := scope.Subject.ProjectMember(); pm != nil {
+		return pm.ProjectId
+	}
+	return uuid.Nil
+}
 
 func populateAuthors(issues []dao.IssueWithCount) {
 	for i := range issues {
@@ -26,13 +97,14 @@ func populateAuthors(issues []dao.IssueWithCount) {
 	}
 }
 
-func buildSearchQuery(db *gorm.DB,
-	user dao.User,
-	projectMember dao.ProjectMember,
-	sprint *dao.Sprint,
-	globalSearch bool,
-	searchParams *types.SearchParams,
-) *gorm.DB {
+func (s *Searcher) buildSearchQuery(ctx context.Context, db *gorm.DB, scope engine.IssueScope) *gorm.DB {
+	searchParams := scope.Params
+	user := scope.Subject.User()
+	if user == nil {
+		user = &dao.User{}
+	}
+	sprint := scopeSprint(scope)
+	globalSearch := scope.Kind != engine.ScopeProject
 	searchParams.OrderByParam = strings.TrimPrefix(searchParams.OrderByParam, "-")
 
 	var query *gorm.DB
@@ -59,19 +131,8 @@ func buildSearchQuery(db *gorm.DB,
 		query = query.Set("userId", user.ID)
 	}
 
-	// Fill filters
-	if !globalSearch && projectMember.ProjectId != uuid.Nil {
-		query = query.
-			Where("issues.workspace_id = ?", projectMember.WorkspaceId).
-			Where("issues.project_id = ?", projectMember.ProjectId)
-	} else /* if !user.IsSuperuser */ {
-		query = query.
-			Where("issues.project_id in (?)", db.
-				Select("project_id").
-				Where("member_id = ?", user.ID).
-				Model(&dao.ProjectMember{}),
-			)
-	}
+	// Видимость задач решает движок
+	query = s.scopeIssues(ctx, scope, query)
 
 	// Filter only sprint issues
 	if sprint != nil {
@@ -347,20 +408,17 @@ func buildSearchQuery(db *gorm.DB,
 // SearchIssuesList выполняет поиск задач без группировки и возвращает сырые DAO-объекты.
 // Не поддерживает GroupByParam - для группировки используйте GetIssueListData.
 // Используется в MCP handlers для прямого доступа к DAO.
-func SearchIssuesList(
-	db *gorm.DB,
-	user dao.User,
-	projectMember dao.ProjectMember,
-	sprint *dao.Sprint,
-	globalSearch bool,
-	searchParams *types.SearchParams,
-) ([]dao.IssueWithCount, int, error) {
+func (s *Searcher) SearchIssuesList(ctx context.Context, db *gorm.DB, scope engine.IssueScope) ([]dao.IssueWithCount, int, error) {
+	searchParams := scope.Params
 	if searchParams.GroupByParam != "" {
 		return nil, 0, apierrors.ErrUnsupportedGroup
 	}
+	if err := resolveScope(scope); err != nil {
+		return nil, 0, err
+	}
 
 	if searchParams.OnlyCount {
-		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+		query := s.buildSearchQuery(ctx, db, scope)
 		var count int64
 		if err := query.Count(&count).Error; err != nil {
 			return nil, 0, err
@@ -375,14 +433,16 @@ func SearchIssuesList(
 	)
 
 	eg.Go(func() error {
-		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+		query := s.buildSearchQuery(ctx, db, scope)
 		return query.Find(&issues).Error
 	})
 
 	eg.Go(func() error {
 		countParams := *searchParams
 		countParams.OnlyCount = true
-		countQuery := buildSearchQuery(db, user, projectMember, sprint, globalSearch, &countParams)
+		countScope := scope
+		countScope.Params = &countParams
+		countQuery := s.buildSearchQuery(ctx, db, countScope)
 		return countQuery.Count(&count).Error
 	})
 
@@ -398,15 +458,18 @@ func SearchIssuesList(
 // GetIssueListData возвращает данные списка задач без привязки к HTTP контексту
 // Используется для переиспользования логики в MCP tools и других местах
 // Поддерживает группировку и streaming через callback
-func GetIssueListData(
+func (s *Searcher) GetIssueListData(
+	ctx context.Context,
 	db *gorm.DB,
-	user dao.User,
-	projectMember dao.ProjectMember,
-	sprint *dao.Sprint,
-	globalSearch bool,
-	searchParams *types.SearchParams,
+	scope engine.IssueScope,
 	streamCallback StreamCallback,
 ) (any, error) {
+	db = db.WithContext(ctx)
+	searchParams := scope.Params
+	if err := resolveScope(scope); err != nil {
+		return nil, err
+	}
+	user := scope.Subject.User()
 	if searchParams.GroupByParam != "" && !slices.Contains(types.IssueGroupFields, searchParams.GroupByParam) {
 		templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam)
 		if !ok {
@@ -424,7 +487,7 @@ func GetIssueListData(
 
 	// OnlyCount - особый случай, считаем через SearchIssuesList
 	if searchParams.OnlyCount {
-		_, count, err := SearchIssuesList(db, user, projectMember, sprint, globalSearch, searchParams)
+		_, count, err := s.SearchIssuesList(ctx, db, scope)
 		if err != nil {
 			return nil, err
 		}
@@ -434,9 +497,9 @@ func GetIssueListData(
 	}
 
 	if searchParams.GroupByParam != "" {
-		query := buildSearchQuery(db, user, projectMember, sprint, globalSearch, searchParams)
+		query := s.buildSearchQuery(ctx, db, scope)
 
-		groupSize, err := getIssuesGroups(db, &user, projectMember.ProjectId, sprint, searchParams)
+		groupSize, err := s.getIssuesGroups(ctx, db, scope)
 		if err != nil {
 			return nil, err
 		}
@@ -444,9 +507,9 @@ func GetIssueListData(
 		groupMap := make([]*dto.IssuesGroupResponse, len(groupSize))
 		i := 0
 		var streamMu sync.Mutex
-		totalCount, err := fetchIssuesByGroups(
+		totalCount, err := fetchIssuesByGroups( //nolint:contextcheck // контекст привязан к db выше
 			db,
-			&user,
+			user,
 			groupSize,
 			query.Session(&gorm.Session{}),
 			searchParams,
@@ -507,7 +570,7 @@ func GetIssueListData(
 	}
 
 	// Обычный случай (без группировки) - используем SearchIssuesList
-	issues, count, err := SearchIssuesList(db, user, projectMember, sprint, globalSearch, searchParams)
+	issues, count, err := s.SearchIssuesList(ctx, db, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +589,7 @@ func GetIssueListData(
 	}
 
 	dtoIssues := utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() })
-	if err := attachIssuesProperties(db, &user, searchParams, dtoIssues); err != nil {
+	if err := attachIssuesProperties(db, user, searchParams, dtoIssues); err != nil { //nolint:contextcheck // контекст привязан к db выше
 		return nil, err
 	}
 

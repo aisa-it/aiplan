@@ -19,6 +19,9 @@ import (
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/config"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine/defaultengine"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/search"
 	"github.com/labstack/echo/v4"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -45,7 +48,7 @@ func TestMain(m *testing.M) {
 	db, _ := gorm.Open(postgres.New(postgres.Config{DSN: cfg.DatabaseDSN}), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
-	s = &Services{db: db}
+	s = &Services{db: db, search: search.New(policy.New(nil, defaultengine.New()))}
 
 	dao.Config = cfg
 	db.Where("email = 'test@aiplan.ru'").First(&admin)
