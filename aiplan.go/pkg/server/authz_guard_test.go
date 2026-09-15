@@ -33,22 +33,17 @@ func TestNoHandmadePermissionChecks(t *testing.T) {
 		"ErrForbiddenState": "states_flow",
 	}
 
-	// Ещё не перенесено: права на проект, пространство, спринт, документы
-	// и формы решают отдельные функции по пути роута.
+	// Ещё не перенесено: пользовательские, административные, git- и
+	// импортные ручки правилами движка не управляются.
 	allowed := map[string]struct{}{
-		"http-project.go":   {},
-		"http-workspace.go": {},
-		"http-sprint.go":    {},
-		"http-doc.go":       {},
-		"http-form.go":      {},
-		"http-user.go":      {},
-		"http-admin.go":     {},
-		"http-backup.go":    {},
-		"http-git.go":       {},
-		"http-import.go":    {},
+		"http-user.go":   {},
+		"http-admin.go":  {},
+		"http-backup.go": {},
+		"http-git.go":    {},
+		"http-import.go": {},
 	}
 
-	files, err := filepath.Glob("http-issue*.go")
+	files, err := filepath.Glob("http-*.go")
 	if err != nil {
 		t.Fatalf("поиск обработчиков: %v", err)
 	}

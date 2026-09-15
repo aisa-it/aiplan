@@ -234,10 +234,3 @@ func TestGetIssueFamily(t *testing.T) {
 func TestSplitTSQuery(t *testing.T) {
 	fmt.Println(SplitTSQuery("тензорный ускоритель"))
 }
-
-func TestGetUserPrivilegesOverIssue(t *testing.T) {
-	userId := uuid.Must(uuid.FromString("cd61d7df-7025-4bf0-85f9-f374f5d10008"))
-	priv, err := GetUserPrivilegesOverIssue("114c08ce-c9f5-4ca6-b829-63ec337a6238", userId, db)
-	fmt.Println(err)
-	fmt.Printf("%+v\n", priv)
-}

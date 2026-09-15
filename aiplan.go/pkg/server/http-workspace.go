@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"net/http"
 	"slices"
 	"strings"
@@ -97,59 +98,57 @@ func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 // AddWorkspaceServices - добавление сервисов рабочих пространств
 func (s *Services) AddWorkspaceServices(g *echo.Group) {
-	workspaceGroup := g.Group("workspaces/:workspaceSlug", s.WorkspaceMiddleware)
+	workspaceGroup := g.Group(workspaceScopePrefix, s.WorkspaceMiddleware)
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
-	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
 
 	g.GET("users/me/workspaces/", s.getUserWorkspaceList)
 
-	// Favorites
 	g.GET("users/user-favorite-workspaces/", s.getFavoriteWorkspaceList)
 	g.POST("users/user-favorite-workspaces/", s.addWorkspaceToFavorites)
 	g.DELETE("users/user-favorite-workspaces/:workspaceID/", s.removeWorkspaceFromFavorites)
 
 	g.POST("workspaces/", s.createWorkspace)
 
-	workspaceGroup.GET("/", s.getWorkspace)
-	workspaceGroup.PATCH("/", s.updateWorkspace)
-	workspaceGroup.POST("/logo/", s.updateWorkspaceLogo)
-	workspaceGroup.DELETE("/logo/", s.deleteWorkspaceLogo)
-	workspaceGroup.DELETE("/", s.deleteWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/", engine.ActionWorkspaceView, s.getWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/", engine.ActionWorkspaceUpdate, s.updateWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/logo/", engine.ActionWorkspaceUpdate, s.updateWorkspaceLogo)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/logo/", engine.ActionWorkspaceUpdate, s.deleteWorkspaceLogo)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/", engine.ActionWorkspaceDelete, s.deleteWorkspace)
 
-	workspaceGroup.GET("/summary/", s.getWorkspaceSummary)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/summary/", engine.ActionWorkspaceView, s.getWorkspaceSummary)
 
-	workspaceGroup.POST("/invite/", s.addToWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/invite/", engine.ActionWorkspaceInvite, s.addToWorkspace)
 
-	workspaceGroup.GET("/activities/", s.getWorkspaceActivityList)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/activities/", engine.ActionWorkspaceActivity, s.getWorkspaceActivityList)
 
-	workspaceGroup.GET("/members/", s.getWorkspaceMemberList)
-	workspaceGroup.GET("/members/me/", s.getWorkspaceCurrentMembership)
-	workspaceGroup.PATCH("/members/:memberId/", s.updateWorkspaceMember)
-	workspaceGroup.PATCH("/members/:memberId/set-email/", s.updateUserEmail)
-	workspaceGroup.DELETE("/members/:memberId/", s.deleteWorkspaceMember)
-	workspaceGroup.POST("/me/notifications/", s.updateMyWorkspaceNotifications)
-	workspaceGroup.GET("/members/activities/", s.getWorkspaceMembersActivityList)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/members/", engine.ActionWorkspaceMemberView, s.getWorkspaceMemberList)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/members/me/", engine.ActionWorkspaceMemberView, s.getWorkspaceCurrentMembership)
+	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/members/:memberId/", engine.ActionWorkspaceMemberManage, s.updateWorkspaceMember)
+	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/members/:memberId/set-email/", engine.ActionWorkspaceMemberManage, s.updateUserEmail)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/members/:memberId/", engine.ActionWorkspaceMemberManage, s.deleteWorkspaceMember)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/me/notifications/", engine.ActionWorkspaceSelfSettings, s.updateMyWorkspaceNotifications)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/members/activities/", engine.ActionWorkspaceMemberView, s.getWorkspaceMembersActivityList)
 
-	workspaceGroup.POST("/members/message/", s.createMessageForWorkspaceMember)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/members/message/", engine.ActionWorkspaceMemberManage, s.createMessageForWorkspaceMember)
 
-	workspaceGroup.GET("/token/", s.getWorkspaceToken)
-	workspaceGroup.POST("/token/reset/", s.resetWorkspaceToken)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/token/", engine.ActionWorkspaceTokenView, s.getWorkspaceToken)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/token/reset/", engine.ActionWorkspaceTokenManage, s.resetWorkspaceToken)
 
 	g.GET("users/last-visited-workspace/", s.getLastVisitedWorkspace)
 
-	workspaceGroup.GET("/workspace-members/me/", s.getWorkspaceMemberMe) // Legacy TODO: delete after front
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/workspace-members/me/", engine.ActionWorkspaceMemberView, s.getWorkspaceMemberMe) // Legacy TODO: delete after front
 
-	workspaceGroup.GET("/states/", s.getWorkspaceStateList)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/states/", engine.ActionWorkspaceView, s.getWorkspaceStateList)
 
 	if !cfg.JitsiDisabled {
-		workspaceGroup.GET("/jitsi-token/", s.getWorkspaceJitsiToken, NewJitsiTokenLogMiddleware(s.db))
+		s.workspaceRoute(workspaceGroup, http.MethodGet, "/jitsi-token/", engine.ActionWorkspaceView, s.getWorkspaceJitsiToken, NewJitsiTokenLogMiddleware(s.db))
 	}
 
-	workspaceGroup.GET("/integrations/", s.getIntegrationList)
-	workspaceGroup.POST("/integrations/add/:name/", s.addIntegrationToWorkspace)
-	workspaceGroup.DELETE("/integrations/:name/", s.deleteIntegrationFromWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/integrations/", engine.ActionWorkspaceView, s.getIntegrationList)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/integrations/add/:name/", engine.ActionWorkspaceIntegrationManage, s.addIntegrationToWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/integrations/:name/", engine.ActionWorkspaceIntegrationManage, s.deleteIntegrationFromWorkspace)
 
-	workspaceGroup.GET("/tariff/", s.getWorkspaceTariff)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/tariff/", engine.ActionWorkspaceView, s.getWorkspaceTariff)
 }
 
 // getWorkspaceMemberMe godoc
@@ -1576,15 +1575,9 @@ func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/token [get]
 func (s *Services) getWorkspaceToken(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
-	user := apiContext.GetUser()
 	workspace := apiContext.GetWorkspace()
-	workspaceMember := apiContext.GetWorkspaceMember()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
-	}
-
-	if !user.IsSuperuser && workspaceMember.Role != types.AdminRole && workspace.OwnerId != workspaceMember.MemberId {
-		return c.NoContent(http.StatusForbidden)
 	}
 	return c.String(http.StatusOK, workspace.IntegrationToken)
 }

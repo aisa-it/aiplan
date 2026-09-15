@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"go/types"
 	"log/slog"
 	"math"
@@ -89,28 +90,25 @@ func (s *Services) AnswerFormNoAuthMiddleware(next echo.HandlerFunc) echo.Handle
 }
 
 func (s *Services) AddFormServices(g *echo.Group) {
-	workspaceGroup := g.Group("workspaces/:workspaceSlug", s.WorkspaceMiddleware)
-	workspaceGroup.Use(s.WorkspacePermissionMiddleware)
+	workspaceGroup := g.Group(workspaceScopePrefix, s.WorkspaceMiddleware)
 
 	answerGroup := g.Group("forms/:formSlug", s.AnswerFormAuthMiddleware)
 
 	formGroup := workspaceGroup.Group("/forms/:formSlug", s.FormMiddleware)
-	formGroup.Use(s.FormPermissionMiddleware)
 
-	workspaceGroup.GET("/forms/", s.getFormList)
-	workspaceGroup.POST("/forms/", s.createForm)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/forms/", engine.ActionFormView, s.getFormList)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/forms/", engine.ActionFormCreate, s.createForm)
 
 	answerGroup.GET("/", s.getFormAuth)
 	answerGroup.POST("/answer/", s.createAnswerAuth)
 	answerGroup.POST("/form-attachments/", s.createFormAttachments)
 	answerGroup.DELETE("/form-attachments/:attachmentId/", s.deleteFormAttachment)
 
-	formGroup.PATCH("/", s.updateForm)
-	formGroup.DELETE("/", s.deleteForm)
+	s.formRoute(formGroup, http.MethodPatch, "/", engine.ActionFormUpdate, s.updateForm)
+	s.formRoute(formGroup, http.MethodDelete, "/", engine.ActionFormDelete, s.deleteForm)
 
-	formGroup.GET("/answers/", s.getAnswers)
-	formGroup.GET("/answers/:answerSeq", s.getAnswer)
-
+	s.formRoute(formGroup, http.MethodGet, "/answers/", engine.ActionFormAnswerView, s.getAnswers)
+	s.formRoute(formGroup, http.MethodGet, "/answers/:answerSeq", engine.ActionFormAnswerView, s.getAnswer)
 }
 
 func (s *Services) AddFormWithoutAuthServices(g *echo.Group) {

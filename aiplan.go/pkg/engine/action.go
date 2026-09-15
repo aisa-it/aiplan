@@ -103,6 +103,13 @@ const (
 	ActionProjectDictionaryView   Action = "project.dictionary.view"
 	ActionProjectDictionaryManage Action = "project.dictionary.manage"
 	ActionProjectViewManage       Action = "project.view.manage"
+
+	// ActionProjectJoin — вступление в проекты пространства.
+	ActionProjectJoin Action = "project.join"
+	// ActionProjectSelfSettings — личные настройки участника в проекте (уведомления).
+	ActionProjectSelfSettings Action = "project.self.settings"
+	// ActionProjectRulesLogView — журнал срабатываний скрипта правил.
+	ActionProjectRulesLogView Action = "project.rules.log.view"
 )
 
 // Пространство.
@@ -120,12 +127,20 @@ const (
 
 	ActionWorkspaceIntegrationManage Action = "workspace.integration.manage"
 	ActionWorkspaceTokenManage       Action = "workspace.token.manage"
+	ActionWorkspaceTokenView         Action = "workspace.token.view"
 	ActionWorkspaceBackup            Action = "workspace.backup"
+	ActionWorkspaceBackupView        Action = "workspace.backup.view"
 	ActionWorkspaceImport            Action = "workspace.import"
+
+	// ActionWorkspaceSelfSettings — личные настройки участника в пространстве:
+	// уведомления, избранное.
+	ActionWorkspaceSelfSettings Action = "workspace.self.settings"
 )
 
 // Спринт.
 const (
+	// ActionSprintList — список спринтов пространства (спринта в запросе нет).
+	ActionSprintList         Action = "sprint.list"
 	ActionSprintView         Action = "sprint.view"
 	ActionSprintCreate       Action = "sprint.create"
 	ActionSprintUpdate       Action = "sprint.update"
@@ -135,12 +150,21 @@ const (
 	ActionSprintIssueManage  Action = "sprint.issue.manage"
 	ActionSprintWatchManage  Action = "sprint.watcher.manage"
 	ActionSprintSearchIssues Action = "sprint.issue.search"
+	// ActionSprintViewManage — личное представление спринта пользователя.
+	ActionSprintViewManage   Action = "sprint.view.manage"
+	ActionSprintFolderManage Action = "sprint.folder.manage"
 )
 
 // Документ.
 const (
+	// ActionDocList и ActionDocCreateRoot — корень дерева документов
+	// пространства (документа в запросе нет).
+	ActionDocList           Action = "doc.list"
+	ActionDocCreateRoot     Action = "doc.create.root"
 	ActionDocView           Action = "doc.view"
 	ActionDocCreate         Action = "doc.create"
+	// ActionDocAccessManage — смена ролей и списков доступа документа.
+	ActionDocAccessManage   Action = "doc.access.manage"
 	ActionDocUpdate         Action = "doc.update"
 	ActionDocDelete         Action = "doc.delete"
 	ActionDocMove           Action = "doc.move"

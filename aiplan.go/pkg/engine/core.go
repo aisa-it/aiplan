@@ -34,6 +34,10 @@ type Core interface {
 	// api — группа без авторизации, auth — с авторизацией.
 	RegisterRoutes(fn func(api, auth *echo.Group))
 
+	// RegisterActions добавляет действия движка в область: они попадут в
+	// наборы прав, отдаваемые наружу (ActionsFor).
+	RegisterActions(area Area, actions ...Action)
+
 	// RegisterMCPTools, RegisterMCPResources, RegisterMCPPrompts добавляют
 	// инструменты, ресурсы и промпты движка в MCP-сервер ядра.
 	RegisterMCPTools(tools ...mcpserver.ServerTool)

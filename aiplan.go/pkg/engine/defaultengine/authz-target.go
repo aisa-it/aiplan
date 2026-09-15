@@ -39,9 +39,32 @@ func (e *Engine) authorizeTarget(req engine.AuthzRequest) (engine.Verdict, bool)
 			return engine.Default, false
 		}
 		return e.authorizeIssueDelete(issue, req.Subject), true
+
+	case engine.ActionDocCommentUpdate:
+		comment, ok := engine.TargetAs[*dao.DocComment](req)
+		if !ok {
+			return engine.Default, false
+		}
+		return verdict(isDocCommentAuthor(comment, req.Subject)), true
+
+	case engine.ActionDocCommentDelete:
+		comment, ok := engine.TargetAs[*dao.DocComment](req)
+		if !ok {
+			return engine.Default, false
+		}
+		return verdict(isDocCommentAuthor(comment, req.Subject) || isWorkspaceAdmin(req.Subject)), true
 	}
 
 	return engine.Default, false
+}
+
+// isDocCommentAuthor сообщает, оставил ли комментарий к документу текущий пользователь.
+func isDocCommentAuthor(comment *dao.DocComment, s engine.Subject) bool {
+	user := s.User()
+	if user == nil || comment == nil {
+		return false
+	}
+	return comment.ActorId.Valid && comment.ActorId.UUID == user.ID
 }
 
 // authorizeIssueDelete — удалять задачи может администратор проекта;

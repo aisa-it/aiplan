@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
 	errStack "github.com/aisa-it/aiplan/aiplan.go/pkg/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/pkg/types/activities"
 
@@ -31,46 +33,45 @@ import (
 )
 
 func (s *Services) AddDocServices(g *echo.Group) {
-	workspaceGroup := g.Group("workspaces/:workspaceSlug",
+	workspaceGroup := g.Group(workspaceScopePrefix,
 		s.WorkspaceMiddleware,
-		s.WorkspacePermissionMiddleware,
 		s.LastVisitedWorkspaceMiddleware,
 	)
-	docGroup := workspaceGroup.Group("/doc/:docId", s.DocPermissionMiddleware)
+	docGroup := workspaceGroup.Group("/doc/:docId")
 
-	workspaceGroup.GET("/doc/", s.getRootDocList)
-	workspaceGroup.POST("/doc/", s.createRootDoc)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/doc/", engine.ActionDocList, s.getRootDocList)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/doc/", engine.ActionDocCreateRoot, s.createRootDoc)
 
-	workspaceGroup.POST("/user-favorite-docs/", s.addDocToFavorites)
-	workspaceGroup.GET("/user-favorite-docs/", s.getFavoriteDocList)
-	workspaceGroup.DELETE("/user-favorite-docs/:docId/", s.removeDocFromFavorites)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/user-favorite-docs/", engine.ActionWorkspaceSelfSettings, s.addDocToFavorites)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/user-favorite-docs/", engine.ActionWorkspaceSelfSettings, s.getFavoriteDocList)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/user-favorite-docs/:docId/", engine.ActionWorkspaceSelfSettings, s.removeDocFromFavorites)
 
-	docGroup.GET("/", s.getDoc)
-	docGroup.POST("/", s.createDoc)
-	docGroup.PATCH("/", s.updateDoc)
-	docGroup.DELETE("/", s.deleteDoc)
-	docGroup.POST("/move/", s.moveDoc)
+	s.docRoute(docGroup, http.MethodGet, "/", engine.ActionDocView, s.getDoc)
+	s.docRoute(docGroup, http.MethodPost, "/", engine.ActionDocCreate, s.createDoc)
+	s.docRoute(docGroup, http.MethodPatch, "/", engine.ActionDocUpdate, s.updateDoc)
+	s.docRoute(docGroup, http.MethodDelete, "/", engine.ActionDocDelete, s.deleteDoc)
+	s.docRoute(docGroup, http.MethodPost, "/move/", engine.ActionDocMove, s.moveDoc)
 
-	docGroup.GET("/child/", s.getChildDocList)
-	docGroup.GET("/history/", s.getDocHistoryList)
-	docGroup.GET("/history/:versionId/", s.getDocHistory)
-	docGroup.PATCH("/history/:versionId/", s.updateDocFromHistory)
+	s.docRoute(docGroup, http.MethodGet, "/child/", engine.ActionDocView, s.getChildDocList)
+	s.docRoute(docGroup, http.MethodGet, "/history/", engine.ActionDocHistoryView, s.getDocHistoryList)
+	s.docRoute(docGroup, http.MethodGet, "/history/:versionId/", engine.ActionDocHistoryView, s.getDocHistory)
+	s.docRoute(docGroup, http.MethodPatch, "/history/:versionId/", engine.ActionDocUpdate, s.updateDocFromHistory)
 
-	docGroup.GET("/comments/", s.getDocCommentList)
-	docGroup.POST("/comments/", s.createDocComment)
-	docGroup.GET("/comments/:commentId/", s.getDocComment)
-	docGroup.PATCH("/comments/:commentId/", s.updateDocComment)
-	docGroup.DELETE("/comments/:commentId/", s.deleteDocComment)
-	docGroup.GET("/comments/:commentId/history/", s.getDocCommentUpdateList)
+	s.docRoute(docGroup, http.MethodGet, "/comments/", engine.ActionDocCommentView, s.getDocCommentList)
+	s.docRoute(docGroup, http.MethodPost, "/comments/", engine.ActionDocCommentCreate, s.createDocComment)
+	s.docRoute(docGroup, http.MethodGet, "/comments/:commentId/", engine.ActionDocCommentView, s.getDocComment)
+	s.docRoute(docGroup, http.MethodPatch, "/comments/:commentId/", engine.ActionDocCommentUpdate, s.updateDocComment)
+	s.docRoute(docGroup, http.MethodDelete, "/comments/:commentId/", engine.ActionDocCommentDelete, s.deleteDocComment)
+	s.docRoute(docGroup, http.MethodGet, "/comments/:commentId/history/", engine.ActionDocCommentView, s.getDocCommentUpdateList)
 
-	docGroup.POST("/comments/:commentId/reactions/", s.addDocCommentReaction)
-	docGroup.DELETE("/comments/:commentId/reactions/:reaction/", s.removeDocCommentReaction)
+	s.docRoute(docGroup, http.MethodPost, "/comments/:commentId/reactions/", engine.ActionDocCommentReact, s.addDocCommentReaction)
+	s.docRoute(docGroup, http.MethodDelete, "/comments/:commentId/reactions/:reaction/", engine.ActionDocCommentReact, s.removeDocCommentReaction)
 
-	docGroup.GET("/doc-attachments/", s.getDocAttachmentList)
-	docGroup.POST("/doc-attachments/", s.createDocAttachments)
-	docGroup.DELETE("/doc-attachments/:attachmentId/", s.deleteDocAttachment)
+	s.docRoute(docGroup, http.MethodGet, "/doc-attachments/", engine.ActionDocAttachmentView, s.getDocAttachmentList)
+	s.docRoute(docGroup, http.MethodPost, "/doc-attachments/", engine.ActionDocAttachmentAdd, s.createDocAttachments)
+	s.docRoute(docGroup, http.MethodDelete, "/doc-attachments/:attachmentId/", engine.ActionDocAttachmentDel, s.deleteDocAttachment)
 
-	docGroup.GET("/activities/", s.getDocActivityList)
+	s.docRoute(docGroup, http.MethodGet, "/activities/", engine.ActionDocActivity, s.getDocActivityList)
 }
 
 // getRootDocList godoc
@@ -356,7 +357,6 @@ func (s *Services) createDoc(c echo.Context) error {
 func (s *Services) updateDoc(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
-	workspaceMember := apiContext.GetWorkspaceMember()
 	// WithDocParent обязателен: ниже по коду смена reader_role/editor_role сверяется
 	// с ролями родителя (ErrDocRoleLowerThanParent). Без Preload ParentDoc всегда nil
 	// и проверка молча пропускается.
@@ -383,8 +383,9 @@ func (s *Services) updateDoc(c echo.Context) error {
 	}
 	form, _ := c.MultipartForm()
 
+	// Смена доступа к документу — отдельное право, проверяется по составу полей.
 	if utils.CheckInSet(utils.SliceToSet(fields), "editor_role", "reader_role", "editor_list", "reader_list", "watcher_list") {
-		if doc.CreatedById != user.ID && workspaceMember.Role != types.AdminRole {
+		if err := s.policy.Authorize(c.Request().Context(), engine.ActionDocAccessManage, apiContext); err != nil {
 			return EErrorDefined(c, apierrors.ErrDocForbidden)
 		}
 	}
@@ -1297,7 +1298,8 @@ func (s *Services) updateDocComment(c echo.Context) error {
 	}
 	oldSnapshot = tracker.CommentToSnapshot(&commentOld)
 
-	if !commentOld.ActorId.Valid || commentOld.ActorId.UUID != user.ID {
+	// Правило зависит от самого комментария — проверяется с объектом действия.
+	if err := s.policy.Authorize(c.Request().Context(), engine.ActionDocCommentUpdate, apiCtx, policy.On(&commentOld)); err != nil {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 
@@ -1378,7 +1380,6 @@ func (s *Services) updateDocComment(c echo.Context) error {
 func (s *Services) deleteDocComment(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
-	workspaceMember := apiContext.GetWorkspaceMember()
 	docPtr := apiContext.GetDoc()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
@@ -1397,7 +1398,7 @@ func (s *Services) deleteDocComment(c echo.Context) error {
 	}
 	oldSnapshot := tracker.CommentToSnapshot(&comment)
 
-	if workspaceMember.Role != types.AdminRole && (!comment.ActorId.Valid || comment.ActorId.UUID != user.ID) {
+	if err := s.policy.Authorize(c.Request().Context(), engine.ActionDocCommentDelete, apiContext, policy.On(&comment)); err != nil {
 		return EErrorDefined(c, apierrors.ErrCommentEditForbidden)
 	}
 

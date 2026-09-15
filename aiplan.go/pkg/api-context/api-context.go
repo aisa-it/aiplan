@@ -67,6 +67,8 @@ type Prefilled struct {
 	ProjectMember   *dao.ProjectMember
 	Issue           *dao.Issue
 	Sprint          *dao.Sprint
+	Doc             *dao.Doc
+	Form            *dao.Form
 }
 
 // NewPrefilled создаёт APIContext с уже загруженными сущностями: геттеры отдают
@@ -87,6 +89,8 @@ func NewPrefilled(c echo.Context, p Prefilled) *APIContext {
 	}
 	a.issue.Issue = p.Issue
 	a.sprint.Sprint = p.Sprint
+	a.doc.Doc = p.Doc
+	a.form.Form = p.Form
 	return a
 }
 
@@ -463,6 +467,9 @@ func (a *APIContext) CleanForm() *APIContext {
 }
 
 func (a *APIContext) GetForm(options ...FormFetchOption) *dao.Form {
+	if a.prefilled {
+		return a.form.Form
+	}
 	fetchOptions := &FormFetchOptions{query: a.db.Session(&gorm.Session{}), loaded: make(map[string]struct{}, 5)}
 
 	for _, option := range options {
@@ -489,6 +496,9 @@ func (a *APIContext) CleanDoc() *APIContext {
 }
 
 func (a *APIContext) GetDoc(options ...DocFetchOption) *dao.Doc {
+	if a.prefilled {
+		return a.doc.Doc
+	}
 	fetchOptions := &DocFetchOptions{query: a.db.Session(&gorm.Session{}), loaded: make(map[string]struct{}, 7)}
 
 	for _, option := range options {

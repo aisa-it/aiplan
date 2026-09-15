@@ -81,6 +81,7 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	s.issueRoute(issueGroup, http.MethodDelete, "/", engine.ActionIssueDelete, s.deleteIssue)
 
 	s.issueRoute(issueGroup, http.MethodGet, "/available-states/", engine.ActionIssueView, s.getAvailableStates)
+	s.issueRoute(issueGroup, http.MethodGet, "/permissions/", engine.ActionIssueView, s.getIssuePermissions)
 
 	s.issueRoute(issueGroup, http.MethodGet, "/sub-issues/", engine.ActionIssueView, s.getSubIssueList)
 	s.issueRoute(issueGroup, http.MethodPost, "/sub-issues/", engine.ActionIssueRelationManage, s.addSubIssueList)
@@ -167,21 +168,30 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 		if !(iOk && fOk) {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrAttachmentsIncorrectMetadata.TusdError()
 		}
-		priv, err := dao.GetUserPrivilegesOverIssue(issueId, user_id, s.db)
-		if err != nil {
+		// Право на вложение решает движок, как и в HTTP-ручке вложений;
+		// apicontext здесь нет, субъект собирается по задаче.
+		var issue dao.Issue
+		if err := s.db.Joins("Project").Preload("Assignees").Where("issues.id = ?", issueId).First(&issue).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrIssueNotFound.TusdError()
 			}
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 		}
-
-		if priv.ProjectRole == types.GuestRole || (!priv.IsAuthor && !priv.IsAssigner && priv.ProjectRole == types.MemberRole && !priv.MemberAttachmentsAllowed) {
+		var user dao.User
+		if err := s.db.Where("id = ?", user_id).First(&user).Error; err != nil {
+			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
+		}
+		subject, err := apicontext.LoadIssueSubject(s.db, &user, &issue)
+		if err != nil {
+			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrNotEnoughRights.TusdError()
+		}
+		if err := s.policy.Authorize(context.Background(), engine.ActionIssueAttachmentAdd, subject); err != nil {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrNotEnoughRights.TusdError()
 		}
 
 		filteredMetadata = tusd.MetaData{
-			"issue_id":  priv.IssueId,
-			"user_id":   priv.UserId,
+			"issue_id":  issue.ID.String(),
+			"user_id":   user.ID.String(),
 			"file_name": fileName,
 			"filetype":  hook.Upload.MetaData["file_type"], // Passed as content-type to minio, https://github.com/mackinleysmith/tusd/blob/d95c0d59ba14a202fbcd8556b5435fef3cb96040/pkg/s3store/s3store.go#L334
 		}
@@ -580,7 +590,43 @@ func (s *Services) getIssue(c echo.Context) error {
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
-	return c.JSON(http.StatusOK, issue.ToDTO())
+
+	result := issue.ToDTO()
+	permissions, err := s.policy.IssuePermissions(c.Request().Context(), apiContext, issue)
+	if err != nil {
+		return EError(c, err)
+	}
+	result.Permissions = permissions.Strings()
+	return c.JSON(http.StatusOK, result)
+}
+
+// getIssuePermissions godoc
+// @id getIssuePermissions
+// @Summary Задачи: права текущего пользователя на задачу
+// @Description Возвращает разрешённые действия над задачей плоской картой вида {"issue.update": true, "issue.delete": false}. Действия, зависящие от объекта (правка чужого комментария), в карте отсутствуют и решаются при обращении. Ролей наружу не отдаёт.
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Param issueIdOrSeq path string true "Идентификатор или последовательный номер задачи"
+// @Success 200 {object} map[string]bool "Разрешённые действия"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Задача не найдена"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/permissions [get]
+func (s *Services) getIssuePermissions(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	issue := apiContext.GetIssue(apicontext.WithAssignees())
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	permissions, err := s.policy.IssuePermissions(c.Request().Context(), apiContext, issue)
+	if err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, permissions.Strings())
 }
 
 // updateIssue godoc
