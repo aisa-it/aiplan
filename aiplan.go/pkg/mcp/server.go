@@ -8,6 +8,8 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/prompts"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/resources"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/tools"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/search"
 	"github.com/labstack/echo/v4"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -55,7 +57,7 @@ const mcpInstructions = `MCP сервер для работы с системо�
 - get_issue — получение задачи по ID, sequence ID или ссылке
 - search_issues — поиск задач с фильтрацией и сортировкой
 - create_issue — создание новой задачи в проекте
-- update_issue — обновление задачи (админ/автор — все поля, участник — только статус)
+- update_issue — обновление задачи (права те же, что в веб-интерфейсе: участник проекта правит задачи, гость — только читает)
 - get_issue_comments — комментарии к задаче
 - get_issue_comment — один комментарий по UUID
 - get_issue_activity — история изменений задачи (с фильтром по полю)
@@ -130,7 +132,7 @@ const mcpInstructions = `MCP сервер для работы с системо�
 ### Обновление задачи
 1. Получи задачу через get_issue для актуальных данных
 2. Вызови update_issue с нужными полями (передавай только изменяемые поля)
-3. Учитывай права: участник может менять только статус, админ/автор — все поля
+3. Учитывай права: они те же, что в веб-интерфейсе — участник проекта правит задачи, гость только читает
 
 ### Работа с документами
 1. Получи workspace_id через get_user_workspaces
@@ -145,25 +147,56 @@ const mcpInstructions = `MCP сервер для работы с системо�
 3. search_issues с фильтрами для детализации
 `
 
+// Options — зависимости и расширения MCP-сервера.
+type Options struct {
+	DB      *gorm.DB
+	BL      *business.Business
+	Version string
+	// Policy — применитель правил движка. Обязателен: права и видимость
+	// в MCP решает тот же движок, что и в HTTP.
+	Policy *policy.Enforcer
+
+	// Дополнения подключённого движка.
+	ExtraTools     []server.ServerTool
+	ExtraResources []server.ServerResource
+	ExtraPrompts   []server.ServerPrompt
+	// Instructions заменяет описание сервера для LLM; пустое — описание ядра.
+	Instructions string
+}
+
 // NewMCPServer создаёт MCP сервер с доступом к БД и business слою.
-func NewMCPServer(db *gorm.DB, bl *business.Business, version string) echo.HandlerFunc {
+func NewMCPServer(opts Options) echo.HandlerFunc {
 	hooks := &server.Hooks{}
 	hooks.AddOnError(ErrorLoggerHook)
 
+	instructions := opts.Instructions
+	if instructions == "" {
+		instructions = mcpInstructions
+	}
 	srv := server.NewMCPServer(
 		"aiplan-mcp",
-		version,
-		server.WithInstructions(mcpInstructions),
+		opts.Version,
+		server.WithInstructions(instructions),
 		server.WithHooks(hooks),
 	)
-	srv.AddTools(tools.GetIssuesTools(db, bl)...)
-	srv.AddTools(tools.GetProjectsTools(db, bl)...)
-	srv.AddTools(tools.GetWorkspacesTools(db, bl)...)
-	srv.AddTools(tools.GetDocsTools(db, bl)...)
 
-	srv.AddResources(resources.GetUsersResources(db)...)
+	deps := tools.Deps{
+		DB:     opts.DB,
+		BL:     opts.BL,
+		Policy: opts.Policy,
+		Search: search.New(opts.Policy),
+	}
+	srv.AddTools(tools.GetIssuesTools(deps)...)
+	srv.AddTools(tools.GetProjectsTools(deps)...)
+	srv.AddTools(tools.GetWorkspacesTools(deps)...)
+	srv.AddTools(tools.GetDocsTools(deps)...)
+	srv.AddTools(opts.ExtraTools...)
 
-	srv.AddPrompts(prompts.GetSearchPrompts(db)...)
+	srv.AddResources(resources.GetUsersResources(opts.DB)...)
+	srv.AddResources(opts.ExtraResources...)
+
+	srv.AddPrompts(prompts.GetSearchPrompts(opts.DB)...)
+	srv.AddPrompts(opts.ExtraPrompts...)
 
 	httpServer := server.NewStreamableHTTPServer(srv)
 	return func(c echo.Context) error {

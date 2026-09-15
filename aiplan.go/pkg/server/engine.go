@@ -13,6 +13,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/labstack/echo/v4"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"gorm.io/gorm"
 )
 
@@ -36,6 +37,10 @@ type coreAdapter struct {
 	actHandlers []tracker.ActHandler
 	cronJobs    cronmanager.JobRegistry
 	routeFns    []func(api, auth *echo.Group)
+
+	mcpTools     []mcpserver.ServerTool
+	mcpResources []mcpserver.ServerResource
+	mcpPrompts   []mcpserver.ServerPrompt
 }
 
 func (c *coreAdapter) DB() *gorm.DB                      { return c.db }
@@ -74,6 +79,27 @@ func (c *coreAdapter) RegisterRoutes(fn func(api, auth *echo.Group)) {
 		return
 	}
 	c.routeFns = append(c.routeFns, fn)
+}
+
+func (c *coreAdapter) RegisterMCPTools(tools ...mcpserver.ServerTool) {
+	if c.rejectAfterInit("mcp tools") {
+		return
+	}
+	c.mcpTools = append(c.mcpTools, tools...)
+}
+
+func (c *coreAdapter) RegisterMCPResources(resources ...mcpserver.ServerResource) {
+	if c.rejectAfterInit("mcp resources") {
+		return
+	}
+	c.mcpResources = append(c.mcpResources, resources...)
+}
+
+func (c *coreAdapter) RegisterMCPPrompts(prompts ...mcpserver.ServerPrompt) {
+	if c.rejectAfterInit("mcp prompts") {
+		return
+	}
+	c.mcpPrompts = append(c.mcpPrompts, prompts...)
 }
 
 // rejectAfterInit отклоняет и логирует регистрацию после Init.

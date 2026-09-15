@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/gofrs/uuid"
@@ -122,7 +121,7 @@ func TestProjectPermissionsMiddleware(t *testing.T) {
 		db := setupTestDB(t)
 		user := &dao.User{ID: uuid.Must(uuid.NewV4())}
 
-		handler := func(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		handler := func(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			t.Fatal("handler не должен быть вызван")
 			return nil, nil
 		}
@@ -130,7 +129,7 @@ func TestProjectPermissionsMiddleware(t *testing.T) {
 		wrappedHandler := ProjectPermissionsMiddleware(handler)
 		request := createTestRequest(map[string]interface{}{})
 
-		result, err := wrappedHandler(context.Background(), db, nil, user, request)
+		result, err := wrappedHandler(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -146,7 +145,7 @@ func TestProjectPermissionsMiddleware(t *testing.T) {
 
 		projectId := uuid.Must(uuid.NewV4())
 
-		handler := func(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		handler := func(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			t.Fatal("handler не должен быть вызван")
 			return nil, nil
 		}
@@ -156,7 +155,7 @@ func TestProjectPermissionsMiddleware(t *testing.T) {
 			"project_id": projectId.String(),
 		})
 
-		result, err := wrappedHandler(context.Background(), db, nil, user, request)
+		result, err := wrappedHandler(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -175,7 +174,7 @@ func TestProjectPermissionsMiddleware(t *testing.T) {
 		insertProjectMember(t, db, memberId, userId, projectId, 10)
 
 		handlerCalled := false
-		handler := func(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		handler := func(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			handlerCalled = true
 			pm := ctx.Value("projectMember")
 			assert.NotNil(t, pm)
@@ -187,7 +186,7 @@ func TestProjectPermissionsMiddleware(t *testing.T) {
 			"project_id": projectId.String(),
 		})
 
-		result, err := wrappedHandler(context.Background(), db, nil, user, request)
+		result, err := wrappedHandler(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.True(t, handlerCalled)
@@ -219,7 +218,7 @@ func TestGetStateList(t *testing.T) {
 			"project_id": projectId.String(),
 		})
 
-		result, err := getStateList(context.Background(), db, nil, user, request)
+		result, err := getStateList(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -260,7 +259,7 @@ func TestGetStateList(t *testing.T) {
 			"search_query": "progress",
 		})
 
-		result, err := getStateList(context.Background(), db, nil, user, request)
+		result, err := getStateList(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -294,7 +293,7 @@ func TestGetStateList(t *testing.T) {
 			"project_id": projectId.String(),
 		})
 
-		result, err := getStateList(context.Background(), db, nil, user, request)
+		result, err := getStateList(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -328,7 +327,7 @@ func TestGetStateList(t *testing.T) {
 			"search_query": "PROGRESS",
 		})
 
-		result, err := getStateList(context.Background(), db, nil, user, request)
+		result, err := getStateList(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -364,7 +363,7 @@ func TestGetStateList(t *testing.T) {
 			"project_id": projectId.String(),
 		})
 
-		result, err := getStateList(context.Background(), db, nil, user, request)
+		result, err := getStateList(context.Background(), Deps{DB: db}, user, request)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)

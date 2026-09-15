@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
@@ -147,26 +146,26 @@ var projectsTools = []Tool{
 	},
 }
 
-func GetProjectsTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
+func GetProjectsTools(d Deps) []server.ServerTool {
 	var result []server.ServerTool
 	for _, t := range projectsTools {
 		result = append(result, server.ServerTool{
 			Tool:    t.Tool,
-			Handler: WrapTool(db, bl, t.Handler),
+			Handler: WrapTool(d, t.Handler),
 		})
 	}
 	return result
 }
 
 func ProjectPermissionsMiddleware(handler ToolHandler) ToolHandler {
-	return func(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		projectId, ok := request.GetArguments()["project_id"]
 		if !ok {
 			return apierrors.ErrProjectIdentifierRequired.MCPError(), nil
 		}
 
 		var projectMember dao.ProjectMember
-		if err := db.Where("member_id = ?", user.ID).Where("project_id = ?", projectId).First(&projectMember).Error; err != nil {
+		if err := d.DB.Where("member_id = ?", user.ID).Where("project_id = ?", projectId).First(&projectMember).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return apierrors.ErrProjectForbidden.MCPError(), nil
 			}
@@ -175,12 +174,12 @@ func ProjectPermissionsMiddleware(handler ToolHandler) ToolHandler {
 
 		ctx = context.WithValue(ctx, "projectMember", projectMember)
 
-		return handler(ctx, db, bl, user, request)
+		return handler(ctx, d, user, request)
 	}
 }
 
 // getStateList возвращает список статусов проекта, сгруппированных по группам
-func getStateList(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getStateList(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	projectId := args["project_id"].(string)
 
@@ -191,7 +190,7 @@ func getStateList(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 	}
 
 	// Строим запрос
-	query := db.
+	query := d.DB.
 		Order("sequence").
 		Where("project_id = ?", projectId)
 
@@ -222,7 +221,7 @@ func getStateList(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 
 // getProjectStats возвращает агрегированную статистику проекта.
 // Использует business.GetProjectStats для получения данных.
-func getProjectStats(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getProjectStats(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	projectIdStr := args["project_id"].(string)
 
@@ -248,7 +247,7 @@ func getProjectStats(ctx context.Context, db *gorm.DB, bl *business.Business, us
 	}
 
 	// Вызываем business логику
-	stats, err := bl.GetProjectStats(projectID, opts)
+	stats, err := d.BL.GetProjectStats(projectID, opts)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -257,7 +256,7 @@ func getProjectStats(ctx context.Context, db *gorm.DB, bl *business.Business, us
 }
 
 // getProject возвращает полную информацию о проекте.
-func getProject(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getProject(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	projectIdStr := args["project_id"].(string)
 
@@ -267,7 +266,7 @@ func getProject(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 	}
 
 	var project dao.Project
-	if err := db.
+	if err := d.DB.
 		Preload("ProjectLead").
 		Preload("Workspace").
 		Preload("Workspace.Owner").
@@ -283,7 +282,7 @@ func getProject(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 }
 
 // getProjectMemberList возвращает список участников проекта с пагинацией и поиском.
-func getProjectMemberList(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getProjectMemberList(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	projectIdStr := args["project_id"].(string)
 
@@ -306,7 +305,7 @@ func getProjectMemberList(ctx context.Context, db *gorm.DB, bl *business.Busines
 		searchQuery = v
 	}
 
-	query := db.
+	query := d.DB.
 		Where("project_id = ?", projectID).
 		Joins("Member").
 		Preload(clause.Associations).
@@ -345,13 +344,13 @@ func getProjectMemberList(ctx context.Context, db *gorm.DB, bl *business.Busines
 }
 
 // getProjectMember возвращает информацию об участнике проекта.
-func getProjectMember(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getProjectMember(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	projectIdStr := args["project_id"].(string)
 	memberIdStr := args["member_id"].(string)
 
 	var member dao.ProjectMember
-	if err := db.
+	if err := d.DB.
 		Where("project_id = ?", projectIdStr).
 		Where("project_members.id = ?", memberIdStr).
 		Joins("Workspace").
@@ -369,13 +368,13 @@ func getProjectMember(ctx context.Context, db *gorm.DB, bl *business.Business, u
 }
 
 // getIssueLabel возвращает метку (тег) задачи по ID.
-func getIssueLabel(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssueLabel(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	projectIdStr := args["project_id"].(string)
 	labelIdStr := args["label_id"].(string)
 
 	var label dao.Label
-	if err := db.
+	if err := d.DB.
 		Where("project_id = ?", projectIdStr).
 		Where("id = ?", labelIdStr).
 		Preload("Parent").
@@ -390,7 +389,7 @@ func getIssueLabel(ctx context.Context, db *gorm.DB, bl *business.Business, user
 }
 
 // getState возвращает статус по ID.
-func getState(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getState(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	projectIdStr := args["project_id"].(string)
 	stateIdStr := args["state_id"].(string)
@@ -401,7 +400,7 @@ func getState(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao
 	}
 
 	var state dao.State
-	if err := db.
+	if err := d.DB.
 		Preload(clause.Associations).
 		Where("project_id = ?", projectIdStr).
 		Where("id = ?", stateID).

@@ -250,11 +250,11 @@ func docCommentTarget(ctx context.Context, db *gorm.DB, args map[string]any) (do
 }
 
 // getDocComments возвращает список комментариев документа с пагинацией.
-func getDocComments(ctx context.Context, db *gorm.DB, _ *business.Business, _ *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getDocComments(ctx context.Context, d Deps, _ *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	doc := docFromContext(ctx).Doc
 	offset, limit := docCommentPagination(request.GetArguments(), 0)
 
-	query := db.
+	query := d.DB.
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
@@ -277,8 +277,8 @@ func getDocComments(ctx context.Context, db *gorm.DB, _ *business.Business, _ *d
 }
 
 // getDocComment возвращает один комментарий документа.
-func getDocComment(ctx context.Context, db *gorm.DB, _ *business.Business, _ *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	_, comment, errRes := docCommentTarget(ctx, db, request.GetArguments())
+func getDocComment(ctx context.Context, d Deps, _ *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	_, comment, errRes := docCommentTarget(ctx, d.DB, request.GetArguments())
 	if errRes != nil {
 		return errRes, nil
 	}
@@ -340,7 +340,7 @@ func docCommentHTML(args map[string]any) (types.RedactorHTML, *mcp.CallToolResul
 }
 
 // createDocComment создает комментарий к документу.
-func createDocComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func createDocComment(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 	docCtx := docFromContext(ctx)
 	doc := docCtx.Doc
@@ -350,11 +350,11 @@ func createDocComment(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		return errRes, nil
 	}
 
-	if errRes := checkDocCommentCooldown(db, doc.WorkspaceId, user.ID); errRes != nil {
+	if errRes := checkDocCommentCooldown(d.DB, doc.WorkspaceId, user.ID); errRes != nil {
 		return errRes, nil
 	}
 
-	replyTo, errRes := docCommentReplyTo(db, &doc, args)
+	replyTo, errRes := docCommentReplyTo(d.DB, &doc, args)
 	if errRes != nil {
 		return errRes, nil
 	}
@@ -374,20 +374,20 @@ func createDocComment(ctx context.Context, db *gorm.DB, bl *business.Business, u
 		Attachments:      make([]dao.FileAsset, 0),
 	}
 
-	if err := db.Omit(clause.Associations).Create(&comment).Error; err != nil {
+	if err := d.DB.Omit(clause.Associations).Create(&comment).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
-	trackDocCommentChanges(bl, &doc, user, nil, tracker.CommentToSnapshot(&comment))
+	trackDocCommentChanges(d.BL, &doc, user, nil, tracker.CommentToSnapshot(&comment))
 
 	return mcp.NewToolResultJSON(comment.ToDTO())
 }
 
 // updateDocComment обновляет комментарий документа. Редактировать может только автор.
-func updateDocComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func updateDocComment(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
-	docCtx, comment, errRes := docCommentTarget(ctx, db, args)
+	docCtx, comment, errRes := docCommentTarget(ctx, d.DB, args)
 	if errRes != nil {
 		return errRes, nil
 	}
@@ -407,20 +407,20 @@ func updateDocComment(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	comment.CommentStripped = commentHtml.StripTags()
 	comment.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
 
-	if err := db.Omit(clause.Associations).
+	if err := d.DB.Omit(clause.Associations).
 		Select("comment_html", "comment_stripped", "updated_by_id", "updated_at").
 		Updates(comment).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
-	trackDocCommentChanges(bl, &docCtx.Doc, user, oldSnapshot, tracker.CommentToSnapshot(comment))
+	trackDocCommentChanges(d.BL, &docCtx.Doc, user, oldSnapshot, tracker.CommentToSnapshot(comment))
 
 	return mcp.NewToolResultJSON(comment.ToDTO())
 }
 
 // deleteDocComment удаляет комментарий документа: автором или администратором пространства.
-func deleteDocComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	docCtx, comment, errRes := docCommentTarget(ctx, db, request.GetArguments())
+func deleteDocComment(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	docCtx, comment, errRes := docCommentTarget(ctx, d.DB, request.GetArguments())
 	if errRes != nil {
 		return errRes, nil
 	}
@@ -432,11 +432,11 @@ func deleteDocComment(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	oldSnapshot := tracker.CommentToSnapshot(comment)
 
-	if err := db.Delete(comment).Error; err != nil {
+	if err := d.DB.Delete(comment).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
-	trackDocCommentChanges(bl, &docCtx.Doc, user, oldSnapshot, nil)
+	trackDocCommentChanges(d.BL, &docCtx.Doc, user, oldSnapshot, nil)
 
 	return mcp.NewToolResultJSON(map[string]any{"id": comment.Id, "deleted": true})
 }
@@ -449,7 +449,7 @@ func trackDocCommentChanges(bl *business.Business, doc *dao.Doc, user *dao.User,
 }
 
 // addDocCommentReaction добавляет реакцию к комментарию документа.
-func addDocCommentReaction(ctx context.Context, db *gorm.DB, _ *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func addDocCommentReaction(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	reaction, _ := args["reaction"].(string)
@@ -457,13 +457,13 @@ func addDocCommentReaction(ctx context.Context, db *gorm.DB, _ *business.Busines
 		return apierrors.ErrInvalidReaction.MCPError(), nil
 	}
 
-	_, comment, errRes := docCommentTarget(ctx, db, args)
+	_, comment, errRes := docCommentTarget(ctx, d.DB, args)
 	if errRes != nil {
 		return errRes, nil
 	}
 
 	var existing dao.DocCommentReaction
-	err := db.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, comment.Id, reaction).
+	err := d.DB.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, comment.Id, reaction).
 		First(&existing).Error
 	if err == nil {
 		return mcp.NewToolResultJSON(existing.ToDTO())
@@ -479,7 +479,7 @@ func addDocCommentReaction(ctx context.Context, db *gorm.DB, _ *business.Busines
 		CommentId: comment.Id,
 		Reaction:  reaction,
 	}
-	if err := db.Create(&created).Error; err != nil {
+	if err := d.DB.Create(&created).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
@@ -487,7 +487,7 @@ func addDocCommentReaction(ctx context.Context, db *gorm.DB, _ *business.Busines
 }
 
 // removeDocCommentReaction удаляет реакцию пользователя с комментария документа.
-func removeDocCommentReaction(ctx context.Context, db *gorm.DB, _ *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func removeDocCommentReaction(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	reaction, _ := args["reaction"].(string)
@@ -495,12 +495,12 @@ func removeDocCommentReaction(ctx context.Context, db *gorm.DB, _ *business.Busi
 		return mcp.NewToolResultError("reaction обязателен"), nil
 	}
 
-	_, comment, errRes := docCommentTarget(ctx, db, args)
+	_, comment, errRes := docCommentTarget(ctx, d.DB, args)
 	if errRes != nil {
 		return errRes, nil
 	}
 
-	res := db.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, comment.Id, reaction).
+	res := d.DB.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, comment.Id, reaction).
 		Delete(&dao.DocCommentReaction{})
 	if res.Error != nil {
 		return logger.Error(res.Error), nil
@@ -510,16 +510,16 @@ func removeDocCommentReaction(ctx context.Context, db *gorm.DB, _ *business.Busi
 }
 
 // getDocCommentHistory возвращает историю изменений комментария документа.
-func getDocCommentHistory(ctx context.Context, db *gorm.DB, _ *business.Business, _ *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getDocCommentHistory(ctx context.Context, d Deps, _ *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
-	docCtx, comment, errRes := docCommentTarget(ctx, db, args)
+	docCtx, comment, errRes := docCommentTarget(ctx, d.DB, args)
 	if errRes != nil {
 		return errRes, nil
 	}
 	offset, limit := docCommentPagination(args, -1)
 
-	query := db.
+	query := d.DB.
 		Joins("Actor").
 		Where("activity_events.workspace_id = ?", docCtx.Doc.WorkspaceId).
 		Where("activity_events.doc_id = ?", docCtx.Doc.ID).
