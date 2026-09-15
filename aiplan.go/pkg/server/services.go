@@ -16,6 +16,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications/email"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/search"
 	tokenscache "github.com/aisa-it/aiplan/aiplan.go/pkg/tokens-cache"
 
 	mem "github.com/aisa-it/aiplan-mem/api"
@@ -50,6 +51,8 @@ type Services struct {
 
 	// policy — применитель правил подключённого движка.
 	policy *policy.Enforcer
+	// search — поиск задач с политикой видимости движка.
+	search *search.Searcher
 }
 
 // Deps — внешние зависимости для сборки Services.
@@ -97,6 +100,7 @@ func NewServices(d Deps) (*Services, error) {
 
 	return &Services{
 		policy:               d.Policy,
+		search:               search.New(d.Policy),
 		db:                   d.DB,
 		snapshotTracker:      d.SnapshotTracker,
 		storage:              d.Storage,

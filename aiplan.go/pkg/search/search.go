@@ -3,6 +3,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -10,15 +11,20 @@ import (
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
-	"github.com/gofrs/uuid"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
 // getIssuesGroups возвращает группы задач с количеством в каждой группе
-func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *dao.Sprint, searchParams *types.SearchParams) ([]types.SearchGroupSize, error) {
+func (s *Searcher) getIssuesGroups(ctx context.Context, db *gorm.DB, scope engine.IssueScope) ([]types.SearchGroupSize, error) {
+	searchParams := scope.Params
+	user := scope.Subject.User()
+	sprint := scopeSprint(scope)
+	projectId := scopeProjectID(scope)
+	visible := s.visibility.VisibleProjects(ctx, scope, db)
 	query := db.Session(&gorm.Session{})
 
 	// Определение запроса для фильтрации по проектам
@@ -34,7 +40,7 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 	} else if len(searchParams.Filters.ProjectIds) > 0 {
 		projectQuery = searchParams.Filters.ProjectIds
 	} else {
-		projectQuery = memberProjectsQuery(db, user, searchParams)
+		projectQuery = memberProjectsQuery(visible, db, searchParams)
 	}
 
 	// Группировка по значению кастомного поля: group_by=property:<template_id>.
@@ -126,12 +132,7 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 		}
 
 		if !user.IsSuperuser {
-			query = query.
-				Where("p.id in (?)", db.
-					Select("project_id").
-					Where("member_id = ?", user.ID).
-					Model(&dao.ProjectMember{}),
-				)
+			query = query.Where("p.id in (?)", visible)
 		}
 	}
 
@@ -181,12 +182,13 @@ func getIssuesGroups(db *gorm.DB, user *dao.User, projectId uuid.UUID, sprint *d
 	return count, nil
 }
 
-// memberProjectsQuery — проекты пользователя для подсчёта групп в глобальном поиске,
-// суженные фильтрами по пространствам. Без сужения группы считаются по всем проектам
-// пользователя: при группировке по статусу это сотни групп (ключ включает project_id),
+// memberProjectsQuery — видимые проекты для подсчёта групп в глобальном поиске,
+// суженные фильтрами по пространствам. Видимость берётся из visible (движок),
+// здесь только сужение. Без него группы считаются по всем проектам пользователя:
+// при группировке по статусу это сотни групп (ключ включает project_id),
 // на каждую — отдельная выборка задач, и запрос упирается в таймаут, а count врёт.
-func memberProjectsQuery(db *gorm.DB, user *dao.User, searchParams *types.SearchParams) *gorm.DB {
-	query := db.Select("project_id").Where("member_id = ?", user.ID).Model(&dao.ProjectMember{})
+func memberProjectsQuery(visible, db *gorm.DB, searchParams *types.SearchParams) *gorm.DB {
+	query := visible
 
 	if len(searchParams.Filters.WorkspaceIds) > 0 {
 		query = query.Where("project_id in (?)", db.Select("id").Model(&dao.Project{}).

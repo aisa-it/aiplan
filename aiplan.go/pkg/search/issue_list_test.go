@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -9,7 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine/defaultengine"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
 	"github.com/gofrs/uuid"
 	"gorm.io/driver/postgres"
@@ -65,20 +70,40 @@ func testUser(superuser bool) dao.User {
 	return dao.User{ID: testUserID, IsSuperuser: superuser}
 }
 
-func projectMemberIn() dao.ProjectMember {
-	return dao.ProjectMember{ProjectId: testProjectID, WorkspaceId: testWorkspaceID, MemberId: testUserID}
+func projectMemberIn() *dao.ProjectMember {
+	return &dao.ProjectMember{ProjectId: testProjectID, WorkspaceId: testWorkspaceID, MemberId: testUserID}
+}
+
+// testSearcher — поиск с политикой видимости в том же виде, что и в сервере:
+// применитель поверх движка ядра.
+func testSearcher() *Searcher {
+	return New(policy.New(nil, defaultengine.New()))
+}
+
+func (c searchCase) scope(params *types.SearchParams) engine.IssueScope {
+	user := c.user
+	return engine.IssueScope{
+		Subject: apicontext.NewSubject(apicontext.Prefilled{
+			User:          &user,
+			ProjectMember: c.projectMember,
+			Sprint:        c.sprint,
+		}),
+		Kind:   c.kind,
+		Params: params,
+	}
 }
 
 func testSprint() *dao.Sprint {
 	return &dao.Sprint{Id: testSprintID, Issues: []dao.Issue{{ID: testIssueID}}}
 }
 
+// kind по умолчанию — ScopeGlobal; проектный и спринтовый режимы задаются явно.
 type searchCase struct {
 	name          string
 	user          dao.User
-	projectMember dao.ProjectMember
+	projectMember *dao.ProjectMember
 	sprint        *dao.Sprint
-	globalSearch  bool
+	kind          engine.ScopeKind
 	params        types.SearchParams
 }
 
@@ -86,130 +111,125 @@ type searchCase struct {
 func searchCases() []searchCase {
 	return []searchCase{
 		{
-			name: "global/без_проекта/пусто",
-			user: testUser(false), globalSearch: true,
+			name:   "global/без_проекта/пусто",
+			user:   testUser(false),
 			params: types.SearchParams{},
 		},
 		{
-			name: "global/без_проекта/light",
-			user: testUser(false), globalSearch: true,
+			name:   "global/без_проекта/light",
+			user:   testUser(false),
 			params: types.SearchParams{LightSearch: true},
 		},
 		{
-			name: "global/без_проекта/only_count",
-			user: testUser(false), globalSearch: true,
+			name:   "global/без_проекта/only_count",
+			user:   testUser(false),
 			params: types.SearchParams{OnlyCount: true},
 		},
 		{
-			name: "global/без_проекта/суперпользователь",
-			user: testUser(true), globalSearch: true,
+			name:   "global/без_проекта/суперпользователь",
+			user:   testUser(true),
 			params: types.SearchParams{},
 		},
 		{
-			// globalSearch перебивает переданного participant-а проекта:
+			// Глобальный режим игнорирует членство в контексте:
 			// видимость всё равно считается по project_members.
 			name: "global/С_проектом/пусто",
-			user: testUser(false), projectMember: projectMemberIn(), globalSearch: true,
+			user: testUser(false), projectMember: projectMemberIn(),
 			params: types.SearchParams{},
 		},
 		{
 			name: "global/без_проекта/фильтр_авторы",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				AuthorIds: []string{testUserID.String()},
 			}},
 		},
 		{
 			name: "global/без_проекта/фильтр_исполнители",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				AssigneeIds: types.FilterUUIDs{Array: []uuid.UUID{testAssigneeID}},
 			}},
 		},
 		{
 			name: "global/без_проекта/фильтр_исполнители_с_пустыми",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				AssigneeIds: types.FilterUUIDs{Array: []uuid.UUID{testAssigneeID}, IncludeEmpty: true},
 			}},
 		},
 		{
 			name: "global/без_проекта/фильтр_статусы+only_active",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{OnlyActive: true, Filters: types.IssuesListFilters{
 				StateIds: []uuid.UUID{testStateID},
 			}},
 		},
 		{
 			name: "global/без_проекта/фильтр_метки",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				Labels: types.FilterUUIDs{Array: []uuid.UUID{testLabelID}},
 			}},
 		},
 		{
 			name: "global/без_проекта/фильтр_пространства",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				WorkspaceIds: []string{testWorkspaceID.String()},
 			}},
 		},
 		{
 			name: "global/без_проекта/фильтр_слаги_пространств",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				WorkspaceSlugs: []string{"ws"},
 			}},
 		},
 		{
 			name: "global/без_проекта/фильтр_проекты",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				ProjectIds: []string{testProjectID.String()},
 			}},
 		},
 		{
 			name: "global/без_проекта/мои_задачи",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				AssignedToMe: true, WatchedByMe: true, AuthoredByMe: true,
 			}},
 		},
 		{
 			name: "global/без_проекта/спринт",
-			user: testUser(false), sprint: testSprint(), globalSearch: true,
+			user: testUser(false), sprint: testSprint(), kind: engine.ScopeSprint,
 			params: types.SearchParams{},
 		},
 		{
 			name: "global/без_проекта/полнотекстовый_поиск",
-			user: testUser(false), globalSearch: true,
+			user: testUser(false),
 			params: types.SearchParams{OrderByParam: "search_rank", Filters: types.IssuesListFilters{
 				SearchQuery: "тест",
 			}},
 		},
 		{
 			name: "проект/пусто",
-			user: testUser(false), projectMember: projectMemberIn(),
+			user: testUser(false), projectMember: projectMemberIn(), kind: engine.ScopeProject,
 			params: types.SearchParams{},
 		},
 		{
 			name: "проект/light",
-			user: testUser(false), projectMember: projectMemberIn(),
+			user: testUser(false), projectMember: projectMemberIn(), kind: engine.ScopeProject,
 			params: types.SearchParams{LightSearch: true},
 		},
 		{
 			name: "проект/only_count",
-			user: testUser(false), projectMember: projectMemberIn(),
+			user: testUser(false), projectMember: projectMemberIn(), kind: engine.ScopeProject,
 			params: types.SearchParams{OnlyCount: true},
 		},
 		{
-			name: "проект/спринт",
-			user: testUser(false), projectMember: projectMemberIn(), sprint: testSprint(),
-			params: types.SearchParams{},
-		},
-		{
 			name: "проект/фильтр_авторы+исполнители",
-			user: testUser(false), projectMember: projectMemberIn(),
+			user: testUser(false), projectMember: projectMemberIn(), kind: engine.ScopeProject,
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				AuthorIds:   []string{testUserID.String()},
 				AssigneeIds: types.FilterUUIDs{Array: []uuid.UUID{testAssigneeID}},
@@ -217,29 +237,31 @@ func searchCases() []searchCase {
 		},
 		{
 			name: "проект/сортировка_по_статусу_desc",
-			user: testUser(false), projectMember: projectMemberIn(),
+			user: testUser(false), projectMember: projectMemberIn(), kind: engine.ScopeProject,
 			params: types.SearchParams{OrderByParam: "-state", Desc: true},
 		},
 		{
 			name: "проект/сортировка_по_исполнителям",
-			user: testUser(false), projectMember: projectMemberIn(),
+			user: testUser(false), projectMember: projectMemberIn(), kind: engine.ScopeProject,
 			params: types.SearchParams{OrderByParam: "assignees"},
 		},
 		{
 			name: "проект/скрыть_подзадачи+черновики+закреплённые",
-			user: testUser(false), projectMember: projectMemberIn(),
+			user: testUser(false), projectMember: projectMemberIn(), kind: engine.ScopeProject,
 			params: types.SearchParams{HideSubIssues: true, Draft: true, OnlyPinned: true},
 		},
 		{
-			// Участник без проектного контекста: ProjectId пустой, globalSearch выключен.
-			// Ветка обязана свалиться в подзапрос по project_members, иначе видимость теряется.
+			// Проектный режим без участника в контексте. Движок обязан свалиться
+			// в подзапрос по project_members, иначе видимость теряется.
 			name:   "не_global/без_проекта/пусто",
 			user:   testUser(false),
+			kind:   engine.ScopeProject,
 			params: types.SearchParams{},
 		},
 		{
 			name: "не_global/без_проекта/фильтр_статусы",
 			user: testUser(false),
+			kind: engine.ScopeProject,
 			params: types.SearchParams{Filters: types.IssuesListFilters{
 				StateIds: []uuid.UUID{testStateID},
 			}},
@@ -258,8 +280,7 @@ func renderQuery(t *testing.T, c searchCase) (string, []any) {
 	t.Helper()
 	db := dryRunDB(t)
 	params := c.params
-	q := buildSearchQuery(db.Session(&gorm.Session{DryRun: true, NewDB: true}),
-		c.user, c.projectMember, c.sprint, c.globalSearch, &params)
+	q := testSearcher().buildSearchQuery(context.Background(), db.Session(&gorm.Session{DryRun: true, NewDB: true}), c.scope(&params))
 	if params.OnlyCount {
 		var count int64
 		q.Count(&count)
@@ -282,8 +303,8 @@ func TestBuildSearchQueryVisibility(t *testing.T) {
 				t.Fatalf("ПОТЕРЯНО ОГРАНИЧЕНИЕ ВИДИМОСТИ ЗАДАЧ: в SQL нет ни фильтра по проекту, "+
 					"ни подзапроса по project_members — поиск вернёт чужие задачи.\nSQL: %s", sql)
 			}
-			// Проектный режим только когда globalSearch выключен и проект задан.
-			wantProject := !c.globalSearch && c.projectMember.ProjectId != uuid.Nil
+			// Проектный фильтр только в проектном режиме с участником в контексте.
+			wantProject := c.kind == engine.ScopeProject && c.projectMember != nil
 			if wantProject && !byProject {
 				t.Fatalf("ожидался проектный фильтр видимости, получено: %s", sql)
 			}
@@ -334,13 +355,15 @@ func formatVars(vars []any) string {
 	return "[" + strings.Join(parts, " ") + "]"
 }
 
-// --- memberProjectsQuery: вторая, независимая реализация того же правила ---
+// --- memberProjectsQuery: сужение видимых проектов для подсчёта групп ---
 
 func renderMemberProjects(t *testing.T, params types.SearchParams) (string, []any) {
 	t.Helper()
-	db := dryRunDB(t)
-	user := testUser(false)
-	q := memberProjectsQuery(db.Session(&gorm.Session{DryRun: true, NewDB: true}), &user, &params)
+	db := dryRunDB(t).Session(&gorm.Session{DryRun: true, NewDB: true})
+	c := searchCase{user: testUser(false)}
+	s := testSearcher()
+	scope := c.scope(&params)
+	q := memberProjectsQuery(s.visibility.VisibleProjects(context.Background(), scope, db), db, &params)
 	var out []dao.ProjectMember
 	q.Find(&out)
 	return q.Statement.SQL.String(), q.Statement.Vars
@@ -386,12 +409,11 @@ func TestMemberProjectsQueryGolden(t *testing.T) {
 	}
 }
 
-// TestVisibilityRulesEquivalent — buildSearchQuery и memberProjectsQuery строят
-// одно и то же правило «проекты, где пользователь состоит участником», но двумя
-// независимыми кусками кода. Сейчас их совпадение держится только на копипасте.
+// TestVisibilityRulesEquivalent — buildSearchQuery и memberProjectsQuery опираются
+// на один подзапрос VisibleProjects движка; тест сторожит, что это так и осталось.
 func TestVisibilityRulesEquivalent(t *testing.T) {
 	sqlSearch, varsSearch := renderQuery(t, searchCase{
-		user: testUser(false), globalSearch: true, params: types.SearchParams{},
+		user: testUser(false), params: types.SearchParams{},
 	})
 
 	const scope = "SELECT project_id FROM project_members WHERE member_id = $1"

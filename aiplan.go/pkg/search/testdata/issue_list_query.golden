@@ -74,10 +74,6 @@ VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333
 SQL:  SELECT count(*) FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL
 VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333]
 
-=== проект/спринт
-SQL:  SELECT issues.* FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND issues.id in ($3) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
-VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 55555555-5555-5555-5555-555555555555 0]
-
 === проект/фильтр_авторы+исполнители
 SQL:  SELECT issues.* FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND issues.created_by_id in ($3) AND issues.id in (SELECT issue_id FROM issue_assignees WHERE assignee_id in ($4) AND issue_assignees.deleted_at IS NULL) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $5
 VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 11111111-1111-1111-1111-111111111111 77777777-7777-7777-7777-777777777777 0]

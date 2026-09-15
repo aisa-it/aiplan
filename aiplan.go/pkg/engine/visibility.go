@@ -24,6 +24,11 @@ const (
 )
 
 // IssueScope — запрос на выборку задач.
+//
+// Геттеры Subject ленивые, поэтому реализация обращается только к тому,
+// что есть в режиме: ProjectMember() — в ScopeProject, Sprint() — в
+// ScopeSprint. В ScopeSprint ядро гарантирует, что спринт загружен вместе
+// с задачами.
 type IssueScope struct {
 	Subject Subject
 	Kind    ScopeKind

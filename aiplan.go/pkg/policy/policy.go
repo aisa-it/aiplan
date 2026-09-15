@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"gorm.io/gorm"
 )
@@ -20,6 +21,9 @@ type Enforcer struct {
 
 	states         engine.StatePolicy
 	statesFallback engine.StatePolicy
+
+	visibility         engine.VisibilityPolicy
+	visibilityFallback engine.VisibilityPolicy
 }
 
 // New собирает применитель правил.
@@ -34,6 +38,12 @@ func New(primary, fallback engine.Authorizer) *Enforcer {
 	}
 	if sp, ok := fallback.(engine.StatePolicy); ok {
 		e.statesFallback = sp
+	}
+	if vp, ok := primary.(engine.VisibilityPolicy); ok {
+		e.visibility = vp
+	}
+	if vp, ok := fallback.(engine.VisibilityPolicy); ok {
+		e.visibilityFallback = vp
 	}
 	return e
 }
@@ -152,4 +162,50 @@ func (p *Enforcer) ScopeStates(ctx context.Context, req engine.StateScopeRequest
 	}
 	// Политики нет — показывать нечего: пустая выдача безопаснее полной.
 	return q.Where("1 = 0")
+}
+
+// visibilityPolicy — действующая политика видимости: подключённый движок
+// целиком, иначе движок ядра. Частичного переопределения нет: VisibleProjects
+// и ScopeIssues обязаны быть согласованы, а это возможно только внутри одной
+// реализации.
+func (p *Enforcer) visibilityPolicy() engine.VisibilityPolicy {
+	if p.visibility != nil {
+		return p.visibility
+	}
+	return p.visibilityFallback
+}
+
+// VisibleProjects — подзапрос project_id, видимых субъекту.
+// Без политики — пустой: пустая выдача безопаснее полной.
+func (p *Enforcer) VisibleProjects(ctx context.Context, req engine.IssueScope, db *gorm.DB) *gorm.DB {
+	if vp := p.visibilityPolicy(); vp != nil {
+		return vp.VisibleProjects(ctx, req, db)
+	}
+	return db.Select("project_id").Model(&dao.ProjectMember{}).Where("1 = 0")
+}
+
+// ScopeIssues ограничивает выборку задач видимыми субъекту.
+func (p *Enforcer) ScopeIssues(ctx context.Context, req engine.IssueScope, q *gorm.DB) *gorm.DB {
+	if vp := p.visibilityPolicy(); vp != nil {
+		return vp.ScopeIssues(ctx, req, q)
+	}
+	return q.Where("1 = 0")
+}
+
+// CanViewIssue проверяет право просмотра одной задачи.
+// Без политики и без решения — запрет.
+func (p *Enforcer) CanViewIssue(ctx context.Context, s engine.Subject, issue *dao.Issue) error {
+	for _, vp := range []engine.VisibilityPolicy{p.visibility, p.visibilityFallback} {
+		if vp == nil {
+			continue
+		}
+		v, err := vp.CanViewIssue(ctx, s, issue)
+		if err != nil {
+			return err
+		}
+		if decided, e := verdictResult(v); decided {
+			return e
+		}
+	}
+	return apierrors.ErrIssueForbidden
 }
