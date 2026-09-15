@@ -113,7 +113,13 @@ func (srv *Server) registerRoutes() {
 
 	// MCP handler
 	if cfg.MCPEnabled {
-		e.Any("mcp/*", mcp.NewMCPServer(db, s.business, version), authMiddleware)
+		opts := mcp.Options{DB: db, BL: s.business, Version: version, Policy: s.policy}
+		if srv.core != nil {
+			opts.ExtraTools = srv.core.mcpTools
+			opts.ExtraResources = srv.core.mcpResources
+			opts.ExtraPrompts = srv.core.mcpPrompts
+		}
+		e.Any("mcp/*", mcp.NewMCPServer(opts), authMiddleware)
 	}
 
 	// Роуты движка — до статики фронта: она перехватывает всё остальное.

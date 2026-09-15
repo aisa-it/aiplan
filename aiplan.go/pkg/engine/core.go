@@ -7,6 +7,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/cronmanager"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/labstack/echo/v4"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"gorm.io/gorm"
 )
 
@@ -32,4 +33,10 @@ type Core interface {
 	// RegisterRoutes добавляет собственные роуты движка.
 	// api — группа без авторизации, auth — с авторизацией.
 	RegisterRoutes(fn func(api, auth *echo.Group))
+
+	// RegisterMCPTools, RegisterMCPResources, RegisterMCPPrompts добавляют
+	// инструменты, ресурсы и промпты движка в MCP-сервер ядра.
+	RegisterMCPTools(tools ...mcpserver.ServerTool)
+	RegisterMCPResources(resources ...mcpserver.ServerResource)
+	RegisterMCPPrompts(prompts ...mcpserver.ServerPrompt)
 }

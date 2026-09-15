@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
@@ -93,7 +92,7 @@ var docsTools = []Tool{
 }
 
 // GetDocsTools возвращает список MCP инструментов для работы с документами и их комментариями.
-func GetDocsTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
+func GetDocsTools(d Deps) []server.ServerTool {
 	allTools := make([]Tool, 0, len(docsTools)+len(docCommentsTools))
 	allTools = append(allTools, docsTools...)
 	allTools = append(allTools, docCommentsTools...)
@@ -102,7 +101,7 @@ func GetDocsTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
 	for _, t := range allTools {
 		result = append(result, server.ServerTool{
 			Tool:    t.Tool,
-			Handler: WrapTool(db, bl, t.Handler),
+			Handler: WrapTool(d, t.Handler),
 		})
 	}
 	return result
@@ -178,7 +177,7 @@ func checkDocEditAccess(db *gorm.DB, doc *dao.Doc, user *dao.User, workspaceMemb
 // 3. Проверяет членство пользователя в workspace
 // 4. Проверяет права на чтение документа (reader_role, editor_role, access_rules, author)
 func DocPermissionsMiddleware(handler ToolHandler) ToolHandler {
-	return func(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// 1. Валидация и парсинг doc_id
 		docId, errResult := parseDocId(request)
 		if errResult != nil {
@@ -186,13 +185,13 @@ func DocPermissionsMiddleware(handler ToolHandler) ToolHandler {
 		}
 
 		// 2. Находим документ и проверяем членство в workspace
-		docBasic, workspaceMember, errResult := findDocAndCheckMembership(db, docId, user)
+		docBasic, workspaceMember, errResult := findDocAndCheckMembership(d.DB, docId, user)
 		if errResult != nil {
 			return errResult, nil
 		}
 
 		// 3. Проверяем права на чтение документа
-		hasAccess, err := checkDocReadAccess(db, docBasic, user, workspaceMember)
+		hasAccess, err := checkDocReadAccess(d.DB, docBasic, user, workspaceMember)
 		if err != nil {
 			return logger.Error(err), nil
 		}
@@ -201,7 +200,7 @@ func DocPermissionsMiddleware(handler ToolHandler) ToolHandler {
 		}
 
 		// 4. Загружаем полный документ со всеми связями
-		doc, errResult := loadFullDoc(db, docId, workspaceMember)
+		doc, errResult := loadFullDoc(d.DB, docId, workspaceMember)
 		if errResult != nil {
 			return errResult, nil
 		}
@@ -212,7 +211,7 @@ func DocPermissionsMiddleware(handler ToolHandler) ToolHandler {
 			WorkspaceMember: *workspaceMember,
 		})
 
-		return handler(ctx, db, bl, user, request)
+		return handler(ctx, d, user, request)
 	}
 }
 
@@ -223,7 +222,7 @@ func DocPermissionsMiddleware(handler ToolHandler) ToolHandler {
 // 3. Проверяет членство пользователя в workspace
 // 4. Проверяет права на редактирование документа (editor_role, access_rules с edit=true, author)
 func DocEditPermissionsMiddleware(handler ToolHandler) ToolHandler {
-	return func(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// 1. Валидация и парсинг doc_id
 		docId, errResult := parseDocId(request)
 		if errResult != nil {
@@ -231,13 +230,13 @@ func DocEditPermissionsMiddleware(handler ToolHandler) ToolHandler {
 		}
 
 		// 2. Находим документ и проверяем членство в workspace
-		docBasic, workspaceMember, errResult := findDocAndCheckMembership(db, docId, user)
+		docBasic, workspaceMember, errResult := findDocAndCheckMembership(d.DB, docId, user)
 		if errResult != nil {
 			return errResult, nil
 		}
 
 		// 3. Проверяем права на редактирование документа
-		hasAccess, err := checkDocEditAccess(db, docBasic, user, workspaceMember)
+		hasAccess, err := checkDocEditAccess(d.DB, docBasic, user, workspaceMember)
 		if err != nil {
 			return logger.Error(err), nil
 		}
@@ -246,7 +245,7 @@ func DocEditPermissionsMiddleware(handler ToolHandler) ToolHandler {
 		}
 
 		// 4. Загружаем полный документ со всеми связями
-		doc, errResult := loadFullDoc(db, docId, workspaceMember)
+		doc, errResult := loadFullDoc(d.DB, docId, workspaceMember)
 		if errResult != nil {
 			return errResult, nil
 		}
@@ -257,7 +256,7 @@ func DocEditPermissionsMiddleware(handler ToolHandler) ToolHandler {
 			WorkspaceMember: *workspaceMember,
 		})
 
-		return handler(ctx, db, bl, user, request)
+		return handler(ctx, d, user, request)
 	}
 }
 
@@ -330,7 +329,7 @@ func loadFullDoc(db *gorm.DB, docId uuid.UUID, workspaceMember *dao.WorkspaceMem
 }
 
 // getDoc возвращает полную информацию о документе.
-func getDoc(ctx context.Context, _ *gorm.DB, _ *business.Business, _ *dao.User, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getDoc(ctx context.Context, d Deps, _ *dao.User, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Получаем документ из контекста (уже загружен в middleware)
 	docCtx := ctx.Value(docContextKey{}).(docContext)
 
@@ -446,18 +445,18 @@ func handleParentDoc(db *gorm.DB, parentDocIdStr string, workspace *dao.Workspac
 }
 
 // createDoc создаёт новый документ в пространстве.
-func createDoc(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func createDoc(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	params, errResult := parseCreateDocParams(request.GetArguments())
 	if errResult != nil {
 		return errResult, nil
 	}
 
-	workspace, err := findWorkspaceByIdOrSlug(db, params.workspaceIdOrSlug)
+	workspace, err := findWorkspaceByIdOrSlug(d.DB, params.workspaceIdOrSlug)
 	if err != nil {
 		return mcp.NewToolResultError("workspace не найден"), nil
 	}
 
-	workspaceMember, err := getWorkspaceMemberOrSuperuser(db, workspace, user)
+	workspaceMember, err := getWorkspaceMemberOrSuperuser(d.DB, workspace, user)
 	if err != nil {
 		return mcp.NewToolResultError("нет доступа к workspace"), nil
 	}
@@ -467,7 +466,7 @@ func createDoc(ctx context.Context, db *gorm.DB, bl *business.Business, user *da
 	}
 
 	parentDocID, readerRole, editorRole, errResult := handleParentDoc(
-		db, params.parentDocIdStr, workspace, user, workspaceMember, params.readerRole, params.editorRole)
+		d.DB, params.parentDocIdStr, workspace, user, workspaceMember, params.readerRole, params.editorRole)
 	if errResult != nil {
 		return errResult, nil
 	}
@@ -487,11 +486,11 @@ func createDoc(ctx context.Context, db *gorm.DB, bl *business.Business, user *da
 		ParentDocID: parentDocID,
 	}
 
-	if err := dao.CreateDoc(db, &doc, user); err != nil {
+	if err := dao.CreateDoc(d.DB, &doc, user); err != nil {
 		return logger.Error(err), nil
 	}
 
-	createdDoc, errResult := loadFullDoc(db, doc.ID, workspaceMember)
+	createdDoc, errResult := loadFullDoc(d.DB, doc.ID, workspaceMember)
 	if errResult != nil {
 		return errResult, nil
 	}
@@ -544,7 +543,7 @@ func parseUpdateDocParams(args map[string]interface{}) (*updateDocParams, *mcp.C
 }
 
 // updateDocTool обновляет существующий документ.
-func updateDocTool(ctx context.Context, db *gorm.DB, _ *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func updateDocTool(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Получаем документ из контекста (уже загружен и проверен в middleware)
 	docCtx := ctx.Value(docContextKey{}).(docContext)
 
@@ -568,12 +567,12 @@ func updateDocTool(ctx context.Context, db *gorm.DB, _ *business.Business, user 
 	updates["llm_content"] = true
 
 	// Обновляем документ
-	if err := db.Model(&dao.Doc{}).Where("id = ?", docCtx.Doc.ID).Updates(updates).Error; err != nil {
+	if err := d.DB.Model(&dao.Doc{}).Where("id = ?", docCtx.Doc.ID).Updates(updates).Error; err != nil {
 		return logger.Error(err), nil
 	}
 
 	// Загружаем обновлённый документ
-	updatedDoc, errResult := loadFullDoc(db, docCtx.Doc.ID, &docCtx.WorkspaceMember)
+	updatedDoc, errResult := loadFullDoc(d.DB, docCtx.Doc.ID, &docCtx.WorkspaceMember)
 	if errResult != nil {
 		return errResult, nil
 	}

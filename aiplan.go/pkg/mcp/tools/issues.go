@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +18,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine/defaultengine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/search"
@@ -342,7 +343,7 @@ var issuesTools = []Tool{
 	},
 }
 
-func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
+func GetIssuesTools(d Deps) []server.ServerTool {
 	all := append([]Tool{}, issuesTools...)
 	all = append(all, issuesActionsTools...)
 
@@ -350,19 +351,19 @@ func GetIssuesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
 	for _, t := range all {
 		resources = append(resources, server.ServerTool{
 			Tool:    t.Tool,
-			Handler: WrapTool(db, bl, t.Handler),
+			Handler: WrapTool(d, t.Handler),
 		})
 	}
 	return resources
 }
 
-func getIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
 	if !ok {
 		return apierrors.ErrIssueIDsRequired.MCPError("не указан индетификатор задачи"), nil
 	}
 
-	query := db.
+	query := d.DB.
 		Joins("Parent").
 		Joins("Workspace").
 		Joins("State").
@@ -400,15 +401,21 @@ func getIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao
 		return logger.Error(err), nil
 	}
 
+	// Видимость задачи решает движок — тот же, что и в поиске.
+	subject := apicontext.NewSubject(apicontext.Prefilled{DB: d.DB, User: user})
+	if err := d.Policy.CanViewIssue(ctx, subject, &issue); err != nil {
+		return mcpError(err), nil
+	}
+
 	// Fetch Author details
-	if err := issue.Author.AfterFind(db); err != nil {
+	if err := issue.Author.AfterFind(d.DB); err != nil {
 		return logger.Error(err), nil
 	}
 
 	return mcp.NewToolResultJSON(issue.ToDTO())
 }
 
-func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func searchIssues(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	searchParams, err := types.ParseSearchParamsMCP(request.GetArguments())
 	if err != nil {
 		return logger.Error(err), nil
@@ -419,9 +426,8 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 		return mcp.NewToolResultError("группировка не поддерживается в MCP search_issues"), nil
 	}
 
-	// Видимость задач ограничивает движок ядра — тот же, что и в HTTP.
-	// Пока MCP не получает подключённый движок, применяется движок ядра.
-	issues, count, err := search.New(defaultengine.New()).SearchIssuesList(ctx, db, engine.IssueScope{
+	// Видимость задач ограничивает тот же движок, что и в HTTP.
+	issues, count, err := d.Search.SearchIssuesList(ctx, d.DB, engine.IssueScope{
 		Subject: apicontext.NewSubject(apicontext.Prefilled{User: user}),
 		Kind:    engine.ScopeGlobal,
 		Params:  searchParams,
@@ -436,7 +442,7 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 			ids[i] = issues[i].ID
 		}
 		var withWatchers []dao.Issue
-		if err := db.Select("issues.id").
+		if err := d.DB.Select("issues.id").
 			Where("id in (?)", ids).
 			Preload("Watchers").
 			Find(&withWatchers).Error; err != nil {
@@ -458,7 +464,7 @@ func searchIssues(ctx context.Context, db *gorm.DB, bl *business.Business, user 
 }
 
 // createIssue создаёт новую задачу в проекте
-func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func createIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	// Получаем обязательные параметры
@@ -479,7 +485,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	// Получаем проект и проверяем членство
 	var project dao.Project
-	if err := db.Preload("Workspace").Where("id = ?", projectId).First(&project).Error; err != nil {
+	if err := d.DB.Preload("Workspace").Where("id = ?", projectId).First(&project).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectNotFound.MCPError(), nil
 		}
@@ -487,7 +493,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, projectId).First(&projectMember).Error; err != nil {
+	if err := d.DB.Where("member_id = ? AND project_id = ?", user.ID, projectId).First(&projectMember).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectForbidden.MCPError(), nil
 		}
@@ -508,6 +514,22 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	var stateId uuid.UUID
 	if s, ok := args["state_id"].(string); ok && s != "" {
 		stateId, _ = uuid.FromString(s)
+	}
+	// Стартовый статус: задачи ещё нет, движку передаётся переход без исходного.
+	if stateId != uuid.Nil {
+		var state dao.State
+		if err := d.DB.Select("from_states").Where("id = ? AND project_id = ?", stateId, projectId).First(&state).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apierrors.ErrProjectStateNotFound.MCPError(), nil
+			}
+			return logger.Error(err), nil
+		}
+		subject := apicontext.NewSubject(apicontext.Prefilled{
+			User: user, Project: &project, ProjectMember: &projectMember,
+		})
+		if err := d.Policy.CheckTransition(ctx, engine.StateTransition{Subject: subject, To: state}); err != nil {
+			return mcpError(err), nil
+		}
 	}
 
 	var parentId uuid.NullUUID
@@ -547,7 +569,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	// Транзакция: создание задачи и связей
-	if err := db.Transaction(func(tx *gorm.DB) error {
+	if err := d.DB.Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, &issueNew); err != nil {
 			return err
 		}
@@ -615,7 +637,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	// Загружаем созданную задачу с связями для ответа
 	var createdIssue dao.Issue
-	if err := db.
+	if err := d.DB.
 		Joins("Parent").
 		Joins("Workspace").
 		Joins("State").
@@ -628,7 +650,7 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		return logger.Error(err), nil
 	}
 
-	err = bl.GetSnapshotTracker().TrackChanges(types.LayerProject, nil, tracker.IssueToSnapshot(issueNew), &project, user)
+	err = d.BL.GetSnapshotTracker().TrackChanges(types.LayerProject, nil, tracker.IssueToSnapshot(issueNew), &project, user)
 	if err != nil {
 		slog.Error("MCP createIssue: track changes failed", "error", err)
 	}
@@ -637,7 +659,28 @@ func createIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 }
 
 // updateIssue обновляет существующую задачу
-func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// updateIssueArgActions — какое право требуется для аргумента update_issue.
+// Имена аргументов свои, поэтому таблица отдельная от HTTP; набор действий тот же.
+// Остальные аргументы покрываются действием issue.update.
+var updateIssueArgActions = map[string]engine.Action{
+	"state_id":     engine.ActionIssueSetState,
+	"parent_id":    engine.ActionIssueSetParent,
+	"assignee_ids": engine.ActionIssueSetAssignees,
+	"label_ids":    engine.ActionIssueSetLabels,
+}
+
+// actionsForUpdateArgs возвращает права, которых требуют переданные аргументы.
+func actionsForUpdateArgs(args map[string]any) []engine.Action {
+	actions := make([]engine.Action, 0, len(updateIssueArgActions))
+	for _, arg := range slices.Sorted(maps.Keys(updateIssueArgActions)) {
+		if _, ok := args[arg]; ok {
+			actions = append(actions, updateIssueArgActions[arg])
+		}
+	}
+	return actions
+}
+
+func updateIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	issueIdOrSeq, ok := args["issue_id"].(string)
@@ -646,7 +689,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	// Поиск задачи (аналогично getIssue)
-	query := db.
+	query := d.DB.
 		Joins("Parent").
 		Joins("Workspace").
 		Joins("State").
@@ -674,36 +717,29 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		return logger.Error(err), nil
 	}
 
-	// Проверка членства в проекте
-	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apierrors.ErrProjectForbidden.MCPError(), nil
-		}
-		return logger.Error(err), nil
-	}
-
-	// Определение прав: admin или автор могут менять все поля,
-	// исполнителю-участнику дополнительно доступны связи (родитель).
-	// issue.IsAssignee здесь бесполезен - loadIssueAndMember не загружает Assignees,
-	// исполнитель проверяется запросом в БД внутри canManageIssueRelations
-	updateAll := projectMember.Role == types.AdminRole || issue.CreatedById == user.ID
-	canManageRelations, relErr := canManageIssueRelations(db, &issue, &projectMember, user.ID)
-	if relErr != nil {
-		return logger.Error(relErr), nil
-	}
-
 	// Сохраняем снимок старых данных для activity tracking
 	oldIssue := issue
+
+	subject, err := apicontext.LoadIssueSubject(d.DB, user, &oldIssue)
+	if err != nil {
+		return mcpError(err), nil
+	}
+	projectMember := subject.GetProjectMember()
+
+	// Право на правку задачи вообще, затем права на отдельные поля по
+	// составу аргументов — тот же порядок, что и в HTTP.
+	if errRes := authorize(ctx, d, engine.ActionIssueUpdate, subject); errRes != nil {
+		return errRes, nil
+	}
+	if err := d.Policy.AuthorizeAll(ctx, actionsForUpdateArgs(args), subject); err != nil {
+		return mcpError(err), nil
+	}
 	data := make(map[string]interface{})
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 
 	// Обновляем поля
 	if name, ok := args["name"].(string); ok {
-		if !updateAll {
-			return apierrors.ErrIssueForbidden.MCPError(), nil
-		}
 		if len(strings.TrimSpace(name)) == 0 {
 			return apierrors.ErrIssueNameEmpty.MCPError(), nil
 		}
@@ -712,17 +748,11 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	if desc, ok := args["description_html"].(string); ok {
-		if !updateAll {
-			return apierrors.ErrIssueForbidden.MCPError(), nil
-		}
 		issue.DescriptionHtml = desc
 		data["description_html"] = desc
 	}
 
 	if priority, ok := args["priority"].(string); ok {
-		if !updateAll {
-			return apierrors.ErrIssueForbidden.MCPError(), nil
-		}
 		if priority == "" {
 			issue.Priority = nil
 		} else {
@@ -740,7 +770,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		if err != nil {
 			return apierrors.ErrProjectStateNotFound.MCPError(), nil
 		}
-		if err := db.Where("id = ?", stateId).
+		if err := d.DB.Where("id = ?", stateId).
 			Where("project_id = ?", issue.ProjectId).
 			First(&newState).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -754,16 +784,13 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	if parentIdStr, ok := args["parent_id"].(string); ok {
-		if !canManageRelations {
-			return apierrors.ErrIssueForbidden.MCPError(), nil
-		}
 		if parentIdStr == "" {
 			issue.ParentId = uuid.NullUUID{Valid: false}
 		} else {
 			if pid, err := uuid.FromString(parentIdStr); err == nil {
 				// Проверка циклических зависимостей
 				var ancestorIDs []string
-				if err := db.Raw(`
+				if err := d.DB.Raw(`
 					WITH RECURSIVE ancestor_chain AS (
 						SELECT id, parent_id FROM issues WHERE id = ?
 						UNION ALL
@@ -788,9 +815,6 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	if targetDateStr, ok := args["target_date"].(string); ok {
-		if !updateAll {
-			return apierrors.ErrIssueForbidden.MCPError(), nil
-		}
 		if targetDateStr == "" {
 			issue.TargetDate = nil
 		} else {
@@ -805,17 +829,11 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	if estimatePoint, ok := args["estimate_point"].(float64); ok {
-		if !updateAll {
-			return apierrors.ErrIssueForbidden.MCPError(), nil
-		}
 		issue.EstimatePoint = int(estimatePoint)
 		data["estimate_point"] = int(estimatePoint)
 	}
 
 	if draft, ok := args["draft"].(bool); ok {
-		if !updateAll {
-			return apierrors.ErrIssueForbidden.MCPError(), nil
-		}
 		issue.Draft = draft
 		data["draft"] = draft
 	}
@@ -825,7 +843,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	var rulesLog []dao.RulesLog
 	defer func() {
-		if err := rules.AddLog(db, rulesLog); err != nil {
+		if err := rules.AddLog(d.DB, rulesLog); err != nil {
 			slog.Error("MCP updateIssue: create rules log", "error", err)
 		}
 	}()
@@ -833,7 +851,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	// Lua-правилам нужны данные, которые стандартная загрузка не даёт:
 	// счётчик вложений и кастомные поля
 	if statusChange && oldIssue.Project != nil && oldIssue.Project.RulesScript != nil {
-		if err := rules.EnrichIssue(db, &oldIssue); err != nil {
+		if err := rules.EnrichIssue(d.DB, &oldIssue); err != nil {
 			return logger.Error(err), nil
 		}
 	}
@@ -852,38 +870,24 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 	}
 
 	// Допустимость перехода определяет движок — тот же, что и в HTTP.
-	// Пока MCP не получает подключённый движок, применяется движок ядра.
 	if statusChange {
-		subject := apicontext.NewSubject(apicontext.Prefilled{
-			User:          user,
-			Project:       issue.Project,
-			ProjectMember: &projectMember,
-			Issue:         &oldIssue,
-		})
-		verdict, err := defaultengine.New().CanTransition(ctx, engine.StateTransition{
+		if err := d.Policy.CheckTransition(ctx, engine.StateTransition{
 			Subject: subject,
 			Issue:   &oldIssue,
 			To:      newState,
-		})
-		if err != nil {
-			return logger.Error(err), nil
-		}
-		if verdict.Decision == engine.DecisionDeny {
-			return apierrors.ErrForbiddenState.MCPError(), nil
+		}); err != nil {
+			return mcpError(err), nil
 		}
 	}
 
 	// Транзакция: обновление задачи и связей
-	if err := db.Transaction(func(tx *gorm.DB) error {
+	if err := d.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Omit(clause.Associations).Save(&issue).Error; err != nil {
 			return err
 		}
 
 		// Обновление assignees (полная замена)
 		if assigneeIds, ok := args["assignee_ids"].([]interface{}); ok {
-			if !updateAll {
-				return apierrors.ErrIssueForbidden
-			}
 			// Удаляем существующих
 			if err := tx.Where("issue_id = ?", issue.ID).Unscoped().Delete(&dao.IssueAssignee{}).Error; err != nil {
 				return err
@@ -916,9 +920,6 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 		// Обновление labels (полная замена)
 		if labelIds, ok := args["label_ids"].([]interface{}); ok {
-			if !updateAll {
-				return apierrors.ErrIssueForbidden
-			}
 			// Удаляем существующие
 			if err := tx.Where("issue_id = ?", issue.ID).Unscoped().Delete(&dao.IssueLabel{}).Error; err != nil {
 				return err
@@ -959,7 +960,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 
 	// Загружаем обновлённую задачу с связями для ответа
 	var updatedIssue dao.Issue
-	if err := db.
+	if err := d.DB.
 		Joins("Parent").
 		Joins("Workspace").
 		Joins("State").
@@ -972,7 +973,7 @@ func updateIssue(ctx context.Context, db *gorm.DB, bl *business.Business, user *
 		return logger.Error(err), nil
 	}
 
-	err := bl.GetSnapshotTracker().TrackChanges(types.LayerIssue,
+	err = d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue,
 		tracker.IssueToSnapshot(oldIssue),
 		tracker.IssueToSnapshot(updatedIssue), &updatedIssue, user)
 	if err != nil {
@@ -1045,7 +1046,7 @@ func structToMap(issue dao.Issue) map[string]interface{} {
 // ========== READ-ONLY HANDLERS ДЛЯ АНАЛИЗА ПРОЕКТОВ ==========
 
 // getSprints возвращает список спринтов рабочего пространства с их статистикой
-func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getSprints(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	workspaceSlug, ok := args["workspace_slug"].(string)
@@ -1055,7 +1056,7 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 
 	// Получаем workspace и проверяем членство
 	var workspace dao.Workspace
-	if err := db.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
+	if err := d.DB.Where("slug = ?", workspaceSlug).First(&workspace).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return mcp.NewToolResultError("Workspace не найден"), nil
 		}
@@ -1063,7 +1064,7 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 	}
 
 	var workspaceMember dao.WorkspaceMember
-	if err := db.Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&workspaceMember).Error; err != nil {
+	if err := d.DB.Where("member_id = ? AND workspace_id = ?", user.ID, workspace.ID).First(&workspaceMember).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return mcp.NewToolResultError("Нет доступа к workspace"), nil
 		}
@@ -1085,7 +1086,7 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 
 	// Получаем спринты с задачами для статистики
 	var sprints []dao.Sprint
-	if err := db.
+	if err := d.DB.
 		Where("workspace_id = ?", workspace.ID).
 		Order("sequence_id DESC").
 		Limit(limit).
@@ -1094,7 +1095,7 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 		return logger.Error(err), nil
 	}
 
-	statsBySprint, err := business.GetSprintStatsByWorkspace(db.WithContext(ctx), workspace.ID)
+	statsBySprint, err := business.GetSprintStatsByWorkspace(d.DB.WithContext(ctx), workspace.ID)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1144,7 +1145,7 @@ func getSprints(ctx context.Context, db *gorm.DB, bl *business.Business, user *d
 }
 
 // getIssueComments возвращает комментарии к задаче с пагинацией
-func getIssueComments(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssueComments(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	issueIdOrSeq, ok := args["issue_id"].(string)
@@ -1153,7 +1154,7 @@ func getIssueComments(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	// Находим задачу
-	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	issue, err := findIssueByIdOrSeq(d.DB, issueIdOrSeq)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1163,7 +1164,7 @@ func getIssueComments(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	// Проверяем членство в проекте
 	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
+	if err := d.DB.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectForbidden.MCPError(), nil
 		}
@@ -1185,7 +1186,7 @@ func getIssueComments(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	// Получаем комментарии
 	var comments []dao.IssueComment
-	query := db.
+	query := d.DB.
 		Joins("Actor").
 		Joins("OriginalComment").
 		Preload("Reactions").
@@ -1200,7 +1201,7 @@ func getIssueComments(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	// Подсчёт общего количества
 	var total int64
-	db.Model(&dao.IssueComment{}).Where("issue_id = ?", issue.ID).Count(&total)
+	d.DB.Model(&dao.IssueComment{}).Where("issue_id = ?", issue.ID).Count(&total)
 
 	// Формируем ответ
 	type commentResponse struct {
@@ -1252,18 +1253,18 @@ func getIssueComments(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	})
 }
 
-func getIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssueComment(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	commentId, err := GetUUIDArg(request.GetArguments(), "comment_id")
 	if err != nil {
 		return logger.Error(err), nil
 	}
 
-	query := db.
+	query := d.DB.
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
 		Preload("Reactions").
-		Where("issue_comments.project_id in (?)", db.Select("project_id").Where("member_id = ?", user.ID).Model(dao.ProjectMember{})).
+		Where("issue_comments.project_id in (?)", d.DB.Select("project_id").Where("member_id = ?", user.ID).Model(dao.ProjectMember{})).
 		Where("issue_comments.id = ? or issue_comments.original_id = ?", commentId, commentId).
 		Order("issue_comments.created_at DESC")
 
@@ -1279,7 +1280,7 @@ func getIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business, us
 }
 
 // getIssueActivity возвращает историю изменений задачи
-func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssueActivity(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	issueIdOrSeq, ok := args["issue_id"].(string)
@@ -1288,7 +1289,7 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	// Находим задачу
-	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	issue, err := findIssueByIdOrSeq(d.DB, issueIdOrSeq)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1298,7 +1299,7 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	// Проверяем членство в проекте
 	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
+	if err := d.DB.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectForbidden.MCPError(), nil
 		}
@@ -1323,7 +1324,7 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	// Получаем историю
-	query := db.
+	query := d.DB.
 		Joins("Actor").
 		Where("activity_events.entity_type = ?", types.LayerIssue).
 		Where("activity_events.issue_id = ?", issue.ID).
@@ -1342,7 +1343,7 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	// Подсчёт общего количества
 	var total int64
-	countQuery := db.Model(&dao.ActivityEvent{}).
+	countQuery := d.DB.Model(&dao.ActivityEvent{}).
 		Where("activity_events.entity_type = ?", types.LayerIssue).
 		Where("issue_id = ?", issue.ID)
 	if field != "" {
@@ -1396,7 +1397,7 @@ func getIssueActivity(ctx context.Context, db *gorm.DB, bl *business.Business, u
 }
 
 // getProjectLabels возвращает список меток проекта
-func getProjectLabels(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getProjectLabels(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	projectIdStr, ok := args["project_id"].(string)
@@ -1411,7 +1412,7 @@ func getProjectLabels(ctx context.Context, db *gorm.DB, bl *business.Business, u
 
 	// Проверяем проект и членство
 	var project dao.Project
-	if err := db.Where("id = ?", projectId).First(&project).Error; err != nil {
+	if err := d.DB.Where("id = ?", projectId).First(&project).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectNotFound.MCPError(), nil
 		}
@@ -1419,7 +1420,7 @@ func getProjectLabels(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, projectId).First(&projectMember).Error; err != nil {
+	if err := d.DB.Where("member_id = ? AND project_id = ?", user.ID, projectId).First(&projectMember).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectForbidden.MCPError(), nil
 		}
@@ -1427,7 +1428,7 @@ func getProjectLabels(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	}
 
 	// Получаем метки
-	query := db.
+	query := d.DB.
 		Where("project_id = ?", projectId).
 		Preload("Parent").
 		Order("name")
@@ -1475,7 +1476,7 @@ func getProjectLabels(ctx context.Context, db *gorm.DB, bl *business.Business, u
 }
 
 // getIssueLinks возвращает внешние ссылки задачи
-func getIssueLinks(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssueLinks(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	issueIdOrSeq, ok := args["issue_id"].(string)
@@ -1484,7 +1485,7 @@ func getIssueLinks(ctx context.Context, db *gorm.DB, bl *business.Business, user
 	}
 
 	// Находим задачу
-	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	issue, err := findIssueByIdOrSeq(d.DB, issueIdOrSeq)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1494,7 +1495,7 @@ func getIssueLinks(ctx context.Context, db *gorm.DB, bl *business.Business, user
 
 	// Проверяем членство в проекте
 	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
+	if err := d.DB.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectForbidden.MCPError(), nil
 		}
@@ -1503,7 +1504,7 @@ func getIssueLinks(ctx context.Context, db *gorm.DB, bl *business.Business, user
 
 	// Получаем ссылки
 	var links []dao.IssueLink
-	if err := db.
+	if err := d.DB.
 		Joins("CreatedBy").
 		Where("issue_id = ?", issue.ID).
 		Order("created_at DESC").
@@ -1545,7 +1546,7 @@ func getIssueLinks(ctx context.Context, db *gorm.DB, bl *business.Business, user
 }
 
 // getIssueAttachments возвращает вложения задачи
-func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getIssueAttachments(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	issueIdOrSeq, ok := args["issue_id"].(string)
@@ -1554,7 +1555,7 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 	}
 
 	// Находим задачу
-	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	issue, err := findIssueByIdOrSeq(d.DB, issueIdOrSeq)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1564,7 +1565,7 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 
 	// Проверяем членство в проекте
 	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
+	if err := d.DB.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apierrors.ErrProjectForbidden.MCPError(), nil
 		}
@@ -1572,7 +1573,7 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 	}
 
 	var attachments []dao.IssueAttachment
-	if err := db.
+	if err := d.DB.
 		Joins("Asset").
 		Where("issue_attachments.issue_id = ?", issue.ID).
 		Order("issue_attachments.created_at").
@@ -1584,7 +1585,7 @@ func getIssueAttachments(ctx context.Context, db *gorm.DB, bl *business.Business
 }
 
 // createIssueComment создаёт комментарий к задаче
-func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func createIssueComment(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	issueIdOrSeq, ok := args["issue_id"].(string)
@@ -1598,7 +1599,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 	}
 
 	// Находим задачу
-	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	issue, err := findIssueByIdOrSeq(d.DB, issueIdOrSeq)
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1606,18 +1607,17 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		return apierrors.ErrIssueNotFound.MCPError(), nil
 	}
 
-	// Проверяем членство в проекте
-	var projectMember dao.ProjectMember
-	if err := db.Where("member_id = ? AND project_id = ?", user.ID, issue.ProjectId).First(&projectMember).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apierrors.ErrProjectForbidden.MCPError(), nil
-		}
-		return logger.Error(err), nil
+	subject, err := apicontext.LoadIssueSubject(d.DB, user, issue)
+	if err != nil {
+		return mcpError(err), nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueCommentCreate, subject); errRes != nil {
+		return errRes, nil
 	}
 
 	// Проверка кулдауна
 	var lastCommentTime time.Time
-	if err := db.Select("created_at").
+	if err := d.DB.Select("created_at").
 		Where("workspace_id = ?", issue.WorkspaceId).
 		Where("actor_id = ?", user.ID).
 		Order("created_at desc").
@@ -1643,7 +1643,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 		CommentStripped: types.RemoveInvisibleChars(commentHtml),
 	}
 
-	if err := db.Transaction(func(tx *gorm.DB) error {
+	if err := d.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Omit(clause.Associations).Create(&comment).Error; err != nil {
 			return err
 		}
@@ -1658,7 +1658,7 @@ func createIssueComment(ctx context.Context, db *gorm.DB, bl *business.Business,
 	comment.Actor = user
 
 	newSnapshot := tracker.CommentToSnapshot(&comment)
-	err = bl.GetSnapshotTracker().TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
+	err = d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
 	if err != nil {
 		slog.Error("MCP createIssueComment: track changes failed", "error", err)
 	}
@@ -1742,8 +1742,10 @@ func newIssueRef(workspace, project, sequence string) (issueRef, bool) {
 }
 
 // findIssueByIdOrSeq — вспомогательная функция для поиска задачи по ID или sequence
+// findIssueByIdOrSeq грузит задачу с проектом, пространством и исполнителями —
+// в таком виде её ждёт движок прав.
 func findIssueByIdOrSeq(db *gorm.DB, issueIdOrSeq string) (*dao.Issue, error) {
-	query := db.Joins("Project").Joins("Workspace")
+	query := db.Joins("Project").Joins("Workspace").Preload("Assignees")
 
 	var issue dao.Issue
 	if id, err := uuid.FromString(issueIdOrSeq); err == nil {

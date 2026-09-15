@@ -57,6 +57,9 @@ type APIContext struct {
 
 // Prefilled — набор заранее загруженных сущностей для NewPrefilled.
 type Prefilled struct {
+	// DB — соединение для правил, которым нужен запрос (проверка членства
+	// по задаче). Необязательно: остальные геттеры в БД не ходят.
+	DB              *gorm.DB
 	User            *dao.User
 	Workspace       *dao.Workspace
 	WorkspaceMember *dao.WorkspaceMember
@@ -72,6 +75,7 @@ type Prefilled struct {
 func NewPrefilled(c echo.Context, p Prefilled) *APIContext {
 	a := &APIContext{
 		Context:         c,
+		db:              p.DB,
 		prefilled:       true,
 		workspace:       p.Workspace,
 		workspaceMember: p.WorkspaceMember,

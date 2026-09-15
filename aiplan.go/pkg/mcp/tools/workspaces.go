@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
@@ -76,18 +75,18 @@ var workspacesTools = []Tool{
 	},
 }
 
-func GetWorkspacesTools(db *gorm.DB, bl *business.Business) []server.ServerTool {
+func GetWorkspacesTools(d Deps) []server.ServerTool {
 	var result []server.ServerTool
 	for _, t := range workspacesTools {
 		result = append(result, server.ServerTool{
 			Tool:    t.Tool,
-			Handler: WrapTool(db, bl, t.Handler),
+			Handler: WrapTool(d, t.Handler),
 		})
 	}
 	return result
 }
 
-func getUserWorkspaces(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getUserWorkspaces(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	// Получаем параметры пагинации
@@ -102,15 +101,15 @@ func getUserWorkspaces(ctx context.Context, db *gorm.DB, bl *business.Business, 
 
 	// Запрос пространств пользователя
 	var workspaces []dao.WorkspaceWithCount
-	query := db.Model(&dao.Workspace{}).
+	query := d.DB.Model(&dao.Workspace{}).
 		Select("*,(?) as total_members,(?) as total_projects,(?) as is_favorite",
-			db.Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
-			db.Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
-			db.Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
+			d.DB.Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			d.DB.Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			d.DB.Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
 		).
 		Preload("Owner").
 		Set("userID", user.ID).
-		Where("workspaces.id in (?)", db.Model(&dao.WorkspaceMember{}).
+		Where("workspaces.id in (?)", d.DB.Model(&dao.WorkspaceMember{}).
 			Select("workspace_id").
 			Where("member_id = ?", user.ID)).
 		Order("is_favorite desc, lower(name)")
@@ -186,7 +185,7 @@ func buildDocsQuery(db *gorm.DB, workspace *dao.Workspace, member *dao.Workspace
 
 // getWorkspaceDocs возвращает список документов пространства с пагинацией.
 // Проверяет права доступа пользователя к каждому документу.
-func getWorkspaceDocs(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getWorkspaceDocs(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	workspaceIdOrSlug, ok := args["workspace_id"].(string)
@@ -206,17 +205,17 @@ func getWorkspaceDocs(ctx context.Context, db *gorm.DB, bl *business.Business, u
 	includeNested, _ := args["include_nested"].(bool)
 	excludeDrafts, _ := args["exclude_drafts"].(bool)
 
-	workspace, err := findWorkspaceByIdOrSlug(db, workspaceIdOrSlug)
+	workspace, err := findWorkspaceByIdOrSlug(d.DB, workspaceIdOrSlug)
 	if err != nil {
 		return mcp.NewToolResultError("workspace не найден"), nil
 	}
 
-	workspaceMember, err := getWorkspaceMemberOrSuperuser(db, workspace, user)
+	workspaceMember, err := getWorkspaceMemberOrSuperuser(d.DB, workspace, user)
 	if err != nil {
 		return mcp.NewToolResultError("нет доступа к workspace"), nil
 	}
 
-	query := buildDocsQuery(db, workspace, workspaceMember, includeNested, excludeDrafts)
+	query := buildDocsQuery(d.DB, workspace, workspaceMember, includeNested, excludeDrafts)
 
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
@@ -237,7 +236,7 @@ func getWorkspaceDocs(ctx context.Context, db *gorm.DB, bl *business.Business, u
 }
 
 // getWorkspaceProjects возвращает список проектов пространства с пагинацией.
-func getWorkspaceProjects(ctx context.Context, db *gorm.DB, bl *business.Business, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getWorkspaceProjects(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
 	workspaceIdOrSlug, ok := args["workspace_id"].(string)
@@ -254,17 +253,17 @@ func getWorkspaceProjects(ctx context.Context, db *gorm.DB, bl *business.Busines
 		limit = int(v)
 	}
 
-	workspace, err := findWorkspaceByIdOrSlug(db, workspaceIdOrSlug)
+	workspace, err := findWorkspaceByIdOrSlug(d.DB, workspaceIdOrSlug)
 	if err != nil {
 		return mcp.NewToolResultError("workspace не найден"), nil
 	}
 
-	workspaceMember, err := getWorkspaceMemberOrSuperuser(db, workspace, user)
+	workspaceMember, err := getWorkspaceMemberOrSuperuser(d.DB, workspace, user)
 	if err != nil {
 		return mcp.NewToolResultError("нет доступа к workspace"), nil
 	}
 
-	query := buildProjectsQuery(db, workspace, workspaceMember, user)
+	query := buildProjectsQuery(d.DB, workspace, workspaceMember, user)
 
 	var count int64
 	if err := query.Model(&dao.Project{}).Count(&count).Error; err != nil {
