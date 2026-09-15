@@ -33,6 +33,7 @@ import (
 
 	tracker "github.com/aisa-it/aiplan/aiplan.go/pkg/activity-tracker"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -1779,7 +1780,6 @@ func (s *Services) createIssue(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	workspace := apiContext.GetWorkspace()
 	project := apiContext.GetProject()
-	projectMember := apiContext.GetProjectMember()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
@@ -1833,7 +1833,9 @@ func (s *Services) createIssue(c echo.Context) error {
 	}
 
 	// State flow check
-	if projectMember.Role != types.AdminRole {
+	// Стартовый статус: задачи ещё нет, поэтому движку передаётся переход
+	// без исходного статуса.
+	{
 		var state dao.State
 		if err := s.DB(c).Select("from_states").Where("id = ?", issue.StateId).First(&state).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1842,8 +1844,11 @@ func (s *Services) createIssue(c echo.Context) error {
 			return EError(c, err)
 		}
 
-		if len(state.FromStates.Array) > 0 && !slices.Contains(state.FromStates.Array, uuid.Nil) {
-			return EErrorDefined(c, apierrors.ErrForbiddenState)
+		if err := s.policy.CheckTransition(c.Request().Context(), engine.StateTransition{
+			Subject: apiContext,
+			To:      state,
+		}); err != nil {
+			return EError(c, err)
 		}
 	}
 
@@ -2748,13 +2753,16 @@ func (s *Services) getProjectStartStates(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 
-	query := s.DB(c).Where("project_id = ?", projectMember.ProjectId).Order("sequence")
-
-	if projectMember.Role != types.AdminRole {
-		query = query.Where(s.DB(c).Where("array_length(from_states, 1) IS NULL"). // States that allow transition from all states
-												Or("? = any(from_states)", uuid.Nil), // States that has start state ability
-		)
-	}
+	// Стартовые статусы: задачи ещё нет, поэтому движку передаётся запрос
+	// без неё — тот же, что и при создании.
+	query := s.policy.ScopeStates(
+		c.Request().Context(),
+		engine.StateScopeRequest{
+			Subject:   apiContext,
+			ProjectID: projectMember.ProjectId,
+		},
+		s.DB(c).Where("project_id = ?", projectMember.ProjectId).Order("sequence"),
+	)
 
 	var states []dao.State
 	if err := query.Find(&states).Error; err != nil {

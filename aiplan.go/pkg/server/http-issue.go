@@ -806,11 +806,14 @@ func (s *Services) updateIssue(c echo.Context) error {
 			}
 		}
 
-		// Check state flow
-		if projectMember.Role != types.AdminRole && // Админ может переводить в любой статус
-			len(newState.FromStates.Array) > 0 && // Если указаны возможные предыдущие статусы
-			!slices.Contains(newState.FromStates.Array, oldIssue.StateId) { // Проверяем наличие старого статуса в списке возможных предыдущих
-			return EErrorDefined(c, apierrors.ErrForbiddenState)
+		// Допустимость перехода определяет движок: правило может зависеть
+		// не только от настройки states_flow, но и от роли на переходе.
+		if err := s.policy.CheckTransition(c.Request().Context(), engine.StateTransition{
+			Subject: apiCtx,
+			Issue:   &oldIssue,
+			To:      newState,
+		}); err != nil {
+			return EError(c, err)
 		}
 
 		issue.StateId = newState.ID
@@ -1282,13 +1285,17 @@ func (s *Services) getAvailableStates(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 
-	query := s.DB(c).Where("project_id = ?", projectMember.ProjectId).Order("sequence")
-
-	if projectMember.Role != types.AdminRole {
-		query = query.Where(s.DB(c).Where("array_length(from_states, 1) IS NULL"). // States that allow transition from all states
-												Or("? = any(from_states)", issue.StateId), // States that has current state as allowed previous
-		)
-	}
+	// Список доступных статусов сужает тот же движок, что проверяет переход:
+	// показанный статус обязан приниматься при сохранении.
+	query := s.policy.ScopeStates(
+		c.Request().Context(),
+		engine.StateScopeRequest{
+			Subject:   apiContext,
+			ProjectID: projectMember.ProjectId,
+			Issue:     issue,
+		},
+		s.DB(c).Where("project_id = ?", projectMember.ProjectId).Order("sequence"),
+	)
 
 	var states []dao.State
 	if err := query.Find(&states).Error; err != nil {
