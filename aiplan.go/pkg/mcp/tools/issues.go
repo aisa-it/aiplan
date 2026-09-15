@@ -19,7 +19,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/search"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
@@ -724,8 +723,6 @@ func updateIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 	if err != nil {
 		return mcpError(err), nil
 	}
-	projectMember := subject.GetProjectMember()
-
 	// Право на правку задачи вообще, затем права на отдельные поля по
 	// составу аргументов — тот же порядок, что и в HTTP.
 	if errRes := authorize(ctx, d, engine.ActionIssueUpdate, subject); errRes != nil {
@@ -841,41 +838,13 @@ func updateIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 	issue.UpdatedById = userID
 	issue.LLMContent = true
 
-	var rulesLog []dao.RulesLog
-	defer func() {
-		if err := rules.AddLog(d.DB, rulesLog); err != nil {
-			slog.Error("MCP updateIssue: create rules log", "error", err)
-		}
-	}()
-
-	// Lua-правилам нужны данные, которые стандартная загрузка не даёт:
-	// счётчик вложений и кастомные поля
-	if statusChange && oldIssue.Project != nil && oldIssue.Project.RulesScript != nil {
-		if err := rules.EnrichIssue(d.DB, &oldIssue); err != nil {
-			return logger.Error(err), nil
-		}
-	}
-
-	// Правила проекта на смену статуса — как в updateIssue: админ может всё
-	if statusChange && projectMember.Role != types.AdminRole {
-		res, msg, err := rules.BeforeStatusChange(*user, oldIssue, newState)
-
-		rules.AppendMsg(oldIssue, *user, msg, &rulesLog)
-		rules.AppendError(oldIssue, *user, err, &rulesLog)
-		rules.ResultToLog(oldIssue, *user, res, err, &rulesLog)
-
-		if !res.ClientResult {
-			return err.ClientError().MCPError(), nil
-		}
-	}
-
-	// Допустимость перехода определяет движок — тот же, что и в HTTP.
+	// Хуки движка и допустимость перехода — тот же порядок, что и в HTTP.
 	if statusChange {
-		if err := d.Policy.CheckTransition(ctx, engine.StateTransition{
-			Subject: subject,
-			Issue:   &oldIssue,
-			To:      newState,
-		}); err != nil {
+		transition := engine.StateTransition{Subject: subject, Issue: &oldIssue, To: newState}
+		if err := d.Policy.BeforeStateChange(ctx, transition); err != nil {
+			return mcpError(err), nil
+		}
+		if err := d.Policy.CheckTransition(ctx, transition); err != nil {
 			return mcpError(err), nil
 		}
 	}
@@ -981,14 +950,11 @@ func updateIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 	}
 
 	if statusChange {
-		res, msg, err := rules.AfterStatusChange(*user, oldIssue, newState)
-
-		rules.AppendMsg(oldIssue, *user, msg, &rulesLog)
-		rules.AppendError(oldIssue, *user, err, &rulesLog)
-		rules.ResultToLog(oldIssue, *user, res, err, &rulesLog)
-
-		if !res.ClientResult {
-			return err.ClientError().MCPError(), nil
+		// Изменение уже сохранено: after-хук его не отменяет, отказ — только в лог.
+		if err := d.Policy.AfterStateChange(ctx, engine.StateTransition{
+			Subject: subject, Issue: &oldIssue, To: newState,
+		}); err != nil {
+			slog.Error("MCP updateIssue: after state change hook", "error", err)
 		}
 	}
 

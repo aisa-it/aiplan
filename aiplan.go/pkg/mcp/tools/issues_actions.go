@@ -16,7 +16,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
-	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
@@ -1576,12 +1575,13 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 		return logger.Error(err), nil
 	}
 
-	// Lua-сценарий проекта может запретить изменение поля.
-	// На админов сценарии не распространяются (канон продукта, как в HTTP setIssueProperty)
-	if issue.Project != nil && issue.Project.RulesScript != nil && pm.Role != types.AdminRole {
-		if errRes := runPropertyChangeRulesMCP(d.DB, user, issue, template, valueStr, lookupRow); errRes != nil {
-			return errRes, nil
-		}
+	// Для lookup хук получает отображаемое значение строки справочника, не id
+	hookValue := valueStr
+	if lookupRow != nil {
+		hookValue = lookupRow.Value
+	}
+	if err := d.Policy.BeforePropertyChange(ctx, subject, *issue, template, hookValue); err != nil {
+		return mcpError(err), nil
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
@@ -1625,48 +1625,6 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 	}
 	resp.ResetProperties = resetProperties
 	return mcp.NewToolResultJSON(resp)
-}
-
-// runPropertyChangeRulesMCP вызывает Lua-хук BeforeIssuePropertyChange проекта
-// (как HTTP setIssueProperty / отказ BeforeStatusChange в MCP updateIssue).
-// Не-nil результат — отказ сценария, значение поля не записывается
-func runPropertyChangeRulesMCP(db *gorm.DB, user *dao.User, issue *dao.Issue, template dao.ProjectPropertyTemplate, valueStr string, lookupRow *dao.DictionaryRow) *mcp.CallToolResult {
-	// findIssueByIdOrSeq грузит Project/Workspace, но не State, а getCallParams
-	// в rules разыменовывает *issue.State — догружаем статус вручную
-	var state dao.State
-	if err := db.Where("id = ?", issue.StateId).First(&state).Error; err != nil {
-		return logger.Error(err)
-	}
-	issue.State = &state
-
-	// Старые значения полей задачи — для old_value хука и params.properties
-	if err := rules.EnrichIssue(db, issue); err != nil {
-		return logger.Error(err)
-	}
-
-	// Для lookup хук получает отображаемое значение строки справочника, не id
-	hookValue := valueStr
-	if lookupRow != nil {
-		hookValue = lookupRow.Value
-	}
-
-	var rulesLog []dao.RulesLog
-	defer func() {
-		if err := rules.AddLog(db, rulesLog); err != nil {
-			slog.Error("MCP setIssueProperty: create rules log", "error", err)
-		}
-	}()
-
-	res, msg, rerr := rules.BeforeIssuePropertyChange(*user, *issue, template, hookValue)
-
-	rules.AppendMsg(*issue, *user, msg, &rulesLog)
-	rules.AppendError(*issue, *user, rerr, &rulesLog)
-	rules.ResultToLog(*issue, *user, res, rerr, &rulesLog)
-
-	if !res.ClientResult {
-		return rerr.ClientError().MCPError()
-	}
-	return nil
 }
 
 func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) error {
