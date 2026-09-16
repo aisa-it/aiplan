@@ -159,10 +159,10 @@ const (
 const (
 	// ActionDocList и ActionDocCreateRoot — корень дерева документов
 	// пространства (документа в запросе нет).
-	ActionDocList           Action = "doc.list"
-	ActionDocCreateRoot     Action = "doc.create.root"
-	ActionDocView           Action = "doc.view"
-	ActionDocCreate         Action = "doc.create"
+	ActionDocList       Action = "doc.list"
+	ActionDocCreateRoot Action = "doc.create.root"
+	ActionDocView       Action = "doc.view"
+	ActionDocCreate     Action = "doc.create"
 	// ActionDocAccessManage — смена ролей и списков доступа документа.
 	ActionDocAccessManage   Action = "doc.access.manage"
 	ActionDocUpdate         Action = "doc.update"

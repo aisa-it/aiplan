@@ -88,16 +88,19 @@ func (s *Services) projectRoute(g *echo.Group, method, path string, action engin
 	s.scopedRoute(g, method, path, action, apierrors.ErrProjectForbidden, h)
 }
 
+// sprintRoute: guard существования спринта идёт после проверки прав — так
+// отказ уровня пространства приходит раньше 404, как в прежней цепочке.
 func (s *Services) sprintRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc) {
-	s.scopedRoute(g, method, path, action, apierrors.ErrSprintForbidden, h)
+	s.scopedRoute(g, method, path, action, apierrors.ErrSprintForbidden, h, s.SprintMiddleware)
 }
 
 func (s *Services) docRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc) {
 	s.scopedRoute(g, method, path, action, apierrors.ErrDocForbidden, h)
 }
 
+// formRoute: guard существования формы — после проверки прав (см. sprintRoute).
 func (s *Services) formRoute(g *echo.Group, method, path string, action engine.Action, h echo.HandlerFunc) {
-	s.scopedRoute(g, method, path, action, apierrors.ErrFormForbidden, h)
+	s.scopedRoute(g, method, path, action, apierrors.ErrFormForbidden, h, s.FormMiddleware)
 }
 
 // permissionMiddleware проверяет право на действие роута через движок.

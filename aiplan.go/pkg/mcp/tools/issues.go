@@ -197,6 +197,10 @@ var issuesTools = []Tool{
 				mcp.Description("Список ID исполнителей (UUID). Заменяет существующих"),
 				mcp.Items(map[string]interface{}{"type": "string"}),
 			),
+			mcp.WithArray("watcher_ids",
+				mcp.Description("Список ID наблюдателей (UUID). Заменяет существующих"),
+				mcp.Items(map[string]interface{}{"type": "string"}),
+			),
 			mcp.WithArray("label_ids",
 				mcp.Description("Список ID меток (UUID). Заменяет существующие"),
 				mcp.Items(map[string]interface{}{"type": "string"}),
@@ -502,12 +506,13 @@ func createIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 		return logger.Error(err), nil
 	}
 
-	var projectMember dao.ProjectMember
-	if err := d.DB.Where("member_id = ? AND project_id = ?", user.ID, projectId).First(&projectMember).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apierrors.ErrProjectForbidden.MCPError(), nil
-		}
-		return logger.Error(err), nil
+	// Право на создание задачи решает движок — тот же, что и в HTTP.
+	subject, err := apicontext.LoadProjectSubject(d.DB, user, &project)
+	if err != nil {
+		return mcpError(err), nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueCreate, subject); errRes != nil {
+		return errRes, nil
 	}
 
 	// Получаем опциональные параметры
@@ -534,9 +539,6 @@ func createIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 			}
 			return logger.Error(err), nil
 		}
-		subject := apicontext.NewSubject(apicontext.Prefilled{
-			User: user, Project: &project, ProjectMember: &projectMember,
-		})
 		if err := d.Policy.CheckTransition(ctx, engine.StateTransition{Subject: subject, To: state}); err != nil {
 			return mcpError(err), nil
 		}
@@ -676,7 +678,34 @@ var updateIssueArgActions = map[string]engine.Action{
 	"state_id":     engine.ActionIssueSetState,
 	"parent_id":    engine.ActionIssueSetParent,
 	"assignee_ids": engine.ActionIssueSetAssignees,
+	"watcher_ids":  engine.ActionIssueSetWatchers,
 	"label_ids":    engine.ActionIssueSetLabels,
+}
+
+// uuidArgs переводит список строк аргумента в UUID, отбрасывая некорректные.
+func uuidArgs(raw []any) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, v := range raw {
+		if str, ok := v.(string); ok {
+			if id := uuid.FromStringOrNil(str); id != uuid.Nil {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+// projectUsersByIDs — пользователи проекта из списка: чужие идентификаторы отбрасываются.
+func projectUsersByIDs(db *gorm.DB, projectID uuid.UUID, ids []uuid.UUID) ([]dao.User, error) {
+	var users []dao.User
+	if len(ids) == 0 {
+		return users, nil
+	}
+	err := db.
+		Where("id in ?", ids).
+		Where("id in (?)", db.Model(&dao.ProjectMember{}).Select("member_id").Where("project_id = ?", projectID)).
+		Find(&users).Error
+	return users, err
 }
 
 // actionsForUpdateArgs возвращает права, которых требуют переданные аргументы.
@@ -860,6 +889,37 @@ func updateIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 		}
 	}
 
+	// Хуки движка на смену исполнителей, наблюдателей и меток — как в HTTP.
+	if assigneeIds, ok := args["assignee_ids"].([]any); ok {
+		users, err := projectUsersByIDs(d.DB, issue.ProjectId, uuidArgs(assigneeIds))
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if err := d.Policy.BeforeAssigneesChange(ctx, subject, oldIssue, users); err != nil {
+			return mcpError(err), nil
+		}
+	}
+	if watcherIds, ok := args["watcher_ids"].([]any); ok {
+		users, err := projectUsersByIDs(d.DB, issue.ProjectId, uuidArgs(watcherIds))
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if err := d.Policy.BeforeWatchersChange(ctx, subject, oldIssue, users); err != nil {
+			return mcpError(err), nil
+		}
+	}
+	if labelIds, ok := args["label_ids"].([]any); ok {
+		var labels []dao.Label
+		if ids := uuidArgs(labelIds); len(ids) > 0 {
+			if err := d.DB.Where("project_id = ? AND id in ?", issue.ProjectId, ids).Find(&labels).Error; err != nil {
+				return logger.Error(err), nil
+			}
+		}
+		if err := d.Policy.BeforeLabelsChange(ctx, subject, oldIssue, labels); err != nil {
+			return mcpError(err), nil
+		}
+	}
+
 	// Транзакция: обновление задачи и связей
 	if err := d.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Omit(clause.Associations).Save(&issue).Error; err != nil {
@@ -896,6 +956,31 @@ func updateIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 				}
 			}
 			data["assignees_list"] = assigneeIds
+		}
+
+		// Обновление watchers (полная замена)
+		if watcherIds, ok := args["watcher_ids"].([]interface{}); ok {
+			if err := tx.Where("issue_id = ?", issue.ID).Unscoped().Delete(&dao.IssueWatcher{}).Error; err != nil {
+				return err
+			}
+			var newWatchers []dao.IssueWatcher
+			for _, id := range uuidArgs(watcherIds) {
+				newWatchers = append(newWatchers, dao.IssueWatcher{
+					Id:          dao.GenUUID(),
+					WatcherId:   id,
+					IssueId:     issue.ID,
+					ProjectId:   issue.ProjectId,
+					WorkspaceId: issue.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				})
+			}
+			if len(newWatchers) > 0 {
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&newWatchers, 10).Error; err != nil {
+					return err
+				}
+			}
+			data["watchers_list"] = watcherIds
 		}
 
 		// Обновление labels (полная замена)

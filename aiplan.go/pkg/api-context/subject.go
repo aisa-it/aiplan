@@ -35,6 +35,9 @@ func (a *APIContext) ProjectMember() *dao.ProjectMember { return a.GetProjectMem
 // Sprint возвращает спринт запроса.
 func (a *APIContext) Sprint() *dao.Sprint { return a.GetSprint() }
 
+// Form возвращает форму запроса.
+func (a *APIContext) Form() *dao.Form { return a.GetForm() }
+
 // Doc возвращает документ запроса вместе с персональными правами доступа:
 // без них списки читателей и редакторов пусты и решение движка неверно.
 func (a *APIContext) Doc() *dao.Doc { return a.GetDoc(WithDocAccessRules()) }
