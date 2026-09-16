@@ -164,18 +164,15 @@ func filterVisibleFields(b *ActivityBucket, r Recipient, ctx *EmailContext) ([]F
 			customBodyAuthors = html.Authors
 			continue
 		}
-		needActionAuthor := ctx.Plan.AuthorRole == member_role.ActionAuthor &&
-			!isUserInAuthors(html.Authors, r.MemberNotify.GetUser().Email)
-
-		if needActionAuthor {
-			r.MemberNotify.Toggle(member_role.ActionAuthor)
+		// авторство считается по каждому полю дайджеста отдельно
+		wasActionAuthor := r.MemberNotify.Has(member_role.ActionAuthor)
+		if ctx.Plan.AuthorRole == member_role.ActionAuthor {
+			setRole(r.MemberNotify, member_role.ActionAuthor, isUserInAuthors(html.Authors, r.MemberNotify.GetUser().Email))
 		}
 
 		allowed := r.MemberNotify.Allowed(field, html.Verb, ctx.Plan.EntityType, ctx.Plan.AuthorRole, &member_role.MemberSettings{Notify: ctx.Settings}, types.EmailCh)
 
-		if needActionAuthor {
-			r.MemberNotify.Toggle(member_role.ActionAuthor)
-		}
+		setRole(r.MemberNotify, member_role.ActionAuthor, wasActionAuthor)
 
 		if !allowed {
 			continue
@@ -393,6 +390,14 @@ func updateNotified(tx *gorm.DB, buckets ActivityBuckets) {
 	if err := tx.Model(&dao.ActivityEvent{}).Where("id IN (?)", ids).Update("notified", true).Error; err != nil {
 		slog.Error(err.Error())
 	}
+}
+
+func setRole(m *member_role.MemberNotify, role member_role.Role, on bool) {
+	if on {
+		m.Add(role)
+		return
+	}
+	m.Remove(role)
 }
 
 func isUserInAuthors(authors []dao.User, userEmail string) bool {
