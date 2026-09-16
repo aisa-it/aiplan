@@ -25,6 +25,10 @@ type WorkspaceLight struct {
 type Workspace struct {
 	WorkspaceLight
 
+	// Permissions — разрешённые текущему пользователю действия в пространстве
+	// ({"workspace.update": true, ...}). Заполняется при получении одного пространства.
+	Permissions map[string]bool `json:"permissions,omitempty" extensions:"x-nullable"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

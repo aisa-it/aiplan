@@ -53,6 +53,26 @@ var ObjectActions = map[Action]struct{}{
 	ActionIssueCommentDelete: {},
 }
 
+// UncheckedActions — действия, которые ядро не проверяет: роут без проверки
+// прав либо действие вне сущности (создать пространство — не «в пространстве»).
+// В наборы прав не входят: false там означал бы запрет, которого нет.
+var UncheckedActions = map[Action]struct{}{
+	ActionIssueMigrate:      {},
+	ActionWorkspaceCreate:   {},
+	ActionFormAnswer:        {},
+	ActionFormAttachmentAdd: {},
+}
+
+// PermissionActions — действия области, которые имеет смысл отдавать наружу
+// набором: без зависящих от объекта и без непроверяемых.
+func PermissionActions(area Area) []Action {
+	return slices.DeleteFunc(ActionsFor(area), func(a Action) bool {
+		_, byObject := ObjectActions[a]
+		_, unchecked := UncheckedActions[a]
+		return byObject || unchecked
+	})
+}
+
 var (
 	actionsMu sync.RWMutex
 	actions   = map[Area][]Action{

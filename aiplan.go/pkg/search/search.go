@@ -27,18 +27,20 @@ func (s *Searcher) getIssuesGroups(ctx context.Context, db *gorm.DB, scope engin
 	visible := s.visibility.VisibleProjects(ctx, scope, db)
 	query := db.Session(&gorm.Session{})
 
-	// Определение запроса для фильтрации по проектам
-	// Если указан спринт, выбираем project_id из таблицы SprintIssue для данного спринта
-	// Если указан конкретный projectId, используем его напрямую
-	// Если указан список ProjectIds в параметрах поиска, используем его напрямую
-	// В противном случае используем список проектов в которых состоит пользователь
+	// Проекты, по которым считаются группы. Везде, кроме проектного режима
+	// (членство там проверено до вызова), сужаются видимыми проектами: иначе
+	// счётчики групп выдают число задач в проектах, где пользователь не состоит,
+	// хотя сами задачи выдача не покажет.
 	var projectQuery any
 	if sprint != nil {
-		projectQuery = db.Select("project_id").Where("sprint_id = ?", sprint.Id).Model(&dao.SprintIssue{})
+		projectQuery = db.Select("project_id").Where("sprint_id = ?", sprint.Id).
+			Where("project_id in (?)", s.visibility.VisibleProjects(ctx, scope, db)).
+			Model(&dao.SprintIssue{})
 	} else if !projectId.IsNil() {
 		projectQuery = projectId
 	} else if len(searchParams.Filters.ProjectIds) > 0 {
-		projectQuery = searchParams.Filters.ProjectIds
+		projectQuery = s.visibility.VisibleProjects(ctx, scope, db).
+			Where("project_id in ?", searchParams.Filters.ProjectIds)
 	} else {
 		projectQuery = memberProjectsQuery(visible, db, searchParams)
 	}

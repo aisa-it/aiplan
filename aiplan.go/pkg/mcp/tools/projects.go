@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
 	"strings"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
@@ -278,7 +279,18 @@ func getProject(ctx context.Context, d Deps, user *dao.User, request mcp.CallToo
 		return logger.Error(err), nil
 	}
 
-	return mcp.NewToolResultJSON(project.ToDTO())
+	// Права на проект — тем же набором, что отдаёт HTTP.
+	subject, err := apicontext.LoadProjectSubject(d.DB, user, &project)
+	if err != nil {
+		return mcpError(err), nil
+	}
+	permissions, err := d.Policy.ProjectPermissions(ctx, subject, &project)
+	if err != nil {
+		return mcpError(err), nil
+	}
+	result := project.ToDTO()
+	result.Permissions = permissions.Strings()
+	return mcp.NewToolResultJSON(result)
 }
 
 // getProjectMemberList возвращает список участников проекта с пагинацией и поиском.
