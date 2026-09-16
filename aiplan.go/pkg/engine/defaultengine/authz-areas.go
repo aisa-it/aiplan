@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
@@ -33,23 +34,20 @@ func newActionSet(actions ...engine.Action) actionSet {
 var (
 	workspaceAnyMember = newActionSet(
 		engine.ActionWorkspaceView, engine.ActionWorkspaceActivity, engine.ActionWorkspaceMemberView,
-		engine.ActionWorkspaceSelfSettings, engine.ActionWorkspaceBackupView,
-		engine.ActionSprintList, engine.ActionDocList, engine.ActionDocCreateRoot, engine.ActionFormView,
+		engine.ActionWorkspaceSelfSettings,
+		engine.ActionSprintList, engine.ActionDocList, engine.ActionDocCreateRoot,
 	)
 	// Токен интеграции читает администратор, владелец или суперпользователь.
 	workspaceTokenView    = newActionSet(engine.ActionWorkspaceTokenView)
 	workspaceAdminOrOwner = newActionSet(
 		engine.ActionWorkspaceUpdate, engine.ActionWorkspaceDelete, engine.ActionWorkspaceInvite,
 		engine.ActionWorkspaceMemberManage, engine.ActionWorkspaceTokenManage,
-		engine.ActionWorkspaceIntegrationManage, engine.ActionWorkspaceBackup, engine.ActionWorkspaceImport,
+		engine.ActionWorkspaceIntegrationManage, engine.ActionWorkspaceBackup, engine.ActionWorkspaceBackupView,
+		engine.ActionWorkspaceImport,
 		engine.ActionProjectCreate, engine.ActionProjectJoin,
 		engine.ActionSprintCreate, engine.ActionSprintFolderManage,
 	)
-	// Формами управляет только администратор: владельцу пространства этого мало.
-	workspaceAdminOnly = newActionSet(
-		engine.ActionWorkspaceAdmin,
-		engine.ActionFormCreate, engine.ActionFormUpdate, engine.ActionFormDelete, engine.ActionFormAnswerView,
-	)
+	workspaceAdminOnly = newActionSet(engine.ActionWorkspaceAdmin)
 )
 
 // Проект.
@@ -82,6 +80,15 @@ var (
 	)
 )
 
+// Форма. Управляет только администратор пространства; владельцу этого мало.
+// Отказ уровня пространства (роут «изменяющий», а пользователь не админ и не
+// владелец) отдаётся ошибкой пространства — так отказывала прежняя цепочка.
+var (
+	formWorkspaceLevel = newActionSet(engine.ActionFormView, engine.ActionFormCreate)
+	formMutating       = newActionSet(engine.ActionFormUpdate, engine.ActionFormDelete)
+	formRead           = newActionSet(engine.ActionFormAnswerView)
+)
+
 // Документ. Комментировать может каждый, кто читает документ.
 var (
 	docRead = newActionSet(
@@ -108,8 +115,27 @@ func (e *Engine) authorizeArea(req engine.AuthzRequest) (engine.Verdict, error) 
 		return authorizeSprint(a, s)
 	case strings.HasPrefix(string(a), "doc."):
 		return authorizeDoc(a, s)
+	case formWorkspaceLevel.has(a) || formMutating.has(a) || formRead.has(a):
+		return authorizeForm(a, s)
 	}
 	return engine.Default, nil
+}
+
+// denyWith — отказ с ошибкой, которую получит клиент.
+func denyWith(err engine.DefinedError) engine.Verdict {
+	return engine.Verdict{Decision: engine.DecisionDeny, Error: &err}
+}
+
+// workspaceAdminOrOwnerOf — администратор пространства или его владелец.
+func workspaceAdminOrOwnerOf(s engine.Subject) (bool, error) {
+	user, workspace, wm := s.User(), s.Workspace(), s.WorkspaceMember()
+	if err := s.Err(); err != nil {
+		return false, err
+	}
+	if user == nil || workspace == nil {
+		return false, nil
+	}
+	return (wm != nil && wm.Role == types.AdminRole) || workspace.OwnerId == user.ID, nil
 }
 
 func authorizeWorkspace(a engine.Action, s engine.Subject) (engine.Verdict, error) {
@@ -165,15 +191,41 @@ func authorizeProject(a engine.Action, s engine.Subject) (engine.Verdict, error)
 	}
 }
 
+// authorizeSprint повторяет прежнюю цепочку: проверка уровня пространства
+// (без загрузки спринта, с ошибкой пространства), затем существование
+// спринта, затем правила спринта.
 func authorizeSprint(a engine.Action, s engine.Subject) (engine.Verdict, error) {
 	if !sprintRead.has(a) && !sprintMember.has(a) && !sprintAdmin.has(a) {
 		return engine.Default, nil
 	}
-	wm, sprint, user := s.WorkspaceMember(), s.Sprint(), s.User()
+
+	wm := s.WorkspaceMember()
 	if err := s.Err(); err != nil {
 		return engine.Default, err
 	}
-	if wm == nil || sprint == nil || user == nil {
+	if wm == nil {
+		return engine.Deny, nil
+	}
+	switch {
+	case sprintAdmin.has(a):
+		ok, err := workspaceAdminOrOwnerOf(s)
+		if err != nil {
+			return engine.Default, err
+		}
+		if !ok {
+			return denyWith(apierrors.ErrWorkspaceForbidden), nil
+		}
+	case sprintMember.has(a):
+		if wm.Role <= types.GuestRole {
+			return denyWith(apierrors.ErrWorkspaceForbidden), nil
+		}
+	}
+
+	sprint, user := s.Sprint(), s.User()
+	if err := s.Err(); err != nil {
+		return engine.Default, err
+	}
+	if sprint == nil || user == nil {
 		return engine.Deny, nil
 	}
 
@@ -181,11 +233,41 @@ func authorizeSprint(a engine.Action, s engine.Subject) (engine.Verdict, error) 
 	case sprintAdmin.has(a):
 		return verdict(wm.Role == types.AdminRole), nil
 	case sprintMember.has(a):
-		return verdict(wm.Role > types.GuestRole), nil
+		return engine.Allow, nil
 	default:
 		return verdict(user.ID == sprint.CreatedById || wm.Role == types.AdminRole ||
 			user.IsSuperuser || wm.Role >= types.MemberRole), nil
 	}
+}
+
+// authorizeForm повторяет прежнюю цепочку: уровень пространства, существование
+// формы, затем «только администратор».
+func authorizeForm(a engine.Action, s engine.Subject) (engine.Verdict, error) {
+	wm := s.WorkspaceMember()
+	if err := s.Err(); err != nil {
+		return engine.Default, err
+	}
+	isAdmin := wm != nil && wm.Role == types.AdminRole
+
+	if formWorkspaceLevel.has(a) {
+		if isAdmin {
+			return engine.Allow, nil
+		}
+		return denyWith(apierrors.ErrWorkspaceForbidden), nil
+	}
+	if formMutating.has(a) {
+		ok, err := workspaceAdminOrOwnerOf(s)
+		if err != nil {
+			return engine.Default, err
+		}
+		if !ok {
+			return denyWith(apierrors.ErrWorkspaceForbidden), nil
+		}
+	}
+	if s.Form(); s.Err() != nil {
+		return engine.Default, s.Err()
+	}
+	return verdict(isAdmin), nil
 }
 
 func authorizeDoc(a engine.Action, s engine.Subject) (engine.Verdict, error) {

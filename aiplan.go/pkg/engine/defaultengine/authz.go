@@ -70,14 +70,14 @@ var memberFreeActions = map[engine.Action]struct{}{
 // доступны правка задачи и комментарии, к чужим задачам — только
 // то, что разрешено настройками проекта.
 func (e *Engine) Authorize(_ context.Context, req engine.AuthzRequest) (engine.Verdict, error) {
-	if !isIssueScopeAction(req.Action) {
-		return e.authorizeArea(req)
-	}
-
 	// Правила по конкретной сущности точнее общих: если объект действия
-	// известен, решение принимается по нему.
+	// известен, решение принимается по нему — в любой области.
 	if v, ok := e.authorizeTarget(req); ok {
 		return v, nil
+	}
+
+	if !isIssueScopeAction(req.Action) {
+		return e.authorizeArea(req)
 	}
 
 	if _, ok := viewActions[req.Action]; ok {

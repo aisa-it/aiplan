@@ -131,7 +131,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 
 	s.workspaceRoute(workspaceGroup, http.MethodPost, "/members/message/", engine.ActionWorkspaceMemberManage, s.createMessageForWorkspaceMember)
 
-	s.workspaceRoute(workspaceGroup, http.MethodGet, "/token/", engine.ActionWorkspaceTokenView, s.getWorkspaceToken)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/token/", engine.ActionWorkspaceView, s.getWorkspaceToken)
 	s.workspaceRoute(workspaceGroup, http.MethodPost, "/token/reset/", engine.ActionWorkspaceTokenManage, s.resetWorkspaceToken)
 
 	g.GET("users/last-visited-workspace/", s.getLastVisitedWorkspace)
@@ -1578,6 +1578,10 @@ func (s *Services) getWorkspaceToken(c echo.Context) error {
 	workspace := apiContext.GetWorkspace()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
+	}
+	// Токен читает администратор, владелец или суперпользователь; ответ без тела, как прежде.
+	if err := s.policy.Authorize(c.Request().Context(), engine.ActionWorkspaceTokenView, apiContext); err != nil {
+		return c.NoContent(http.StatusForbidden)
 	}
 	return c.String(http.StatusOK, workspace.IntegrationToken)
 }

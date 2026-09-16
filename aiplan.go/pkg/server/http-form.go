@@ -94,7 +94,7 @@ func (s *Services) AddFormServices(g *echo.Group) {
 
 	answerGroup := g.Group("forms/:formSlug", s.AnswerFormAuthMiddleware)
 
-	formGroup := workspaceGroup.Group("/forms/:formSlug", s.FormMiddleware)
+	formGroup := workspaceGroup.Group("/forms/:formSlug")
 
 	s.workspaceRoute(workspaceGroup, http.MethodGet, "/forms/", engine.ActionFormView, s.getFormList)
 	s.workspaceRoute(workspaceGroup, http.MethodPost, "/forms/", engine.ActionFormCreate, s.createForm)

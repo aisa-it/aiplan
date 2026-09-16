@@ -47,7 +47,7 @@ func (s *Services) AddSprintServices(g *echo.Group) {
 	workspaceGroup := g.Group(workspaceScopePrefix, s.WorkspaceMiddleware)
 	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
 
-	sprintGroup := workspaceGroup.Group("/sprints/:sprintId", s.SprintMiddleware)
+	sprintGroup := workspaceGroup.Group("/sprints/:sprintId")
 
 	s.workspaceRoute(workspaceGroup, http.MethodGet, "/sprints/", engine.ActionSprintList, s.getSprintList)
 	s.workspaceRoute(workspaceGroup, http.MethodPost, "/sprints/", engine.ActionSprintCreate, s.createSprint)
@@ -657,10 +657,10 @@ func (s *Services) getSpringActivityList(c echo.Context) error {
 		Joins("Sprint").
 		Joins("Workspace").
 		Joins("Actor").
-		Order("created_at desc").
-		Where("entity_type = ?", types.LayerSprint).
-		Where("workspace_id = ?", workspaceId).
-		Where("sprint_id = ?", sprintId)
+		Order("activity_events.created_at desc").
+		Where("activity_events.entity_type = ?", types.LayerSprint).
+		Where("activity_events.workspace_id = ?", workspaceId).
+		Where("activity_events.sprint_id = ?", sprintId)
 
 	var acts []dao.ActivityEvent
 

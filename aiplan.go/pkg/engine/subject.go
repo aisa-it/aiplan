@@ -27,6 +27,7 @@ type Subject interface {
 	ProjectMember() *dao.ProjectMember
 	Sprint() *dao.Sprint
 	Doc() *dao.Doc
+	Form() *dao.Form
 
 	// Issue — задача запроса. В issue-скоупе ядро гарантирует, что
 	// исполнители уже подгружены.
