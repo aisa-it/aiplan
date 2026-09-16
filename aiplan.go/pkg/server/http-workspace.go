@@ -110,6 +110,7 @@ func (s *Services) AddWorkspaceServices(g *echo.Group) {
 	g.POST("workspaces/", s.createWorkspace)
 
 	s.workspaceRoute(workspaceGroup, http.MethodGet, "/", engine.ActionWorkspaceView, s.getWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/permissions/", engine.ActionWorkspaceView, s.getWorkspacePermissions)
 	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/", engine.ActionWorkspaceUpdate, s.updateWorkspace)
 	s.workspaceRoute(workspaceGroup, http.MethodPost, "/logo/", engine.ActionWorkspaceUpdate, s.updateWorkspaceLogo)
 	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/logo/", engine.ActionWorkspaceUpdate, s.deleteWorkspaceLogo)
@@ -196,7 +197,41 @@ func (s *Services) getWorkspace(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 	c.Response().Header().Add("ETag", hex.EncodeToString(workspace.Hash))
-	return c.JSON(http.StatusOK, workspace.ToDTO())
+
+	result := workspace.ToDTO()
+	permissions, err := s.policy.WorkspacePermissions(c.Request().Context(), apiContext, workspace)
+	if err != nil {
+		return EError(c, err)
+	}
+	result.Permissions = permissions.Strings()
+	return c.JSON(http.StatusOK, result)
+}
+
+// getWorkspacePermissions godoc
+// @id getWorkspacePermissions
+// @Summary Пространство: права текущего пользователя в пространстве
+// @Description Возвращает разрешённые действия в пространстве плоской картой вида {"workspace.update": true, "project.create": false}. Ролей наружу не отдаёт.
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} map[string]bool "Разрешённые действия"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/permissions [get]
+func (s *Services) getWorkspacePermissions(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	permissions, err := s.policy.WorkspacePermissions(c.Request().Context(), apiContext, workspace)
+	if err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, permissions.Strings())
 }
 
 // updateWorkspace godoc

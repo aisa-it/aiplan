@@ -10348,6 +10348,68 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/permissions": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает разрешённые действия в пространстве плоской картой вида {\"workspace.update\": true, \"project.create\": false}. Ролей наружу не отдаёт.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Workspace"
+                ],
+                "summary": "Пространство: права текущего пользователя в пространстве",
+                "operationId": "getWorkspacePermissions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Разрешённые действия",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Пространство не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/project-identifiers": {
             "get": {
                 "security": [
@@ -14826,6 +14888,82 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/permissions": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает разрешённые действия над задачей плоской картой вида {\"issue.update\": true, \"issue.delete\": false}. Действия, зависящие от объекта (правка чужого комментария), в карте отсутствуют и решаются при обращении. Ролей наружу не отдаёт.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Issues"
+                ],
+                "summary": "Задачи: права текущего пользователя на задачу",
+                "operationId": "getIssuePermissions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Идентификатор или последовательный номер задачи",
+                        "name": "issueIdOrSeq",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Разрешённые действия",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/pin": {
             "post": {
                 "security": [
@@ -16223,6 +16361,75 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Участник проекта не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/permissions": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает разрешённые действия над проектом плоской картой вида {\"project.update\": true, \"issue.create\": false}. Ролей наружу не отдаёт.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Проекты: права текущего пользователя на проект",
+                "operationId": "getProjectPermissions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Разрешённые действия",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Доступ запрещен",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Проект не найден",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -20947,6 +21154,14 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "permissions": {
+                    "description": "Permissions — разрешённые текущему пользователю действия над задачей\n({\"issue.update\": true, ...}). Заполняется при получении одной задачи.\nДействия, зависящие от объекта (правка чужого комментария), отсутствуют:\nрешаются при обращении.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    },
+                    "x-nullable": true
+                },
                 "pinned": {
                     "type": "boolean"
                 },
@@ -21482,6 +21697,14 @@ const docTemplate = `{
                     ],
                     "x-nullable": true
                 },
+                "permissions": {
+                    "description": "Permissions — разрешённые текущему пользователю действия над задачей\n({\"issue.update\": true, ...}). Заполняется при получении одной задачи.\nДействия, зависящие от объекта (правка чужого комментария), отсутствуют:\nрешаются при обращении.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    },
+                    "x-nullable": true
+                },
                 "pinned": {
                     "type": "boolean"
                 },
@@ -21853,6 +22076,14 @@ const docTemplate = `{
                 },
                 "name_highlighted": {
                     "type": "string"
+                },
+                "permissions": {
+                    "description": "Permissions — разрешённые текущему пользователю действия над проектом\n({\"project.update\": true, ...}). Заполняется при получении одного проекта.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    },
+                    "x-nullable": true
                 },
                 "project_lead": {
                     "type": "string"
@@ -23171,6 +23402,14 @@ const docTemplate = `{
                 "owner_id": {
                     "type": "string"
                 },
+                "permissions": {
+                    "description": "Permissions — разрешённые текущему пользователю действия в пространстве\n({\"workspace.update\": true, ...}). Заполняется при получении одного пространства.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    },
+                    "x-nullable": true
+                },
                 "slug": {
                     "type": "string"
                 },
@@ -23425,6 +23664,14 @@ const docTemplate = `{
                 },
                 "owner_id": {
                     "type": "string"
+                },
+                "permissions": {
+                    "description": "Permissions — разрешённые текущему пользователю действия в пространстве\n({\"workspace.update\": true, ...}). Заполняется при получении одного пространства.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    },
+                    "x-nullable": true
                 },
                 "slug": {
                     "type": "string"
@@ -24188,6 +24435,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/dto.IssueLight"
                         }
                     ],
+                    "x-nullable": true
+                },
+                "permissions": {
+                    "description": "Permissions — разрешённые текущему пользователю действия над задачей\n({\"issue.update\": true, ...}). Заполняется при получении одной задачи.\nДействия, зависящие от объекта (правка чужого комментария), отсутствуют:\nрешаются при обращении.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    },
                     "x-nullable": true
                 },
                 "pinned": {
@@ -25411,9 +25666,23 @@ const docTemplate = `{
                 3,
                 4,
                 5,
+                6,
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
                 6
             ],
             "x-enum-varnames": [
+                "Sunday",
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
                 "Sunday",
                 "Monday",
                 "Tuesday",

@@ -128,6 +128,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	s.workspaceRoute(workspaceGroup, http.MethodPost, "/projects/", engine.ActionProjectCreate, s.createProject)
 
 	s.projectRoute(projectGroup, http.MethodGet, "/", engine.ActionProjectView, s.getProject)
+	s.projectRoute(projectGroup, http.MethodGet, "/permissions/", engine.ActionProjectView, s.getProjectPermissions)
 	s.projectRoute(projectGroup, http.MethodPatch, "/", engine.ActionProjectUpdate, s.updateProject)
 	s.projectRoute(projectGroup, http.MethodDelete, "/", engine.ActionProjectDelete, s.deleteProject)
 
@@ -410,7 +411,42 @@ func (s *Services) getProject(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 	c.Response().Header().Add("ETag", hex.EncodeToString(project.Hash))
-	return c.JSON(http.StatusOK, project.ToDTO())
+
+	result := project.ToDTO()
+	permissions, err := s.policy.ProjectPermissions(c.Request().Context(), apiContext, project)
+	if err != nil {
+		return EError(c, err)
+	}
+	result.Permissions = permissions.Strings()
+	return c.JSON(http.StatusOK, result)
+}
+
+// getProjectPermissions godoc
+// @id getProjectPermissions
+// @Summary Проекты: права текущего пользователя на проект
+// @Description Возвращает разрешённые действия над проектом плоской картой вида {"project.update": true, "issue.create": false}. Ролей наружу не отдаёт.
+// @Tags Projects
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param projectId path string true "ID проекта"
+// @Success 200 {object} map[string]bool "Разрешённые действия"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Проект не найден"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/permissions [get]
+func (s *Services) getProjectPermissions(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	project := apiContext.GetProject()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	permissions, err := s.policy.ProjectPermissions(c.Request().Context(), apiContext, project)
+	if err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, permissions.Strings())
 }
 
 // deleteProject godoc

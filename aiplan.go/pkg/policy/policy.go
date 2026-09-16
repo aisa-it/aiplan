@@ -7,7 +7,6 @@ package policy
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
@@ -364,15 +363,23 @@ func decidePermissions(
 	return set, nil
 }
 
-// IssuePermissions — набор прав субъекта на задачу для выдачи наружу:
-// все действия области задачи, кроме зависящих от объекта
-// (engine.ObjectActions), с самой задачей в роли объекта. HTTP и MCP
-// обязаны отдавать права этим методом: иначе «показано» и «разрешено»
-// разойдутся.
+// Наборы прав для выдачи наружу: все действия области (engine.PermissionActions),
+// сама сущность — в роли объекта. HTTP и MCP обязаны отдавать права этими
+// методами: иначе «показано» и «разрешено» разойдутся.
+
+// IssuePermissions — набор прав субъекта на задачу.
 func (p *Enforcer) IssuePermissions(ctx context.Context, s engine.Subject, issue *dao.Issue) (engine.PermissionSet, error) {
-	actions := slices.DeleteFunc(engine.ActionsFor(engine.AreaIssue), func(a engine.Action) bool {
-		_, byObject := engine.ObjectActions[a]
-		return byObject
-	})
-	return p.Permissions(ctx, s, actions, On(issue))
+	return p.Permissions(ctx, s, engine.PermissionActions(engine.AreaIssue), On(issue))
+}
+
+// ProjectPermissions — набор прав субъекта на проект, включая создание,
+// поиск и массовые операции с задачами в нём.
+func (p *Enforcer) ProjectPermissions(ctx context.Context, s engine.Subject, project *dao.Project) (engine.PermissionSet, error) {
+	return p.Permissions(ctx, s, engine.PermissionActions(engine.AreaProject), On(project))
+}
+
+// WorkspacePermissions — набор прав субъекта на пространство, включая
+// создание проектов, спринтов, документов и форм в нём.
+func (p *Enforcer) WorkspacePermissions(ctx context.Context, s engine.Subject, workspace *dao.Workspace) (engine.PermissionSet, error) {
+	return p.Permissions(ctx, s, engine.PermissionActions(engine.AreaWorkspace), On(workspace))
 }
