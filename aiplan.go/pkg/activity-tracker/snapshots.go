@@ -368,7 +368,8 @@ func DocToSnapshot(doc *dao.Doc) DocSnapshot {
 	if doc.ParentDoc != nil {
 		snapshot.Parent = opt.Some(daoToEntityRef(doc.ParentDoc))
 	} else if doc.ParentDocID.Valid {
-		snapshot.Parent = opt.Some(EntityRef{ID: doc.ParentDocID.UUID, NameValue: doc.Title, NameField: actField.Doc.Field.String()})
+		// Название родителя без Preload неизвестно: подставлять сюда doc.Title нельзя.
+		snapshot.Parent = opt.Some(EntityRef{ID: doc.ParentDocID.UUID, NameField: actField.Doc.Field.String()})
 	}
 	return snapshot
 }

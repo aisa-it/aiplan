@@ -102,6 +102,12 @@ func diffScalar(spec ActivityFieldSpec, oldValue, newValue any, oldSet, newSet b
 	oldId := extractEntityRefID(oldValue)
 	newId := extractEntityRefID(newValue)
 
+	// Ссылочное поле меняется только сменой сущности: тот же id — изменения нет,
+	// как бы ни отличались названия в снимках.
+	if spec.PreserveID && oldId.Valid && newId.Valid && oldId.UUID == newId.UUID {
+		return nil
+	}
+
 	if spec.PreserveID && snapshotID != uuid.Nil && !oldId.Valid && !newId.Valid {
 		oldId = uuid.NullUUID{UUID: snapshotID, Valid: true}
 		newId = uuid.NullUUID{UUID: snapshotID, Valid: true}
