@@ -38,7 +38,10 @@ type Doc struct {
 
 	Tokens types.TsVector `json:"-" gorm:"index:doc_tokens_gin,type:gin;->:false"`
 
-	Title       string             `json:"title" validate:"required,max=150"`
+	Title string `json:"title" validate:"required,max=150"`
+	// Slug — адрес документа: транслит названий от корня через «/».
+	// Пересчитывается при переименовании и переносе, у потомков тоже.
+	Slug        string             `json:"slug" gorm:"index"`
 	Content     types.RedactorHTML `json:"description"`
 	LLMContent  bool               `gorm:"index;default:false"`
 	EditorRole  int                `json:"editor_role" gorm:"default:10"`
@@ -67,6 +70,9 @@ type Doc struct {
 
 	URL      *url.URL `json:"-" gorm:"-"`
 	ShortURL *url.URL `json:"-" gorm:"-"`
+	// WorkspaceSlug — для короткой ссылки, когда Workspace не подгружен;
+	// обработчик знает слаг пространства и без запроса.
+	WorkspaceSlug string `json:"-" gorm:"-"`
 
 	IsFavorite           bool `json:"is_favorite" gorm:"-"`
 	CurrentWorkspaceRole int  `json:"-" gorm:"-"`
@@ -246,15 +252,26 @@ func (d *Doc) AfterFind(tx *gorm.DB) error {
 	return nil
 }
 
+// Ref — фрагмент адреса документа: слаг, если он есть, иначе id.
+func (d *Doc) Ref() string {
+	if d.Slug != "" {
+		return d.Slug
+	}
+	return d.ID.String()
+}
+
 func (d *Doc) SetUrl() {
-	raw := fmt.Sprintf("/%s/aidoc/%s", d.WorkspaceId.String(), d.ID)
+	raw := fmt.Sprintf("/%s/aidoc/%s", d.WorkspaceId.String(), d.Ref())
 	u, _ := url.Parse(raw)
 	d.URL = Config.WebURL.URL.ResolveReference(u)
 
+	// Короткая ссылка — адрес по слагам; нужен слаг пространства.
+	wsSlug := d.WorkspaceSlug
 	if d.Workspace != nil {
-		ref, _ := url.Parse(fmt.Sprintf("/d/%s/%s",
-			d.Workspace.Slug,
-			d.ID))
+		wsSlug = d.Workspace.Slug
+	}
+	if wsSlug != "" {
+		ref, _ := url.Parse(fmt.Sprintf("/%s/aidoc/%s", wsSlug, d.Ref()))
 		d.ShortURL = Config.WebURL.URL.ResolveReference(ref)
 	}
 }
@@ -386,6 +403,7 @@ func (d *Doc) ToLightDTO() *dto.DocLight {
 	return &dto.DocLight{
 		Id:           d.ID,
 		Title:        d.Title,
+		Slug:         d.Slug,
 		HasChildDocs: len(d.ChildDocs) > 0,
 		Draft:        &d.Draft,
 		IsFavorite:   d.IsFavorite,
@@ -870,6 +888,11 @@ func GetDoc(db *gorm.DB, workspaceId, docId uuid.UUID, workspaceMember Workspace
 // Возвращает:
 //   - error: ошибка, если при создании документа произошла ошибка, в противном случае nil.
 func CreateDoc(db *gorm.DB, doc *Doc, user *User) error {
+	slug, err := DocSlugForTitle(db, doc, doc.Title)
+	if err != nil {
+		return err
+	}
+	doc.Slug = slug
 	if err := db.Create(&doc).Error; err != nil {
 		return err
 	}
@@ -925,4 +948,59 @@ func getUniqueDocMemberIDs(watcherIDs, readerIDs, editorIDs []uuid.UUID) []uuid.
 	}
 
 	return utils.MergeUniqueSlices(filteredWatchers, readerIDs)
+}
+
+// UniqueDocSlug строит адрес документа: слаг родителя, «/», транслит
+// названия. Адрес уникален в пространстве, при совпадении добавляется
+// числовой суффикс.
+func UniqueDocSlug(db *gorm.DB, workspaceId uuid.UUID, parentSlug, title string, selfId uuid.UUID) (string, error) {
+	base := utils.Slugify(title)
+	if parentSlug != "" {
+		base = parentSlug + "/" + base
+	}
+
+	var taken []string
+	if err := db.Model(&Doc{}).
+		Where("workspace_id = ?", workspaceId).
+		Where("id <> ?", selfId).
+		Where("slug LIKE ?", base+"%").
+		Pluck("slug", &taken).Error; err != nil {
+		return "", err
+	}
+	if !slices.Contains(taken, base) {
+		return base, nil
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if !slices.Contains(taken, candidate) {
+			return candidate, nil
+		}
+	}
+}
+
+// DocSlugForTitle — адрес документа под название. Слаг родителя берётся из
+// загруженного ParentDoc, иначе читается по ParentDocID. Адрес всегда
+// строится здесь, снаружи не задаётся.
+func DocSlugForTitle(db *gorm.DB, doc *Doc, title string) (string, error) {
+	parentSlug := ""
+	switch {
+	case doc.ParentDoc != nil:
+		parentSlug = doc.ParentDoc.Slug
+	case doc.ParentDocID.Valid:
+		if err := db.Model(&Doc{}).Where("id = ?", doc.ParentDocID.UUID).Pluck("slug", &parentSlug).Error; err != nil {
+			return "", err
+		}
+	}
+	return UniqueDocSlug(db, doc.WorkspaceId, parentSlug, title, doc.ID)
+}
+
+// RenameDocSubtree переписывает адреса потомков после смены адреса документа.
+func RenameDocSubtree(db *gorm.DB, workspaceId uuid.UUID, oldSlug, newSlug string) error {
+	if oldSlug == "" || oldSlug == newSlug {
+		return nil
+	}
+	return db.Model(&Doc{}).
+		Where("workspace_id = ?", workspaceId).
+		Where("slug LIKE ?", oldSlug+"/%").
+		UpdateColumn("slug", gorm.Expr("? || substr(slug, ?)", newSlug, len(oldSlug)+1)).Error
 }
