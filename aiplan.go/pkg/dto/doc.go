@@ -47,6 +47,7 @@ type Doc struct {
 type DocLight struct {
 	Id           uuid.UUID `json:"id"`
 	Title        string    `json:"title"`
+	Slug         string    `json:"slug"`
 	HasChildDocs bool      `json:"has_child_docs"`
 	Draft        *bool     `json:"draft,omitempty"`
 	IsFavorite   bool      `json:"is_favorite"`

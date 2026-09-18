@@ -117,7 +117,9 @@ func (s *Services) getRootDocList(c echo.Context) error {
 		Find(&docs).Error; err != nil {
 		return EError(c, apierrors.ErrGeneric)
 	}
-
+	for i := range docs {
+		docs[i].WorkspaceSlug = workspace.Slug
+	}
 	return c.JSON(http.StatusOK,
 		utils.SliceToSlice(&docs, func(d *dao.Doc) dto.DocLight { return *d.ToLightDTO() }))
 }
@@ -125,7 +127,7 @@ func (s *Services) getRootDocList(c echo.Context) error {
 // getDoc godoc
 // @id getDoc
 // @Summary doc: получение документа
-// @Description получение документа
+// @Description получение документа по id или адресу (слагу от корня, «/» экранирован как %2F)
 // @Tags Docs
 // @Security ApiKeyAuth
 // @Accept json
@@ -617,7 +619,20 @@ func (s *Services) updateDoc(c echo.Context) error {
 				}
 			}
 
+			if newDoc.Title != doc.Title {
+				slug, err := dao.DocSlugForTitle(tx, &doc, newDoc.Title)
+				if err != nil {
+					return err
+				}
+				newDoc.Slug = slug
+				fields = append(fields, "slug")
+			}
+
 			if err := tx.Omit(clause.Associations).Select(fields).Updates(&newDoc).Error; err != nil {
+				return err
+			}
+
+			if err := dao.RenameDocSubtree(tx, workspace.ID, doc.Slug, newDoc.Slug); err != nil {
 				return err
 			}
 		}
@@ -886,6 +901,13 @@ func (s *Services) moveDoc(c echo.Context) error {
 		docMoveRemoveFromGroup(&currentGroup, doc.ID)
 
 		doc.ParentDocID = req.ParentId
+		doc.ParentDoc = newParentDoc
+		oldSlug := doc.Slug
+		slug, err := dao.DocSlugForTitle(tx, &doc, doc.Title)
+		if err != nil {
+			return err
+		}
+		doc.Slug = slug
 
 		if err := docMoveInsertIntoGroup(&newGroup, &doc, req.PreviousId, req.NextId); err != nil {
 			return err
@@ -895,7 +917,10 @@ func (s *Services) moveDoc(c echo.Context) error {
 		docMoveReindexGroup(&newGroup)
 
 		allDocs = docMoveMergeGroups(currentGroup, newGroup)
-		return saveAllDocs(tx, allDocs)
+		if err := saveAllDocs(tx, allDocs); err != nil {
+			return err
+		}
+		return dao.RenameDocSubtree(tx, doc.WorkspaceId, oldSlug, doc.Slug)
 	}); err != nil {
 		return EError(c, err)
 	}
@@ -1044,7 +1069,9 @@ func (s *Services) getChildDocList(c echo.Context) error {
 		Error; err != nil {
 		return EError(c, apierrors.ErrGeneric)
 	}
-
+	for i := range docs {
+		docs[i].WorkspaceSlug = workspace.Slug
+	}
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&docs, func(d *dao.Doc) dto.DocLight { return *d.ToLightDTO() }))
 }
 
@@ -1919,6 +1946,11 @@ func (s *Services) getFavoriteDocList(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	for i := range favorites {
+		if favorites[i].Doc != nil {
+			favorites[i].Doc.WorkspaceSlug = workspace.Slug
+		}
+	}
 	return c.JSON(http.StatusOK, utils.SliceToSlice(&favorites, func(df *dao.DocFavorites) dto.DocFavorites { return *df.ToDTO() }))
 }
 

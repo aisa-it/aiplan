@@ -42,6 +42,7 @@ func New(db *gorm.DB) *Migration {
 			NewMigrateActivityTargetDateUpdate(db),
 			NewMigrateActivitiesToOneTable(db),
 			NewMigrateIssueTokensNormalize(db),
+			NewMigrateDocSlug(db),
 		},
 	}
 }

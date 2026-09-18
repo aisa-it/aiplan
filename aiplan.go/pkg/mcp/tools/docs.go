@@ -554,8 +554,15 @@ func updateDocTool(ctx context.Context, d Deps, user *dao.User, request mcp.Call
 
 	// Собираем поля для обновления
 	updates := make(map[string]interface{})
+	newSlug := docCtx.Doc.Slug
 	if params.hasTitle {
 		updates["title"] = params.title
+		slug, err := dao.DocSlugForTitle(d.DB, &docCtx.Doc, params.title)
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		newSlug = slug
+		updates["slug"] = slug
 	}
 	if params.hasContent {
 		updates["content"] = types.RedactorHTML{Body: params.content}
@@ -568,6 +575,9 @@ func updateDocTool(ctx context.Context, d Deps, user *dao.User, request mcp.Call
 
 	// Обновляем документ
 	if err := d.DB.Model(&dao.Doc{}).Where("id = ?", docCtx.Doc.ID).Updates(updates).Error; err != nil {
+		return logger.Error(err), nil
+	}
+	if err := dao.RenameDocSubtree(d.DB, docCtx.Doc.WorkspaceId, docCtx.Doc.Slug, newSlug); err != nil {
 		return logger.Error(err), nil
 	}
 

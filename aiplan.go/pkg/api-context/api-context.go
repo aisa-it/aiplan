@@ -2,7 +2,9 @@ package apicontext
 
 import (
 	"errors"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/token"
@@ -638,10 +640,23 @@ func (a *APIContext) fetchDoc(fetchOptions *DocFetchOptions) {
 		return
 	}
 
-	docId := a.Param("docId")
-	if docId == "" {
+	// Как у задач: UUID — поиск по id, иначе по адресу (слагу);
+	// «/» внутри адреса приходит экранированным.
+	docRef := a.Param("docId")
+	if docRef == "" {
 		a.error = apierrors.ErrDocNotFound
 		return
+	}
+	var byRef func(*gorm.DB) *gorm.DB
+	if id, err := uuid.FromString(docRef); err == nil {
+		byRef = func(q *gorm.DB) *gorm.DB { return q.Where("docs.id = ?", id) }
+	} else {
+		slug, err := url.PathUnescape(docRef)
+		if err != nil {
+			a.error = apierrors.ErrDocNotFound
+			return
+		}
+		byRef = func(q *gorm.DB) *gorm.DB { return q.Where("docs.slug = ?", strings.Trim(slug, "/")) }
 	}
 
 	query := fetchOptions.query.
@@ -658,9 +673,7 @@ func (a *APIContext) fetchDoc(fetchOptions *DocFetchOptions) {
 	}
 
 	var doc dao.Doc
-	if err := query.
-		Where("docs.workspace_id = ?", workspace.ID).
-		Where("docs.id = ?", docId).
+	if err := byRef(query.Where("docs.workspace_id = ?", workspace.ID)).
 		First(&doc).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			a.error = apierrors.ErrDocNotFound

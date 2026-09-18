@@ -67,7 +67,7 @@ func (s *Services) shortDocURLRedirect(c echo.Context) error {
 	ref, _ := url.Parse(fmt.Sprintf(
 		"/%s/aidoc/%s/",
 		slug,
-		doc.ID.String()))
+		doc.Ref()))
 	path := cfg.WebURL.URL.ResolveReference(ref)
 	return c.Redirect(http.StatusTemporaryRedirect, path.String())
 }
