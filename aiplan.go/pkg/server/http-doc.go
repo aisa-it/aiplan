@@ -635,7 +635,7 @@ func (s *Services) updateDoc(c echo.Context) error {
 	//if err := loadDoc(s.DB(c), newDoc, workspaceMember.Role, workspaceMember.MemberId, workspace.ID, doc.ID.String()); err != nil {
 	//	return EError(c, err)
 	//}
-	newDoc = apiContext.CleanDoc().GetDoc(apicontext.WithDocAccessRules())
+	newDoc = apiContext.CleanDoc().GetDoc(apicontext.WithDocAccessRules(), apicontext.WithDocParent())
 
 	newSnapshot := tracker.DocToSnapshot(newDoc)
 	err = s.snapshotTracker.TrackChanges(types.LayerDoc, oldSnapshot, newSnapshot, newDoc, user)
