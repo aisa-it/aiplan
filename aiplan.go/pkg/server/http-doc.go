@@ -737,11 +737,17 @@ func (s *Services) deleteDoc(c echo.Context) error {
 	oldSnapshot := tracker.DocToSnapshot(&doc)
 
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
-		if len(doc.ChildDocs) > 0 {
-			return EErrorDefined(c, apierrors.ErrDocDeleteHasChild)
+		// Дочерние считаем по базе, а не по видимым текущему пользователю:
+		// иначе скрытые от него документы удалялись бы вместе с родителем.
+		var childCount int64
+		if err := tx.Model(&dao.Doc{}).Where("parent_doc_id = ?", doc.ID).Count(&childCount).Error; err != nil {
+			return err
+		}
+		if childCount > 0 {
+			return apierrors.ErrDocDeleteHasChild
 		}
 
-		return s.DB(c).Delete(&doc).Error
+		return tx.Delete(&doc).Error
 	}); err != nil {
 		if err.Error() == "forbidden" {
 			return EErrorDefined(c, apierrors.ErrDocUpdateForbidden)
