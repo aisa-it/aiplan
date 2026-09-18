@@ -1054,6 +1054,12 @@ func CleanupActivityData(tx, q *gorm.DB, id uuid.UUID, layers ...types.EntityLay
 		return err
 	}
 
+	// Явно, не полагаясь на каскад внешнего ключа в БД.
+	if err := tx.Where("activity_id IN (?)", subQuery).
+		Delete(&ActivityTelegramMessage{}).Error; err != nil {
+		return err
+	}
+
 	if err := q.Unscoped().Delete(&ActivityEvent{}).Error; err != nil {
 		return err
 	}
