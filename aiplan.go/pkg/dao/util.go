@@ -1,0 +1,1079 @@
+// DAO (Data Access Object) - предоставляет методы для взаимодействия с базой данных.
+// Содержит функции для работы с пользователями, проектами, документами и другими сущностями.
+//
+// Основные возможности:
+//   - Работа с пользователями: создание, аутентификация, получение информации о пользователях.
+//   - Работа с проектами: получение списка проектов, фильтрация проектов по различным критериям.
+//   - Работа с документами: получение списка документов, фильтрация документов по различным критериям.
+//   - Работа с правами доступа: определение прав доступа пользователей к различным ресурсам.
+//   - Генерация UUID и паролей.
+//   - Обработка текстовых данных (например, выделение упоминаний пользователей в тексте).
+package dao
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
+	"log"
+	"log/slog"
+	"math/big"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
+	"github.com/gofrs/uuid"
+	"github.com/sethvargo/go-password/password"
+	"golang.org/x/crypto/pbkdf2"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// -migration
+type PaginationResponse struct {
+	Count  int64 `json:"count"`
+	Offset int   `json:"offset"`
+	Limit  int   `json:"limit"`
+	Result any   `json:"result"`
+
+	MyEntity any `json:"my_entity,omitempty"`
+}
+
+func AddDefaultUser(db *gorm.DB, email string) {
+	pass := "pbkdf2_sha256$260000$QM9bPwqeyc3Ed2LYppRoNN$BRt1aWr5wV3uqY/14k24Fnhaj1+TWExblkXUjFJKHDw=" // password123
+	u := GenUUID()
+	ubx := "admin"
+	tm := time.Now()
+	user := User{
+		ID:              u,
+		Email:           email,
+		Password:        pass,
+		Username:        &ubx,
+		LastActive:      &tm,
+		LastLoginTime:   &tm,
+		LastLoginIp:     "0.0.0.0",
+		LastLoginUagent: "golang",
+		TokenUpdatedAt:  &tm,
+		Theme:           types.Theme{},
+		IsActive:        true,
+		IsSuperuser:     true,
+	}
+
+	if err := db.Create(&user).Error; err != nil {
+		log.Println(err)
+	} else {
+		log.Println("User created")
+	}
+}
+
+func PaginationRequest(offset int, limit int, query *gorm.DB, target any) (res PaginationResponse, err error) {
+	// Count query
+	if err := query.Session(&gorm.Session{}).Model(target).Count(&res.Count).Error; err != nil {
+		return res, err
+	}
+
+	// Data query
+	if acts, ok := target.(*[]ActivityEvent); ok {
+		// Активности грузим батчем, без per-row хука AfterFind (анти-N+1).
+		if err := LoadActivitiesBatched(query.Offset(offset).Limit(limit), acts); err != nil {
+			return res, err
+		}
+	} else {
+		if err := query.Offset(offset).Limit(limit).Find(target).Error; err != nil {
+			return res, err
+		}
+	}
+
+	res.Result = target
+	res.Limit = limit
+	res.Offset = offset
+
+	return res, nil
+}
+
+// LoadActivitiesBatched грузит активности по готовому query без хука AfterFind и
+// подгружает New*/Old*-сущности батчем (анти-N+1). Сущности тянутся через чистую
+// сессию, чтобы не наследовать накопленные условия/Joins.
+func LoadActivitiesBatched(query *gorm.DB, dest *[]ActivityEvent) error {
+	if err := query.Session(&gorm.Session{SkipHooks: true}).Find(dest).Error; err != nil {
+		return err
+	}
+	ptrs := make([]*ActivityEvent, len(*dest))
+	for i := range *dest {
+		ptrs[i] = &(*dest)[i]
+	}
+	return BatchPreloadActivityEntities(query.Session(&gorm.Session{NewDB: true}), ptrs)
+}
+
+func GetIssueFamily(issue Issue, db *gorm.DB, authorId uuid.NullUUID) (family []Issue) {
+	var getChildren func(issueId uuid.UUID) []Issue
+
+	getChildren = func(issueId uuid.UUID) []Issue {
+		var children []Issue
+		db.Where("parent_id = ?", issueId).Preload(clause.Associations).Find(&children)
+		for _, child := range children {
+			children = append(children, getChildren(child.ID)...)
+		}
+		return children
+	}
+	if parent := GetIssueRoot(issue, db); parent != nil && !parent.ID.IsNil() {
+		family = append(getChildren(parent.ID), *parent)
+	} else {
+		family = append(getChildren(issue.ID), issue)
+	}
+	skipIssueId := make(map[uuid.UUID]struct{})
+
+	if authorId.Valid {
+		filteredFamily := make([]Issue, 0, len(family))
+		for _, item := range family {
+			if item.CreatedById == authorId.UUID {
+				filteredFamily = append(filteredFamily, item)
+			} else {
+				skipIssueId[item.ID] = struct{}{}
+			}
+		}
+		family = filteredFamily
+	}
+
+	slices.SortFunc(family, func(a Issue, b Issue) int {
+		return a.SequenceId - b.SequenceId
+	})
+
+	for i := range family {
+		family[i].FetchLinkedIssues(db)
+		if len(skipIssueId) > 0 {
+			if _, ok := skipIssueId[family[i].ParentId.UUID]; ok {
+				family[i].ParentId = uuid.NullUUID{}
+				family[i].Parent = nil
+			}
+		}
+	}
+	return
+}
+
+func GetIssueRoot(issue Issue, db *gorm.DB) *Issue {
+	if !issue.ParentId.Valid {
+		return nil
+	}
+
+	var getParent func(issue Issue) *Issue
+
+	getParent = func(issue Issue) *Issue {
+		var parent Issue
+		db.Where("id = ?", issue.ParentId).Preload(clause.Associations).Find(&parent)
+		if parent.ParentId.Valid {
+			return getParent(parent)
+		}
+		return &parent
+	}
+	return getParent(issue)
+}
+
+func GenPassword() string {
+	return password.MustGenerate(12, 6, 0, false, false)
+}
+
+// Генерация хэша пароля для базы
+func GenPasswordHash(password string) string {
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	salt := make([]rune, 32)
+	for i := range salt {
+		nBig, _ := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		salt[i] = letters[nBig.Int64()]
+	}
+
+	return fmt.Sprintf("pbkdf2_sha256$260000$%s$%s",
+		string(salt),
+		base64.StdEncoding.EncodeToString(pbkdf2.Key([]byte(password), []byte(string(salt)), 260000, 32, sha256.New)),
+	)
+}
+
+var (
+	// Нода упоминания редактора: <span class="mention" data-type="mention" data-id="username" ...>@username</span>.
+	mentionSpanRegexp   = regexp.MustCompile(`<span\b[^>]*\bdata-type="mention"[^>]*>`)
+	mentionDataIdRegexp = regexp.MustCompile(`\bdata-id="([^"]+)"`)
+	// Фолбэк для контента без ноды: логины содержат точки и дефисы, \w их не покрывает;
+	// @ внутри e-mail (буква перед ним) не считается упоминанием.
+	mentionTextRegexp = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_.\-])@([\p{L}\p{N}_][\p{L}\p{N}_.\-]*)`)
+)
+
+// ExtractMentionedUsernames возвращает уникальные логины, упомянутые в HTML редактора.
+// Основной источник — data-id ноды упоминания; текстовые @логины — запасной путь.
+func ExtractMentionedUsernames(html string) []string {
+	seen := make(map[string]struct{})
+	var usernames []string
+	add := func(name string) {
+		name = strings.TrimRight(name, ".")
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		usernames = append(usernames, name)
+	}
+
+	for _, span := range mentionSpanRegexp.FindAllString(html, -1) {
+		if m := mentionDataIdRegexp.FindStringSubmatch(span); m != nil {
+			add(m[1])
+		}
+	}
+	for _, m := range mentionTextRegexp.FindAllStringSubmatch(html, -1) {
+		add(m[1])
+	}
+	return usernames
+}
+
+func GetMentionedUsersLimitProject(db *gorm.DB, text types.RedactorHTML, projectID uuid.UUID) ([]User, error) {
+	usernames := ExtractMentionedUsernames(text.Body)
+	if len(usernames) == 0 {
+		return nil, nil
+	}
+
+	var users []User
+	err := db.
+		Where("username in (?)", usernames).
+		Where("id IN (SELECT member_id FROM project_members WHERE project_id = ?)", projectID).
+		Find(&users).Error
+	return users, err
+}
+
+func ExtractProjectMemberIDs(members []ProjectMember) []uuid.UUID {
+	ids := make([]uuid.UUID, len(members))
+	for i, member := range members {
+		ids[i] = member.MemberId
+	}
+	return ids
+}
+
+func PrepareFilterProjectsQuery(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []string) *gorm.DB {
+	projectQuery := tx.Model(&ProjectMember{}).
+		Select("project_id").
+		Where("member_id = ?", userID)
+
+	if len(workspaceIDs) > 0 {
+		projectQuery = projectQuery.Where("workspace_id IN ?", workspaceIDs)
+	}
+
+	if len(projectIDs) > 0 {
+		projectQuery = projectQuery.Where("project_id IN ?", projectIDs)
+	}
+
+	return projectQuery
+}
+
+func GetUserNeighbors(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []string) *gorm.DB {
+	query := tx.Model(&ProjectMember{}).
+		Distinct("project_members.member_id").
+		Joins("JOIN project_members u on project_members.project_id = u.project_id").
+		Where("u.member_id = ?", userID)
+
+	if len(workspaceIDs) > 0 {
+		query = query.Where("project_members.workspace_id IN ?", workspaceIDs)
+	}
+
+	if len(projectIDs) > 0 {
+		query = query.Where("project_members.project_id IN ?", projectIDs)
+	}
+	return query
+}
+
+func GetUserFromProjectMember(members []User, ids []interface{}) []User {
+	users := make([]User, 0, len(members))
+	idsMap := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		idsMap[id.(uuid.UUID)] = struct{}{}
+	}
+	for _, member := range members {
+		if _, ok := idsMap[member.ID]; ok {
+			users = append(users, member)
+		}
+	}
+	return users
+}
+
+func UpdateUserLastActivityTime(tx *gorm.DB, user *User) error {
+	// User table update cooldown
+	if user.LastActive != nil && time.Since(*user.LastActive) <= time.Second*10 {
+		return nil
+	}
+	return tx.Omit(clause.Associations).Model(user).UpdateColumn("last_active", time.Now()).Error
+}
+
+// Не буква и не цифра (Unicode; `\w` в Go — только ASCII, кириллицу бы стёр).
+var filterRegexp = regexp.MustCompile(`[^\p{L}\p{N}]+`)
+
+// SplitTSQuery строит префиксный tsquery `word:* | word2:*`; дефисы — разделители (согласовано с normalize_fts_text).
+func SplitTSQuery(searchQuery string) string {
+	searchQuery = strings.TrimSpace(searchQuery)
+	if searchQuery == "" {
+		return ""
+	}
+
+	searchQuery = filterRegexp.ReplaceAllString(searchQuery, " ")
+	words := strings.Fields(searchQuery)
+	var tokens []string
+	for _, word := range words {
+		if word != "" {
+			tokens = append(tokens, word+":*")
+		}
+	}
+
+	if len(tokens) == 0 {
+		return ""
+	}
+	return strings.Join(tokens, " | ")
+}
+
+func GetIssuesLink(id1 uuid.UUID, id2 uuid.UUID) LinkedIssues {
+	link := LinkedIssues{
+		Id1: id1,
+		Id2: id2,
+	}
+	if bytes.Compare(id2.Bytes(), id1.Bytes()) < 0 {
+		link = LinkedIssues{
+			Id1: id2,
+			Id2: id1,
+		}
+	}
+	return link
+}
+
+func DeleteWorkspaceMember(actor *WorkspaceMember, requestedMember *WorkspaceMember, tx *gorm.DB) error {
+	// Change workspace owner on demand
+	if requestedMember.Workspace.OwnerId == requestedMember.MemberId {
+		if err := requestedMember.Workspace.ChangeOwner(tx, actor); err != nil {
+			return err
+		}
+	}
+
+	// Change role to admin for new owner
+	if err := tx.Model(requestedMember).UpdateColumn("role", types.AdminRole).Error; err != nil {
+		return err
+	}
+
+	// Update memberships in projects
+	{
+		var projects []Project
+		if err := tx.Where("workspace_id = ?", requestedMember.Workspace.ID).Find(&projects).Error; err != nil {
+			return err
+		}
+
+		createdByID := uuid.NullUUID{UUID: actor.MemberId, Valid: true}
+
+		for _, project := range projects {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": createdByID}),
+			}).Create(&ProjectMember{
+				ID:          GenUUID(),
+				CreatedAt:   time.Now(),
+				CreatedById: createdByID,
+				WorkspaceId: requestedMember.Workspace.ID,
+				ProjectId:   project.ID,
+				Role:        types.AdminRole,
+				MemberId:    requestedMember.MemberId,
+			}).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	// Migrate projects leaders to current user
+	if err := tx.
+		Model(&Project{}).
+		Where(&Project{
+			WorkspaceId:   requestedMember.Workspace.ID,
+			ProjectLeadId: requestedMember.MemberId,
+		}).
+		Updates(Project{
+			ProjectLeadId: actor.MemberId,
+		}).Error; err != nil {
+		return err
+	}
+
+	return tx.Omit(clause.Associations).Delete(requestedMember).Error
+}
+
+func GetFileAssetFromDescription(query *gorm.DB, description *string) ([]FileAsset, error) {
+	var fileAssets []FileAsset
+	var ids []string
+
+	if description == nil {
+		return nil, fmt.Errorf("body empty")
+	}
+
+	re := regexp.MustCompile(`/api/auth/file/([a-f0-9-]+-\d+)`)
+	matches := re.FindAllStringSubmatch(*description, -1)
+	for _, match := range matches {
+		ids = append(ids, match[1])
+	}
+
+	if err := query.Where("name IN (?)", ids).Find(&fileAssets).Error; err != nil {
+		return nil, err
+	}
+	return fileAssets, nil
+}
+
+// UserPrivilegesOverDoc
+// -migration
+type UserPrivilegesOverDoc struct {
+	UserId        string
+	DocId         string
+	WorkspaceRole int
+	IsAuthor      bool
+	IsEditor      bool
+	IsReader      bool
+	IsWatcher     bool
+}
+
+func GetUserPrivilegesOverDoc(docId string, userId uuid.UUID, db *gorm.DB) (*UserPrivilegesOverDoc, error) {
+	var priv UserPrivilegesOverDoc
+	if err := db.Raw(`select
+	wm.member_id as "user_id",
+  d.id as "doc_id",
+  wm.role as "workspace_role",
+  d.created_by_id = ? as "is_author",
+  (dar.id is not null and dar.edit is true) or wm.role >= d.editor_role as "is_editor",
+  dar.id is not null  or wm.role >= d.reader_role as "is_reader",
+  (dar.id is not null and dar.watch is true)  as "is_watcher"
+from docs d
+left join doc_access_rules dar on d.id = dar.doc_id and dar.member_id = ?
+left join workspace_members wm on d.workspace_id = wm.workspace_id and wm.member_id = ?
+where d.id = ?`, userId, userId, userId, docId).First(&priv).Error; err != nil {
+		return nil, err
+	}
+	return &priv, nil
+}
+
+func GetSystemUser(tx *gorm.DB) *User {
+	var user User
+	username := "system"
+	if err := tx.Where("username = ?", username).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			user = User{
+				ID:        GenUUID(),
+				Email:     "aiplan@aiplan.ru",
+				Password:  "",
+				FirstName: "АИПлан",
+				Username:  &username,
+				IsActive:  true,
+				IsBot:     true,
+			}
+			if err := tx.Create(&user).Error; err != nil {
+				slog.Error("Create system user", "err", err)
+				return nil
+			}
+		} else {
+			slog.Error("Get system user", "err", err)
+			return nil
+		}
+	}
+	return &user
+}
+
+const (
+	getForeignKeysSQL = `SELECT
+    tc.table_name AS foreign_table_name,
+    kcu.column_name AS foreign_column_name,
+    ccu.table_name AS referenced_table_name,
+    ccu.column_name AS referenced_column_name,
+    tc.constraint_name
+FROM information_schema.table_constraints AS tc
+JOIN information_schema.key_column_usage AS kcu
+    ON tc.constraint_name = kcu.constraint_name
+JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = tc.constraint_name
+WHERE tc.constraint_type = 'FOREIGN KEY'
+    AND ccu.table_name = ?
+    AND ccu.column_name = ?;`
+)
+
+type ForeignKey struct {
+	ForeignTableName     string
+	ForeignColumnName    string
+	ReferencedTableName  string
+	ReferencedColumnName string
+	ConstraintName       string
+}
+
+func ReplaceColumnType(db *gorm.DB, table string, column string, newType string) error {
+	var fks []ForeignKey
+	if err := db.Raw(getForeignKeysSQL, table, column).Find(&fks).Error; err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Delete FKs
+		for _, fk := range fks {
+			//fmt.Printf("ALTER TABLE %s DROP CONSTRAINT %s;\n", fk.ForeignTableName, fk.ConstraintName)
+			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s;", fk.ForeignTableName, fk.ConstraintName)).Error; err != nil {
+				return err
+			}
+		}
+
+		// Change types
+		//fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", table, column, newType, column, newType)
+		if err := tx.Exec(fmt.Sprintf("alter table %s alter column %s TYPE %s USING %s::%s;", table, column, newType, column, newType)).Error; err != nil {
+			return err
+		}
+		for _, fk := range fks {
+			//fmt.Printf("alter table %s alter column %s TYPE %s USING %s::%s;\n", fk.ForeignTableName, fk.ForeignColumnName, newType, fk.ForeignColumnName, newType)
+			if err := tx.Exec(fmt.Sprintf("alter table %s alter column %s TYPE %s USING %s::%s;", fk.ForeignTableName, fk.ForeignColumnName, newType, fk.ForeignColumnName, newType)).Error; err != nil {
+				return err
+			}
+		}
+
+		// Add FKs back
+		for _, fk := range fks {
+			//fmt.Printf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s);\n", fk.ForeignTableName, fk.ConstraintName, fk.ForeignColumnName, fk.ReferencedTableName, fk.ReferencedColumnName)
+			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s);", fk.ForeignTableName, fk.ConstraintName, fk.ForeignColumnName, fk.ReferencedTableName, fk.ReferencedColumnName)).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// CleanInvalidUUIDs очищает невалидные UUID значения, устанавливая их в NULL
+// Это предотвращает ошибки при конвертации text -> uuid
+func CleanInvalidUUIDs(tx *gorm.DB, table string, column string) error {
+	// Очищаем все значения которые не соответствуют формату UUID
+	// Устанавливаем NULL для hex-кодированных, битых и любых невалидных значений
+	sql := fmt.Sprintf(`
+		UPDATE "%s"
+		SET "%s" = NULL
+		WHERE "%s" IS NOT NULL
+		AND "%s"::text !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+	`, table, column, column, column)
+
+	result := tx.Exec(sql)
+	if result.Error != nil {
+		return fmt.Errorf("failed to clean invalid UUIDs in %s.%s: %w", table, column, result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		slog.Warn("Cleaned invalid UUIDs", "table", table, "column", column, "rows", result.RowsAffected)
+	}
+
+	return nil
+}
+
+// joinTablesForDeletion — таблицы связей, где orphaned записи нужно удалять, а не обнулять
+// Это таблицы, где FK колонки обязательны по бизнес-логике
+var joinTablesForDeletion = map[string]bool{
+	"issue_blockers":  true,
+	"issue_assignees": true,
+	"issue_labels":    true,
+	"issue_links":     true,
+	"issue_watchers":  true,
+}
+
+// CleanOrphanedForeignKeys очищает "осиротевшие" внешние ключи - записи, которые ссылаются на несуществующие записи в referenced таблице
+func CleanOrphanedForeignKeys(tx *gorm.DB, table string, column string, referencedTable string, referencedColumn string) error {
+	// Сначала проверяем, существует ли таблица и колонка
+	checkColumnSQL := fmt.Sprintf(`
+		SELECT is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		AND table_name = '%s'
+		AND column_name = '%s'
+	`, table, column)
+
+	var isNullable string
+	if err := tx.Raw(checkColumnSQL).Scan(&isNullable).Error; err != nil {
+		// Если колонка/таблица не существует, просто пропускаем
+		return nil
+	}
+
+	// Дополнительная проверка: если isNullable пустой, значит колонка не найдена
+	if isNullable == "" {
+		return nil
+	}
+
+	// Для join tables или NOT NULL колонок — удаляем записи, иначе — обнуляем
+	useDelete := joinTablesForDeletion[table] || isNullable != "YES"
+
+	var sql string
+	if useDelete {
+		// Удаляем записи с orphaned FK
+		sql = fmt.Sprintf(`
+			DELETE FROM "%s" as outer_table
+			WHERE "%s" IS NOT NULL
+			AND NOT EXISTS (
+				SELECT 1 FROM "%s" as inner_table WHERE inner_table."%s"::text = outer_table."%s"::text
+			)
+		`, table, column, referencedTable, referencedColumn, column)
+	} else {
+		// Устанавливаем NULL для всех записей, где внешний ключ указывает на несуществующую запись
+		sql = fmt.Sprintf(`
+			UPDATE "%s" as outer_table
+			SET "%s" = NULL
+			WHERE "%s" IS NOT NULL
+			AND NOT EXISTS (
+				SELECT 1 FROM "%s" as inner_table WHERE inner_table."%s"::text = outer_table."%s"::text
+			)
+		`, table, column, column, referencedTable, referencedColumn, column)
+	}
+
+	result := tx.Exec(sql)
+	if result.Error != nil {
+		return fmt.Errorf("failed to clean orphaned foreign keys in %s.%s: %w", table, column, result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		action := "Cleaned"
+		if useDelete {
+			action = "Deleted rows with"
+		}
+		slog.Warn(action+" orphaned foreign keys", "table", table, "column", column, "referenced_table", referencedTable, "rows", result.RowsAffected)
+	}
+
+	return nil
+}
+
+// CleanAllOrphanedForeignKeys автоматически очищает все битые foreign keys из базы данных
+func CleanAllOrphanedForeignKeys(tx *gorm.DB) error {
+	const getAllForeignKeysSQL = `
+SELECT
+    kcu.table_name,
+    kcu.column_name,
+    ccu.table_name AS referenced_table_name,
+    ccu.column_name AS referenced_column_name
+FROM information_schema.table_constraints AS tc
+JOIN information_schema.key_column_usage AS kcu
+    ON tc.constraint_name = kcu.constraint_name
+    AND tc.table_schema = kcu.table_schema
+JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = tc.constraint_name
+    AND ccu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY'
+    AND tc.table_schema = 'public'
+ORDER BY kcu.table_name, kcu.column_name;`
+
+	type FKInfo struct {
+		TableName            string
+		ColumnName           string
+		ReferencedTableName  string
+		ReferencedColumnName string
+	}
+
+	var foreignKeys []FKInfo
+	if err := tx.Raw(getAllForeignKeysSQL).Find(&foreignKeys).Error; err != nil {
+		return fmt.Errorf("failed to get foreign keys list: %w", err)
+	}
+
+	slog.Info("Found foreign keys to clean", "count", len(foreignKeys))
+
+	for i, fk := range foreignKeys {
+		if err := CleanOrphanedForeignKeys(tx, fk.TableName, fk.ColumnName, fk.ReferencedTableName, fk.ReferencedColumnName); err != nil {
+			return fmt.Errorf("failed to clean orphaned foreign keys in %s.%s: %w", fk.TableName, fk.ColumnName, err)
+		}
+
+		// Прогресс логирование каждые 10 FK или на последнем
+		if i%10 == 0 || i == len(foreignKeys)-1 {
+			slog.Info("Cleaning FK progress", "completed", i+1, "total", len(foreignKeys))
+		}
+	}
+
+	return nil
+}
+
+// DropAllForeignKeys удаляет все foreign key constraints из базы данных (без транзакции)
+func DropAllForeignKeys(tx *gorm.DB) error {
+	const getAllForeignKeysSQL = `
+SELECT
+    tc.table_name AS foreign_table_name,
+    tc.constraint_name
+FROM information_schema.table_constraints AS tc
+WHERE tc.constraint_type = 'FOREIGN KEY'
+    AND tc.table_schema = 'public';`
+
+	type FKConstraint struct {
+		ForeignTableName string
+		ConstraintName   string
+	}
+
+	var constraints []FKConstraint
+	if err := tx.Raw(getAllForeignKeysSQL).Find(&constraints).Error; err != nil {
+		return err
+	}
+
+	slog.Info("Found foreign key constraints to drop", "count", len(constraints))
+
+	// Увеличиваем lock_timeout и statement_timeout для длительных операций
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
+		slog.Warn("Failed to set lock_timeout", "err", err)
+	}
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
+		slog.Warn("Failed to set statement_timeout", "err", err)
+	}
+
+	for i, fk := range constraints {
+		// Экранируем имена через двойные кавычки для поддержки constraint с цифрами в начале
+		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP CONSTRAINT IF EXISTS \"%s\";", fk.ForeignTableName, fk.ConstraintName)
+
+		// Retry логика для deadlock и lock timeout
+		const maxRetries = 5
+		var lastErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := tx.Exec(sql).Error; err != nil {
+				// Проверяем на deadlock (40P01) или lock timeout (55P03)
+				isDeadlock := strings.Contains(err.Error(), "40P01") || strings.Contains(err.Error(), "deadlock detected")
+				isLockTimeout := strings.Contains(err.Error(), "55P03") || strings.Contains(err.Error(), "lock timeout")
+
+				if (isDeadlock || isLockTimeout) && attempt < maxRetries {
+					errType := "deadlock"
+					if isLockTimeout {
+						errType = "lock timeout"
+					}
+					slog.Warn("Retrying after "+errType,
+						"constraint", fk.ConstraintName,
+						"table", fk.ForeignTableName,
+						"attempt", attempt,
+						"maxRetries", maxRetries)
+					// Увеличенная пауза перед retry
+					time.Sleep(time.Duration(attempt*500) * time.Millisecond)
+					lastErr = err
+					continue
+				}
+				return fmt.Errorf("failed to drop FK constraint %s on table %s (attempt %d/%d): %w",
+					fk.ConstraintName, fk.ForeignTableName, attempt, maxRetries, err)
+			}
+			// Успешно удалили
+			if i%10 == 0 || i == len(constraints)-1 {
+				slog.Info("Dropping FK constraints progress", "completed", i+1, "total", len(constraints))
+			}
+			break
+		}
+		if lastErr != nil {
+			return fmt.Errorf("failed to drop FK constraint %s on table %s after %d retries: %w",
+				fk.ConstraintName, fk.ForeignTableName, maxRetries, lastErr)
+		}
+	}
+	return nil
+}
+
+// DropAllGeneratedColumns удаляет все generated columns из базы данных
+// Generated columns препятствуют изменению типа referenced columns
+func DropAllGeneratedColumns(tx *gorm.DB) error {
+	const getAllGeneratedColumnsSQL = `
+SELECT
+    table_name,
+    column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+    AND is_generated = 'ALWAYS';`
+
+	type GeneratedColumn struct {
+		TableName  string
+		ColumnName string
+	}
+
+	var columns []GeneratedColumn
+	if err := tx.Raw(getAllGeneratedColumnsSQL).Find(&columns).Error; err != nil {
+		return err
+	}
+
+	slog.Info("Found generated columns to drop", "count", len(columns))
+
+	// Увеличиваем lock_timeout и statement_timeout для длительных операций
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
+		slog.Warn("Failed to set lock_timeout", "err", err)
+	}
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
+		slog.Warn("Failed to set statement_timeout", "err", err)
+	}
+
+	for i, col := range columns {
+		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP COLUMN IF EXISTS \"%s\";", col.TableName, col.ColumnName)
+
+		// Retry логика для deadlock и lock timeout
+		const maxRetries = 5
+		var lastErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := tx.Exec(sql).Error; err != nil {
+				// Проверяем на deadlock (40P01) или lock timeout (55P03)
+				isDeadlock := strings.Contains(err.Error(), "40P01") || strings.Contains(err.Error(), "deadlock detected")
+				isLockTimeout := strings.Contains(err.Error(), "55P03") || strings.Contains(err.Error(), "lock timeout")
+
+				if (isDeadlock || isLockTimeout) && attempt < maxRetries {
+					errType := "deadlock"
+					if isLockTimeout {
+						errType = "lock timeout"
+					}
+					slog.Warn("Retrying after "+errType,
+						"column", col.ColumnName,
+						"table", col.TableName,
+						"attempt", attempt,
+						"maxRetries", maxRetries)
+					// Увеличенная пауза перед retry
+					time.Sleep(time.Duration(attempt*500) * time.Millisecond)
+					lastErr = err
+					continue
+				}
+				return fmt.Errorf("failed to drop generated column %s.%s (attempt %d/%d): %w",
+					col.TableName, col.ColumnName, attempt, maxRetries, err)
+			}
+			if i%5 == 0 || i == len(columns)-1 {
+				slog.Info("Dropping generated columns progress", "completed", i+1, "total", len(columns))
+			}
+			break
+		}
+		if lastErr != nil {
+			return fmt.Errorf("failed to drop generated column %s.%s after %d retries: %w",
+				col.TableName, col.ColumnName, maxRetries, lastErr)
+		}
+	}
+	return nil
+}
+
+// DropAllCheckConstraints удаляет все check constraints из базы данных (без транзакции)
+func DropAllCheckConstraints(tx *gorm.DB) error {
+	const getAllCheckConstraintsSQL = `
+SELECT
+    tc.table_name,
+    tc.constraint_name
+FROM information_schema.table_constraints AS tc
+WHERE tc.constraint_type = 'CHECK'
+    AND tc.table_schema = 'public';`
+
+	type CheckConstraint struct {
+		TableName      string
+		ConstraintName string
+	}
+
+	var constraints []CheckConstraint
+	if err := tx.Raw(getAllCheckConstraintsSQL).Find(&constraints).Error; err != nil {
+		return err
+	}
+
+	slog.Info("Found check constraints to drop", "count", len(constraints))
+
+	// Увеличиваем lock_timeout и statement_timeout для длительных операций
+	if err := tx.Exec("SET lock_timeout = '300s';").Error; err != nil {
+		slog.Warn("Failed to set lock_timeout", "err", err)
+	}
+	if err := tx.Exec("SET statement_timeout = '600s';").Error; err != nil {
+		slog.Warn("Failed to set statement_timeout", "err", err)
+	}
+
+	for i, ck := range constraints {
+		// Экранируем имена через двойные кавычки для поддержки constraint с цифрами в начале
+		sql := fmt.Sprintf("ALTER TABLE \"%s\" DROP CONSTRAINT IF EXISTS \"%s\";", ck.TableName, ck.ConstraintName)
+
+		// Retry логика для deadlock и lock timeout
+		const maxRetries = 5
+		var lastErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := tx.Exec(sql).Error; err != nil {
+				// Проверяем на deadlock (40P01) или lock timeout (55P03)
+				isDeadlock := strings.Contains(err.Error(), "40P01") || strings.Contains(err.Error(), "deadlock detected")
+				isLockTimeout := strings.Contains(err.Error(), "55P03") || strings.Contains(err.Error(), "lock timeout")
+
+				if (isDeadlock || isLockTimeout) && attempt < maxRetries {
+					errType := "deadlock"
+					if isLockTimeout {
+						errType = "lock timeout"
+					}
+					slog.Warn("Retrying after "+errType,
+						"constraint", ck.ConstraintName,
+						"table", ck.TableName,
+						"attempt", attempt,
+						"maxRetries", maxRetries)
+					// Увеличенная пауза перед retry
+					time.Sleep(time.Duration(attempt*500) * time.Millisecond)
+					lastErr = err
+					continue
+				}
+				return fmt.Errorf("failed to drop CHECK constraint %s on table %s (attempt %d/%d): %w",
+					ck.ConstraintName, ck.TableName, attempt, maxRetries, err)
+			}
+			if i%10 == 0 || i == len(constraints)-1 {
+				slog.Info("Dropping check constraints progress", "completed", i+1, "total", len(constraints))
+			}
+			break
+		}
+		if lastErr != nil {
+			return fmt.Errorf("failed to drop CHECK constraint %s on table %s after %d retries: %w",
+				ck.ConstraintName, ck.TableName, maxRetries, lastErr)
+		}
+	}
+	return nil
+}
+
+// VacuumFull выполняет VACUUM FULL для всей базы данных
+// VACUUM FULL пересоздает таблицы без фрагментации и возвращает место на диске
+// ВАЖНО: VACUUM FULL блокирует таблицы, поэтому должен выполняться только во время миграции
+func VacuumFull(db *gorm.DB) error {
+	slog.Info("Starting VACUUM FULL")
+
+	// VACUUM FULL нельзя выполнить внутри транзакции, поэтому используем db напрямую
+	if err := db.Exec("VACUUM FULL;").Error; err != nil {
+		return fmt.Errorf("failed to execute VACUUM FULL: %w", err)
+	}
+
+	slog.Info("VACUUM FULL completed successfully")
+	return nil
+}
+
+func Exists(db *gorm.DB, query *gorm.DB) (bool, error) {
+	var exists bool
+	if err := db.
+		Raw("SELECT EXISTS(?)", query).
+		Find(&exists).Error; err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func IsWorkspaceExists(db *gorm.DB, user *User, slugOrId string) (bool, error) {
+	id := uuid.FromStringOrNil(slugOrId)
+	workspaceQuery := db.Session(&gorm.Session{}).Model(&Workspace{})
+
+	if !id.IsNil() {
+		workspaceQuery = workspaceQuery.Where("id = ?", id)
+	} else {
+		workspaceQuery = workspaceQuery.Where("slug = ?", slugOrId)
+	}
+
+	if user == nil {
+		return Exists(db, workspaceQuery.Select("1"))
+	}
+
+	return Exists(db, db.Select("1").
+		Where("member_id = ?", user.ID).
+		Where("workspace_id in (?)", workspaceQuery.Select("id")).
+		Model(&WorkspaceMember{}))
+}
+
+func IsProjectExists(db *gorm.DB, user *User, workspaceId uuid.UUID, idOrIdent string) (bool, error) {
+	id := uuid.FromStringOrNil(idOrIdent)
+	projectQuery := db.Session(&gorm.Session{}).Model(&Project{}).
+		Where("workspace_id = ?", workspaceId)
+
+	// Search by id or identifier
+	if !id.IsNil() {
+		projectQuery = projectQuery.Where("projects.id = ?", id)
+	} else {
+		projectQuery = projectQuery.Where("projects.identifier = ?", idOrIdent)
+	}
+
+	if user == nil {
+		return Exists(db, projectQuery.Select("1"))
+	}
+
+	return Exists(db, db.Select("1").
+		Where("member_id = ?", user.ID).
+		Where("project_id in (?)", projectQuery.Select("id")).
+		Model(&ProjectMember{}))
+}
+
+func IsIssueExists(db *gorm.DB, projectId uuid.UUID, idOrSeq string) (bool, error) {
+	id := uuid.FromStringOrNil(idOrSeq)
+	issueQuery := db.Session(&gorm.Session{}).Model(&Issue{}).
+		Where("project_id = ?", projectId)
+
+	// Search by id or identifier
+	if !id.IsNil() {
+		issueQuery = issueQuery.Where("issues.id = ?", id)
+	} else {
+		issueQuery = issueQuery.Where("issues.sequence_id = ?", idOrSeq)
+	}
+
+	return Exists(db, issueQuery.Select("1"))
+}
+
+func IsSprintExists(db *gorm.DB, workspaceId uuid.UUID, idOrSeq string) (bool, error) {
+	id, err := uuid.FromString(idOrSeq)
+	if err == nil && id.IsNil() {
+		return false, nil
+	}
+	sprintQuery := db.Session(&gorm.Session{}).Model(&Sprint{}).
+		Where("workspace_id = ?", workspaceId)
+	if !id.IsNil() {
+		sprintQuery = sprintQuery.Where("sprints.id = ?", id)
+	} else {
+		sprintQuery = sprintQuery.Where("sprints.sequence_id = ?", idOrSeq)
+	}
+	return Exists(db, sprintQuery.Select("1"))
+}
+
+func IsSearchFilterExists(db *gorm.DB, filterId string) (bool, error) {
+	id := uuid.FromStringOrNil(filterId)
+	if id.IsNil() {
+		return false, nil
+	}
+	return Exists(db, db.Session(&gorm.Session{}).Model(&SearchFilter{}).Where("id = ?", id).Select("1"))
+}
+
+func IsReleaseNoteExists(db *gorm.DB, idOrTag string) (bool, error) {
+	query := db.Session(&gorm.Session{}).Model(&ReleaseNote{})
+	if id, err := uuid.FromString(idOrTag); err == nil {
+		query = query.Where("id = ?", id)
+	} else {
+		query = query.Where("tag_name = ?", idOrTag)
+	}
+	return Exists(db, query.Select("1"))
+}
+
+func IsFormExists(db *gorm.DB, slug string) (bool, error) {
+	return Exists(db, db.Session(&gorm.Session{}).Model(&Form{}).Where("slug = ?", slug).Select("1"))
+}
+
+func ScanToMap[T any](query *gorm.DB, getId func(T) uuid.UUID) (map[uuid.UUID]T, error) {
+	rows, err := query.Rows()
+	if err != nil {
+		return nil, err
+	}
+
+	res := make(map[uuid.UUID]T)
+	for rows.Next() {
+		var entity T
+		if err := query.ScanRows(rows, &entity); err != nil {
+			return nil, err
+		}
+
+		res[getId(entity)] = entity
+	}
+	return res, nil
+}
+
+func CleanupActivityData(tx, q *gorm.DB, id uuid.UUID, layers ...types.EntityLayer) error {
+	subQuery := q.Model(&ActivityEvent{}).Select("id")
+
+	if err := tx.Where("activity_event_id IN (?)", subQuery).
+		Unscoped().
+		Delete(&UserAppNotify{}).Error; err != nil {
+		return err
+	}
+
+	// Явно, не полагаясь на каскад внешнего ключа в БД.
+	if err := tx.Where("activity_id IN (?)", subQuery).
+		Delete(&ActivityTelegramMessage{}).Error; err != nil {
+		return err
+	}
+
+	if err := q.Unscoped().Delete(&ActivityEvent{}).Error; err != nil {
+		return err
+	}
+
+	if len(layers) > 0 {
+		cleanId := map[string]interface{}{"new_identifier": nil, "old_identifier": nil}
+		if err := tx.Where("new_identifier = ? OR old_identifier = ?",
+			id, id).
+			Where("entity_type IN (?)", layers).
+			Model(&ActivityEvent{}).
+			Updates(cleanId).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

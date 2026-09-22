@@ -1,0 +1,100 @@
+=== global/без_проекта/пусто
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $3
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/light
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $3
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/only_count
+SQL:  SELECT count(*) FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111]
+
+=== global/без_проекта/суперпользователь
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $2
+VARS: [11111111-1111-1111-1111-111111111111 0]
+
+=== global/С_проектом/пусто
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $3
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/фильтр_авторы
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.created_by_id in ($2) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $3) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/фильтр_исполнители
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.id in (SELECT issue_id FROM issue_assignees WHERE assignee_id in ($2) AND issue_assignees.deleted_at IS NULL) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $3) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
+VARS: [11111111-1111-1111-1111-111111111111 77777777-7777-7777-7777-777777777777 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/фильтр_исполнители_с_пустыми
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND (issues.id in (SELECT issue_id FROM issue_assignees WHERE assignee_id in ($2) AND issue_assignees.deleted_at IS NULL) OR issues.id not in (SELECT issue_id FROM issue_assignees WHERE issue_assignees.deleted_at IS NULL)) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $3) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
+VARS: [11111111-1111-1111-1111-111111111111 77777777-7777-7777-7777-777777777777 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/фильтр_статусы+only_active
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2) AND issues.state_id in (SELECT id FROM states WHERE "group" <> $3 AND "group" <> $4 AND issues.state_id in ($5)) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $6
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 cancelled completed 66666666-6666-6666-6666-666666666666 0]
+
+=== global/без_проекта/фильтр_метки
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.id in (SELECT issue_id FROM issue_labels WHERE label_id in ($2) AND issue_labels.deleted_at IS NULL) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $3) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
+VARS: [11111111-1111-1111-1111-111111111111 88888888-8888-8888-8888-888888888888 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/фильтр_пространства
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2 AND workspace_id in ($3)) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 22222222-2222-2222-2222-222222222222 0]
+
+=== global/без_проекта/фильтр_слаги_пространств
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2 AND workspace_id in (SELECT id FROM workspaces WHERE slug in ($3) AND workspaces.deleted_at IS NULL)) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 ws 0]
+
+=== global/без_проекта/фильтр_проекты
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.project_id in (SELECT project_id FROM workspace_members WHERE member_id = $2 AND project_id in ($3)) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $4) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $5
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 33333333-3333-3333-3333-333333333333 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/мои_задачи
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $2) AND issues.id in (SELECT issue_id FROM issue_assignees WHERE assignee_id = $3 AND issue_assignees.deleted_at IS NULL) AND issues.id in (SELECT issue_id FROM issue_watchers WHERE watcher_id = $4 AND issue_watchers.deleted_at IS NULL) AND issues.created_by_id = $5 AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $6
+VARS: [11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/спринт
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.id in ($2) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $3) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $4
+VARS: [11111111-1111-1111-1111-111111111111 55555555-5555-5555-5555-555555555555 11111111-1111-1111-1111-111111111111 0]
+
+=== global/без_проекта/полнотекстовый_поиск
+SQL:  SELECT issues.*, ts_headline('russian', issues.name, websearch_to_tsquery('russian', $1)) as name_highlighted, ts_headline('russian', issues.description_stripped, websearch_to_tsquery('russian', $2), 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted, calc_rank(tokens, p.identifier, issues.sequence_id, $3) as ts_rank FROM issues join projects p on p.id = issues.project_id WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $4) AND issues.workspace_id in (SELECT workspace_id FROM workspace_members WHERE member_id = $5) AND p.deleted_at IS NULL AND (issues.tokens @@ (websearch_to_tsquery('simple', normalize_fts_text($6)) || websearch_to_tsquery('russian', normalize_fts_text($7)) || websearch_to_tsquery('english', normalize_fts_text($8))) OR issues.tokens @@ (to_tsquery('simple', $9) || to_tsquery('russian', $10) || to_tsquery('english', $11)) OR issues.sequence_id::text like $12) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY ts_rank desc LIMIT $13
+VARS: [тест тест тест 11111111-1111-1111-1111-111111111111 11111111-1111-1111-1111-111111111111 тест тест тест тест:* тест:* тест:* тест% 0]
+
+=== проект/пусто
+SQL:  SELECT issues.* FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $3
+VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 0]
+
+=== проект/light
+SQL:  SELECT issues.* FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $3
+VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 0]
+
+=== проект/only_count
+SQL:  SELECT count(*) FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL
+VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333]
+
+=== проект/фильтр_авторы+исполнители
+SQL:  SELECT issues.* FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND issues.created_by_id in ($3) AND issues.id in (SELECT issue_id FROM issue_assignees WHERE assignee_id in ($4) AND issue_assignees.deleted_at IS NULL) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $5
+VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 11111111-1111-1111-1111-111111111111 77777777-7777-7777-7777-777777777777 0]
+
+=== проект/сортировка_по_статусу_desc
+SQL:  SELECT issues.*, (SELECT concat(case "group" when 'backlog' then 1 when 'unstarted' then 2 when 'started' then 3 when 'completed' then 4 when 'cancelled' then 5 end, sequence, name, color) FROM states WHERE id = issues.state_id) as state_sort FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY state_sort DESC LIMIT $3
+VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 0]
+
+=== проект/сортировка_по_исполнителям
+SQL:  SELECT issues.*, array(SELECT COALESCE(NULLIF(last_name,''), email) FROM users WHERE users.id in (SELECT assignee_id FROM issue_assignees WHERE issue_id = issues.id AND issue_assignees.deleted_at IS NULL) AND users.deleted_at IS NULL) as assignees_sort FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY assignees_sort LIMIT $3
+VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 0]
+
+=== проект/скрыть_подзадачи+черновики+закреплённые
+SQL:  SELECT issues.* FROM issues WHERE issues.workspace_id = $1 AND issues.project_id = $2 AND issues.pinned = true AND issues.parent_id is null AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $3
+VARS: [22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333 0]
+
+=== не_global/без_проекта/пусто
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $2
+VARS: [11111111-1111-1111-1111-111111111111 0]
+
+=== не_global/без_проекта/фильтр_статусы
+SQL:  SELECT issues.* FROM issues WHERE issues.project_id in (SELECT project_id FROM project_members WHERE member_id = $1) AND issues.state_id in (SELECT id FROM states WHERE issues.state_id in ($2)) AND (issues.draft = false or issues.draft is null) AND issues.deleted_at IS NULL ORDER BY issues. LIMIT $3
+VARS: [11111111-1111-1111-1111-111111111111 66666666-6666-6666-6666-666666666666 0]
+

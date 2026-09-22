@@ -24,13 +24,13 @@ import (
 // main - главная функция программы.  Считывает определения ошибок из указанного файла, генерирует Markdown-таблицу с информацией об ошибках и сохраняет её в указанный файл.
 //
 // Параметры:
-//   - src: путь к файлу с определениями ошибок (например, internal/aiplan/errors.go).
+//   - src: путь к файлу с определениями ошибок (например, pkg/apierrors/errors.go).
 //   - out: путь к файлу, куда будет сохранена Markdown-таблица с ошибками.
 //
 // Возвращает:
 //   - void: функция ничего не возвращает.
 func main() {
-	errorsFile := flag.String("src", "internal/aiplan/apierrors/errors.go", "Path of errors.go")
+	errorsFile := flag.String("src", "pkg/apierrors/errors.go", "Path of errors.go")
 	outputMd := flag.String("out", "api_error.md", "Path to output md")
 	flag.Parse()
 

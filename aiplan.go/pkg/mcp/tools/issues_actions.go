@@ -1,0 +1,1654 @@
+package tools
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"time"
+
+	tracker "github.com/aisa-it/aiplan/aiplan.go/pkg/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/mcp/logger"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/policy"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
+	"github.com/gofrs/uuid"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+var validReactionsMCP = map[string]bool{
+	"\xf0\x9f\x91\x8d":         true,
+	"\xf0\x9f\x91\x8e":         true,
+	"\xe2\x9d\xa4\xef\xb8\x8f": true,
+	"\xf0\x9f\x98\x82":         true,
+	"\xf0\x9f\x98\xae":         true,
+	"\xf0\x9f\xa4\xa1":         true,
+	"\xf0\x9f\x92\xa9":         true,
+	"\xf0\x9f\xa4\xae":         true,
+}
+
+var issuesActionsTools = []Tool{
+	{
+		mcp.NewTool(
+			"delete_issue",
+			mcp.WithDescription("Удаление задачи. Доступно администратору или автору (если в проекте разрешено удаление автором)"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		deleteIssue,
+	},
+	{
+		mcp.NewTool(
+			"get_available_states",
+			mcp.WithDescription("Получение списка доступных статусов для перехода. Админу возвращаются все, остальным — только разрешённые из текущего статуса"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		getAvailableStates,
+	},
+	{
+		mcp.NewTool(
+			"get_sub_issues",
+			mcp.WithDescription("Получение списка подзадач задачи с распределением по группам статусов"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID родительской задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		getSubIssues,
+	},
+	{
+		mcp.NewTool(
+			"add_sub_issues",
+			mcp.WithDescription("Прикрепление существующих задач как подзадач к указанной задаче. Не-админ может прикрепить только свои задачи"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID родительской задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithArray("sub_issue_ids",
+				mcp.Required(),
+				mcp.Description("Список UUID задач, которые нужно сделать подзадачами"),
+				mcp.Items(map[string]interface{}{"type": "string"}),
+			),
+		),
+		addSubIssues,
+	},
+	{
+		mcp.NewTool(
+			"get_linked_issues",
+			mcp.WithDescription("Получение списка связанных задач (linked issues)"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		getLinkedIssues,
+	},
+	{
+		mcp.NewTool(
+			"set_linked_issues",
+			mcp.WithDescription("Полная замена списка связанных задач. Старые связи удаляются, создаются переданные"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithArray("issue_ids",
+				mcp.Required(),
+				mcp.Description("Список UUID задач из того же проекта, которые должны быть связаны"),
+				mcp.Items(map[string]interface{}{"type": "string"}),
+			),
+		),
+		setLinkedIssues,
+	},
+	{
+		mcp.NewTool(
+			"create_issue_link",
+			mcp.WithDescription("Добавление внешней ссылки (URL) к задаче"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithString("url",
+				mcp.Required(),
+				mcp.Description("URL ссылки"),
+			),
+			mcp.WithString("title",
+				mcp.Required(),
+				mcp.Description("Заголовок ссылки"),
+			),
+		),
+		createIssueLink,
+	},
+	{
+		mcp.NewTool(
+			"update_issue_link",
+			mcp.WithDescription("Обновление внешней ссылки задачи"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("link_id",
+				mcp.Required(),
+				mcp.Description("UUID ссылки"),
+			),
+			mcp.WithString("url",
+				mcp.Required(),
+				mcp.Description("Новый URL"),
+			),
+			mcp.WithString("title",
+				mcp.Required(),
+				mcp.Description("Новый заголовок"),
+			),
+		),
+		updateIssueLink,
+	},
+	{
+		mcp.NewTool(
+			"delete_issue_link",
+			mcp.WithDescription("Удаление внешней ссылки задачи"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("link_id",
+				mcp.Required(),
+				mcp.Description("UUID ссылки"),
+			),
+		),
+		deleteIssueLink,
+	},
+	{
+		mcp.NewTool(
+			"update_issue_comment",
+			mcp.WithDescription("Изменение текста комментария. Доступно только автору комментария"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("comment_id",
+				mcp.Required(),
+				mcp.Description("UUID комментария"),
+			),
+			mcp.WithString("comment_html",
+				mcp.Required(),
+				mcp.Description("Новый текст комментария в HTML"),
+			),
+		),
+		updateIssueComment,
+	},
+	{
+		mcp.NewTool(
+			"delete_issue_comment",
+			mcp.WithDescription("Удаление комментария. Доступно администратору проекта или автору комментария"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("comment_id",
+				mcp.Required(),
+				mcp.Description("UUID комментария"),
+			),
+		),
+		deleteIssueComment,
+	},
+	{
+		mcp.NewTool(
+			"add_comment_reaction",
+			mcp.WithDescription("Добавление эмодзи-реакции к комментарию задачи"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("comment_id",
+				mcp.Required(),
+				mcp.Description("UUID комментария"),
+			),
+			mcp.WithString("reaction",
+				mcp.Required(),
+				mcp.Description("Эмодзи из разрешённого набора: 👍 👎 ❤️ 😂 😮 🤡 💩 🤮"),
+			),
+		),
+		addCommentReaction,
+	},
+	{
+		mcp.NewTool(
+			"remove_comment_reaction",
+			mcp.WithDescription("Удаление эмодзи-реакции пользователя с комментария"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("comment_id",
+				mcp.Required(),
+				mcp.Description("UUID комментария"),
+			),
+			mcp.WithString("reaction",
+				mcp.Required(),
+				mcp.Description("Эмодзи реакции для удаления"),
+			),
+		),
+		removeCommentReaction,
+	},
+	{
+		mcp.NewTool(
+			"get_issue_history",
+			mcp.WithDescription("Объединённая лента изменений и комментариев задачи, отсортированная по времени"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		getIssueHistory,
+	},
+	{
+		mcp.NewTool(
+			"get_comment_history",
+			mcp.WithDescription("История правок (версии) комментария задачи"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithString("comment_id",
+				mcp.Required(),
+				mcp.Description("UUID комментария"),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Лимит записей (по умолчанию 100)"),
+			),
+			mcp.WithNumber("offset",
+				mcp.Description("Смещение"),
+			),
+		),
+		getCommentHistory,
+	},
+	{
+		mcp.NewTool(
+			"get_available_issues_for_relation",
+			mcp.WithDescription("Поиск задач, доступных для прикрепления как подзадача/родитель/блокируемая/блокирующая/связанная. Учитывает права (не-админ видит только свои в parent/sub; для linked не-автору видны 0 записей)"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID текущей задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithString("relation",
+				mcp.Required(),
+				mcp.Description("Тип отношения, для которого ищем кандидатов"),
+				mcp.Enum("sub", "parent", "blocks", "blockers", "linked"),
+			),
+			mcp.WithString("search_query",
+				mcp.Description("Полнотекстовый поиск по названию"),
+			),
+			mcp.WithString("order_by",
+				mcp.Description("Поле сортировки (по умолчанию name)"),
+			),
+			mcp.WithBoolean("desc",
+				mcp.Description("Сортировка по убыванию"),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Лимит (по умолчанию 100, максимум 100)"),
+			),
+			mcp.WithNumber("offset",
+				mcp.Description("Смещение"),
+			),
+		),
+		getAvailableIssuesForRelation,
+	},
+	{
+		mcp.NewTool(
+			"move_sub_issue",
+			mcp.WithDescription("Перемещение подзадачи вверх или вниз при ручной сортировке"),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID родительской задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithString("sub_issue_id",
+				mcp.Required(),
+				mcp.Description("UUID подзадачи"),
+			),
+			mcp.WithString("direction",
+				mcp.Required(),
+				mcp.Description("Направление перемещения"),
+				mcp.Enum("up", "down"),
+			),
+		),
+		moveSubIssue,
+	},
+	{
+		mcp.NewTool(
+			"pin_issue",
+			mcp.WithDescription("Закрепить задачу"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		pinIssue,
+	},
+	{
+		mcp.NewTool(
+			"unpin_issue",
+			mcp.WithDescription("Открепить задачу"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		unpinIssue,
+	},
+	{
+		mcp.NewTool(
+			"get_issue_properties",
+			mcp.WithDescription("Получение кастомных свойств задачи. Возвращает все шаблоны проекта со значениями или дефолтами. OnlyAdmin поля скрыты для не-админов"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+		),
+		getIssueProperties,
+	},
+	{
+		mcp.NewTool(
+			"set_issue_property",
+			mcp.WithDescription("Установка значения кастомного свойства задачи. OnlyAdmin шаблоны может ставить только админ. Значение проходит JSON Schema валидацию. Изменение может быть отклонено Lua-сценарием проекта (для не-админов)"),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithString("issue_id",
+				mcp.Required(),
+				mcp.Description("ID задачи (UUID или workspace-PROJECT-123)"),
+			),
+			mcp.WithString("template_id",
+				mcp.Required(),
+				mcp.Description("UUID шаблона свойства проекта"),
+			),
+			mcp.WithObject("value",
+				mcp.Required(),
+				mcp.Description("Значение: строка для string/select, массив строк из options для multiselect (пустой массив - сброс; при unique_values шаблона без повторов), bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime"),
+			),
+		),
+		setIssueProperty,
+	},
+}
+
+// loadIssueSubject находит задачу и собирает субъект для движка.
+// Не участник проекта — ErrProjectForbidden.
+func loadIssueSubject(db *gorm.DB, user *dao.User, issueIdOrSeq string) (*apicontext.APIContext, *mcp.CallToolResult) {
+	issue, err := findIssueByIdOrSeq(db, issueIdOrSeq)
+	if err != nil {
+		return nil, logger.Error(err)
+	}
+	if issue == nil {
+		return nil, apierrors.ErrIssueNotFound.MCPError()
+	}
+	subject, err := apicontext.LoadIssueSubject(db, user, issue)
+	if err != nil {
+		return nil, mcpError(err)
+	}
+	return subject, nil
+}
+
+// mcpError переводит ошибку ядра в ответ инструмента.
+func mcpError(err error) *mcp.CallToolResult {
+	var defined apierrors.DefinedError
+	if errors.As(err, &defined) {
+		return defined.MCPError()
+	}
+	return logger.Error(err)
+}
+
+// authorize спрашивает движок; nil — действие разрешено.
+func authorize(ctx context.Context, d Deps, action engine.Action, s engine.Subject) *mcp.CallToolResult {
+	if err := d.Policy.Authorize(ctx, action, s); err != nil {
+		return mcpError(err)
+	}
+	return nil
+}
+
+// authorizeLinkIssue проверяет право управлять ссылками задачи, которой
+// принадлежит ссылка.
+func authorizeLinkIssue(ctx context.Context, d Deps, user *dao.User, issueID uuid.UUID) *mcp.CallToolResult {
+	subject, errRes := loadIssueSubject(d.DB, user, issueID.String())
+	if errRes != nil {
+		return errRes
+	}
+	return authorize(ctx, d, engine.ActionIssueLinkManage, subject)
+}
+
+func deleteIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+
+	// Право на удаление зависит от самой задачи и настроек проекта.
+	if err := d.Policy.Authorize(ctx, engine.ActionIssueDelete, subject, policy.On(issue)); err != nil {
+		return apierrors.ErrDeleteIssueForbidden.MCPError(), nil
+	}
+
+	project := *subject.GetProject()
+	issue.Project = &project
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
+	if err := d.DB.Transaction(func(tx *gorm.DB) error {
+		if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerProject, oldSnapshot, nil, project, user); err != nil {
+			return err
+		}
+		return tx.Delete(issue).Error
+	}); err != nil {
+		return logger.Error(err), nil
+	}
+
+	return mcp.NewToolResultText("задача удалена"), nil
+}
+
+func getAvailableStates(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+
+	// Список доступных статусов сужает тот же движок, что проверяет переход.
+	query := d.Policy.ScopeStates(
+		ctx,
+		engine.StateScopeRequest{
+			Subject:   subject,
+			ProjectID: issue.ProjectId,
+			Issue:     issue,
+		},
+		d.DB.Where("project_id = ?", issue.ProjectId).Order("sequence"),
+	)
+
+	var states []dao.State
+	if err := query.Find(&states).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	return listResult(utils.SliceToSlice(&states, func(v *dao.State) dto.StateLight { return *v.ToLightDTO() }))
+}
+
+func getSubIssues(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+
+	var subIssues []dao.Issue
+	if err := d.DB.
+		Where(&dao.Issue{ParentId: uuid.NullUUID{UUID: issue.ID, Valid: true}, ProjectId: issue.ProjectId}).
+		Joins("State").
+		Joins("Project").
+		Joins("Workspace").
+		Joins("Author").
+		Order(`"State".sequence, sequence_id`).
+		Find(&subIssues).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	stateDistribution := make(map[string]int)
+	for _, si := range subIssues {
+		if si.State != nil {
+			stateDistribution[si.State.Group]++
+		}
+	}
+
+	return mcp.NewToolResultJSON(dto.ResponseSubIssueList{
+		SubIssues:         utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.Issue { return *i.ToDTO() }),
+		StateDistribution: stateDistribution,
+	})
+}
+
+func addSubIssues(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	rawIDs, ok := args["sub_issue_ids"].([]interface{})
+	if !ok || len(rawIDs) == 0 {
+		return listResult([]dto.IssueLight{})
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueRelationManage, subject); errRes != nil {
+		return errRes, nil
+	}
+	parentIssue, pm := subject.GetIssue(), subject.GetProjectMember()
+
+	var candidateIDs []string
+	for _, raw := range rawIDs {
+		idStr, ok := raw.(string)
+		if !ok || idStr == "" {
+			continue
+		}
+		candidateUUID, err := uuid.FromString(idStr)
+		if err != nil {
+			continue
+		}
+		rootID, err := getRootAncestorIDMCP(d.DB, candidateUUID)
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if rootID != parentIssue.ID.String() {
+			candidateIDs = append(candidateIDs, idStr)
+		}
+	}
+	if len(candidateIDs) == 0 {
+		return listResult([]dto.IssueLight{})
+	}
+
+	query := d.DB.
+		Preload("Project").
+		Preload("Assignees").
+		Where("project_id = ?", parentIssue.ProjectId).
+		Where("parent_id is null").
+		Where("id in ?", candidateIDs)
+	if pm.Role < types.AdminRole {
+		query = query.Where(dao.Issue{}.RelationCandidates(d.DB, user.ID, pm.Role))
+	}
+
+	var subIssues []dao.Issue
+	if err := query.Find(&subIssues).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	var maxSortOrder int
+	if err := d.DB.Select("coalesce(max(sort_order), 0)").
+		Where("parent_id = ?", parentIssue.ID).
+		Model(&dao.Issue{}).
+		Find(&maxSortOrder).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	oldSubIssuesData := make([]tracker.IssueSnapshot, len(subIssues))
+
+	for i, si := range subIssues {
+		oldSubIssuesData[i] = tracker.IssueToSnapshot(si)
+	}
+
+	parentNullID := uuid.NullUUID{UUID: parentIssue.ID, Valid: true}
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	for i := range subIssues {
+		if pm.Role != types.AdminRole && subIssues[i].CreatedById != user.ID &&
+			!(pm.Role >= types.MemberRole && subIssues[i].IsAssignee(user.ID)) {
+			return apierrors.ErrPermissionParentIssue.MCPError(), nil
+		}
+		subIssues[i].ParentId = parentNullID
+		subIssues[i].UpdatedById = userID
+		subIssues[i].SortOrder = i + maxSortOrder + 1
+	}
+
+	// Omit(clause.Associations) обязателен: Assignees загружены Preload'ом для
+	// проверки IsAssignee, а автосохранение many2many пишет в issue_assignees
+	// без id (join-таблица не через SetupJoinTable) и валит запрос
+	if err := d.DB.Omit(clause.Associations).Save(&subIssues).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	for i, subIssue := range subIssues {
+		subIssue.Parent = parentIssue
+		newSnapshot := tracker.IssueToSnapshot(subIssue)
+		if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSubIssuesData[i], newSnapshot, subIssues[i], user); err != nil {
+			slog.Error("MCP addSubIssues: track changes failed", "error", err)
+		}
+	}
+
+	return listResult(utils.SliceToSlice(&subIssues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
+}
+
+func getRootAncestorIDMCP(tx *gorm.DB, issueID uuid.UUID) (string, error) {
+	var rootID string
+	err := tx.Raw(`
+		WITH RECURSIVE ancestor_chain AS (
+			SELECT id, parent_id FROM issues WHERE id = ?
+			UNION ALL
+			SELECT i.id, i.parent_id FROM issues i
+			INNER JOIN ancestor_chain ac ON i.id = ac.parent_id
+			WHERE ac.parent_id IS NOT NULL
+		)
+		SELECT id FROM ancestor_chain WHERE parent_id IS NULL;
+	`, issueID).Scan(&rootID).Error
+	return rootID, err
+}
+
+func getLinkedIssues(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+
+	if err := issue.FetchLinkedIssues(d.DB); err != nil {
+		return logger.Error(err), nil
+	}
+
+	var issues []dao.Issue
+	if err := d.DB.Where("project_id = ?", issue.ProjectId).
+		Preload(clause.Associations).
+		Where("id in (?)", issue.LinkedIssuesIDs).
+		Order("sequence_id").Find(&issues).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	return listResult(utils.SliceToSlice(&issues, func(il *dao.Issue) dto.Issue { return *il.ToDTO() }))
+}
+
+func setLinkedIssues(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	rawIDs, _ := args["issue_ids"].([]interface{})
+	var newIDs []uuid.UUID
+	for _, raw := range rawIDs {
+		idStr, ok := raw.(string)
+		if !ok || idStr == "" {
+			continue
+		}
+		newID, err := uuid.FromString(idStr)
+		if err != nil {
+			continue
+		}
+		newIDs = append(newIDs, newID)
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueRelationManage, subject); errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+
+	if err := issue.FetchLinkedIssues(d.DB); err != nil {
+		return logger.Error(err), nil
+	}
+
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
+
+	var issues []dao.Issue
+	if err := d.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id1 = ? or id2 = ?", issue.ID, issue.ID).Delete(&dao.LinkedIssues{}).Error; err != nil {
+			return err
+		}
+		for _, id := range newIDs {
+			if err := issue.AddLinkedIssue(tx, id); err != nil {
+				return err
+			}
+		}
+		if err := issue.FetchLinkedIssues(tx); err != nil {
+			return err
+		}
+		return tx.Where("id in (?)", issue.LinkedIssuesIDs).Find(&issues).Error
+	}); err != nil {
+		return logger.Error(err), nil
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(*issue)
+	if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
+	return listResult(utils.SliceToSlice(&issues, func(i *dao.Issue) dto.IssueLight { return *i.ToLightDTO() }))
+}
+
+func createIssueLink(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	url, _ := args["url"].(string)
+	title, _ := args["title"].(string)
+	if url == "" || title == "" {
+		return apierrors.ErrURLAndTitleRequired.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueLinkManage, subject); errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+	oldSnapshot := tracker.IssueToSnapshot(*issue)
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	link := dao.IssueLink{
+		Id:          dao.GenUUID(),
+		Title:       title,
+		Url:         url,
+		CreatedById: userID,
+		UpdatedById: userID,
+		IssueId:     issue.ID,
+		ProjectId:   issue.ProjectId,
+		WorkspaceId: issue.WorkspaceId,
+	}
+
+	if err := d.DB.Create(&link).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	if err := d.DB.Preload("Links").Where("id = ?", issue.ID).First(&issue).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(*issue)
+
+	if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
+
+	return mcp.NewToolResultJSON(link.ToLightDTO())
+}
+
+func updateIssueLink(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	linkIdStr, _ := args["link_id"].(string)
+	linkID, err := uuid.FromString(linkIdStr)
+	if err != nil {
+		return mcp.NewToolResultError("некорректный link_id"), nil
+	}
+
+	newURL, _ := args["url"].(string)
+	newTitle, _ := args["title"].(string)
+	if newURL == "" || newTitle == "" {
+		return apierrors.ErrURLAndTitleRequired.MCPError(), nil
+	}
+
+	var link dao.IssueLink
+	if err := d.DB.
+		Where("issue_links.id = ?", linkID).
+		Where("project_id in (?)", d.DB.Select("project_id").Where("member_id = ?", user.ID).Model(dao.ProjectMember{})).
+		First(&link).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return mcp.NewToolResultError("ссылка не найдена"), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	if errRes := authorizeLinkIssue(ctx, d, user, link.IssueId); errRes != nil {
+		return errRes, nil
+	}
+
+	oldSnapshot := tracker.LinkToSnapshot(&link)
+
+	if newURL == link.Url && newTitle == link.Title {
+		return mcp.NewToolResultJSON(link.ToLightDTO())
+	}
+
+	link.Title = newTitle
+	link.Url = newURL
+	link.UpdatedAt = time.Now()
+	link.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+	if err := d.DB.Omit(clause.Associations).Save(&link).Error; err != nil {
+		return logger.Error(err), nil
+	}
+	newSnapshot := tracker.LinkToSnapshot(&link)
+
+	var issue dao.Issue
+	if err := d.DB.Preload("Links").Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
+		return logger.Error(err), nil
+	}
+	if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
+
+	return mcp.NewToolResultJSON(link.ToLightDTO())
+}
+
+func deleteIssueLink(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	linkIdStr, _ := request.GetArguments()["link_id"].(string)
+	linkID, err := uuid.FromString(linkIdStr)
+	if err != nil {
+		return mcp.NewToolResultError("некорректный link_id"), nil
+	}
+
+	var link dao.IssueLink
+	if err := d.DB.
+		Where("issue_links.id = ?", linkID).
+		Where("project_id in (?)", d.DB.Select("project_id").Where("member_id = ?", user.ID).Model(dao.ProjectMember{})).
+		First(&link).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return mcp.NewToolResultError("ссылка не найдена"), nil
+		}
+		return logger.Error(err), nil
+	}
+	if errRes := authorizeLinkIssue(ctx, d, user, link.IssueId); errRes != nil {
+		return errRes, nil
+	}
+	var issue dao.Issue
+	if err := d.DB.Preload("Links").Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	oldSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := d.DB.Delete(&link).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	if err := d.DB.Preload("Links").Where("id = ?", link.IssueId).First(&issue).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	newSnapshot := tracker.IssueToSnapshot(issue)
+
+	if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, issue, user); err != nil {
+		slog.Error("MCP issue action: track changes failed", "error", err)
+	}
+
+	return mcp.NewToolResultText("ссылка удалена"), nil
+}
+
+// loadCommentSubject находит комментарий и собирает субъект по его задаче.
+func loadCommentSubject(db *gorm.DB, user *dao.User, commentID uuid.UUID) (*dao.IssueComment, *apicontext.APIContext, *mcp.CallToolResult) {
+	var comment dao.IssueComment
+	if err := db.Preload("Issue").Preload("Issue.Assignees").Preload("Issue.Project").
+		Where("id = ?", commentID).
+		First(&comment).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, apierrors.ErrIssueCommentNotFound.MCPError()
+		}
+		return nil, nil, logger.Error(err)
+	}
+
+	subject, err := apicontext.LoadIssueSubject(db, user, comment.Issue)
+	if err != nil {
+		return nil, nil, mcpError(err)
+	}
+	return &comment, subject, nil
+}
+
+func updateIssueComment(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	commentID, err := GetUUIDArg(args, "comment_id")
+	if err != nil || commentID == uuid.Nil {
+		return apierrors.ErrIssueCommentNotFound.MCPError(), nil
+	}
+
+	newHTML, _ := args["comment_html"].(string)
+
+	comment, subject, errRes := loadCommentSubject(d.DB, user, commentID)
+	if errRes != nil {
+		return errRes, nil
+	}
+
+	oldSnapshot := tracker.CommentToSnapshot(comment)
+
+	// Правило зависит от самого комментария — проверяется с объектом действия.
+	if err := d.Policy.Authorize(ctx, engine.ActionIssueCommentUpdate, subject, policy.On(comment)); err != nil {
+		return apierrors.ErrCommentEditForbidden.MCPError(), nil
+	}
+
+	if comment.CommentHtml.Body == newHTML {
+		return mcp.NewToolResultJSON(comment.ToDTO())
+	}
+
+	body := types.RedactorHTML{Body: newHTML}
+	stripped := types.RemoveInvisibleChars(newHTML)
+	if body.StripTags() == "" && stripped == "" {
+		return apierrors.ErrIssueCommentEmpty.MCPError(), nil
+	}
+
+	comment.CommentHtml = body
+	comment.CommentStripped = stripped
+	comment.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+	if err := d.DB.Omit(clause.Associations).Save(comment).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	newSnapshot := tracker.CommentToSnapshot(comment)
+
+	comment.Actor = user
+	if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, newSnapshot, comment.Issue, user); err != nil {
+		slog.Error("MCP comment action: track changes failed", "error", err)
+	}
+
+	return mcp.NewToolResultJSON(comment.ToDTO())
+}
+
+func deleteIssueComment(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	commentID, err := GetUUIDArg(request.GetArguments(), "comment_id")
+	if err != nil || commentID == uuid.Nil {
+		return apierrors.ErrIssueCommentNotFound.MCPError(), nil
+	}
+
+	comment, subject, errRes := loadCommentSubject(d.DB, user, commentID)
+	if errRes != nil {
+		return errRes, nil
+	}
+	oldSnapshot := tracker.CommentToSnapshot(comment)
+	issue := comment.Issue
+
+	if err := d.Policy.Authorize(ctx, engine.ActionIssueCommentDelete, subject, policy.On(comment)); err != nil {
+		return apierrors.ErrCommentEditForbidden.MCPError(), nil
+	}
+
+	if err := d.DB.Delete(comment).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	if err := d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, oldSnapshot, nil, issue, user); err != nil {
+		slog.Error("MCP issue delete: track changes failed", "error", err)
+	}
+
+	return mcp.NewToolResultText("комментарий удалён"), nil
+}
+
+func addCommentReaction(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	commentID, err := GetUUIDArg(args, "comment_id")
+	if err != nil || commentID == uuid.Nil {
+		return apierrors.ErrIssueCommentNotFound.MCPError(), nil
+	}
+	reaction, _ := args["reaction"].(string)
+	if !validReactionsMCP[reaction] {
+		return apierrors.ErrInvalidReaction.MCPError(), nil
+	}
+
+	_, subject, errRes := loadCommentSubject(d.DB, user, commentID)
+	if errRes != nil {
+		return errRes, nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueCommentReact, subject); errRes != nil {
+		return errRes, nil
+	}
+
+	var existing dao.CommentReaction
+	err = d.DB.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, commentID, reaction).First(&existing).Error
+	if err == nil {
+		return mcp.NewToolResultJSON(existing.ToDTO())
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return logger.Error(err), nil
+	}
+
+	created := dao.CommentReaction{
+		Id:        dao.GenUUID(),
+		CreatedAt: time.Now(),
+		UserId:    user.ID,
+		CommentId: commentID,
+		Reaction:  reaction,
+	}
+	if err := d.DB.Create(&created).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	return mcp.NewToolResultJSON(created.ToDTO())
+}
+
+func removeCommentReaction(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	commentID, err := GetUUIDArg(args, "comment_id")
+	if err != nil || commentID == uuid.Nil {
+		return apierrors.ErrIssueCommentNotFound.MCPError(), nil
+	}
+	reaction, _ := args["reaction"].(string)
+	if reaction == "" {
+		return mcp.NewToolResultError("reaction обязателен"), nil
+	}
+
+	_, subject, errRes := loadCommentSubject(d.DB, user, commentID)
+	if errRes != nil {
+		return errRes, nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueCommentReact, subject); errRes != nil {
+		return errRes, nil
+	}
+
+	res := d.DB.Where("user_id = ? AND comment_id = ? AND reaction = ?", user.ID, commentID, reaction).
+		Delete(&dao.CommentReaction{})
+	if res.Error != nil {
+		return logger.Error(res.Error), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("удалено реакций: %d", res.RowsAffected)), nil
+}
+
+func getIssueHistory(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+
+	var issueActivities []dao.ActivityEvent
+	if err := d.DB.Preload(clause.Associations).
+		Where("issue_id = ?", issue.ID).
+		Where("project_id = ?", issue.ProjectId).
+		Where("field != ?", activities.Comment.Field.String()).
+		Where("entity_type = ?", types.LayerIssue).
+		Order("created_at DESC").
+		Find(&issueActivities).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	var issueComments []dao.IssueComment
+	if err := d.DB.Where("issue_id = ?", issue.ID).
+		Where("project_id = ?", issue.ProjectId).
+		Order("created_at DESC").
+		Preload(clause.Associations).
+		Find(&issueComments).Error; err != nil {
+		return logger.Error(err), nil
+	}
+
+	type historyEntry struct {
+		Kind      string                 `json:"kind"`
+		CreatedAt time.Time              `json:"created_at"`
+		Activity  *dto.ActivityEventFull `json:"activity,omitempty"`
+		Comment   *dto.IssueComment      `json:"comment,omitempty"`
+	}
+
+	entries := make([]historyEntry, 0, len(issueActivities)+len(issueComments))
+	for i := range issueActivities {
+		a := issueActivities[i].ToDTO()
+		entries = append(entries, historyEntry{Kind: "activity", CreatedAt: a.CreatedAt, Activity: a})
+	}
+	for i := range issueComments {
+		c := issueComments[i].ToDTO()
+		entries = append(entries, historyEntry{Kind: "comment", CreatedAt: c.CreatedAt, Comment: c})
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].CreatedAt.After(entries[j].CreatedAt) })
+
+	return mcp.NewToolResultJSON(map[string]interface{}{
+		"count":   len(entries),
+		"history": entries,
+	})
+}
+
+func getCommentHistory(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+	commentID, err := GetUUIDArg(args, "comment_id")
+	if err != nil || commentID == uuid.Nil {
+		return apierrors.ErrIssueCommentNotFound.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue := subject.GetIssue()
+
+	limit := 100
+	offset := -1
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+		if limit > 200 {
+			limit = 200
+		}
+	}
+	if o, ok := args["offset"].(float64); ok {
+		offset = int(o)
+	}
+
+	var activities []dao.ActivityEvent
+	query := d.DB.
+		Joins("Actor").
+		Where("activity_events.project_id = ?", issue.ProjectId).
+		Where("activity_events.issue_id = ?", issue.ID).
+		Where("activity_events.new_identifier = ?", commentID).
+		Where("entity_type = ?", types.LayerIssue).
+		Order("activity_events.created_at DESC")
+
+	resp, err := dao.PaginationRequest(offset, limit, query, &activities)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+
+	result := utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent),
+		func(a *dao.ActivityEvent) dto.CommentHistory {
+			body := types.RedactorHTML{Body: a.NewValue}
+			var commentNullID uuid.NullUUID
+			if a.NewIssueComment != nil {
+				commentNullID = uuid.NullUUID{UUID: a.NewIssueComment.Id, Valid: true}
+			}
+			return dto.CommentHistory{
+				CommentHtml:     body,
+				CommentStripped: body.StripTags(),
+				UpdatedById:     a.ActorID,
+				ActorUpdate:     a.Actor.ToLightDTO(),
+				CommentId:       commentNullID,
+				CreatedAt:       a.CreatedAt,
+			}
+		})
+
+	resp.Result = result
+	return mcp.NewToolResultJSON(resp)
+}
+
+const (
+	relationParent = iota
+	relationSub
+	relationBlocks
+	relationBlockers
+	relationLinked
+)
+
+func getAvailableIssuesForRelation(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+	relationStr, _ := args["relation"].(string)
+	relationMap := map[string]int{
+		"parent":   relationParent,
+		"sub":      relationSub,
+		"blocks":   relationBlocks,
+		"blockers": relationBlockers,
+		"linked":   relationLinked,
+	}
+	relationType, ok := relationMap[relationStr]
+	if !ok {
+		return mcp.NewToolResultError("неизвестный тип отношения"), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	currentIssue, pm := subject.GetIssue(), subject.GetProjectMember()
+
+	if currentIssue.Author == nil {
+		var author dao.User
+		if err := d.DB.Where("id = ?", currentIssue.CreatedById).First(&author).Error; err == nil {
+			currentIssue.Author = &author
+		}
+	}
+
+	offset := 0
+	limit := 100
+	orderBy := "name"
+	desc := false
+	searchQuery := ""
+
+	if v, ok := args["offset"].(float64); ok {
+		offset = int(v)
+	}
+	if v, ok := args["limit"].(float64); ok && v > 0 {
+		limit = int(v)
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if v, ok := args["order_by"].(string); ok && v != "" {
+		orderBy = v
+	}
+	if v, ok := args["desc"].(bool); ok {
+		desc = v
+	}
+	if v, ok := args["search_query"].(string); ok {
+		searchQuery = v
+	}
+
+	query := d.DB.
+		Preload("Workspace").
+		Preload("Watchers").
+		Preload("Assignees").
+		Preload("Author").
+		Joins("join projects p on p.id = issues.project_id").
+		Where("issues.id != ?", currentIssue.ID).
+		Where("project_id = ?", currentIssue.ProjectId).
+		Order(clause.OrderByColumn{
+			Column: clause.Column{Name: orderBy},
+			Desc:   desc,
+		})
+
+	if pm.Role < types.AdminRole && (relationType == relationParent || relationType == relationSub) {
+		query = query.Where(dao.Issue{}.RelationCandidates(d.DB, user.ID, pm.Role))
+	}
+
+	switch relationType {
+	case relationParent:
+		familyIDs, err := getDescendantIssueIDsMCP(d.DB, currentIssue.ID)
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if len(familyIDs) > 0 {
+			query = query.Where("issues.id NOT IN (?)", familyIDs)
+		}
+		if currentIssue.ParentId.Valid {
+			query = query.Where("issues.id != ?", currentIssue.ParentId)
+		}
+	case relationSub:
+		query = query.Where("parent_id is null")
+		if currentIssue.ParentId.Valid {
+			rootID, err := getRootAncestorIDMCP(d.DB, currentIssue.ID)
+			if err != nil {
+				return logger.Error(err), nil
+			}
+			query = query.Where("issues.id != ?", rootID)
+		}
+	case relationBlocks:
+		blockedIDs, err := getBlockedIssueIDsMCP(d.DB, currentIssue.ID)
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if len(blockedIDs) > 0 {
+			query = query.Where("issues.id NOT IN (?)", blockedIDs)
+		}
+		query = query.Where("issues.id NOT IN (?)",
+			d.DB.Select("block_id").
+				Where("blocked_by_id = ?", currentIssue.ID).
+				Where("project_id = ?", currentIssue.ProjectId).
+				Model(&dao.IssueBlocker{}),
+		)
+	case relationBlockers:
+		blockingIDs, err := getBlockingIssueIDsMCP(d.DB, currentIssue.ID)
+		if err != nil {
+			return logger.Error(err), nil
+		}
+		if len(blockingIDs) > 0 {
+			query = query.Where("issues.id NOT IN (?)", blockingIDs)
+		}
+		query = query.Where("issues.id NOT IN (?)",
+			d.DB.Select("blocked_by_id").
+				Where("block_id = ?", currentIssue.ID).
+				Where("project_id = ?", currentIssue.ProjectId).
+				Model(&dao.IssueBlocker{}),
+		)
+	case relationLinked:
+		if d.Policy.Authorize(ctx, engine.ActionIssueRelationManage, subject) != nil {
+			query = query.Where("1 = 0")
+		}
+	}
+
+	if searchQuery != "" {
+		query = query.Where(dao.Issue{}.FullTextSearch(d.DB, searchQuery))
+	}
+
+	var issues []dao.Issue
+	resp, err := dao.PaginationRequest(offset, limit, query, &issues)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.Issue), func(i *dao.Issue) dto.Issue { return *i.ToDTO() })
+	return mcp.NewToolResultJSON(resp)
+}
+
+func getDescendantIssueIDsMCP(tx *gorm.DB, issueID uuid.UUID) ([]string, error) {
+	var ids []string
+	err := tx.Raw(`
+		WITH RECURSIVE descendant_chain AS (
+			SELECT id, parent_id FROM issues WHERE id = ? OR parent_id = ?
+			UNION ALL
+			SELECT i.id, i.parent_id FROM issues i
+			INNER JOIN descendant_chain dc ON i.parent_id = dc.id
+		)
+		SELECT id FROM descendant_chain WHERE id != ?;
+	`, issueID, issueID, issueID).Scan(&ids).Error
+	return ids, err
+}
+
+func getBlockedIssueIDsMCP(tx *gorm.DB, issueID uuid.UUID) ([]string, error) {
+	var ids []string
+	err := tx.Raw(`
+		WITH RECURSIVE blocked_chain AS (
+			SELECT block_id FROM issue_blockers WHERE blocked_by_id = ?
+			UNION ALL
+			SELECT ib.block_id FROM issue_blockers ib
+			INNER JOIN blocked_chain bc ON ib.blocked_by_id = bc.block_id
+		)
+		SELECT DISTINCT block_id FROM blocked_chain;
+	`, issueID).Scan(&ids).Error
+	return ids, err
+}
+
+func getBlockingIssueIDsMCP(tx *gorm.DB, issueID uuid.UUID) ([]string, error) {
+	var ids []string
+	err := tx.Raw(`
+		WITH RECURSIVE blocking_chain AS (
+			SELECT blocked_by_id FROM issue_blockers WHERE block_id = ?
+			UNION ALL
+			SELECT ib.blocked_by_id FROM issue_blockers ib
+			INNER JOIN blocking_chain bc ON ib.block_id = bc.blocked_by_id
+		)
+		SELECT DISTINCT blocked_by_id FROM blocking_chain;
+	`, issueID).Scan(&ids).Error
+	return ids, err
+}
+
+func moveSubIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+	subIssueID, err := GetUUIDArg(args, "sub_issue_id")
+	if err != nil || subIssueID == uuid.Nil {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+	direction, _ := args["direction"].(string)
+	if direction != "up" && direction != "down" {
+		return mcp.NewToolResultError("direction должен быть 'up' или 'down'"), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssueRelationManage, subject); errRes != nil {
+		return errRes, nil
+	}
+	parentIssue := subject.GetIssue()
+
+	if err := d.DB.Transaction(func(tx *gorm.DB) error {
+		var subIssue dao.Issue
+		baseUpd := tx.Model(&subIssue).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "sort_order"}}}).
+			Where("id = ?", subIssueID).
+			Where("workspace_id = ?", parentIssue.WorkspaceId).
+			Where("project_id = ?", parentIssue.ProjectId).
+			Where("parent_id = ?", parentIssue.ID)
+
+		var updateErr error
+		if direction == "up" {
+			updateErr = baseUpd.Update("sort_order", gorm.Expr("GREATEST(sort_order - 1, 0)")).Error
+		} else {
+			updateErr = baseUpd.Update("sort_order",
+				gorm.Expr("LEAST(sort_order + 1, (?))",
+					tx.Select("max(sort_order) + 1").
+						Where("workspace_id = ?", parentIssue.WorkspaceId).
+						Where("project_id = ?", parentIssue.ProjectId).
+						Where("parent_id = ?", parentIssue.ID).
+						Where("id != ?", subIssueID).
+						Model(&dao.Issue{}),
+				)).Error
+		}
+		if updateErr != nil {
+			return updateErr
+		}
+
+		neighborDelta := 1
+		if direction == "down" {
+			neighborDelta = -1
+		}
+		return tx.Model(&dao.Issue{}).
+			Where("workspace_id = ?", parentIssue.WorkspaceId).
+			Where("project_id = ?", parentIssue.ProjectId).
+			Where("parent_id = ?", parentIssue.ID).
+			Where("sort_order = ?", subIssue.SortOrder).
+			Where("id != ?", subIssueID).
+			Update("sort_order", subIssue.SortOrder+neighborDelta).Error
+	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrIssueNotFound.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	return mcp.NewToolResultText("подзадача перемещена"), nil
+}
+
+func setIssuePinned(ctx context.Context, d Deps, user *dao.User, issueIdOrSeq string, pinned bool) *mcp.CallToolResult {
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes
+	}
+	if errRes := authorize(ctx, d, engine.ActionIssuePin, subject); errRes != nil {
+		return errRes
+	}
+	issue := subject.GetIssue()
+	if err := d.DB.Model(&dao.Issue{}).Where("id = ?", issue.ID).UpdateColumn("pinned", pinned).Error; err != nil {
+		return logger.Error(err)
+	}
+	if pinned {
+		return mcp.NewToolResultText("задача закреплена")
+	}
+	return mcp.NewToolResultText("задача откреплена")
+}
+
+func pinIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+	return setIssuePinned(ctx, d, user, issueIdOrSeq, true), nil
+}
+
+func unpinIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+	return setIssuePinned(ctx, d, user, issueIdOrSeq, false), nil
+}
+
+func getIssueProperties(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueIdOrSeq, ok := request.GetArguments()["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue, pm := subject.GetIssue(), subject.GetProjectMember()
+
+	result, err := dao.ListIssuePropertiesDTO(d.DB, issue, pm.Role == types.AdminRole)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+
+	return listResult(result)
+}
+
+func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	issueIdOrSeq, ok := args["issue_id"].(string)
+	if !ok || issueIdOrSeq == "" {
+		return apierrors.ErrIssueNotFound.MCPError(), nil
+	}
+	templateID, err := GetUUIDArg(args, "template_id")
+	if err != nil || templateID == uuid.Nil {
+		return apierrors.ErrPropertyTemplateNotFound.MCPError(), nil
+	}
+	value, hasValue := args["value"]
+	if !hasValue {
+		return mcp.NewToolResultError("value обязателен"), nil
+	}
+
+	subject, errRes := loadIssueSubject(d.DB, user, issueIdOrSeq)
+	if errRes != nil {
+		return errRes, nil
+	}
+	issue, pm := subject.GetIssue(), subject.GetProjectMember()
+
+	var template dao.ProjectPropertyTemplate
+	if err := d.DB.Where("id = ? AND project_id = ?", templateID, issue.ProjectId).First(&template).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierrors.ErrPropertyTemplateNotFound.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	if errRes := authorize(ctx, d, engine.ActionIssueSetProperty, subject); errRes != nil {
+		return errRes, nil
+	}
+
+	if template.OnlyAdmin && pm.Role < types.AdminRole {
+		return apierrors.ErrPropertyOnlyAdminCanSet.MCPError(), nil
+	}
+
+	if err := validatePropertyValueMCP(template, value); err != nil {
+		return apierrors.ErrPropertyValueValidationFailed.MCPError(), nil
+	}
+	// Настройка шаблона multiselect: значения в списке не повторяются
+	if !types.CheckUniqueValues(template.Type, template.UniqueValues, value) {
+		return apierrors.ErrPropertyValuesNotUnique.MCPError(), nil
+	}
+
+	valueStr := serializePropertyValueMCP(value)
+
+	// Для lookup-полей значение - id строки справочника: строка должна существовать
+	// в справочнике шаблона и быть не архивной
+	var lookupRow *dao.DictionaryRow
+	if template.Type == "lookup" {
+		lookupRow, err = dao.CheckLookupValue(d.DB, template, valueStr)
+		switch {
+		case errors.Is(err, dao.ErrLookupRowNotFound):
+			return apierrors.ErrDictionaryRowNotFound.MCPError(), nil
+		case errors.Is(err, dao.ErrLookupRowArchived):
+			return apierrors.ErrPropertyValueValidationFailed.MCPError(), nil
+		case err != nil:
+			return logger.Error(err), nil
+		}
+	}
+
+	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
+	if err := dao.CheckDependencyValue(d.DB, template, issue.ID, valueStr, lookupRow); err != nil {
+		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
+			return apierrors.ErrPropertyValueIncompatible.MCPError(), nil
+		}
+		return logger.Error(err), nil
+	}
+
+	// Для lookup хук получает отображаемое значение строки справочника, не id
+	hookValue := valueStr
+	if lookupRow != nil {
+		hookValue = lookupRow.Value
+	}
+	if err := d.Policy.BeforePropertyChange(ctx, subject, *issue, template, hookValue); err != nil {
+		return mcpError(err), nil
+	}
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+
+	var existing dao.IssueProperty
+	err = d.DB.Where("issue_id = ? AND template_id = ?", issue.ID, templateID).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		existing = dao.IssueProperty{
+			Id:          dao.GenUUID(),
+			IssueId:     issue.ID,
+			TemplateId:  templateID,
+			ProjectId:   issue.ProjectId,
+			WorkspaceId: issue.WorkspaceId,
+			Value:       valueStr,
+			CreatedById: userID,
+			UpdatedById: userID,
+		}
+		if err := d.DB.Create(&existing).Error; err != nil {
+			return logger.Error(err), nil
+		}
+	} else if err != nil {
+		return logger.Error(err), nil
+	} else {
+		existing.Value = valueStr
+		existing.UpdatedById = userID
+		if err := d.DB.Save(&existing).Error; err != nil {
+			return logger.Error(err), nil
+		}
+	}
+
+	// Смена значения родителя каскада: сбрасываем ставшие недопустимыми значения детей
+	resetProperties, err := dao.ResetIncompatibleChildren(d.DB, template, issue.ID, valueStr, user.ID)
+	if err != nil {
+		return logger.Error(err), nil
+	}
+
+	existing.Template = &template
+	resp := existing.ToDTO()
+	if lookupRow != nil {
+		resp.ValueLabel = &lookupRow.Value
+	}
+	resp.ResetProperties = resetProperties
+	return mcp.NewToolResultJSON(resp)
+}
+
+func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) error {
+	schema := types.GenValueSchema(template.Type, template.Options)
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", schema); err != nil {
+		return err
+	}
+	sch, err := compiler.Compile("schema.json")
+	if err != nil {
+		return err
+	}
+	if err := sch.Validate(value); err != nil {
+		return err
+	}
+	// Семантика дат: JSON Schema паттерном не поймать 2026-13-45 или unix вне диапазона
+	if !types.CheckDateValue(template.Type, value) {
+		return apierrors.ErrPropertyValueValidationFailed
+	}
+	return nil
+}
+
+// serializePropertyValueMCP сериализует значение в строку для хранения в БД
+// (объект link и массив multiselect - JSON, см. dao.SerializePropertyValue)
+func serializePropertyValueMCP(value any) string {
+	return dao.SerializePropertyValue(value)
+}

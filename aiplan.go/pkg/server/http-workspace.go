@@ -1,0 +1,2107 @@
+// Пакет server предоставляет функциональность для управления рабочими пространствами, включая создание, редактирование, добавление участников, интеграции и историю изменений.  Он включает в себя API для работы с рабочими пространствами, а также логику для управления пользователями и их правами доступа.
+package server
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
+	"net/http"
+	"slices"
+	"strings"
+	"time"
+
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/cache"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/limiter"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/pkg/stack-error"
+
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
+
+	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
+
+	tracker "github.com/aisa-it/aiplan/aiplan.go/pkg/activity-tracker"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/gofrs/uuid"
+	"github.com/labstack/echo/v4"
+	"github.com/sethvargo/go-password/password"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+func (s *Services) LastVisitedWorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		apiContext := apicontext.GetContext(c)
+		if apiContext == nil {
+			return next(c)
+		}
+
+		workspace := apiContext.GetWorkspace()
+		user := apiContext.GetUser()
+		if apiContext.Error() != nil {
+			return EError(c, apiContext.Error())
+		}
+
+		if !user.LastWorkspaceId.Valid || user.LastWorkspaceId.UUID != workspace.ID {
+			user.LastWorkspace = workspace
+			if err := s.DB(c).Model(user).Update("last_workspace_id", workspace.ID).Error; err != nil {
+				return EError(c, err)
+			}
+		}
+
+		return next(c)
+	}
+}
+
+func (s *Services) WorkspaceMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		slugOrId := c.Param("workspaceSlug")
+
+		user := apicontext.GetContext(c).GetUser()
+
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			etag = strings.TrimSuffix(etag, user.ID.String())
+			var exist bool
+			if err := s.DB(c).Model(&dao.Workspace{}).
+				Select("EXISTS(?)",
+					s.DB(c).Model(&dao.Workspace{}).
+						Select("1").
+						Where("encode(hash, 'hex') = ?", etag),
+				).
+				Find(&exist).Error; err != nil {
+				return EError(c, err)
+			}
+
+			if exist {
+				return c.NoContent(http.StatusNotModified)
+			}
+		}
+
+		// Check if workspace exists
+		exists, err := dao.IsWorkspaceExists(s.DB(c), user, slugOrId)
+		if err != nil {
+			return EError(c, err)
+		}
+		if !exists {
+			return EErrorDefined(c, apierrors.ErrWorkspaceNotFound)
+		}
+
+		return next(c)
+	}
+}
+
+// AddWorkspaceServices - добавление сервисов рабочих пространств
+func (s *Services) AddWorkspaceServices(g *echo.Group) {
+	workspaceGroup := g.Group(workspaceScopePrefix, s.WorkspaceMiddleware)
+	workspaceGroup.Use(s.LastVisitedWorkspaceMiddleware)
+
+	g.GET("users/me/workspaces/", s.getUserWorkspaceList)
+
+	g.GET("users/user-favorite-workspaces/", s.getFavoriteWorkspaceList)
+	g.POST("users/user-favorite-workspaces/", s.addWorkspaceToFavorites)
+	g.DELETE("users/user-favorite-workspaces/:workspaceID/", s.removeWorkspaceFromFavorites)
+
+	g.POST("workspaces/", s.createWorkspace)
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/", engine.ActionWorkspaceView, s.getWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/permissions/", engine.ActionWorkspaceView, s.getWorkspacePermissions)
+	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/", engine.ActionWorkspaceUpdate, s.updateWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/logo/", engine.ActionWorkspaceUpdate, s.updateWorkspaceLogo)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/logo/", engine.ActionWorkspaceUpdate, s.deleteWorkspaceLogo)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/", engine.ActionWorkspaceDelete, s.deleteWorkspace)
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/summary/", engine.ActionWorkspaceView, s.getWorkspaceSummary)
+
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/invite/", engine.ActionWorkspaceInvite, s.addToWorkspace)
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/activities/", engine.ActionWorkspaceActivity, s.getWorkspaceActivityList)
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/members/", engine.ActionWorkspaceMemberView, s.getWorkspaceMemberList)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/members/me/", engine.ActionWorkspaceMemberView, s.getWorkspaceCurrentMembership)
+	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/members/:memberId/", engine.ActionWorkspaceMemberManage, s.updateWorkspaceMember)
+	s.workspaceRoute(workspaceGroup, http.MethodPatch, "/members/:memberId/set-email/", engine.ActionWorkspaceMemberManage, s.updateUserEmail)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/members/:memberId/", engine.ActionWorkspaceMemberManage, s.deleteWorkspaceMember)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/me/notifications/", engine.ActionWorkspaceSelfSettings, s.updateMyWorkspaceNotifications)
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/members/activities/", engine.ActionWorkspaceMemberView, s.getWorkspaceMembersActivityList)
+
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/members/message/", engine.ActionWorkspaceMemberManage, s.createMessageForWorkspaceMember)
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/token/", engine.ActionWorkspaceView, s.getWorkspaceToken)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/token/reset/", engine.ActionWorkspaceTokenManage, s.resetWorkspaceToken)
+
+	g.GET("users/last-visited-workspace/", s.getLastVisitedWorkspace)
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/workspace-members/me/", engine.ActionWorkspaceMemberView, s.getWorkspaceMemberMe) // Legacy TODO: delete after front
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/states/", engine.ActionWorkspaceView, s.getWorkspaceStateList)
+
+	if !cfg.JitsiDisabled {
+		s.workspaceRoute(workspaceGroup, http.MethodGet, "/jitsi-token/", engine.ActionWorkspaceView, s.getWorkspaceJitsiToken, NewJitsiTokenLogMiddleware(s.db))
+	}
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/integrations/", engine.ActionWorkspaceView, s.getIntegrationList)
+	s.workspaceRoute(workspaceGroup, http.MethodPost, "/integrations/add/:name/", engine.ActionWorkspaceIntegrationManage, s.addIntegrationToWorkspace)
+	s.workspaceRoute(workspaceGroup, http.MethodDelete, "/integrations/:name/", engine.ActionWorkspaceIntegrationManage, s.deleteIntegrationFromWorkspace)
+
+	s.workspaceRoute(workspaceGroup, http.MethodGet, "/tariff/", engine.ActionWorkspaceView, s.getWorkspaceTariff)
+}
+
+// getWorkspaceMemberMe godoc
+// @id getWorkspaceMemberMe
+// @Summary Пространство: получение информации о текущем участнике рабочего пространства
+// @Description Возвращает данные участника для текущего пользователя в рабочем пространстве.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceMember "Успешный ответ с данными текущего участника рабочего пространства"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/workspace-members/me/ [get]
+func (s *Services) getWorkspaceMemberMe(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	wm := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	return c.JSON(http.StatusOK, wm.ToDTO())
+}
+
+// ############# Workspace methods ###################
+
+// getWorkspace godoc
+// @id getWorkspace
+// @Summary Пространство: получение информации о рабочем пространстве
+// @Description Возвращает информацию о рабочем пространстве по его ID
+// @Tags Workspace
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.Workspace "Информация о рабочем пространстве"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug} [get]
+func (s *Services) getWorkspace(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	c.Response().Header().Add("ETag", hex.EncodeToString(workspace.Hash))
+
+	result := workspace.ToDTO()
+	permissions, err := s.policy.WorkspacePermissions(c.Request().Context(), apiContext, workspace)
+	if err != nil {
+		return EError(c, err)
+	}
+	result.Permissions = permissions.Strings()
+	return c.JSON(http.StatusOK, result)
+}
+
+// getWorkspacePermissions godoc
+// @id getWorkspacePermissions
+// @Summary Пространство: права текущего пользователя в пространстве
+// @Description Возвращает разрешённые действия в пространстве плоской картой вида {"workspace.update": true, "project.create": false}. Ролей наружу не отдаёт.
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} map[string]bool "Разрешённые действия"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/permissions [get]
+func (s *Services) getWorkspacePermissions(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	permissions, err := s.policy.WorkspacePermissions(c.Request().Context(), apiContext, workspace)
+	if err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, permissions.Strings())
+}
+
+// updateWorkspace godoc
+// @id updateWorkspace
+// @Summary Пространство: обновление данных рабочего пространства
+// @Description Обновляет информацию о рабочем пространстве
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param workspace body dto.Workspace false "Объект рабочего пространства с обновленными данными"
+// @Success 200 {object} dto.Workspace "Информация о обновленном рабочем пространстве"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка запроса"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство или администратор не найдены"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug} [patch]
+func (s *Services) updateWorkspace(c echo.Context) error {
+	apiCtx := apicontext.GetContext(c)
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	oldOwnerId := workspace.OwnerId
+	id := workspace.ID
+	if err := c.Bind(&workspace); err != nil {
+		return EError(c, err)
+	}
+	workspace.ID = id
+	workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+	workspace.Name = strings.TrimSpace(workspace.Name)
+	//var newMemberOwnerEmail string
+	err := c.Validate(workspace)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	changeOwner := oldOwnerId != workspace.OwnerId
+	// Check new owner id exists and admin
+	if changeOwner {
+		var member dao.WorkspaceMember
+		if err := s.DB(c).
+			Joins("Member").
+			Where("workspace_id = ?", workspace.ID).
+			Where("member_id = ?", workspace.OwnerId).
+			Where("workspace_members.role = ?", 15).Find(&member).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return EErrorDefined(c, apierrors.ErrWorkspaceAdminNotFound)
+			}
+			return EError(c, err)
+		}
+		//newMemberOwnerEmail = member.Member.Email
+	}
+
+	if !user.IsSuperuser && user.ID != oldOwnerId && oldOwnerId != workspace.OwnerId {
+		return EErrorDefined(c, apierrors.ErrPermissionChangeWorkspaceOwner)
+	}
+
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select([]string{"name", "description", "company_size", "owner_id"}).Updates(&workspace).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	err = s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, workspace.ToDTO())
+}
+
+// updateWorkspaceLogo godoc
+// @id updateWorkspaceLogo
+// @Summary Пространство (логотип): обновление пространства
+// @Description Загружает новый логотип для указанного рабочего пространства и обновляет запись в базе данных.
+// @Tags Workspace
+// @Accept multipart/form-data
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param file formData file true "Файл логотипа"
+// @Success 200 {object} dto.Workspace "Обновленное рабочее пространство"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка: неверный формат файла"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для обновления логотипа"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/logo [post]
+func (s *Services) updateWorkspaceLogo(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	if !limiter.Limiter.CanAddAttachment(workspace.ID) {
+		return EError(c, apierrors.ErrAssetsLimitExceed)
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		return EError(c, err)
+	}
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	fileAsset := dao.FileAsset{
+		Id:          dao.GenUUID(),
+		CreatedById: userID,
+		WorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
+	}
+
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		var oldLogo dao.FileAsset
+		if workspace.LogoAsset != nil {
+			if err := tx.Where("id = ?", workspace.LogoId).First(&oldLogo).Error; err != nil {
+				if err != gorm.ErrRecordNotFound {
+					return err
+				}
+			}
+		}
+
+		if err := s.uploadAssetForm(tx, file, &fileAsset, filestorage.Metadata{
+			WorkspaceId: workspace.ID.String(),
+		}); err != nil {
+			return err
+		}
+
+		workspace.LogoId = uuid.NullUUID{UUID: fileAsset.Id, Valid: true}
+		workspace.LogoAsset = &fileAsset
+		if err := tx.Select("logo_id").Updates(&workspace).Error; err != nil {
+			return err
+		}
+
+		if !oldLogo.Id.IsNil() {
+			if err := tx.Delete(&oldLogo).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return EError(c, err)
+	}
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, workspace.ToDTO())
+}
+
+// deleteWorkspaceLogo godoc
+// @id deleteWorkspaceLogo
+// @Summary Пространство (логотип): удаление логотипа пространства
+// @Description Удаляет логотип указанного рабочего пространства и обновляет запись в базе данных.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.Workspace "Обновленное рабочее пространство"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для удаления логотипа"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/logo [delete]
+func (s *Services) deleteWorkspaceLogo(c echo.Context) error {
+
+	apiCtx := apicontext.GetContext(c)
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		workspace.UpdatedById = uuid.NullUUID{UUID: user.ID, Valid: true}
+		workspace.LogoId = uuid.NullUUID{}
+		if err := tx.Select("logo_id").Updates(&workspace).Error; err != nil {
+			return err
+		}
+
+		if workspace.LogoAsset != nil {
+			if err := tx.Delete(&workspace.LogoAsset).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user)
+
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+	return c.JSON(http.StatusOK, workspace.ToDTO())
+}
+
+// deleteWorkspace godoc
+// @id deleteWorkspace
+// @Summary Пространство: удаление пространства
+// @Description Удаляет указанное рабочее пространство. Доступно только для суперпользователей и владельца рабочего пространства.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 "Рабочее пространство успешно удалено"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для удаления рабочего пространства"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug} [delete]
+func (s *Services) deleteWorkspace(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	// Cancel jira imports
+	if err := s.importService.CancelWorkspaceImports(workspace.ID); err != nil {
+		return EError(c, err)
+	}
+
+	if err := s.business.DeleteWorkspace(user, workspace); err != nil {
+		return EError(c, err)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+// getWorkspaceSummary godoc
+// @id getWorkspaceSummary
+// @Summary Пространство: получение сводки рабочего пространства
+// @Description Возвращает сводку рабочего пространства (проекты, спринты, формы) с учётом роли пользователя
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceSummaryResponse "Сводка рабочего пространства"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/summary/ [get]
+func (s *Services) getWorkspaceSummary(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	workspaceSummary := cache.WorkspaceSummary.Load(c.Request().Context(), workspaceMember.WorkspaceId)
+	if workspaceSummary == nil {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	// Роль подмешана в ETag, т.к. ниже по коду один и тот же кэш фильтруется по роли
+	// (Forms/Sprints/Projects) — без этого смена роли участника не сбросила бы старый ETag.
+	etag := fmt.Sprintf("%s-%d", hex.EncodeToString(workspaceSummary.Hash), workspaceMember.Role)
+
+	// Список приватных проектов для не-админов зависит от персонального членства (project_members),
+	// которое не входит в общий кэш сводки (он один на весь workspace, без разреза по пользователю).
+	// Досчитываем членство заранее и подмешиваем в ETag, иначе добавление/удаление пользователя
+	// из проекта не инвалидировало бы его старый ETag.
+	var membershipsMap map[uuid.UUID]struct{}
+	if workspaceMember.Role < types.AdminRole && len(workspaceSummary.Projects) > 0 {
+		var memberships []dao.ProjectMember
+		if err := s.DB(c).
+			Where("workspace_id = ?", workspaceMember.WorkspaceId).
+			Where("member_id = ?", user.ID).
+			Find(&memberships).Error; err != nil {
+			return EError(c, err)
+		}
+
+		membershipsMap = make(map[uuid.UUID]struct{}, len(memberships))
+		projectIds := make([]string, 0, len(memberships))
+		for _, member := range memberships {
+			membershipsMap[member.ProjectId] = struct{}{}
+			projectIds = append(projectIds, member.ProjectId.String())
+		}
+		slices.Sort(projectIds)
+
+		h := sha256.New()
+		for _, id := range projectIds {
+			h.Write([]byte(id))
+		}
+		etag += "-" + hex.EncodeToString(h.Sum(nil))
+	}
+
+	if c.Request().Header.Get("If-None-Match") == etag {
+		return c.NoContent(http.StatusNotModified)
+	}
+	c.Response().Header().Set("ETag", etag)
+
+	// Show forms only for admins
+	if workspaceMember.Role != types.AdminRole && len(workspaceSummary.Forms) > 0 {
+		workspaceSummary.Forms = make([]dto.FormLight, 0)
+	}
+
+	// Show sprints only for members and admins
+	if workspaceMember.Role < types.MemberRole && len(workspaceSummary.Sprints) > 0 {
+		workspaceSummary.Sprints = make([]dto.SprintFolder, 0)
+	}
+
+	if membershipsMap != nil {
+		filteredProjects := make([]dto.ProjectLight, 0, len(workspaceSummary.Projects))
+		for _, project := range workspaceSummary.Projects {
+			if _, ok := membershipsMap[project.ID]; ok || project.Public {
+				filteredProjects = append(filteredProjects, project)
+			}
+		}
+		workspaceSummary.Projects = filteredProjects
+	}
+
+	return c.JSON(http.StatusOK, workspaceSummary)
+}
+
+// ############# Activities methods ###################
+
+// getWorkspaceActivityList godoc
+// @id getWorkspaceActivityList
+// @Summary Пространство: получение активностей рабочего пространства
+// @Description Возвращает список активностей рабочего пространства с поддержкой пагинации
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param day query string false "День выборки активностей" default("")
+// @Param offset query int false "Смещение для пагинации" default(-1)
+// @Param limit query int false "Количество результатов на странице" default(100)
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.ActivityEventFull} "Список активностей рабочего пространства"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные параметры запроса"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/activities [get]
+func (s *Services) getWorkspaceActivityList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	ws := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	workspaceId := ws.ID
+
+	var day DayRequest
+	offset := -1
+	limit := 100
+
+	if err := echo.QueryParamsBinder(c).
+		TextUnmarshaler("day", &day).
+		Int("offset", &offset).
+		Int("limit", &limit).BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	query := s.db.
+		Joins("Project").
+		Joins("Workspace").
+		Joins("Actor").
+		Joins("Issue").
+		Joins("Doc").
+		Joins("Form").
+		Joins("Sprint").
+		Order("created_at desc").
+		Where("activity_events.workspace_id = ?", workspaceId)
+
+	if !time.Time(day).IsZero() {
+		query = query.Where("created_at >= ?", time.Time(day)).Where("created_at < ?", time.Time(day).Add(time.Hour*24))
+	}
+
+	var acts []dao.ActivityEvent
+	resp, err := dao.PaginationRequest(offset, limit, query, &acts)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	resp.Result = utils.SliceToSlice(resp.Result.(*[]dao.ActivityEvent), func(ea *dao.ActivityEvent) dto.ActivityEventFull { return *ea.ToDTO() })
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// ############# Workspace members methods ###################
+
+// getWorkspaceMemberList godoc
+// @id getWorkspaceMemberList
+// @Summary Пространство (участники): получение списка участников пространства
+// @Description Возвращает список участников указанного рабочего пространства. Включает поиск по email или имени.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param offset query int false "Смещение для пагинации" default(-1)
+// @Param limit query int false "Ограничение количества записей на странице" default(100)
+// @Param search_query query string false "Поисковый запрос для фильтрации участников по email или имени" default("")
+// @Param order_by query string false "Поле для сортировки: 'last_name' (по умолчанию), 'email', 'role'" default("last_name")
+// @Param desc query bool false "Направление сортировки: true - по убыванию, false - по возрастанию" default(true)
+// @Success 200 {object} dao.PaginationResponse{result=[]dto.WorkspaceMemberLight} "Список участников с учетом пагинации"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка валидации данных запроса"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members [get]
+func (s *Services) getWorkspaceMemberList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	offset := 0
+	limit := 1000
+	searchQuery := ""
+	orderBy := ""
+	desc := true
+
+	if err := echo.QueryParamsBinder(c).
+		Int("offset", &offset).
+		Int("limit", &limit).
+		String("search_query", &searchQuery).
+		String("order_by", &orderBy).
+		Bool("desc", &desc).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	if limit < 0 {
+		limit = -limit
+	}
+
+	if offset > limit || offset < 0 {
+		offset = 0
+	}
+
+	cMembers, ok := cache.WorkspaceMembersCache.Load(workspace.ID)
+	if ok && searchQuery == "" {
+		fullHash := fmt.Sprintf("%x%d%d%s%t", cMembers.Hash, offset, limit, orderBy, desc)
+
+		if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+			if fullHash == etag {
+				return c.NoContent(http.StatusNotModified)
+			}
+		}
+
+		c.Response().Header().Set("ETag", fullHash)
+
+		count := int64(len(cMembers.Members))
+		cMembers.Members = cache.SortWorkspaceMembers(cMembers.Members, offset, limit, orderBy, desc)
+
+		return c.JSON(http.StatusOK, dao.PaginationResponse{
+			Offset: offset,
+			Limit:  limit,
+			Count:  count,
+			Result: cMembers.Members,
+		})
+	}
+
+	switch orderBy {
+	case "email":
+		orderBy = "lower(\"Member\".email)"
+	case "role":
+		break
+	default:
+		orderBy = "lower(\"Member\".last_name)"
+	}
+
+	if desc {
+		orderBy = fmt.Sprintf("%s %s", orderBy, "desc")
+	} else {
+		orderBy = fmt.Sprintf("%s %s", orderBy, "asc")
+	}
+
+	query := s.DB(c).
+		Joins("Member").
+		Where("workspace_id in (?)", workspaceMember.WorkspaceId).
+		Order(orderBy)
+
+	if searchQuery != "" {
+		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		query = query.Where("lower(email) like ? or lower(last_name) like ? or lower(first_name) like ?", escapedSearchQuery, escapedSearchQuery, escapedSearchQuery)
+	}
+
+	var members []dao.WorkspaceMember
+	res, err := dao.PaginationRequest(
+		0,
+		1000,
+		query,
+		&members,
+	)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	for i := range members {
+		members[i].Workspace = workspace
+	}
+
+	res.Result = utils.SliceToSlice(res.Result.(*[]dao.WorkspaceMember), func(wm *dao.WorkspaceMember) dto.WorkspaceMemberLight { return *wm.ToLightDTO() })
+	if searchQuery == "" {
+		cache.WorkspaceMembersCache.Store(workspace.ID, res.Result.([]dto.WorkspaceMemberLight))
+	}
+
+	res.Result = res.Result.([]dto.WorkspaceMemberLight)[max(offset, 0):min(offset+limit, len(members))]
+
+	return c.JSON(http.StatusOK, res)
+}
+
+// getWorkspaceCurrentMembership godoc
+// @id getWorkspaceCurrentMembership
+// @Summary Пространство (участники): получение информации о текущем участнике рабочего пространства
+// @Description Возвращает данные участника для текущего пользователя в рабочем пространстве.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceMemberWithOwner "Успешный ответ с данными текущего участника рабочего пространства"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/me/ [get]
+func (s *Services) getWorkspaceCurrentMembership(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	res := dao.WorkspaceMemberWithOwner{
+		WorkspaceMember:  *workspaceMember,
+		IsWorkspaceOwner: workspaceMember.MemberId == workspace.OwnerId,
+	}
+	return c.JSON(http.StatusOK, res.ToDTOWithOwner())
+}
+
+// updateWorkspaceMember godoc
+// @id updateWorkspaceMember
+// @Summary Пространство (участники): обновление роли участника пространства
+// @Description Изменяет роль участника в рабочем пространстве. Администраторы могут назначать и изменять роли участников.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param memberId path string true "ID участника для обновления роли"
+// @Param role body requestRoleMember true "Новая роль участника"
+// @Success 200 {object} dto.WorkspaceMemberLight "Роль участника успешно обновлена"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка валидации данных запроса"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для обновления роли"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: участник или рабочее пространство не найдены"
+// @Failure 409 {object} apierrors.DefinedError "Ошибка: запрещено обновлять роль владельца рабочего пространства"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/{memberId} [patch]
+func (s *Services) updateWorkspaceMember(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	requestedMemberId := c.Param("memberId")
+
+	var req requestRoleMember
+
+	if err := c.Bind(&req); err != nil {
+		return EError(c, err)
+	}
+
+	var requestedMember dao.WorkspaceMember
+	if err := s.DB(c).
+		Preload("Member").
+		Where("id = ?", requestedMemberId).
+		Where("workspace_id = ?", workspace.ID).
+		First(&requestedMember).Error; err != nil {
+		return EError(c, err)
+	}
+	oldSnapshot := tracker.MemberToSnapshot(&requestedMember)
+
+	if requestedMember.MemberId == workspace.OwnerId {
+		return EErrorDefined(c, apierrors.ErrUpdateOwnerForbidden)
+	}
+
+	if user.ID == requestedMember.MemberId {
+		return EErrorDefined(c, apierrors.ErrUpdateOwnUserForbidden)
+	}
+
+	if workspaceMember.Role < requestedMember.Role {
+		return EErrorDefined(c, apierrors.ErrUpdateHigherRoleUserForbidden)
+	}
+
+	var oldMemberRole int
+	if req.Role != nil {
+		// Валидируем НОВОЕ значение роли: оно должно быть допустимым и не выше
+		// роли вызывающего (проверка выше сравнивает лишь с текущей ролью цели).
+		if !IsValidRole(*req.Role) {
+			return EErrorDefined(c, apierrors.ErrUnsupportedRole.WithFormattedMessage(*req.Role))
+		}
+		if *req.Role > workspaceMember.Role {
+			return EErrorDefined(c, apierrors.ErrUpdateHigherRoleUserForbidden)
+		}
+
+		oldMemberRole = *req.Role
+
+		userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+			requestedMember.UpdatedById = userID
+			requestedMember.UpdatedAt = time.Now()
+			requestedMember.Role = *req.Role
+			if err := tx.Save(&requestedMember).Error; err != nil {
+				return err
+			}
+
+			var projects []dao.Project
+			if err := tx.Where("workspace_id = ?", workspace.ID).Find(&projects).Error; err != nil {
+				return err
+			}
+
+			// -> AdminRole = add admin memberships to all projects
+			if *req.Role == types.AdminRole {
+				for _, project := range projects {
+					if err := tx.Clauses(clause.OnConflict{
+						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
+						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userID}),
+					}).Create(&dao.ProjectMember{
+						ID:                              dao.GenUUID(),
+						CreatedAt:                       time.Now(),
+						CreatedById:                     userID,
+						WorkspaceId:                     workspace.ID,
+						ProjectId:                       project.ID,
+						Role:                            types.AdminRole,
+						MemberId:                        requestedMember.MemberId,
+						ViewProps:                       types.DefaultViewProps,
+						NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsTG:    types.DefaultProjectMemberNS,
+						NotificationSettingsEmail:       types.DefaultProjectMemberNS,
+						NotificationSettingsApp:         types.DefaultProjectMemberNS,
+						NotificationSettingsTG:          types.DefaultProjectMemberNS,
+					}).Error; err != nil {
+						return err
+					}
+				}
+			}
+
+			// AdminRole -> not AdminRole = remove all memberships
+			if *req.Role != types.AdminRole && oldMemberRole == types.AdminRole {
+				if err := tx.
+					Where("workspace_id = ?", workspace.ID).
+					Where("member_id = ?", requestedMember.MemberId).
+					Delete(&dao.ProjectMember{}).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return EError(c, err)
+		}
+	}
+
+	newSnapshot := tracker.MemberToSnapshot(&requestedMember)
+	err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user)
+
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
+	return c.JSON(http.StatusOK, requestedMember.ToLightDTO())
+}
+
+// updateUserEmail godoc
+// @id updateUserEmail
+// @Summary Пространство (участники): назначение email для участника пространства
+// @Description Устанавливает email для участника рабочего пространства. Операция доступна только администраторам рабочего пространства.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param memberId path string true "ID участника для установки email"
+// @Param email body requestEmailMember false "Новый email участника"
+// @Success 200 "Email успешно установлен"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка валидации данных запроса"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: недостаточно прав для установки email"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: участник или рабочее пространство не найдены"
+// @Failure 409 {object} apierrors.DefinedError "Ошибка: email уже назначен данному участнику"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/{memberId}/set-email/ [patch]
+func (s *Services) updateUserEmail(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	requestedMemberId := c.Param("memberId")
+
+	if workspaceMember.Role != types.AdminRole {
+		return EErrorDefined(c, apierrors.ErrNotEnoughRights)
+	}
+
+	var requestedMember dao.WorkspaceMember
+	if err := s.DB(c).
+		Where("member_id = ?", requestedMemberId).
+		Where("workspace_id = ?", workspace.ID).
+		Preload("Member").
+		First(&requestedMember).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if requestedMember.Member.Email != "" {
+		return EErrorDefined(c, apierrors.ErrMemberAlreadyHasEmail)
+	}
+
+	var req requestEmailMember
+	if err := c.Bind(&req); err != nil {
+		return EError(c, err)
+	}
+
+	req.Email = strings.ToLower(req.Email)
+
+	if !ValidateEmail(req.Email) {
+		return EErrorDefined(c, apierrors.ErrInvalidEmail)
+	}
+
+	if err := s.DB(c).Model(&dao.User{}).
+		Where("id = ?", requestedMember.MemberId).
+		UpdateColumn("email", req.Email).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+// deleteWorkspaceMember godoc
+// @id deleteWorkspaceMember
+// @Summary Пространство (участники): удаление участника пространства
+// @Description Удаляет указанного участника из рабочего пространства
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param memberId path string true "ID участника для удаления"
+// @Success 204 "Участник успешно удален из рабочего пространства"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка: недопустимое действие или запрос"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: участник или рабочее пространство не найдены"
+// @Failure 409 {object} apierrors.DefinedError "Ошибка: невозможно удалить участника с более высокой ролью"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/{memberId} [delete]
+func (s *Services) deleteWorkspaceMember(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	requestedMemberId := c.Param("memberId")
+
+	if workspaceMember.Member == nil {
+		workspaceMember.Member = user
+	}
+
+	var requestedMember dao.WorkspaceMember
+	if err := s.DB(c).Preload("Member").
+		Where("id = ?", requestedMemberId).
+		Where("workspace_id = ?", workspace.ID).
+		First(&requestedMember).Error; err != nil {
+		return EError(c, err)
+	}
+	requestedMember.Workspace = workspace
+
+	// One cannot remove role higher than his own role
+	if workspaceMember.Role < requestedMember.Role && !user.IsSuperuser {
+		return EErrorDefined(c, apierrors.ErrCannotRemoveHigherRoleUser)
+	} else if requestedMember.Member.IsSuperuser && workspaceMember.ID != requestedMember.ID {
+		return EErrorDefined(c, apierrors.ErrDeleteSuperUser)
+	}
+	if workspace.OwnerId == requestedMember.MemberId {
+		if !user.IsSuperuser {
+			return EErrorDefined(c, apierrors.ErrCannotDeleteWorkspaceAdmin)
+		}
+	}
+
+	if user.ID == requestedMember.Member.ID && !user.IsSuperuser {
+		return EErrorDefined(c, apierrors.ErrCannotRemoveSelfFromWorkspace)
+	}
+
+	// Delete workspace if this is last member(last user leaves workspace)
+	var possibleOwners []dao.WorkspaceMember
+	if err := s.DB(c).
+		Model(&dao.WorkspaceMember{}).
+		Joins("Member").
+		Where("workspace_id = ?", workspace.ID).
+		Where("is_bot = false").                           // only humans
+		Where("is_active = true").                         // only active users
+		Where("is_onboarded = true").                      // only onboarded users
+		Where("member_id != ?", requestedMember.MemberId). // not requested member
+		Order("last_active DESC").
+		Find(&possibleOwners).Error; err != nil {
+		return EError(c, err)
+	}
+
+	// If last member, delete workspace. Member will be owner or/and superuser if this is last member
+	if len(possibleOwners) < 1 {
+		return s.deleteWorkspace(c)
+	}
+
+	if user.ID != requestedMember.Member.ID {
+		// If not current user - set current user as new owner
+		if err := s.business.DeleteWorkspaceMember(workspaceMember, &requestedMember); err != nil {
+			return EError(c, err)
+		}
+	} else {
+		newOwner := possibleOwners[0]
+		newOwner.Workspace = workspace
+		if err := s.business.DeleteWorkspaceMember(&newOwner, &requestedMember); err != nil {
+			return EError(c, err)
+		}
+	}
+
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
+	return c.NoContent(http.StatusNoContent)
+
+}
+
+// getWorkspaceMembersActivityList godoc
+// @id getWorkspaceMembersActivityList
+// @Summary Пространство: активность участников
+// @Description активность участников пространства
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param from query string true "Начальная дата периода в формате YYYY-MM-DD"
+// @Param to query string true "Конечная дата периода в формате YYYY-MM-DD"
+// @Success 200 {object}  map[string]types.ActivityTable "таблица активностей"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/activities/ [get]
+func (s *Services) getWorkspaceMembersActivityList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	workspaceMember := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	if workspaceMember.Role != types.AdminRole {
+		return EErrorDefined(c, apierrors.ErrWorkspaceAdminRoleRequired)
+	}
+
+	var from, to DayRequest
+	if err := echo.QueryParamsBinder(c).
+		TextUnmarshaler("from", &from).
+		TextUnmarshaler("to", &to).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	query := s.db.Where("workspace_id = ?", workspace.ID)
+	acts, err := GetActivitiesTable(query, from, to)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, acts)
+}
+
+// createMessageForWorkspaceMember godoc
+// @id createMessageForWorkspaceMember
+// @Summary Пространство: Отправка сообщений участникам
+// @Description Позволяет отправить сообщение всем участникам рабочего пространства или выбранным участникам. Поддерживается отправка отложенных сообщений.
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param data body requestMessage true "Информация о сообщении"
+// @Success 200 "Сообщения успешно отправлены"
+// @Failure 400 {object} apierrors.DefinedError "Некорректные данные запроса"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/members/message/ [post]
+func (s *Services) createMessageForWorkspaceMember(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	var req requestMessage
+	if err := c.Bind(&req); err != nil {
+		return EError(c, err)
+	}
+	if req.SendAt.IsZero() {
+		req.SendAt = time.Now()
+	}
+
+	var members []dao.WorkspaceMember
+	var notificationSentAt []dao.DeferredNotifications
+
+	query := s.DB(c).Preload("Member").Where("workspace_id = ?", workspace.ID)
+
+	if len(req.Members) > 0 {
+		query = query.Where("id IN (?)", req.Members)
+	}
+	if err := query.Find(&members).Error; err != nil {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+	if len(members) > 0 {
+		for _, member := range members {
+			payload := map[string]interface{}{
+				"id":        dao.GenID(),
+				"title":     req.Title,
+				"msg":       req.Msg,
+				"author_id": user.ID,
+			}
+			payloadBytes, err := json.Marshal(payload)
+			if err != nil {
+				return EErrorDefined(c, apierrors.ErrGeneric)
+			}
+			tmpNotify := dao.DeferredNotifications{
+				ID: dao.GenUUID(),
+
+				UserID: member.MemberId,
+				User:   member.Member,
+
+				WorkspaceID:         uuid.NullUUID{UUID: workspace.ID, Valid: true},
+				Workspace:           workspace,
+				NotificationType:    "message",
+				DeliveryMethod:      "telegram",
+				AttemptCount:        0,
+				LastAttemptAt:       time.Time{},
+				TimeSend:            &req.SendAt,
+				NotificationPayload: payloadBytes,
+			}
+
+			notificationSentAt = append(notificationSentAt, tmpNotify)
+			tmpNotify.ID = dao.GenUUID()
+			tmpNotify.DeliveryMethod = "email"
+			notificationSentAt = append(notificationSentAt, tmpNotify)
+			tmpNotify.ID = dao.GenUUID()
+			tmpNotify.DeliveryMethod = "app"
+			notificationSentAt = append(notificationSentAt, tmpNotify)
+		}
+	}
+
+	if len(notificationSentAt) > 0 {
+		if err := s.DB(c).Omit(clause.Associations).Create(&notificationSentAt).Error; err != nil {
+			return EErrorDefined(c, apierrors.ErrGeneric)
+		}
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+// addToWorkspace godoc
+// @id addToWorkspace
+// @Summary Пространство: приглашение новых участников пространства
+// @Description Приглашает новых пользователей или существующих в системе в указанное рабочее пространство, Приглашённые получают роль, определённую отправителем.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param invite body requestMembersInvite true "Список email и ролей для приглашения пользователей в рабочее пространство"
+// @Success 200 {object} map[string]interface{} "Сообщение об успешной отправке приглашений"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка валидации данных запроса, например, некорректный email"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 409 {object} apierrors.DefinedError "Ошибка: пользователь уже является участником рабочего пространства"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/invite [post]
+func (s *Services) addToWorkspace(c echo.Context) error {
+	apiCtx := apicontext.GetContext(c)
+	issuer := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+
+	var req requestMembersInvite
+
+	if err := c.Bind(&req); err != nil {
+		return EError(c, err)
+	}
+	remainInvites := limiter.Limiter.GetRemainingInvites(workspace.ID)
+
+	if remainInvites == 0 {
+		return EErrorDefined(c, apierrors.ErrInvitesExceed)
+	}
+
+	for i, invite := range req.Emails {
+		if i >= remainInvites {
+			break
+		}
+
+		invite.Email = strings.ToLower(strings.TrimSpace(invite.Email))
+		if !ValidateEmail(invite.Email) {
+			return EErrorDefined(c, apierrors.ErrInvalidEmail.WithFormattedMessage(invite.Email))
+		}
+
+		if !IsValidRole(invite.Role) {
+			return EErrorDefined(c, apierrors.ErrUnsupportedRole.WithFormattedMessage(invite.Role))
+		}
+
+		var user dao.User
+		var workspaceMember dao.WorkspaceMember
+
+		type projectMemberTrack struct {
+			project dao.Project
+			member  dao.ProjectMember
+		}
+
+		var projectMemberTrackLog []projectMemberTrack
+
+		if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("email = ?", invite.Email).First(&user).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					// Create new user
+					pass := dao.GenPassword()
+					user = dao.User{
+						ID:              dao.GenUUID(),
+						Email:           invite.Email,
+						Password:        dao.GenPasswordHash(pass),
+						CreatedByID:     uuid.NullUUID{UUID: issuer.ID, Valid: true},
+						Theme:           types.DefaultTheme,
+						IsActive:        true,
+						LastWorkspaceId: uuid.NullUUID{UUID: workspace.ID, Valid: true},
+					}
+
+					if err := tx.Create(&user).Error; err != nil {
+						return err
+					}
+
+					if err := s.emailService.NewUserPasswordNotify(user, pass); err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			}
+			var existingMember dao.WorkspaceMember
+			userUUID := user.ID
+			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+			if err := tx.Where("member_id = ? AND workspace_id = ?", userUUID, workspace.ID).First(&existingMember).Error; err == nil {
+				return apierrors.ErrInviteMemberExist
+			}
+
+			workspaceMember = dao.WorkspaceMember{
+				ID:                              dao.GenUUID(),
+				WorkspaceId:                     workspace.ID,
+				MemberId:                        user.ID,
+				Role:                            invite.Role,
+				CreatedById:                     userID,
+				Member:                          &user,
+				Workspace:                       workspace,
+				CreatedBy:                       issuer,
+				NotificationAuthorSettingsEmail: types.DefaultWorkspaceMemberNS,
+				NotificationAuthorSettingsApp:   types.DefaultWorkspaceMemberNS,
+				NotificationAuthorSettingsTG:    types.DefaultWorkspaceMemberNS,
+				NotificationSettingsEmail:       types.DefaultWorkspaceMemberNS,
+				NotificationSettingsApp:         types.DefaultWorkspaceMemberNS,
+				NotificationSettingsTG:          types.DefaultWorkspaceMemberNS,
+			}
+			if err := tx.Omit(clause.Associations).Create(&workspaceMember).Error; err != nil {
+				if err == gorm.ErrDuplicatedKey {
+					return nil
+				}
+				return err
+			}
+
+			if workspaceMember.Role == types.AdminRole {
+				var projects []dao.Project
+				if err := tx.Where("workspace_id = ?", workspace.ID).Find(&projects).Error; err != nil {
+					return err
+				}
+
+				for _, project := range projects {
+					projectMember := dao.ProjectMember{
+						ID:                              dao.GenUUID(),
+						CreatedAt:                       time.Now(),
+						CreatedById:                     userID,
+						WorkspaceId:                     workspace.ID,
+						ProjectId:                       project.ID,
+						Role:                            types.AdminRole,
+						MemberId:                        workspaceMember.MemberId,
+						Member:                          &user,
+						ViewProps:                       types.DefaultViewProps,
+						NotificationAuthorSettingsEmail: types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsApp:   types.DefaultProjectMemberNS,
+						NotificationAuthorSettingsTG:    types.DefaultProjectMemberNS,
+						NotificationSettingsEmail:       types.DefaultProjectMemberNS,
+						NotificationSettingsApp:         types.DefaultProjectMemberNS,
+						NotificationSettingsTG:          types.DefaultProjectMemberNS,
+					}
+					if err := tx.Clauses(clause.OnConflict{
+						Columns:   []clause.Column{{Name: "project_id"}, {Name: "member_id"}},
+						DoUpdates: clause.Assignments(map[string]interface{}{"role": types.AdminRole, "updated_at": time.Now(), "updated_by_id": userUUID}),
+					}).Create(&projectMember).Error; err != nil {
+						return err
+					}
+					projectMemberTrackLog = append(projectMemberTrackLog, projectMemberTrack{project: project, member: projectMember})
+				}
+			}
+
+			s.notificationsService.Tg.WorkspaceInvitation(workspaceMember)
+			go s.emailService.WorkspaceInvitation(workspaceMember)
+
+			return nil
+		}); err != nil {
+			return EError(c, err)
+		}
+
+		for _, t := range projectMemberTrackLog {
+			oldSnapshot := tracker.ProjectToSnapshot(&t.project)
+			newSnapshot := tracker.ProjectToSnapshot(&t.project, tracker.WithProjectMembers([]dao.ProjectMember{t.member}, func(m dao.ProjectMember) string {
+				return fmt.Sprint(m.Role)
+			}))
+			err := s.snapshotTracker.TrackChanges(types.LayerProject, oldSnapshot, newSnapshot, &t.project, issuer)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+		}
+
+		oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+		newSnapshot := tracker.WorkspaceToSnapshot(workspace, tracker.WithWorkspaceMembers([]dao.WorkspaceMember{workspaceMember}, func(m dao.WorkspaceMember) string {
+			return fmt.Sprint(m.Role)
+		}))
+
+		err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, issuer)
+
+		if err != nil {
+			errStack.GetError(c, err)
+		}
+	}
+
+	// Кеш участников инвалидируется триггером workspace_members_notify через канал
+	// workspace_members_changes, ручной сброс здесь не нужен.
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "Emails sent successfully",
+	})
+}
+
+// getUserWorkspaceList godoc
+// @id getUserWorkspaceList
+// @Summary Пространство: получение рабочих пространств пользователя
+// @Description Возвращает список рабочих пространств, в которых состоит текущий пользователь, с возможностью поиска по имени.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param search_query query string false "Поисковый запрос для фильтрации рабочих пространств по имени"
+// @Success 200 {array} dto.WorkspaceWithCount "Список рабочих пространств с количеством участников и проектов"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка валидации запроса"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/users/me/workspaces/ [get]
+func (s *Services) getUserWorkspaceList(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+	searchQuery := ""
+
+	if err := echo.QueryParamsBinder(c).
+		String("search_query", &searchQuery).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	var workspaces []dao.WorkspaceWithCount
+	query := s.DB(c).Model(&dao.Workspace{}).
+		Select("*,(?) as total_members,(?) as total_projects,(?) as is_favorite",
+			s.DB(c).Model(&dao.WorkspaceMember{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			s.DB(c).Model(&dao.Project{}).Select("count(*)").Where("workspace_id = workspaces.id"),
+			s.DB(c).Raw("EXISTS(select 1 from workspace_favorites WHERE workspace_favorites.workspace_id = workspaces.id AND user_id = ?)", user.ID),
+		).
+		Preload("Owner").
+		Set("userID", user.ID).
+		Order("is_favorite desc, lower(name)")
+
+	if searchQuery != "" {
+		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
+			escapedSearchQuery, searchQuery)
+	}
+
+	if err := query.
+		Where("workspaces.id in (?)", s.DB(c).Model(&dao.WorkspaceMember{}).
+			Select("workspace_id").
+			Where("member_id = ?", user.ID)).
+		Find(&workspaces).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&workspaces, func(w *dao.WorkspaceWithCount) dto.WorkspaceWithCount { return *w.ToDTO() }))
+}
+
+// getProductUpdateList godoc
+// @id getProductUpdateList
+// @Summary Релизы: получение списка обновлений
+// @Description Возвращает список обновлений
+// @Tags ReleaseNotes
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {array} dto.ReleaseNoteLight "Список обновлений"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка при получении обновлений"
+// @Router /api/auth/release-notes/ [get]
+func (s *Services) getProductUpdateList(c echo.Context) error {
+	var notes []dao.ReleaseNote
+	if err := s.DB(c).Preload("Author").Order("published_at DESC").Find(&notes).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&notes, func(n *dao.ReleaseNote) dto.ReleaseNoteLight { return *n.ToLightDTO() }))
+}
+
+// createWorkspace godoc
+// @id createWorkspace
+// @Summary Пространство: создание нового пространства
+// @Description Создает новое рабочее пространство с заданными параметрами.
+// @Tags Workspace
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body CreateWorkspaceRequest true "Информация о новом рабочем пространстве"
+// @Success 201 {object} dto.Workspace "Созданное рабочее пространство"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка: неверные параметры запроса"
+// @Failure 409 {object} apierrors.DefinedError "Ошибка: конфликт с существующим рабочим пространством"
+// @Router /api/auth/workspaces/ [post]
+func (s *Services) createWorkspace(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+
+	if !limiter.Limiter.CanCreateWorkspace(user.ID) {
+		return EErrorDefined(c, apierrors.ErrWorkspaceLimitExceed)
+	}
+
+	var workspace dao.Workspace
+	var req CreateWorkspaceRequest
+	if err := c.Bind(&req); err != nil {
+		return EError(c, err)
+	}
+	if req.Name == "" {
+		return EErrorDefined(c, apierrors.ErrWorkspaceNameRequired)
+	}
+	if !CheckWorkspaceSlug(req.Slug) {
+		return EErrorDefined(c, apierrors.ErrForbiddenSlug)
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+
+	err := c.Validate(req)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	req.Bind(&workspace)
+	workspace.ID = dao.GenUUID()
+	workspace.OwnerId = user.ID
+	workspace.CreatedById = user.ID
+	workspace.IntegrationToken = password.MustGenerate(64, 30, 0, false, true)
+
+	if err := s.DB(c).Create(&workspace).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return EErrorDefined(c, apierrors.ErrWorkspaceSlugConflict)
+		}
+		return EError(c, err)
+	}
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	workspaceMember := dao.WorkspaceMember{
+		ID:                              dao.GenUUID(),
+		WorkspaceId:                     workspace.ID,
+		MemberId:                        user.ID,
+		CreatedById:                     userID,
+		Role:                            15,
+		NotificationAuthorSettingsEmail: types.DefaultWorkspaceMemberNS,
+		NotificationAuthorSettingsApp:   types.DefaultWorkspaceMemberNS,
+		NotificationAuthorSettingsTG:    types.DefaultWorkspaceMemberNS,
+		NotificationSettingsEmail:       types.DefaultWorkspaceMemberNS,
+		NotificationSettingsApp:         types.DefaultWorkspaceMemberNS,
+		NotificationSettingsTG:          types.DefaultWorkspaceMemberNS,
+	}
+	if err := s.DB(c).Create(&workspaceMember).Error; err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(&workspace)
+	err = s.snapshotTracker.TrackChanges(types.LayerRoot, nil, newSnapshot, &workspace, user)
+	if err != nil {
+		errStack.GetError(c, err)
+	}
+	return c.JSON(http.StatusCreated, workspace.ToDTO())
+}
+
+// ############# Last Visited Workspace methods ###################
+
+// getLastVisitedWorkspace godoc
+// @id getLastVisitedWorkspace
+// @Summary Пространство: получение последнего посещенного рабочего пространства
+// @Description Возвращает информацию о последнем посещенном рабочем пространстве пользователя. Если ID последнего рабочего пространства отсутствует, возвращает пустые данные.
+// @Tags Workspace
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} dto.LastWorkspaceResponse "Детали последнего рабочего пространства и проекта"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/users/last-visited-workspace [get]
+func (s *Services) getLastVisitedWorkspace(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+
+	if !user.LastWorkspaceId.Valid {
+		return c.JSON(http.StatusOK, dto.LastWorkspaceResponse{
+			WorkspaceDetails: make([]interface{}, 0),
+			ProjectDetails:   struct{}{},
+		})
+	}
+
+	var workspace dao.Workspace
+	if err := s.DB(c).Where("id = ?", user.LastWorkspaceId.UUID).Find(&workspace).Error; err != nil {
+		return EError(c, err)
+	}
+
+	var projectMember []dao.ProjectMember
+	if err := s.DB(c).Preload("Workspace").
+		Preload("Workspace.Owner").
+		Preload("Project").
+		Preload("Member").
+		Where("workspace_id = ?", workspace.ID).
+		Where("member_id = ?", user.ID).
+		Find(&projectMember).Error; err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, dto.LastWorkspaceResponse{
+		WorkspaceDetails: workspace.ToLightDTO(),
+		ProjectDetails:   utils.SliceToSlice(&projectMember, func(pm *dao.ProjectMember) dto.ProjectMember { return *pm.ToDTO() }),
+	})
+}
+
+// getWorkspaceToken godoc
+// @id getWorkspaceToken
+// @Summary Пространство (токен): получение токена для пространства
+// @Description Возвращает токен интеграции для указанного рабочего пространства, если пользователь имеет необходимые права доступа.
+// @Tags Workspace
+// @Produce plain
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {string} string "Токен интеграции рабочего пространства"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/token [get]
+func (s *Services) getWorkspaceToken(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	// Токен читает администратор, владелец или суперпользователь; ответ без тела, как прежде.
+	if err := s.policy.Authorize(c.Request().Context(), engine.ActionWorkspaceTokenView, apiContext); err != nil {
+		return c.NoContent(http.StatusForbidden)
+	}
+	return c.String(http.StatusOK, workspace.IntegrationToken)
+}
+
+// resetWorkspaceToken godoc
+// @id resetWorkspaceToken
+// @Summary Пространство (токен): сброс токена для пространства
+// @Description Генерирует новый токен интеграции для указанного рабочего пространства.
+// @Tags Workspace
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 201 {string} string "Токен интеграции успешно сброшен"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка в запросе"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/token/reset/ [post]
+func (s *Services) resetWorkspaceToken(c echo.Context) error {
+	apiCtx := apicontext.GetContext(c)
+	user := apiCtx.GetUser()
+	workspace := apiCtx.GetWorkspace()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	newToken := map[string]interface{}{
+		"integration_token": password.MustGenerate(64, 30, 0, false, true),
+	}
+
+	if err := s.DB(c).Model(&workspace).UpdateColumn("integration_token", newToken["integration_token"]).Error; err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
+
+		errStack.GetError(c, err)
+	}
+
+	return c.NoContent(http.StatusCreated)
+}
+
+// getWorkspaceStateList godoc
+// @id getWorkspaceStateList
+// @Summary Пространство: получение состояния рабочего пространства
+// @Description Возвращает список состояний, сгруппированных по проектам, для указанного рабочего пространства.
+// @Tags Workspace
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} map[string][]dto.StateLight "Список состояний, сгруппированных по проектам"
+// @Failure 403 {object} apierrors.DefinedError "Доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/states/ [get]
+func (s *Services) getWorkspaceStateList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	if etag := c.Request().Header.Get("If-None-Match"); etag != "" {
+		etagHash, err := hex.DecodeString(etag)
+		if err != nil {
+			return EError(c, err)
+		}
+
+		var state dao.State
+		if err := s.DB(c).Model(&dao.State{}).Select("digest(string_agg(hash, '' order by sequence), 'sha256') as hash").Where("workspace_id = ?", workspace.ID).Find(&state).Error; err != nil {
+			return EError(c, err)
+		}
+
+		if bytes.Equal(etagHash, state.Hash) {
+			return c.NoContent(http.StatusNotModified)
+		}
+	}
+
+	var states []dao.State
+	if err := s.DB(c).
+		Preload(clause.Associations).
+		Order("sequence").
+		Where("workspace_id = ?", workspace.ID).
+		Find(&states).Error; err != nil {
+		return EError(c, err)
+	}
+
+	result := make(map[uuid.UUID][]dto.StateLight)
+	hash := sha256.New()
+	for _, state := range states {
+		arr, ok := result[state.ProjectId]
+		if !ok {
+			arr = make([]dto.StateLight, 0)
+		}
+		arr = append(arr, *state.ToLightDTO())
+		result[state.ProjectId] = arr
+		hash.Write(state.Hash)
+	}
+	c.Response().Header().Add("ETag", hex.EncodeToString(hash.Sum(nil)))
+	return c.JSON(http.StatusOK, result)
+}
+
+// getWorkspaceJitsiToken godoc
+// @id getWorkspaceJitsiToken
+// @Summary Пространство: получение токена для Jitsi-комнаты рабочего пространства
+// @Description Генерирует и возвращает JWT-токен для доступа пользователя в комнату Jitsi, соответствующую рабочему пространству.
+// @Tags Workspace
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} map[string]string "JWT-токен для комнаты Jitsi"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/jitsi-token [get]
+func (s *Services) getWorkspaceJitsiToken(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	user := apiContext.GetUser()
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	token, err := s.jitsiTokenIss.IssueToken(user, false, workspace.Slug)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"jitsi_token": token,
+	})
+}
+
+// ############# User favorite workspaces methods ###################
+
+// getFavoriteWorkspaceList godoc
+// @id getFavoriteWorkspaceList
+// @Summary Пространство (избранное): получение избранных пространств
+// @Description Возвращает список избранных рабочих пространств с информацией о владельце.
+// @Tags Workspace
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {array} dto.WorkspaceFavorites "Список избранных рабочих пространств"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка при получении избранных рабочих пространств"
+// @Router /api/auth/users/user-favorite-workspaces/ [get]
+func (s *Services) getFavoriteWorkspaceList(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+
+	var favorites []dao.WorkspaceFavorites
+	if err := s.DB(c).Where("user_id = ?", user.ID).
+		Preload("Workspace").
+		Preload("Workspace.Owner").
+		Set("userId", user.ID).
+		Find(&favorites).Error; err != nil {
+		return EError(c, err)
+	}
+	for i := range favorites {
+		favorites[i].Workspace.IsFavorite = true
+	}
+
+	return c.JSON(http.StatusOK, utils.SliceToSlice(&favorites, func(wf *dao.WorkspaceFavorites) dto.WorkspaceFavorites { return *wf.ToDao() }))
+}
+
+// addWorkspaceToFavorites godoc
+// @id addWorkspaceToFavorites
+// @Summary Пространство (избранное): добавление пространства в избранное
+// @Description Добавляет рабочее пространство в избранное для текущего пользователя.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspace body requestAddFavorite false "ID рабочего пространства"
+// @Success 200 {string} string "No Content"
+// @Success 201 {object} dto.WorkspaceFavorites "Созданное избранное рабочее пространство"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка в запросе"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 409 {object} apierrors.DefinedError "Рабочее пространство уже в избранном"
+// @Router /api/auth/users/user-favorite-workspaces/ [post]
+func (s *Services) addWorkspaceToFavorites(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+
+	var req requestAddFavorite
+	if err := c.Bind(&req); err != nil {
+		return EError(c, err)
+	}
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	workspace, err := dao.GetWorkspaceByID(s.db, req.Workspace, user.ID)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	workspaceFavorite := dao.WorkspaceFavorites{
+		ID:          dao.GenUUID(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CreatedById: userID,
+		WorkspaceId: workspace.ID,
+		Workspace:   &workspace,
+		UserId:      user.ID,
+	}
+	if err := s.DB(c).Create(&workspaceFavorite).Error; err != nil {
+		if err == gorm.ErrDuplicatedKey {
+			return c.NoContent(http.StatusOK)
+		}
+		return EError(c, err)
+	}
+	return c.JSON(http.StatusCreated, workspaceFavorite.ToDao())
+}
+
+// removeWorkspaceFromFavorites godoc
+// @id removeWorkspaceFromFavorites
+// @Summary Пространство (избранное): удаление пространства из избранного
+// @Description Удаляет рабочее пространство из избранного для текущего пользователя по его ID.
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceID path string true "ID рабочего пространства"
+// @Success 204 {string} string "No Content"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка в запросе"
+// @Failure 404 {object} apierrors.DefinedError "Рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/users/user-favorite-workspaces/{workspaceID} [delete]
+func (s *Services) removeWorkspaceFromFavorites(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+	workspaceID := c.Param("workspaceID")
+	userIdStr := user.ID
+	workspace, err := dao.GetWorkspaceByID(s.db, workspaceID, user.ID)
+
+	if err != nil {
+		return EError(c, err)
+	}
+
+	if err := s.DB(c).Where("workspace_id = ?", workspace.ID).
+		Where("user_id = ?", userIdStr).
+		Delete(&dao.WorkspaceFavorites{}).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// getIntegrationList godoc
+// @id getIntegrationList
+// @Summary Пространство (интеграции): получение интеграций
+// @Description получение интеграций
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {array} integrations.Integration "интеграции"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка в запросе"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/integrations/ [get]
+func (s *Services) getIntegrationList(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	return c.JSON(http.StatusOK, s.integrationsService.GetIntegrations(workspace.ID))
+}
+
+// addIntegrationToWorkspace godoc
+// @id addIntegrationToWorkspace
+// @Summary Пространство (интеграции): добавление интеграции
+// @Description добавление интеграции в пространство
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param name path string true "имя интеграции"
+// @Success 201  "ok"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка в запросе"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/integrations/add/{name}/ [post]
+func (s *Services) addIntegrationToWorkspace(c echo.Context) error {
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	workspaceMember := apiCtx.GetWorkspaceMember()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
+	name := c.Param("name")
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	if workspaceMember.Role != types.AdminRole {
+		return EErrorDefined(c, apierrors.ErrNotEnoughRights)
+	}
+
+	integration := s.integrationsService.GetIntegrationUser(name)
+	if integration == nil {
+		return EErrorDefined(c, apierrors.ErrIntegrationNotFound)
+	}
+
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	newMember := dao.WorkspaceMember{
+		ID:          dao.GenUUID(),
+		WorkspaceId: workspace.ID,
+		MemberId:    integration.ID,
+		Role:        types.MemberRole,
+		CreatedById: userID,
+		Member:      integration,
+	}
+	if err := s.DB(c).Save(&newMember).Error; err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace, tracker.WithIntegration(integration.ID, name))
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
+		errStack.GetError(c, err)
+	}
+
+	return c.NoContent(http.StatusCreated)
+}
+
+// deleteIntegrationFromWorkspace godoc
+// @id deleteIntegrationFromWorkspace
+// @Summary Пространство (интеграции): удаление интеграции
+// @Description удаление интеграции из пространства
+// @Tags Workspace
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param name path string true "имя интеграции"
+// @Success 200  "ok"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка в запросе"
+// @Failure 403 {object} apierrors.DefinedError "Ошибка: доступ запрещен"
+// @Failure 404 {object} apierrors.DefinedError "Ошибка: рабочее пространство не найдено"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/integrations/{name}/ [post]
+func (s *Services) deleteIntegrationFromWorkspace(c echo.Context) error {
+
+	apiCtx := apicontext.GetContext(c)
+	workspace := apiCtx.GetWorkspace()
+	workspaceMember := apiCtx.GetWorkspaceMember()
+	if apiCtx.Error() != nil {
+		return EError(c, apiCtx.Error())
+	}
+	user := apiCtx.GetUser()
+	name := c.Param("name")
+
+	if workspaceMember.Role != types.AdminRole {
+		return EErrorDefined(c, apierrors.ErrNotEnoughRights)
+	}
+
+	integration := s.integrationsService.GetIntegrationUser(name)
+	if integration == nil {
+		return EErrorDefined(c, apierrors.ErrIntegrationNotFound)
+	}
+	oldSnapshot := tracker.WorkspaceToSnapshot(workspace, tracker.WithIntegration(integration.ID, name))
+
+	var wm dao.WorkspaceMember
+	if err := s.DB(c).Joins("Member").Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).First(&wm).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if err := s.DB(c).Session(&gorm.Session{SkipHooks: true}).
+		Where("workspace_id = ? and member_id = ?", workspace.ID, integration.ID).
+		Delete(&dao.WorkspaceMember{}).Error; err != nil {
+		return EError(c, err)
+	}
+
+	newSnapshot := tracker.WorkspaceToSnapshot(workspace)
+
+	if err := s.snapshotTracker.TrackChanges(types.LayerWorkspace, oldSnapshot, newSnapshot, workspace, user); err != nil {
+		errStack.GetError(c, err)
+	}
+
+	return c.NoContent(http.StatusOK)
+}
+
+// updateMyWorkspaceNotifications godoc
+// @id updateMyWorkspaceNotifications
+// @Summary Пространство (участники): обновление настроек уведомлений текущего участника
+// @Description Обновляет настройки уведомлений для текущего участника пространства.
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param notificationSettings body workspaceNotificationRequest true "Настройки уведомлений"
+// @Success 204 "Настройки успешно обновлены"
+// @Failure 400 {object} apierrors.DefinedError "Ошибка при обновлении настроек уведомлений"
+// @Failure 500 {object} apierrors.DefinedError "Ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/me/notifications/ [post]
+func (s *Services) updateMyWorkspaceNotifications(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	wm := apiContext.GetWorkspaceMember()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+
+	var req workspaceNotificationRequest
+	fields, err := BindData(c, "", &req)
+	if err != nil {
+		return EErrorDefined(c, apierrors.ErrGeneric)
+	}
+
+	for _, field := range fields {
+		switch field {
+		case "notification_settings_app":
+			wm.NotificationSettingsApp = req.NotificationSettingsApp
+		case "notification_author_settings_app":
+			wm.NotificationAuthorSettingsApp = req.NotificationAuthorSettingsApp
+		case "notification_settings_tg":
+			wm.NotificationSettingsTG = req.NotificationSettingsTG
+		case "notification_author_settings_tg":
+			wm.NotificationAuthorSettingsTG = req.NotificationAuthorSettingsTG
+		case "notification_settings_email":
+			wm.NotificationSettingsEmail = req.NotificationSettingsEmail
+		case "notification_author_settings_email":
+			wm.NotificationAuthorSettingsEmail = req.NotificationAuthorSettingsEmail
+		}
+	}
+
+	if err := s.DB(c).Select(fields).Updates(&wm).Error; err != nil {
+		return EError(c, err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+// getWorkspaceTariff godoc
+// @id getWorkspaceTariff
+// @Summary Пространство (участники): получение текущего тарифа пространства
+// @Description Возвращает текущий тариф и лимиты пространства. Community тариф всегда возвращает нулевые цифры
+// @Tags Workspace
+// @Security ApiKeyAuth
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Success 200 {object} dto.WorkspaceLimitsInfo "Текущий тариф"
+// @Router /api/auth/workspaces/{workspaceSlug}/tariff/ [get]
+func (s *Services) getWorkspaceTariff(c echo.Context) error {
+	apiContext := apicontext.GetContext(c)
+	workspace := apiContext.GetWorkspace()
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
+	return c.JSON(http.StatusOK, limiter.Limiter.GetWorkspaceLimitInfo(workspace.ID))
+}
+
+// ******* RESPONSE *******
+
+//***** REQUEST ******
+
+type requestRoleMember struct {
+	Role *int `json:"role"`
+}
+
+type requestEmailMember struct {
+	Email string `json:"email"`
+}
+
+type requestMembersInvite struct {
+	Emails []struct {
+		Email string `json:"email"`
+		Role  int    `json:"role"`
+	} `json:"emails"`
+}
+
+type requestAddFavorite struct {
+	Workspace string `json:"workspace"`
+}
+
+type requestMessage struct {
+	Title   string    `json:"title"`
+	Msg     string    `json:"msg"`
+	SendAt  time.Time `json:"send_at"`
+	Members []string  `json:"members,omitempty"`
+}
+
+type workspaceNotificationRequest struct {
+	NotificationSettingsTG          types.WorkspaceMemberNS `json:"notification_settings_tg"`
+	NotificationAuthorSettingsTG    types.WorkspaceMemberNS `json:"notification_author_settings_tg"`
+	NotificationSettingsEmail       types.WorkspaceMemberNS `json:"notification_settings_email"`
+	NotificationAuthorSettingsEmail types.WorkspaceMemberNS `json:"notification_author_settings_email"`
+	NotificationSettingsApp         types.WorkspaceMemberNS `json:"notification_settings_app"`
+	NotificationAuthorSettingsApp   types.WorkspaceMemberNS `json:"notification_author_settings_app"`
+}

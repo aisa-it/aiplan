@@ -19,7 +19,7 @@ import (
 //   - filePath: путь к файлу Go, содержащему определения моделей DAO.
 //
 // Возвращает:
-//   - models: слайс строк, содержащий строки с типами моделей DAO в формате `&dao.ModelName`.
+//   - models: слайс строк, содержащий строки с типами моделей DAO в формате `&ModelName`.
 //   - error: ошибка, если произошла ошибка при парсинге или обработке файла.
 func GetDAOModelsForMigration(filePath string) (models []string, err error) {
 	fset := token.NewFileSet()
@@ -40,17 +40,18 @@ func GetDAOModelsForMigration(filePath string) (models []string, err error) {
 				continue
 			}
 
-			models = append(models, fmt.Sprintf("&dao.%s{}", t.Name))
+			// Список живёт внутри пакета dao, поэтому без префикса пакета.
+			models = append(models, fmt.Sprintf("&%s{}", t.Name))
 		}
 	}
 	return
 }
 
-// main - главная функция, которая извлекает имена моделей DAO для миграций из указанного файла Go и вставляет их в файл main.go.  Функция читает main.go, ищет строку, содержащую объявление переменной `models`, и заменяет её на строку, содержащую список моделей DAO в формате `&dao.ModelName`. Затем обновленный файл main.go записывается обратно на диск.  Обрабатывает ошибки при чтении и записи файлов.  Необходимо, чтобы в файле `main.go` уже было объявление переменной `var models = []any{}`.  Также, функция предполагает, что модели DAO определены в каталоге `internal/aiplan/dao/`.
+// main - главная функция, которая извлекает имена моделей DAO для миграций из указанного файла Go и вставляет их в pkg/dao/models.go. Функция читает этот файл, ищет строку, содержащую объявление переменной `models`, и заменяет её на строку, содержащую список моделей DAO в формате `&ModelName`. Затем обновлённый файл записывается обратно на диск.  Обрабатывает ошибки при чтении и записи файлов.  Необходимо, чтобы в файле `pkg/dao/models.go` уже было объявление переменной `var models = []any{}`.  Также, функция предполагает, что модели DAO определены в каталоге `pkg/dao/`.
 func main() {
-	mainFilePath := "../../cmd/aiplan/main.go"
+	modelsFilePath := "../../pkg/dao/models.go"
 
-	models, err := GetDAOModelsForMigration("../../internal/aiplan/dao/")
+	models, err := GetDAOModelsForMigration("../../pkg/dao/")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -58,14 +59,14 @@ func main() {
 	cmd := fmt.Sprintf("var models = []any{%s}", strings.Join(models, ", "))
 	fmt.Println(cmd)
 
-	mainFile, err := os.ReadFile(mainFilePath)
+	modelsFile, err := os.ReadFile(modelsFilePath)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
 	reg := regexp.MustCompile(`var\s*models\s*=\s*\[\]any{.*}`)
-	if err := os.WriteFile(mainFilePath, reg.ReplaceAll(mainFile, []byte(cmd)), 0644); err != nil {
+	if err := os.WriteFile(modelsFilePath, reg.ReplaceAll(modelsFile, []byte(cmd)), 0644); err != nil {
 		fmt.Println(err)
 	}
 }

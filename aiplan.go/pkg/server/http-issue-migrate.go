@@ -1,0 +1,1746 @@
+// Пакет server предоставляет функциональность для миграции задач между проектами в системе планирования.
+// Он включает в себя копирование задач, обновление связанных данных (комментарии, реакции, ссылки), и обработку изменений статусов задач.
+//
+// Основные возможности:
+//   - Копирование задач с сохранением связанных данных.
+//   - Обновление статусов задач при миграции.
+//   - Обработка связанных задач (комментарии, реакции, ссылки).
+//   - Поддержка миграции задач с учетом различных типов статусов и меток.
+package server
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	tracker "github.com/aisa-it/aiplan/aiplan.go/pkg/activity-tracker"
+	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
+	errStack "github.com/aisa-it/aiplan/aiplan.go/pkg/stack-error"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/types/activities"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
+
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
+	"github.com/gofrs/uuid"
+	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+var (
+	ErrTargetProjectNotFound  = "target project not found"
+	ErrMigrationIssueNotFound = "issue not found"
+	ErrLabelNotFound          = "label not found"
+	ErrConflictIssuesNames    = "issues with conflicted names"
+
+	ErrAuthorNotAProjectMember = "source author not a target project member"
+	ErrUserNotAProjectMember   = "you are not a target project member"
+	ErrAssigneesNotFound       = "source assignees that not a members of target project"
+	ErrWatchersNotFound        = "source watchers that not a members of target project"
+	ErrAssigneeRoleInvalid     = "issue assignment is not allowed for assignee with current role of target project"
+	ErrWatcherRoleInvalid      = "issue watching is not allowed for watcher with current role of target project"
+
+	ErrStateNotFound  = "source state that does not exist in target project"
+	ErrLabelsNotFound = "source labels that does not exist in target project"
+
+	ErrOther = "Error"
+)
+
+type ErrClause struct {
+	Error           string      `json:"error"`
+	SrcIssueId      *uuid.UUID  `json:"src_issue_id,omitempty"`
+	IssueSequenceId int         `json:"issue_sequence_id,omitempty"`
+	Type            string      `json:"type,omitempty"`
+	Entities        []uuid.UUID `json:"entities,omitempty"`
+}
+
+func (s *Services) AddIssueMigrationServices(g *echo.Group) {
+	s.route(g, http.MethodPost, "workspaces/:workspaceSlug/issues/migrate/", engine.ActionIssueMigrate, s.migrateIssues)
+	s.route(g, http.MethodPost, "workspaces/:workspaceSlug/issues/migrate/byLabel/", engine.ActionIssueMigrate, s.migrateIssuesByLabel)
+}
+
+// migrateIssues godoc
+// @id migrateIssues
+// @Summary Задачи (миграции): миграция задачи рабочего пространства
+// @Description Мигрирует задачу из одного проекта в другой с опциональной поддержкой связанных задач и удаления исходной задачи
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param target_project query string true "ID целевого проекта"
+// @Param src_issue query string true "ID исходной задачи"
+// @Param linked_issues query bool false "Мигрировать связанные задачи" default(false)
+// @Param delete_src query bool false "Удалить исходную задачу после миграции" default(false)
+// @Param create_entities query bool false "Создать не достающие label, state" default(false)
+// @Param data body NewIssueParam false "Идентификаторы связанных задач"
+// @Success 201 {object} dto.NewIssueID "ID созданной задачи"
+// @Failure 400 {object} map[string]interface{} "Некорректные параметры запроса или данные"
+// / @Failure 404 {object} apierrors.DefinedError "Целевой проект или исходная задача не найдены"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/issues/migrate [post]
+func (s *Services) migrateIssues(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+
+	targetProjectId := ""
+	srcIssueId := ""
+	linkedIssues := false
+	deleteSrc := false
+	createEntities := false
+
+	if err := echo.QueryParamsBinder(c).
+		String("target_project", &targetProjectId).
+		String("src_issue", &srcIssueId).
+		Bool("linked_issues", &linkedIssues).
+		Bool("delete_src", &deleteSrc).
+		Bool("create_entities", &createEntities).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	var param *NewIssueParam
+	if err := c.Bind(&param); err != nil && !errors.Is(err, io.EOF) {
+		return EError(c, err)
+	}
+
+	var migrateWithNewState bool
+	var labelIds []uuid.UUID
+	var stateIds []uuid.UUID
+	stateMap := make(map[uuid.UUID]dao.State)
+
+	var targetProject, srcProject dao.Project
+
+	if err := s.DB(c).Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"errors": []ErrClause{
+					{
+						Error: ErrTargetProjectNotFound,
+						Type:  "project",
+					},
+				},
+			})
+		}
+		return EError(c, err)
+	}
+
+	var srcIssue dao.Issue
+	if err := s.DB(c).Where("id = ?", srcIssueId).
+		Preload(clause.Associations).
+		First(&srcIssue).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"errors": []ErrClause{
+					{
+						Error: ErrMigrationIssueNotFound,
+						Type:  "issue",
+					},
+				},
+			})
+		}
+		return EError(c, err)
+	}
+	if linkedIssues == false && param != nil {
+
+		if v, ok := param.StateId.GetValue(); ok && v != nil {
+			var state dao.State
+			if err := s.DB(c).Where("workspace_id = ?", srcIssue.WorkspaceId).
+				Where("project_id = ?", targetProject.ID).
+				Where("id = ?", *v).
+				First(&state).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return c.JSON(http.StatusBadRequest, map[string]interface{}{
+						"errors": []ErrClause{
+							{
+								Error: ErrStateNotFound,
+								Type:  "issue",
+							},
+						},
+					})
+				}
+				return EError(c, err)
+			}
+
+			srcIssue.StateId = *v
+			srcIssue.State = &state
+			migrateWithNewState = true
+		}
+
+		if v, ok := param.Priority.GetValue(); ok {
+			srcIssue.Priority = v
+		}
+
+		if v, ok := param.AssignersIds.GetValue(); ok {
+			if v == nil {
+				srcIssue.AssigneeIDs = []uuid.UUID{}
+			} else {
+				srcIssue.AssigneeIDs = *v
+			}
+		}
+
+		if v, ok := param.WatchersIds.GetValue(); ok {
+			if v == nil {
+				srcIssue.WatcherIDs = []uuid.UUID{}
+			} else {
+				srcIssue.WatcherIDs = *v
+			}
+		}
+
+		if v, ok := param.TargetDate.GetValue(); ok {
+			if v == nil {
+				srcIssue.TargetDate = nil
+			} else {
+				date, err := utils.FormatDateStr(*v, "2006-01-02T15:04:05Z07:00", nil)
+				if err != nil {
+					return EErrorDefined(c, apierrors.ErrGeneric)
+				}
+
+				if d, err := utils.FormatDate(date); err != nil {
+					return EErrorDefined(c, apierrors.ErrGeneric)
+				} else {
+					if time.Now().After(d) {
+						return EErrorDefined(c, apierrors.ErrIssueTargetDateExp)
+					}
+					srcIssue.TargetDate = &types.TargetDateTimeZ{Time: d}
+				}
+			}
+		}
+	}
+
+	err := srcIssue.FetchLinkedIssues(s.db)
+	if err != nil {
+		return EError(c, err)
+	}
+
+	srcProject = *srcIssue.Project
+	if srcProject.ID == targetProject.ID {
+		linkedIssues = false
+		deleteSrc = false
+		createEntities = false
+	}
+
+	var projectMember dao.ProjectMember
+
+	if err := s.DB(c).Where("project_id = ?", srcProject.ID).
+		Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+		return EError(c, err)
+	}
+
+	var srcIssues []dao.Issue
+	if linkedIssues {
+		compareAuthorId := uuid.NullUUID{}
+		if projectMember.Role != types.AdminRole {
+			compareAuthorId = uuid.NullUUID{UUID: user.ID, Valid: true}
+		}
+		srcIssues = dao.GetIssueFamily(srcIssue, s.db, compareAuthorId)
+	} else {
+		srcIssues = []dao.Issue{srcIssue}
+	}
+
+	if len(srcIssues) == 0 {
+		return c.NoContent(http.StatusNotModified)
+	}
+
+	idsMap := make(map[uuid.UUID]uuid.UUID)
+	idsCommentMap := make(map[uuid.UUID]uuid.UUID)
+	linkedIds := make(map[string]struct{})
+	var srcIssueUUId uuid.UUID
+	var familyIds, newFamilyIds []uuid.UUID
+	preparedIssues := make([]IssueCheckResult, len(srcIssues))
+
+	// Checks
+	{
+		var errors []ErrClause
+		if _, exist := dao.IsProjectMember(s.db, user.ID, targetProject.ID); !exist {
+			errors = append(errors, ErrClause{
+				Error: ErrUserNotAProjectMember,
+			})
+		}
+
+		for i, issue := range srcIssues {
+			result, err := s.CheckIssueBeforeMigrate(issue, targetProject, migrateWithNewState)
+			if err != nil {
+				return EError(c, err)
+			}
+			if deleteSrc {
+				srcIssues[i].ProjectId = targetProject.ID
+				srcIssues[i].Project = &targetProject
+				srcIssues[i].StateId = result.TargetState.ID
+				if result.TargetState.ID != uuid.Nil {
+					srcIssues[i].State = &result.TargetState
+				}
+			}
+			errors = append(errors, result.Errors...)
+			preparedIssues[i] = result
+			srcIssueUUId = result.SrcIssue.ID
+			idsMap[result.SrcIssue.ID] = result.TargetId
+			familyIds = append(familyIds, result.SrcIssue.ID)
+			newFamilyIds = append(newFamilyIds, result.TargetId)
+		}
+
+		if !deleteSrc {
+			for _, issue := range srcIssues {
+				newId1, okId1 := idsMap[issue.ID]
+				if !okId1 {
+					continue
+				}
+				for _, id := range issue.LinkedIssuesIDs {
+					newId2, okId2 := idsMap[id]
+
+					if okId2 {
+						key := linkedIdToStringKey(newId1, newId2)
+						linkedIds[key] = struct{}{}
+					}
+				}
+			}
+		}
+
+		var comments []dao.IssueComment
+		if err := s.DB(c).Where("issue_id in ?", familyIds).Find(&comments).Error; err != nil {
+			return EError(c, err)
+		}
+		for _, comment := range comments {
+			idsCommentMap[comment.Id] = dao.GenUUID()
+		}
+
+		if createEntities {
+			newErr := make([]ErrClause, 0)
+			for _, errClause := range errors {
+				switch errClause.Type {
+				case "state":
+					stateIds = append(stateIds, errClause.Entities...)
+				case "label":
+					for _, entity := range errClause.Entities {
+						labelIds = append(labelIds, entity)
+					}
+				default:
+					newErr = append(newErr, errClause)
+				}
+			}
+			errors = newErr
+		}
+
+		if len(errors) > 0 {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"errors": errors,
+			})
+		}
+	}
+
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		if len(labelIds) > 0 {
+			var labels []dao.Label
+			if err := tx.
+				Where("workspace_id = ?", targetProject.WorkspaceId).
+				Where("id in (?)", labelIds).Find(&labels).Error; err != nil {
+				return err
+			}
+
+			var newLabels []dao.Label
+			for _, label := range labels {
+				id := dao.GenUUID()
+				l := dao.Label{
+					ID:          id,
+					Name:        label.Name,
+					Description: label.Description,
+					Color:       label.Color,
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+
+					WorkspaceId: targetProject.WorkspaceId,
+					ProjectId:   targetProject.ID,
+				}
+				newLabels = append(newLabels, l)
+				uuidLabel := label.ID
+				idsMap[uuidLabel] = id
+			}
+			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(stateIds) > 0 {
+			var states []dao.State
+			if err := tx.
+				Where("workspace_id = ?", targetProject.WorkspaceId).
+				Where("id in (?)", stateIds).Find(&states).Error; err != nil {
+				return err
+			}
+
+			for _, state := range states {
+				id := dao.GenUUID()
+				st := dao.State{
+					ID:          id,
+					Name:        state.Name,
+					Description: state.Description,
+					Color:       state.Color,
+					Slug:        state.Slug,
+					Group:       state.Group,
+
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+
+					WorkspaceId: targetProject.WorkspaceId,
+					ProjectId:   targetProject.ID,
+				}
+
+				stateMap[st.ID] = st
+				if err := updateStatesGroup(tx, &st, "create"); err != nil {
+				}
+				idsMap[state.ID] = id
+			}
+		}
+		return nil
+	}); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"errors": []ErrClause{
+				{
+					Error: ErrOther,
+					Type:  "transfer",
+				},
+			},
+		})
+	}
+
+	// Create issues
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+
+		for _, issue := range preparedIssues {
+			if deleteSrc {
+				if err := migrateIssueMove(issue, *user, tx, idsMap, !linkedIssues); err != nil {
+					return err
+				}
+			} else {
+				if err := migrateIssueCopy(issue, *user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
+					return err
+				}
+			}
+		}
+
+		if deleteSrc {
+			var seqId int
+			// Calculate sequence id
+			var lastId sql.NullInt64
+			row := tx.Model(&dao.Issue{}).
+				Select("max(sequence_id)").
+				Unscoped().
+				Where("project_id = ?", targetProjectId).
+				Row()
+			if err := row.Scan(&lastId); err != nil {
+				return err
+			}
+
+			// Just use the last ID specified (which should be the greatest) and add one to it
+			if lastId.Valid {
+				seqId = int(lastId.Int64)
+			} else {
+				seqId = 0
+			}
+
+			stateCreated := createEntities && len(stateIds) > 0
+
+			for i := range srcIssues {
+				seqId++
+				srcIssues[i].SequenceId = seqId
+				if !linkedIssues && srcIssues[i].Parent != nil {
+					srcIssues[i].Parent = nil
+					srcIssues[i].ParentId = uuid.NullUUID{}
+				}
+
+				if stateCreated && srcIssues[i].StateId == uuid.Nil {
+					id := srcIssues[i].State.ID
+					stateTmp := stateMap[idsMap[id]]
+					srcIssues[i].State = &stateTmp
+					srcIssues[i].StateId = stateTmp.ID
+				}
+			}
+
+			err := stateActivityUpdate(tx, familyIds, srcIssue.ProjectId, targetProject.ID)
+			if err != nil {
+				return err
+			}
+
+			if err := tx.
+				Where("(block_id IN (?) AND blocked_by_id NOT IN (?) AND project_id IN (?, ?)) OR (blocked_by_id IN (?) AND block_id NOT IN (?) AND project_id IN (?, ?))",
+					familyIds, familyIds, srcIssue.ProjectId, targetProjectId,
+					familyIds, familyIds, srcIssue.ProjectId, targetProjectId).
+				Delete(&dao.IssueBlocker{}).Error; err != nil {
+				return err
+			}
+
+			if !linkedIssues {
+				if err := tx.Model(&dao.Issue{}).
+					Where("id NOT IN (?)", familyIds).
+					Where("parent_id IN (?)", familyIds).
+					Update("parent_id", nil).Error; err != nil {
+					return err
+				}
+			}
+
+			{
+				if err := tx.
+					Where("(id1 IN ? and id2 NOT IN ?) OR (id1 NOT IN ? and id2 IN ?)", familyIds, familyIds, familyIds, familyIds).
+					Delete(&dao.LinkedIssues{}).Error; err != nil {
+					return err
+				}
+			}
+
+			if err := tx.Omit(clause.Associations).Save(&srcIssues).Error; err != nil {
+				return err
+			}
+		} else {
+			for key := range linkedIds {
+				ids := strings.Split(key, " ")
+				if len(ids) == 2 {
+					uuid1, err := uuid.FromString(ids[0])
+					if err != nil {
+						continue
+					}
+					uuid2, err := uuid.FromString(ids[1])
+					if err != nil {
+						continue
+					}
+
+					tmp := dao.LinkedIssues{Id1: uuid1, Id2: uuid2}
+					if err := tx.Create(&tmp).Error; err != nil {
+						continue
+					}
+				}
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"errors": []ErrClause{
+				{
+					Error: ErrOther,
+					Type:  "transfer",
+				},
+			},
+		})
+	}
+
+	var newId uuid.UUID
+	if deleteSrc {
+		newId = srcIssue.ID
+		for _, issue := range srcIssues {
+			err = s.snapshotTracker.TrackVerb(types.LayerIssue, activities.VerbMove, &issue, user,
+				tracker.WithField(activities.Project.Field),
+				tracker.WithOldVal(srcProject.Identifier),
+				tracker.WithNewVal(targetProject.Identifier),
+				tracker.WithOldID(srcProject.ID),
+				tracker.WithNewID(targetProject.ID),
+			)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbAdded, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
+
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbRemoved, &srcProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithOldVal(issue.Name),
+				tracker.WithOldID(issue.ID),
+			)
+
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+		}
+	} else {
+		var newIssues []dao.Issue
+		s.DB(c).Joins("Project").Where("issues.id in (?)", newFamilyIds).Find(&newIssues)
+
+		for _, issue := range newIssues {
+			err := s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbCopied, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+		}
+		newId = idsMap[srcIssueUUId]
+	}
+
+	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: newId})
+}
+
+// migrateIssuesByLabel godoc
+// @id migrateIssuesByLabel
+// @Summary Задачи (миграции): миграция задач по метке рабочего пространства
+// @Description Мигрирует все задачи с определенной меткой из одного проекта в другой с опциональной поддержкой связанных задач и удаления исходных задач
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param workspaceSlug path string true "Slug рабочего пространства"
+// @Param target_project query string true "ID целевого проекта"
+// @Param src_label query string true "ID исходной метки"
+// @Param linked_issues query bool false "Мигрировать связанные задачи" default(false)
+// @Param delete_src query bool false "Удалить исходные задачи после миграции" default(false)
+// @Param create_entities query bool false "Создать не достающие label, state" default(false)
+// @Success 204 "Задачи успешно мигрированы"
+// @Failure 400 {object} map[string]interface{} "Некорректные параметры запроса или данные"
+// @Failure 404 {object} apierrors.DefinedError "Целевой проект или исходная метка не найдены"
+// @Failure 500 {object} apierrors.DefinedError "Внутренняя ошибка сервера"
+// @Router /api/auth/workspaces/{workspaceSlug}/issues/migrate/byLabel [post]
+func (s *Services) migrateIssuesByLabel(c echo.Context) error {
+	user := apicontext.GetContext(c).GetUser()
+
+	targetProjectId := ""
+	srcLabelId := ""
+	linkedIssues := false
+	deleteSrc := false
+	createEntities := false
+
+	if err := echo.QueryParamsBinder(c).
+		String("target_project", &targetProjectId).
+		String("src_label", &srcLabelId).
+		Bool("linked_issues", &linkedIssues).
+		Bool("delete_src", &deleteSrc).
+		Bool("create_entities", &createEntities).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	var labelIds []uuid.UUID
+	var stateIds []uuid.UUID
+	stateMap := make(map[uuid.UUID]dao.State)
+
+	var targetProject, srcProject dao.Project
+	if err := s.DB(c).Where("id = ?", targetProjectId).First(&targetProject).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"errors": []ErrClause{
+					{
+						Error: ErrTargetProjectNotFound,
+						Type:  "project",
+					},
+				},
+			})
+		}
+		return EError(c, err)
+	}
+
+	var srcLabel dao.Label
+	if err := s.DB(c).Where("id = ?", srcLabelId).
+		Preload(clause.Associations).
+		First(&srcLabel).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"errors": []ErrClause{
+					{
+						Error: ErrLabelNotFound,
+						Type:  "label",
+					},
+				},
+			})
+		}
+		return EError(c, err)
+	}
+
+	srcProject = *srcLabel.Project
+
+	var srcIssues []dao.Issue
+	if err := s.DB(c).Preload(clause.Associations).Where("id in (?)", s.DB(c).Select("issue_id").Where("label_id = ?", srcLabel.ID).Model(&dao.IssueLabel{})).
+		Where("project_id = ?", srcLabel.ProjectId).
+		Find(&srcIssues).Error; err != nil {
+		return EError(c, err)
+	}
+
+	var projectMember dao.ProjectMember
+
+	if err := s.DB(c).Where("project_id = ?", srcProject.ID).
+		Where("member_id = ?", user.ID).First(&projectMember).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if linkedIssues {
+		srcIssueMap := make(map[uuid.UUID]dao.Issue)
+		compereAuthorId := uuid.NullUUID{}
+		if projectMember.Role != types.AdminRole {
+			compereAuthorId = uuid.NullUUID{UUID: user.ID, Valid: true}
+
+		}
+		for i, srcIssue := range srcIssues {
+			srcIssues[i].FetchLinkedIssues(s.db)
+			srcIssueMap[srcIssue.ID] = srcIssue
+			for _, issue := range dao.GetIssueFamily(srcIssue, s.db, compereAuthorId) {
+				srcIssueMap[issue.ID] = issue
+			}
+		}
+		srcIssues = srcIssues[:0]
+		for _, issue := range srcIssueMap {
+			srcIssues = append(srcIssues, issue)
+		}
+	}
+
+	if len(srcIssues) == 0 {
+		return c.NoContent(http.StatusNotModified)
+	}
+
+	idsMap := make(map[uuid.UUID]uuid.UUID)
+	idsCommentMap := make(map[uuid.UUID]uuid.UUID)
+	linkedIds := make(map[string]struct{})
+
+	var targetIds, newTargetIds []uuid.UUID
+	preparedIssues := make([]IssueCheckResult, len(srcIssues))
+
+	// Checks
+	{
+		var errors []ErrClause
+		if _, exist := dao.IsProjectMember(s.db, user.ID, targetProject.ID); !exist {
+			errors = append(errors, ErrClause{
+				Error: ErrUserNotAProjectMember,
+			})
+		}
+
+		for i, issue := range srcIssues {
+			result, err := s.CheckIssueBeforeMigrate(issue, targetProject, false)
+			if err != nil {
+				return EError(c, err)
+			}
+			if deleteSrc {
+				srcIssues[i].ProjectId = targetProject.ID
+				srcIssues[i].Project = &targetProject
+				srcIssues[i].StateId = result.TargetState.ID
+				if result.TargetState.ID != uuid.Nil {
+					srcIssues[i].State = &result.TargetState
+				}
+			}
+			errors = append(errors, result.Errors...)
+			preparedIssues[i] = result
+			idsMap[result.SrcIssue.ID] = result.TargetId
+			targetIds = append(targetIds, result.SrcIssue.ID)
+			newTargetIds = append(newTargetIds, result.TargetId)
+		}
+
+		if !deleteSrc {
+			for _, issue := range srcIssues {
+				newId1, okId1 := idsMap[issue.ID]
+				if !okId1 {
+					continue
+				}
+				for _, id := range issue.LinkedIssuesIDs {
+					newId2, okId2 := idsMap[id]
+
+					if okId2 {
+						key := linkedIdToStringKey(newId1, newId2)
+						linkedIds[key] = struct{}{}
+					}
+				}
+			}
+		}
+
+		var comments []dao.IssueComment
+		if err := s.DB(c).Where("issue_id in ?", targetIds).Find(&comments).Error; err != nil {
+			return EError(c, err)
+		}
+		for _, comment := range comments {
+			idsCommentMap[comment.Id] = dao.GenUUID()
+		}
+
+		if createEntities {
+			newErr := make([]ErrClause, 0)
+			for _, errClause := range errors {
+				switch errClause.Type {
+				case "state":
+					stateIds = append(stateIds, errClause.Entities...)
+				case "label":
+					for _, entity := range errClause.Entities {
+						labelIds = append(labelIds, entity)
+					}
+				default:
+					newErr = append(newErr, errClause)
+				}
+			}
+			errors = newErr
+		}
+
+		if len(errors) > 0 {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"errors": errors,
+			})
+		}
+	}
+
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+		if len(labelIds) > 0 {
+			var labels []dao.Label
+			if err := tx.
+				Where("workspace_id = ?", targetProject.WorkspaceId).
+				Where("id in (?)", labelIds).Find(&labels).Error; err != nil {
+				return err
+			}
+
+			var newLabels []dao.Label
+			for _, label := range labels {
+				id := dao.GenUUID()
+				l := dao.Label{
+					ID:          id,
+					Name:        label.Name,
+					Description: label.Description,
+					Color:       label.Color,
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+
+					WorkspaceId: targetProject.WorkspaceId,
+					ProjectId:   targetProject.ID,
+				}
+				newLabels = append(newLabels, l)
+				uuidLabel := label.ID
+				idsMap[uuidLabel] = id
+			}
+			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(stateIds) > 0 {
+			var states []dao.State
+			if err := tx.
+				Where("workspace_id = ?", targetProject.WorkspaceId).
+				Where("id in (?)", stateIds).Find(&states).Error; err != nil {
+				return err
+			}
+
+			for _, state := range states {
+				id := dao.GenUUID()
+				st := dao.State{
+					ID:          id,
+					Name:        state.Name,
+					Description: state.Description,
+					Color:       state.Color,
+					Slug:        state.Slug,
+					Group:       state.Group,
+
+					CreatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+					UpdatedById: uuid.NullUUID{UUID: user.ID, Valid: true},
+
+					WorkspaceId: targetProject.WorkspaceId,
+					ProjectId:   targetProject.ID,
+				}
+
+				stateMap[st.ID] = st
+				if err := updateStatesGroup(tx, &st, "create"); err != nil {
+				}
+				idsMap[state.ID] = id
+			}
+		}
+		return nil
+	}); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"errors": []ErrClause{
+				{
+					Error: ErrOther,
+					Type:  "transfer",
+				},
+			},
+		})
+	}
+
+	// Create issues
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
+
+		for _, issue := range preparedIssues {
+			if deleteSrc {
+				if err := migrateIssueMove(issue, *user, tx, idsMap, !linkedIssues); err != nil {
+					return err
+				}
+			} else {
+				if err := migrateIssueCopy(issue, *user, tx, idsMap, idsCommentMap, !linkedIssues); err != nil {
+					return err
+				}
+			}
+		}
+
+		if deleteSrc {
+			var seqId int
+			// Calculate sequence id
+			var lastId sql.NullInt64
+			row := tx.Model(&dao.Issue{}).
+				Select("max(sequence_id)").
+				Unscoped().
+				Where("project_id = ?", targetProjectId).
+				Row()
+			if err := row.Scan(&lastId); err != nil {
+				return err
+			}
+
+			// Just use the last ID specified (which should be the greatest) and add one to it
+			if lastId.Valid {
+				seqId = int(lastId.Int64)
+			} else {
+				seqId = 0
+			}
+
+			stateCreated := createEntities && len(stateIds) > 0
+
+			for i := range srcIssues {
+				seqId++
+				srcIssues[i].SequenceId = seqId
+				if !linkedIssues && srcIssues[i].Parent != nil {
+					if _, ok := idsMap[srcIssues[i].Parent.ID]; !ok {
+						srcIssues[i].Parent = nil
+						srcIssues[i].ParentId = uuid.NullUUID{}
+					}
+				}
+
+				if stateCreated && srcIssues[i].StateId == uuid.Nil {
+					id := srcIssues[i].State.ID
+					stateTmp := stateMap[idsMap[id]]
+					srcIssues[i].State = &stateTmp
+					srcIssues[i].StateId = stateTmp.ID
+				}
+			}
+
+			err := stateActivityUpdate(tx, targetIds, srcProject.ID, targetProject.ID)
+			if err != nil {
+				return err
+			}
+
+			if err := tx.
+				Where("(block_id IN (?) AND blocked_by_id NOT IN (?) AND project_id IN (?, ?)) OR (blocked_by_id IN (?) AND block_id NOT IN (?) AND project_id IN (?, ?))",
+					targetIds, targetIds, srcLabel.ProjectId, targetProjectId,
+					targetIds, targetIds, srcLabel.ProjectId, targetProjectId).
+				Delete(&dao.IssueBlocker{}).Error; err != nil {
+				return err
+			}
+
+			if !linkedIssues {
+				if err := tx.Model(&dao.Issue{}).
+					Where("id NOT IN (?)", targetIds).
+					Where("parent_id IN (?)", targetIds).
+					Update("parent_id", nil).Error; err != nil {
+					return err
+				}
+			}
+
+			{
+				if err := tx.
+					Where("(id1 IN ? and id2 NOT IN ?) OR (id1 NOT IN ? and id2 IN ?)", targetIds, targetIds, targetIds, targetIds).
+					Delete(&dao.LinkedIssues{}).Error; err != nil {
+					return err
+				}
+			}
+
+			if err := tx.Omit(clause.Associations).Save(&srcIssues).Error; err != nil {
+				return err
+			}
+		} else {
+			for key := range linkedIds {
+				ids := strings.Split(key, " ")
+				if len(ids) == 2 {
+					uuid1, err := uuid.FromString(ids[0])
+					if err != nil {
+						continue
+					}
+					uuid2, err := uuid.FromString(ids[1])
+					if err != nil {
+						continue
+					}
+
+					tmp := dao.LinkedIssues{Id1: uuid1, Id2: uuid2}
+					if err := tx.Create(&tmp).Error; err != nil {
+						continue
+					}
+				}
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"errors": []ErrClause{
+				{
+					Error: ErrOther,
+					Type:  "transfer",
+				},
+			},
+		})
+	}
+
+	if deleteSrc {
+		for _, issue := range srcIssues {
+			err := s.snapshotTracker.TrackVerb(types.LayerIssue, activities.VerbMove, &issue, user,
+				tracker.WithField(activities.Project.Field),
+				tracker.WithOldVal(srcProject.Identifier),
+				tracker.WithOldID(srcProject.ID),
+				tracker.WithNewVal(targetProject.Identifier),
+				tracker.WithNewID(targetProject.ID),
+			)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbAdded, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+
+			err = s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbRemoved, &srcProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithOldVal(issue.Name),
+				tracker.WithOldID(issue.ID),
+			)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+		}
+	} else {
+		var newIssues []dao.Issue
+		s.DB(c).Joins("Project").Where("issues.id in (?)", newTargetIds).Find(&newIssues)
+
+		for _, issue := range newIssues {
+			err := s.snapshotTracker.TrackVerb(types.LayerProject, activities.VerbCopied, &targetProject, user,
+				tracker.WithField(activities.Issue.Field),
+				tracker.WithNewVal(issue.Name),
+				tracker.WithNewID(issue.ID),
+			)
+			if err != nil {
+				errStack.GetError(c, err)
+			}
+		}
+	}
+
+	return c.NoContent(http.StatusCreated)
+}
+
+type IssueCheckResult struct {
+	SrcIssue      dao.Issue
+	TargetProject dao.Project
+	TargetId      uuid.UUID
+
+	TargetState  dao.State
+	TargetLabels []dao.Label
+	MapLabelIds  map[uuid.UUID]uuid.UUID
+
+	Migrate bool
+	Errors  []ErrClause
+}
+
+type stateTarget struct {
+	Str      string
+	Id       uuid.UUID
+	Relation bool
+}
+
+func (st *stateTarget) getID() uuid.NullUUID {
+	if st.Relation {
+		return uuid.NullUUID{UUID: st.Id, Valid: true}
+	}
+	return uuid.NullUUID{}
+}
+
+func (s *Services) CheckIssueBeforeMigrate(srcIssue dao.Issue, targetProject dao.Project, migrateWithNewState bool) (IssueCheckResult, error) {
+	res := IssueCheckResult{
+		SrcIssue:      srcIssue,
+		TargetProject: targetProject,
+		TargetId:      dao.GenUUID(),
+	}
+
+	// Check memberships
+	{
+		if !srcIssue.Author.IsBot {
+			if _, exist := dao.IsProjectMember(s.db, srcIssue.CreatedById, targetProject.ID); !exist {
+				res.Errors = append(res.Errors, ErrClause{
+					Error:           ErrAuthorNotAProjectMember,
+					SrcIssueId:      &srcIssue.ID,
+					IssueSequenceId: srcIssue.SequenceId,
+					Type:            "user",
+					Entities:        []uuid.UUID{srcIssue.CreatedById},
+				})
+			}
+		}
+
+		assigneeErr := ErrClause{
+			Error:           ErrAssigneesNotFound,
+			Type:            "user",
+			SrcIssueId:      &srcIssue.ID,
+			IssueSequenceId: srcIssue.SequenceId,
+		}
+
+		assigneeRoleErr := ErrClause{
+			Error:           ErrAssigneeRoleInvalid,
+			Type:            "user",
+			SrcIssueId:      &srcIssue.ID,
+			IssueSequenceId: srcIssue.SequenceId,
+		}
+
+		for _, assigneeId := range srcIssue.AssigneeIDs {
+			role, exist := dao.IsProjectMember(s.db, assigneeId, targetProject.ID)
+			if !exist {
+				assigneeErr.Entities = append(assigneeErr.Entities, assigneeId)
+			}
+			if role < types.MemberRole {
+				assigneeRoleErr.Entities = append(assigneeRoleErr.Entities, assigneeId)
+			}
+		}
+
+		if len(assigneeErr.Entities) > 0 {
+			res.Errors = append(res.Errors, assigneeErr)
+		}
+
+		if len(assigneeRoleErr.Entities) > 0 {
+			res.Errors = append(res.Errors, assigneeRoleErr)
+		}
+
+		watcherErr := ErrClause{
+			Error:           ErrWatchersNotFound,
+			Type:            "user",
+			SrcIssueId:      &srcIssue.ID,
+			IssueSequenceId: srcIssue.SequenceId,
+		}
+		watcherRoleErr := ErrClause{
+			Error:           ErrWatcherRoleInvalid,
+			Type:            "user",
+			SrcIssueId:      &srcIssue.ID,
+			IssueSequenceId: srcIssue.SequenceId,
+		}
+		for _, watcherId := range srcIssue.WatcherIDs {
+			role, exist := dao.IsProjectMember(s.db, watcherId, targetProject.ID)
+			if !exist {
+				watcherErr.Entities = append(watcherErr.Entities, watcherId)
+			}
+			if role < types.GuestRole {
+				watcherRoleErr.Entities = append(watcherRoleErr.Entities, watcherId)
+			}
+		}
+		if len(watcherErr.Entities) > 0 {
+			res.Errors = append(res.Errors, watcherErr)
+		}
+
+		if len(watcherRoleErr.Entities) > 0 {
+			res.Errors = append(res.Errors, watcherRoleErr)
+		}
+	}
+
+	// Check state
+	{
+		if migrateWithNewState == false {
+			if err := s.RawDB().Where("project_id = ?", targetProject.ID).
+				Where("name = ?", srcIssue.State.Name).
+				Where("\"group\" = ?", srcIssue.State.Group).
+				Where("color = ?", srcIssue.State.Color).
+				First(&res.TargetState).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					res.Errors = append(res.Errors, ErrClause{
+						Error:           ErrStateNotFound,
+						SrcIssueId:      &srcIssue.ID,
+						IssueSequenceId: srcIssue.SequenceId,
+						Type:            "state",
+						Entities:        []uuid.UUID{srcIssue.State.ID},
+					})
+				} else {
+					return res, err
+				}
+			}
+		} else {
+			res.TargetState = *srcIssue.State
+		}
+	}
+
+	// Check labels
+	{
+		labelsError := ErrClause{
+			Error:           ErrLabelsNotFound,
+			Type:            "label",
+			SrcIssueId:      &srcIssue.ID,
+			IssueSequenceId: srcIssue.SequenceId,
+		}
+		res.MapLabelIds = make(map[uuid.UUID]uuid.UUID, len(*srcIssue.Labels))
+
+		for _, label := range *srcIssue.Labels {
+			var targetLabel dao.Label
+			if err := s.RawDB().Where("name = ?", label.Name).
+				Where("color = ?", label.Color).
+				Where("project_id = ?", targetProject.ID).
+				First(&targetLabel).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					labelsError.Entities = append(labelsError.Entities, label.ID)
+				} else {
+					return res, err
+				}
+			}
+			res.MapLabelIds[label.ID] = targetLabel.ID
+			res.TargetLabels = append(res.TargetLabels, targetLabel)
+		}
+		if len(labelsError.Entities) > 0 {
+			res.Errors = append(res.Errors, labelsError)
+		}
+	}
+	return res, nil
+}
+
+func migrateIssueMove(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap map[uuid.UUID]uuid.UUID, single bool) error {
+	srcIssue := issue.SrcIssue
+	var familyIds []uuid.UUID
+	for key := range idsMap {
+		familyIds = append(familyIds, key)
+	}
+
+	if issue.Migrate {
+		return nil
+	}
+
+	{ // Add assignees
+		var oldAssignees []dao.IssueAssignee
+		if err := tx.
+			Where("issue_id = ?", srcIssue.ID).Find(&oldAssignees).Error; err != nil {
+			return err
+		}
+
+		diffAssignees := diffUUID(
+			append(srcIssue.AssigneeIDs, issue.TargetProject.DefaultAssignees...),
+			utils.SliceToSlice(&oldAssignees, func(t *dao.IssueAssignee) uuid.UUID { return t.AssigneeId }),
+		)
+
+		if len(diffAssignees.del) > 0 {
+			if err := tx.
+				Where("issue_id = ?", srcIssue.ID).
+				Where("assignee_id IN (?)", diffAssignees.del).Unscoped().
+				Delete(&dao.IssueAssignee{}).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(diffAssignees.update) > 0 {
+			if err := tx.Model(&dao.IssueAssignee{}).
+				Where("issue_id = ? AND assignee_id IN (?)", srcIssue.ID, diffAssignees.update).
+				Update("project_id", issue.TargetProject.ID).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(diffAssignees.add) > 0 {
+			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+			newAssignees := make([]dao.IssueAssignee, len(diffAssignees.add))
+			for i, assignee := range diffAssignees.add {
+				newAssignees[i] = dao.IssueAssignee{
+					Id:          dao.GenUUID(),
+					AssigneeId:  assignee,
+					IssueId:     srcIssue.ID,
+					ProjectId:   issue.TargetProject.ID,
+					WorkspaceId: srcIssue.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				}
+			}
+			if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	{ // Add watchers
+		var oldWatchers []dao.IssueWatcher
+		if err := tx.
+			Where("issue_id = ?", srcIssue.ID).Find(&oldWatchers).Error; err != nil {
+			return err
+		}
+
+		diffWatchers := diffUUID(
+			append(srcIssue.WatcherIDs, issue.TargetProject.DefaultWatchers...),
+			utils.SliceToSlice(&oldWatchers, func(t *dao.IssueWatcher) uuid.UUID { return t.WatcherId }),
+		)
+
+		if len(diffWatchers.del) > 0 {
+			if err := tx.
+				Where("issue_id = ?", srcIssue.ID).
+				Where("watcher_id IN (?)", diffWatchers.del).Unscoped().
+				Delete(&dao.IssueWatcher{}).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(diffWatchers.update) > 0 {
+			if err := tx.Model(&dao.IssueWatcher{}).
+				Where("issue_id = ? AND watcher_id IN (?)", srcIssue.ID, diffWatchers.update).
+				Update("project_id", issue.TargetProject.ID).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(diffWatchers.add) > 0 {
+			userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+			newWatchers := make([]dao.IssueWatcher, len(diffWatchers.add))
+			for i, watcher := range diffWatchers.add {
+				newWatchers[i] = dao.IssueWatcher{
+					Id:          dao.GenUUID(),
+					WatcherId:   watcher,
+					IssueId:     srcIssue.ID,
+					ProjectId:   issue.TargetProject.ID,
+					WorkspaceId: srcIssue.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				}
+			}
+			if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
+				return err
+			}
+		}
+	}
+	// Labels
+	{
+		for srcLabelId, targetLabelId := range issue.MapLabelIds {
+			if targetLabelId.IsNil() {
+				v, ok := idsMap[srcLabelId]
+				if !ok {
+					return fmt.Errorf("label mapping not found for %s", srcLabelId)
+				}
+				targetLabelId = v
+			}
+			if err := tx.Model(&dao.IssueLabel{}).
+				Where("issue_id = ? and label_id = ?", srcIssue.ID, srcLabelId).
+				Update("project_id", issue.TargetProject.ID).
+				Update("label_id", targetLabelId).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	// Comments
+	{
+		if err := tx.Model(&dao.IssueComment{}).
+			Where("issue_id = ?", srcIssue.ID).
+			Update("project_id", issue.TargetProject.ID).Error; err != nil {
+			return err
+		}
+	}
+
+	// Attachments
+	{
+		if err := tx.Model(&dao.IssueAttachment{}).
+			Where("issue_id = ?", srcIssue.ID).
+			Update("project_id", issue.TargetProject.ID).Error; err != nil {
+			return err
+		}
+	}
+
+	// Links
+	{
+		if err := tx.Model(&dao.IssueLink{}).
+			Where("issue_id = ?", srcIssue.ID).
+			Update("project_id", issue.TargetProject.ID).Error; err != nil {
+			return err
+		}
+	}
+
+	// Activities
+	{
+		if err := tx.Model(&dao.ActivityEvent{}).
+			Where("issue_id = ?", srcIssue.ID).
+			Update("project_id", issue.TargetProject.ID).Error; err != nil {
+			return err
+		}
+	}
+
+	// Blockers
+	{
+		if err := tx.Model(&dao.IssueBlocker{}).
+			Where("blocked_by_id = ? AND block_id in (?)", srcIssue.ID, familyIds).
+			Update("project_id", issue.TargetProject.ID).Error; err != nil {
+			return err
+		}
+	}
+
+	// Rules-log
+	{
+		if err := tx.Where("issue_id = ?", issue.SrcIssue.ID).Delete(&dao.RulesLog{}).Error; err != nil {
+			return err
+		}
+	}
+	issue.Migrate = true
+	return nil
+}
+
+func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap map[uuid.UUID]uuid.UUID, idsCommentMap map[uuid.UUID]uuid.UUID, single bool) error {
+	srcIssue := issue.SrcIssue
+
+	if issue.Migrate {
+		return nil
+	}
+
+	targetIssue := issue.SrcIssue
+	targetIssue.ID = issue.TargetId
+	targetIssue.ProjectId = issue.TargetProject.ID
+	if issue.TargetState.ID == uuid.Nil {
+		if err := tx.Where("workspace_id = ?", issue.SrcIssue.WorkspaceId).
+			Where("project_id = ?", issue.TargetProject.ID).
+			Where("id = ?", idsMap[issue.SrcIssue.StateId]).
+			First(&issue.TargetState).Error; err != nil {
+			return err
+		}
+	}
+	targetIssue.StateId = issue.TargetState.ID
+	targetIssue.State = &issue.TargetState
+
+	if targetIssue.ParentId.Valid {
+		targetIssue.ParentId = uuid.NullUUID{UUID: idsMap[srcIssue.Parent.ID], Valid: true}
+	}
+
+	if single {
+		targetIssue.ParentId = uuid.NullUUID{}
+	}
+
+	tx.Exec("SET session_replication_role = 'replica'")
+	if err := dao.CreateIssue(tx, &targetIssue); err != nil {
+		return err
+	}
+	tx.Exec("SET session_replication_role = 'origin'")
+
+	// Add assignees
+	var assigneesList []uuid.UUID
+	if len(srcIssue.AssigneeIDs) > 0 {
+		assigneesList = srcIssue.AssigneeIDs
+	} else if len(issue.TargetProject.DefaultAssignees) > 0 {
+		assigneesList = issue.TargetProject.DefaultAssignees
+	}
+	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
+	if len(assigneesList) > 0 {
+		var newAssignees []dao.IssueAssignee
+		for _, assignee := range assigneesList {
+			newAssignees = append(newAssignees, dao.IssueAssignee{
+				Id:          dao.GenUUID(),
+				AssigneeId:  assignee,
+				IssueId:     targetIssue.ID,
+				ProjectId:   issue.TargetProject.ID,
+				WorkspaceId: srcIssue.WorkspaceId,
+				CreatedById: userID,
+				UpdatedById: userID,
+			})
+		}
+		if err := tx.CreateInBatches(&newAssignees, 10).Error; err != nil {
+			return err
+		}
+	}
+
+	// Add watchers
+	var watchersList []uuid.UUID
+	if len(srcIssue.WatcherIDs) > 0 {
+		watchersList = srcIssue.WatcherIDs
+	} else if len(issue.TargetProject.DefaultWatchers) > 0 {
+		watchersList = issue.TargetProject.DefaultWatchers
+	}
+	if len(watchersList) > 0 {
+		var newWatchers []dao.IssueWatcher
+		for _, watcher := range watchersList {
+			newWatchers = append(newWatchers, dao.IssueWatcher{
+				Id:          dao.GenUUID(),
+				WatcherId:   watcher,
+				IssueId:     targetIssue.ID,
+				ProjectId:   issue.TargetProject.ID,
+				WorkspaceId: srcIssue.WorkspaceId,
+				CreatedById: userID,
+				UpdatedById: userID,
+			})
+		}
+		if err := tx.CreateInBatches(&newWatchers, 10).Error; err != nil {
+			return err
+		}
+	}
+
+	// Labels
+	{
+		var newLabels []dao.IssueLabel
+		for _, label := range issue.TargetLabels {
+			if label.ID.IsNil() {
+				continue
+			}
+			newLabels = append(newLabels, dao.IssueLabel{
+				Id:          dao.GenUUID(),
+				LabelId:     label.ID,
+				IssueId:     targetIssue.ID,
+				ProjectId:   issue.TargetProject.ID,
+				WorkspaceId: targetIssue.WorkspaceId,
+				CreatedById: userID,
+				UpdatedById: userID,
+			})
+		}
+
+		for k, v := range issue.MapLabelIds {
+			if v.IsNil() {
+				v, ok := idsMap[k]
+				if !ok {
+					return fmt.Errorf("label mapping not found for %s", k)
+				}
+				newLabels = append(newLabels, dao.IssueLabel{
+					Id:          dao.GenUUID(),
+					LabelId:     v,
+					IssueId:     targetIssue.ID,
+					ProjectId:   issue.TargetProject.ID,
+					WorkspaceId: targetIssue.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				})
+			}
+		}
+		if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
+			return err
+		}
+	}
+
+	// Comments, reactions
+	{
+		var comments []dao.IssueComment
+		var commentIds []uuid.UUID
+
+		if err := tx.Where("issue_id = ?", srcIssue.ID).Find(&comments).Error; err != nil {
+			return err
+		}
+
+		for i := range comments {
+			commentIds = append(commentIds, comments[i].Id)
+			comments[i].Id = idsCommentMap[comments[i].Id]
+			comments[i].IssueId = targetIssue.ID
+			comments[i].ProjectId = issue.TargetProject.ID
+			if comments[i].ReplyToCommentId.Valid {
+				replyId := idsCommentMap[comments[i].ReplyToCommentId.UUID]
+				comments[i].ReplyToCommentId = uuid.NullUUID{UUID: replyId, Valid: true}
+			}
+		}
+
+		if err := tx.CreateInBatches(&comments, 10).Error; err != nil {
+			return err
+		}
+
+		var reactions []dao.CommentReaction
+		if err := tx.Where("comment_id in ?", commentIds).Find(&reactions).Error; err != nil {
+			return err
+		}
+
+		for i := range reactions {
+			reactions[i].Id = dao.GenUUID()
+			reactions[i].CommentId = idsCommentMap[reactions[i].CommentId]
+		}
+
+		if err := tx.CreateInBatches(&reactions, 10).Error; err != nil {
+			return err
+		}
+	}
+
+	// Attachments
+	{
+		var attachments []dao.IssueAttachment
+		if err := tx.Where("issue_id = ?", srcIssue.ID).Find(&attachments).Error; err != nil {
+			return err
+		}
+
+		for i := range attachments {
+			attachments[i].Id = dao.GenUUID()
+			attachments[i].IssueId = targetIssue.ID
+			attachments[i].ProjectId = issue.TargetProject.ID
+		}
+
+		if err := tx.CreateInBatches(&attachments, 10).Error; err != nil {
+			return err
+		}
+	}
+
+	// Links
+	{
+		var links []dao.IssueLink
+		if err := tx.Where("issue_id = ?", srcIssue.ID).Find(&links).Error; err != nil {
+			return err
+		}
+
+		for i := range links {
+			links[i].Id = dao.GenUUID()
+			links[i].IssueId = targetIssue.ID
+			links[i].ProjectId = issue.TargetProject.ID
+		}
+
+		if err := tx.CreateInBatches(&links, 10).Error; err != nil {
+			return err
+		}
+	}
+
+	// blockers
+	{
+		var blocker, newBlockers []dao.IssueBlocker
+		if err := tx.Where("blocked_by_id = ?", srcIssue.ID).Find(&blocker).Error; err != nil {
+			return err
+		}
+
+		for i, block := range blocker {
+			if _, ok := idsMap[block.BlockId]; !ok {
+				continue
+			}
+			blocker[i].Id = dao.GenUUID()
+			blocker[i].BlockId = idsMap[block.BlockId]
+			blocker[i].BlockedById = idsMap[block.BlockedById]
+			blocker[i].ProjectId = issue.TargetProject.ID
+			blocker[i].WorkspaceId = issue.TargetProject.WorkspaceId
+
+			newBlockers = append(newBlockers, blocker[i])
+		}
+
+		tx.Exec("SET session_replication_role = 'replica'")
+		if err := tx.CreateInBatches(&newBlockers, 10).Error; err != nil {
+			return err
+		}
+		tx.Exec("SET session_replication_role = 'origin'")
+	}
+
+	issue.Migrate = true
+	issue.SrcIssue = targetIssue
+
+	return nil
+}
+
+func stateRelation(tx *gorm.DB, srcProject, targetProject uuid.UUID) (error, map[uuid.UUID]stateTarget) {
+	var srcStates, targetStates []dao.State
+	if err := tx.Where("project_id = ?", srcProject).
+		Find(&srcStates).Error; err != nil {
+		return err, nil
+	}
+	if err := tx.Where("project_id = ?", targetProject).
+		Find(&targetStates).Error; err != nil {
+		return err, nil
+	}
+	result := make(map[uuid.UUID]stateTarget)
+	strState := func(state dao.State) string {
+		return fmt.Sprintf("%s-%s-%s", state.Name, state.Group, state.Color)
+	}
+
+	for _, state := range srcStates {
+		tmp := stateTarget{
+			Str:      strState(state),
+			Id:       uuid.Nil,
+			Relation: false,
+		}
+		for _, target := range targetStates {
+			if tmp.Str == strState(target) {
+				tmp.Id = target.ID
+				tmp.Relation = true
+			}
+		}
+		result[state.ID] = tmp
+	}
+
+	return nil, result
+}
+
+func stateActivityUpdate(tx *gorm.DB, ids []uuid.UUID, srcProjectId, targetProjectId uuid.UUID) error {
+	{
+		var activityState []dao.ActivityEvent
+		if err := tx.
+			Where("entity_type = ?", types.LayerIssue).
+			Where("issue_id IN ?", ids).
+			Where("field = ?", activities.Status.Field.String()).
+			Find(&activityState).Error; err != nil {
+			return err
+		}
+
+		err, stateMap := stateRelation(tx, srcProjectId, targetProjectId)
+		if err != nil {
+			return err
+		}
+		for i, activity := range activityState {
+			if activity.OldIdentifier.Valid {
+				oldState := stateMap[activity.OldIdentifier.UUID]
+				activityState[i].OldIdentifier = oldState.getID()
+			} else {
+				activityState[i].OldIdentifier = uuid.NullUUID{}
+			}
+			if activity.NewIdentifier.Valid {
+				newState := stateMap[activity.NewIdentifier.UUID]
+				activityState[i].NewIdentifier = newState.getID()
+			} else {
+				activityState[i].NewIdentifier = uuid.NullUUID{}
+			}
+		}
+
+		if len(activityState) == 0 {
+			return nil
+		}
+
+		if err := tx.Save(&activityState).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func linkedIdToStringKey(s1, s2 uuid.UUID) string {
+	if s1.String() < s2.String() {
+		return fmt.Sprintf("%s %s", s1, s2)
+	} else if s1.String() > s2.String() {
+		return fmt.Sprintf("%s %s", s2, s1)
+	} else {
+		return ""
+	}
+}
+
+type diffResult struct {
+	add    []uuid.UUID
+	del    []uuid.UUID
+	update []uuid.UUID
+}
+
+func diffUUID(req []uuid.UUID, cur []uuid.UUID) diffResult {
+	var result diffResult
+	type action int
+
+	reqMap := make(map[uuid.UUID]action, len(req)+len(cur))
+	add := action(1)
+	del := action(-1)
+	update := action(0)
+
+	for _, id := range req {
+		reqMap[id] = add
+	}
+
+	for _, id := range cur {
+		if _, ok := reqMap[id]; ok {
+			reqMap[id] = update
+		} else {
+			reqMap[id] = del
+		}
+	}
+
+	for id, v := range reqMap {
+		switch v {
+		case add:
+			result.add = append(result.add, id)
+		case del:
+			result.del = append(result.del, id)
+		case update:
+			result.update = append(result.update, id)
+		}
+	}
+
+	return result
+}
+
+// NewIssueParam изменяемы поля при копировании одиночной задачи
+type NewIssueParam struct {
+	Priority     types.JSONField[string]      `json:"priority,omitempty" extensions:"x-nullable" swaggertype:"string" enums:"urgent,high,medium,low"`
+	TargetDate   types.JSONField[string]      `json:"target_date,omitempty" extensions:"x-nullable" swaggertype:"string"`
+	AssignersIds types.JSONField[[]uuid.UUID] `json:"assigner_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
+	WatchersIds  types.JSONField[[]uuid.UUID] `json:"watcher_ids,omitempty" extensions:"x-nullable" swaggertype:"array,string"`
+
+	StateId types.JSONField[uuid.UUID] `json:"state_id,omitempty" extensions:"x-nullable" swaggertype:"string"`
+}
