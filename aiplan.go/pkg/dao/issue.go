@@ -62,6 +62,8 @@ type Issue struct {
 	ProjectId uuid.UUID `json:"project" gorm:"index:,type:hash,where:deleted_at is not null;type:uuid"`
 	// state_id uuid NOT NULL,
 	StateId uuid.UUID `json:"state"`
+	// Тип задачи: необязателен, у задач, заведённых до появления справочника, его нет
+	IssueTypeId uuid.NullUUID `json:"issue_type" gorm:"type:uuid;index" extensions:"x-nullable"`
 	// updated_by_id uuid,
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
@@ -99,6 +101,7 @@ type Issue struct {
 	Parent    *Issue       `json:"parent_detail" gorm:"foreignKey:ParentId;references:ID;belongsTo" extensions:"x-nullable"`
 	Workspace *Workspace   `json:"workspace_detail" gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
 	State     *State       `json:"state_detail" gorm:"foreignKey:StateId" extensions:"x-nullable"`
+	IssueType *IssueType   `json:"issue_type_detail" gorm:"foreignKey:IssueTypeId" extensions:"x-nullable"`
 	Project   *Project     `json:"project_detail" gorm:"foreignKey:ProjectId" extensions:"x-nullable"`
 	Assignees *[]User      `json:"assignee_details,omitempty" gorm:"many2many:issue_assignees;foreignKey:id;joinForeignKey:issue_id;References:id;joinReferences:assignee_id;- :migration" extensions:"x-nullable"`
 	Watchers  *[]User      `json:"watcher_details,omitempty" gorm:"many2many:issue_watchers;foreignKey:id;joinForeignKey:issue_id;References:id;joinReferences:watcher_id;- :migration" extensions:"x-nullable"`
@@ -274,6 +277,9 @@ func (i *Issue) ToLightDTO() *dto.IssueLight {
 		StateId:    i.StateId,
 		State:      i.State.ToLightDTO(),
 		Priority:   i.Priority,
+
+		IssueTypeId: i.IssueTypeId,
+		IssueType:   i.IssueType.ToLightDTO(),
 	}
 }
 
@@ -402,7 +408,7 @@ func (i *Issue) ToDTO() *dto.Issue {
 // Возвращает:
 //   - []string: список строк, представляющих имена полей, которые можно обновлять.
 func (Issue) FieldsAllowedForUpdate() []string {
-	return []string{"name", "priority", "target_date", "start_date", "completed_at", "parent_id", "state_id", "description_html", "description_stripped", "description_type", "description_json", "completed_at", "estimate_point", "updated_at", "updated_by_id", "draft", "sort_order"}
+	return []string{"name", "priority", "target_date", "start_date", "completed_at", "parent_id", "state_id", "description_html", "description_stripped", "description_type", "description_json", "completed_at", "estimate_point", "issue_type_id", "updated_at", "updated_by_id", "draft", "sort_order"}
 }
 
 // BeforeSave - проверяет, какие поля можно обновлять в Issue. Возвращает список разрешенных полей для обновления.

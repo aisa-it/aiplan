@@ -548,7 +548,9 @@ type IssuesListFilters struct {
 	AssigneeIds FilterUUIDs `json:"assignees"`
 	WatcherIds  FilterUUIDs `json:"watchers"`
 
-	StateIds       []uuid.UUID `json:"states"`
+	StateIds []uuid.UUID `json:"states"`
+	// IssueTypes - фильтр по типу задачи; пустое значение в списке отбирает задачи без типа
+	IssueTypes     FilterUUIDs `json:"issue_types"`
 	Priorities     []string    `json:"priorities"`
 	Labels         FilterUUIDs `json:"labels"`
 	WorkspaceIds   []string    `json:"workspaces"`

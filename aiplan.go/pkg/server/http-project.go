@@ -185,6 +185,12 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	s.projectRoute(projectGroup, http.MethodDelete, "/states/:stateId/", engine.ActionProjectStateManage, s.deleteState)
 	s.projectRoute(projectGroup, http.MethodGet, "/start-states/", engine.ActionProjectView, s.getProjectStartStates)
 
+	s.projectRoute(projectGroup, http.MethodGet, "/issue-types/", engine.ActionProjectView, s.getIssueTypeList)
+	s.projectRoute(projectGroup, http.MethodPost, "/issue-types/", engine.ActionProjectIssueTypeManage, s.createIssueType)
+	s.projectRoute(projectGroup, http.MethodGet, "/issue-types/:issueTypeId/", engine.ActionProjectView, s.getIssueType)
+	s.projectRoute(projectGroup, http.MethodPatch, "/issue-types/:issueTypeId/", engine.ActionProjectIssueTypeManage, s.updateIssueType)
+	s.projectRoute(projectGroup, http.MethodDelete, "/issue-types/:issueTypeId/", engine.ActionProjectIssueTypeManage, s.deleteIssueType)
+
 	s.projectRoute(projectGroup, http.MethodPost, "/rules-log/", engine.ActionProjectRulesLogView, s.getRulesLog)
 
 	s.projectRoute(projectGroup, http.MethodGet, "/rules-script/", engine.ActionProjectRulesManage, s.getProjectRulesScript)
@@ -1835,6 +1841,16 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueNameEmpty)
 	}
 
+	// Тип задачи: заданный клиентом проверяется на принадлежность проекту,
+	// иначе подставляется тип проекта по умолчанию
+	issueTypeId, ok, err := dao.ResolveIssueTypeForProject(s.DB(c), project.ID, issue.IssueTypeId)
+	if err != nil {
+		return EError(c, err)
+	}
+	if !ok {
+		return EErrorDefined(c, apierrors.ErrIssueTypeNotFound)
+	}
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	issueNew := dao.Issue{
 		ID:                  dao.GenUUID(),
@@ -1848,6 +1864,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		ParentId:            issue.ParentId,
 		ProjectId:           project.ID,
 		StateId:             issue.StateId,
+		IssueTypeId:         issueTypeId,
 		UpdatedById:         uuid.NullUUID{UUID: user.ID, Valid: true},
 		WorkspaceId:         workspace.ID,
 		DescriptionHtml:     issue.DescriptionHtml,
@@ -2046,6 +2063,7 @@ func (s *Services) createIssue(c echo.Context) error {
 		Preload("Assignees").
 		Preload("Watchers").
 		Preload("State").
+		Preload("IssueType").
 		Where("id = ?", issueNew.ID).
 		First(&issueNew).Error; err != nil {
 		return EError(c, err)
@@ -2053,7 +2071,7 @@ func (s *Services) createIssue(c echo.Context) error {
 	//issueNew = *apiContext.GetIssue(apicontext.WithAssignees(), apicontext.WithWatchers(), apicontext.WithState())
 
 	newSnapshot := tracker.IssueToSnapshot(issueNew)
-	err := s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, issueNew.Project, user)
+	err = s.snapshotTracker.TrackChanges(types.LayerProject, nil, newSnapshot, issueNew.Project, user)
 	if err != nil {
 		errStack.GetError(c, err)
 	}

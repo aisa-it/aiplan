@@ -123,6 +123,7 @@ func (s *Searcher) buildSearchQuery(ctx context.Context, db *gorm.DB, scope engi
 			Preload("Assignees").
 			Preload("Labels").
 			Preload("Sprints").
+			Preload("IssueType").
 			Preload("Parent.State")
 	}
 
@@ -201,6 +202,14 @@ func (s *Searcher) buildSearchQuery(ctx context.Context, db *gorm.DB, scope engi
 				q = q.Or("issues.id not in (?)", db.
 					Select("issue_id").
 					Model(&dao.IssueLabel{}))
+			}
+			query = query.Where(q)
+		}
+
+		if !searchParams.Filters.IssueTypes.IsEmpty() {
+			q := db.Where("issues.issue_type_id in (?)", searchParams.Filters.IssueTypes.Array)
+			if searchParams.Filters.IssueTypes.IncludeEmpty {
+				q = q.Or("issues.issue_type_id is null")
 			}
 			query = query.Where(q)
 		}

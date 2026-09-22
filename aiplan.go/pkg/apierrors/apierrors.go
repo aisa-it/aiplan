@@ -281,6 +281,9 @@ var (
 	ErrPropertyDependencyInvalid          = DefinedError{Code: 4517, StatusCode: http.StatusBadRequest, Err: "invalid property dependency: %s", RuErr: "Некорректная зависимость поля: %s"}
 	ErrPropertyValueIncompatible          = DefinedError{Code: 4518, StatusCode: http.StatusBadRequest, Err: "value is not allowed by the parent property value", RuErr: "Значение недопустимо при текущем значении родительского параметра"}
 	ErrPropertyValuesNotUnique            = DefinedError{Code: 4519, StatusCode: http.StatusBadRequest, Err: "property values must be unique", RuErr: "Значения параметра не должны повторяться"}
+	ErrIssueTypeNotFound                  = DefinedError{Code: 4520, StatusCode: http.StatusNotFound, Err: "issue type not found", RuErr: "Тип задачи не найден"}
+	ErrIssueTypeNameRequired              = DefinedError{Code: 4521, StatusCode: http.StatusBadRequest, Err: "issue type name is required", RuErr: "Имя типа задачи обязательно"}
+	ErrIssueTypeInUse                     = DefinedError{Code: 4522, StatusCode: http.StatusConflict, Err: "issue type is used by issues", RuErr: "Тип задачи установлен у задач — удаление невозможно"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}

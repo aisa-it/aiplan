@@ -109,6 +109,7 @@ var (
 	ReaderRole       = FieldMapping{"reader_role", "reader_role"}
 	EditorRole       = FieldMapping{"editor_role", "editor_role"}
 	Status           = FieldMapping{"state", "status"}
+	IssueType        = FieldMapping{"issue_type", "issue_type"}
 	DefaultAssignees = FieldMapping{"default_assignees", "default_assignees"}
 	DefaultWatchers  = FieldMapping{"default_watchers", "default_watchers"}
 

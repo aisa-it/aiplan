@@ -209,6 +209,18 @@ func ParseSearchParamsMCP(args map[string]any) (*SearchParams, error) {
 		}
 	}
 
+	if v, ok := args["issue_types"].([]interface{}); ok {
+		for _, s := range v {
+			if str, ok := s.(string); ok {
+				if str == "" {
+					sp.Filters.IssueTypes.IncludeEmpty = true
+					continue
+				}
+				sp.Filters.IssueTypes.Array = append(sp.Filters.IssueTypes.Array, uuid.FromStringOrNil(str))
+			}
+		}
+	}
+
 	if v, ok := args["sprint_ids"].([]interface{}); ok {
 		for _, s := range v {
 			if str, ok := s.(string); ok {

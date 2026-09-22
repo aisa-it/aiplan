@@ -35,6 +35,13 @@ func WithState() FetchOption {
 		ifo.loaded["State"] = struct{}{}
 	}
 }
+func WithIssueType() FetchOption {
+	return func(ifo *IssueFetchOptions) {
+		ifo.query = ifo.query.Joins("IssueType")
+		ifo.loaded["IssueType"] = struct{}{}
+	}
+}
+
 func WithSprints() FetchOption {
 	return func(ifo *IssueFetchOptions) {
 		ifo.query = ifo.query.Preload("Sprints")
@@ -114,6 +121,7 @@ func WithAll() FetchOption {
 	return func(ifo *IssueFetchOptions) {
 		WithParent()(ifo)
 		WithState()(ifo)
+		WithIssueType()(ifo)
 		WithAuthor()(ifo)
 		WithSprints()(ifo)
 		WithAssignees()(ifo)

@@ -148,6 +148,7 @@ func writeFiltersReference(sb *strings.Builder) {
 	sb.WriteString("| project_ids | string[] | Фильтр по UUID проектов |\n")
 	sb.WriteString("| priorities | string[] | urgent, high, medium, low |\n")
 	sb.WriteString("| state_ids | string[] | UUID статусов (получи через get_state_list) |\n")
+	sb.WriteString("| issue_types | string[] | UUID типов задач; \"\" — задачи без типа |\n")
 	sb.WriteString("| assignee_ids | string[] | UUID исполнителей |\n")
 	sb.WriteString("| labels | string[] | UUID меток |\n")
 	sb.WriteString("| sprint_ids | string[] | UUID спринтов |\n")

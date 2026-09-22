@@ -26,6 +26,8 @@ import (
 var issueFieldActions = map[string]engine.Action{
 	actField.Status.Req:    engine.ActionIssueSetState,
 	"state_id":             engine.ActionIssueSetState, // второе написание статуса
+	actField.IssueType.Req: engine.ActionIssueUpdate,
+	"issue_type_id":        engine.ActionIssueUpdate, // второе написание типа задачи
 	actField.Assignees.Req: engine.ActionIssueSetAssignees,
 	actField.Watchers.Req:  engine.ActionIssueSetWatchers,
 	actField.Label.Req:     engine.ActionIssueSetLabels,

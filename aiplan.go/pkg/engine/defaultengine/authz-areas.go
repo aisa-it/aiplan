@@ -61,6 +61,7 @@ var (
 	projectManage = newActionSet(
 		engine.ActionProjectUpdate, engine.ActionProjectDelete, engine.ActionProjectMemberManage,
 		engine.ActionProjectEstimateManage, engine.ActionProjectLabelManage, engine.ActionProjectStateManage,
+		engine.ActionProjectIssueTypeManage,
 		engine.ActionProjectRulesLogView, engine.ActionIssueBulkEdit,
 	)
 	projectAdminOnly = newActionSet(

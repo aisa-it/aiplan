@@ -24,6 +24,32 @@ type LabelLight struct {
 	ProjectId   uuid.UUID `json:"project"`
 	Color       string    `json:"color" `
 }
+
+// IssueTypeLight - тип задачи проекта в облегченном виде
+type IssueTypeLight struct {
+	Id          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Color       string    `json:"color"`
+	Default     bool      `json:"default"`
+}
+
+// CreateIssueTypeRequest - запрос на создание типа задачи
+type CreateIssueTypeRequest struct {
+	Name        string `json:"name" validate:"required,min=1,max=255"`
+	Description string `json:"description,omitempty"`
+	Color       string `json:"color,omitempty"`
+	Default     bool   `json:"default,omitempty"`
+}
+
+// UpdateIssueTypeRequest - запрос на обновление типа задачи
+type UpdateIssueTypeRequest struct {
+	Name        *string `json:"name,omitempty" extensions:"x-nullable"`
+	Description *string `json:"description,omitempty" extensions:"x-nullable"`
+	Color       *string `json:"color,omitempty" extensions:"x-nullable"`
+	Default     *bool   `json:"default,omitempty" extensions:"x-nullable"`
+}
+
 type IssueLight struct {
 	Id         uuid.UUID     `json:"id"`
 	Name       string        `json:"name"`
@@ -34,6 +60,10 @@ type IssueLight struct {
 	StateId  uuid.UUID   `json:"state"`
 	State    *StateLight `json:"state_detail" extensions:"x-nullable"`
 	Priority *string     `json:"priority" extensions:"x-nullable"`
+
+	// Тип задачи необязателен: у старых задач его нет
+	IssueTypeId uuid.NullUUID   `json:"issue_type" extensions:"x-nullable"`
+	IssueType   *IssueTypeLight `json:"issue_type_detail" extensions:"x-nullable"`
 }
 
 type IssueLinkLight struct {

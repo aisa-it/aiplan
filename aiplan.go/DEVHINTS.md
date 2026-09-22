@@ -108,6 +108,7 @@ GET /api/workspaces/:workspaceSlug/my-issues/ LEGACY
   "watchers": [""],
 
   "states": [""],
+  "issue_types": [""],
   "priorities": [""],
   "labels": [""],
   "workspaces": [""],
@@ -125,6 +126,7 @@ GET /api/workspaces/:workspaceSlug/my-issues/ LEGACY
 | ----------------- | ---------------------------------------------------------------------------------- | -------- | -------------------- |
 | `authors`         | Список id авторов                                                                  | []string | []                   |
 | `states`          | Список id состояний                                                                | []string | []                   |
+| `issue_types`     | Список id типов задач. "" для задач без типа.                                      | []string | []                   |
 | `priorities`      | Список id приоритетов. "" для задач без приоритета.                                | []string | []                   |
 | `labels`          | Список id тегов                                                                    | []string | []                   |
 | `workspaces`      | Список id пространств                                                              | []string | []                   |

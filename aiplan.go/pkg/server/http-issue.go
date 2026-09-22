@@ -783,6 +783,44 @@ func (s *Services) updateIssue(c echo.Context) error {
 		}
 		data["parent_id"] = parentId
 	}
+	// Тип задачи: клиент присылает issue_type, в базе колонка issue_type_id.
+	// null сбрасывает тип. Второе написание ключа сводим к первому, чтобы
+	// проверка принадлежности типа проекту была одна
+	if raw, ok := data["issue_type_id"]; ok {
+		if _, hasAlias := data["issue_type"]; !hasAlias {
+			data["issue_type"] = raw
+		}
+		delete(data, "issue_type_id")
+	}
+	if issueTypeId, ok := data["issue_type"]; ok {
+		if issueTypeId == nil {
+			data["issue_type_id"] = uuid.NullUUID{}
+		} else {
+			str, ok := issueTypeId.(string)
+			if !ok {
+				return EErrorDefined(c, apierrors.ErrIssueTypeNotFound)
+			}
+			issueTypeUUID, err := uuid.FromString(str)
+			if err != nil {
+				return EErrorDefined(c, apierrors.ErrIssueTypeNotFound)
+			}
+
+			var exists bool
+			if err := s.DB(c).Model(&dao.IssueType{}).
+				Select("count(*) > 0").
+				Where("id = ?", issueTypeUUID).
+				Where("project_id = ?", issue.ProjectId).
+				Find(&exists).Error; err != nil {
+				return EError(c, err)
+			}
+			if !exists {
+				return EErrorDefined(c, apierrors.ErrIssueTypeNotFound)
+			}
+
+			data["issue_type_id"] = uuid.NullUUID{UUID: issueTypeUUID, Valid: true}
+		}
+	}
+
 	// State change
 	var statusChange bool
 	var newState dao.State

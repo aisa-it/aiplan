@@ -272,6 +272,9 @@ func (s *Services) migrateIssues(c echo.Context) error {
 			if deleteSrc {
 				srcIssues[i].ProjectId = targetProject.ID
 				srcIssues[i].Project = &targetProject
+				// Тип задачи привязан к проекту-источнику, в целевом его нет
+				srcIssues[i].IssueTypeId = uuid.NullUUID{}
+				srcIssues[i].IssueType = nil
 				srcIssues[i].StateId = result.TargetState.ID
 				if result.TargetState.ID != uuid.Nil {
 					srcIssues[i].State = &result.TargetState
@@ -721,6 +724,9 @@ func (s *Services) migrateIssuesByLabel(c echo.Context) error {
 			if deleteSrc {
 				srcIssues[i].ProjectId = targetProject.ID
 				srcIssues[i].Project = &targetProject
+				// Тип задачи привязан к проекту-источнику, в целевом его нет
+				srcIssues[i].IssueTypeId = uuid.NullUUID{}
+				srcIssues[i].IssueType = nil
 				srcIssues[i].StateId = result.TargetState.ID
 				if result.TargetState.ID != uuid.Nil {
 					srcIssues[i].State = &result.TargetState
@@ -1386,6 +1392,9 @@ func migrateIssueCopy(issue IssueCheckResult, user dao.User, tx *gorm.DB, idsMap
 	targetIssue := issue.SrcIssue
 	targetIssue.ID = issue.TargetId
 	targetIssue.ProjectId = issue.TargetProject.ID
+	// Тип задачи привязан к проекту-источнику, в целевом его нет
+	targetIssue.IssueTypeId = uuid.NullUUID{}
+	targetIssue.IssueType = nil
 	if issue.TargetState.ID == uuid.Nil {
 		if err := tx.Where("workspace_id = ?", issue.SrcIssue.WorkspaceId).
 			Where("project_id = ?", issue.TargetProject.ID).

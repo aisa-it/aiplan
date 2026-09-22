@@ -93,6 +93,7 @@ var (
 			ActionProjectView, ActionProjectUpdate, ActionProjectDelete, ActionProjectAdmin,
 			ActionProjectArchive, ActionProjectStats, ActionProjectActivity,
 			ActionProjectMemberView, ActionProjectMemberManage, ActionProjectStateManage,
+			ActionProjectIssueTypeManage,
 			ActionProjectRulesManage, ActionProjectLabelManage, ActionProjectEstimateManage,
 			ActionProjectTemplateManage, ActionProjectPropertyManage,
 			ActionProjectDictionaryView, ActionProjectDictionaryManage, ActionProjectViewManage,

@@ -426,6 +426,9 @@ func (project *Project) BeforeDelete(tx *gorm.DB) error {
 	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&State{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&IssueType{}).Error; err != nil {
+		return err
+	}
 	if err := tx.Unscoped().Where("project_id = ?", project.ID).Delete(&ProjectMember{}).Error; err != nil {
 		return err
 	}

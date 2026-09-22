@@ -29,6 +29,7 @@ type IssueSnapshot struct {
 	Description  opt.Field[string]                 `act:"field:description;kind:scalar"`
 	Priority     opt.Field[string]                 `act:"field:priority;kind:scalar"`
 	State        opt.Field[EntityRef]              `act:"field:status;kind:scalar;preserve_id:true"`
+	IssueType    opt.Field[EntityRef]              `act:"field:issue_type;kind:scalar;preserve_id:true"`
 	TargetDate   opt.Field[*types.TargetDateTimeZ] `act:"field:target_date;kind:scalar"`
 	StartDate    opt.Field[*types.TargetDateTimeZ] `act:"field:start_date;kind:scalar"`
 	CompletedAt  opt.Field[*types.TargetDateTimeZ] `act:"field:completed_at;kind:scalar"`
@@ -68,6 +69,16 @@ func IssueToSnapshot(i dao.Issue, extraSubIssues ...dao.Issue) IssueSnapshot {
 		Assignees:   opt.Some(utils.SliceToSlice(i.Assignees, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
 		Watchers:    opt.Some(utils.SliceToSlice(i.Watchers, func(t *dao.User) EntityRef { return daoToEntityRef(t) })),
 		State:       opt.Some(daoToEntityRef(i.State)),
+		IssueType: func() opt.Field[EntityRef] {
+			if i.IssueTypeId.Valid && i.IssueType != nil {
+				return opt.Some(EntityRef{
+					ID:        i.IssueType.Id,
+					NameValue: i.IssueType.Name,
+					NameField: actField.IssueType.Field.String(),
+				})
+			}
+			return opt.None[EntityRef]()
+		}(),
 
 		BlockerList: opt.Some(utils.SliceToSlice(&i.BlockerIssuesIDs, func(t *dao.IssueBlocker) EntityRef {
 			t.BlockedBy.Project = i.Project

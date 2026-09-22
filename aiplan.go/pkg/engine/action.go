@@ -93,6 +93,8 @@ const (
 
 	// ActionProjectStateManage — статусы и их граф переходов.
 	ActionProjectStateManage Action = "project.state.manage"
+	// ActionProjectIssueTypeManage — справочник типов задач проекта.
+	ActionProjectIssueTypeManage Action = "project.issuetype.manage"
 	// ActionProjectRulesManage — скрипт правил проекта.
 	ActionProjectRulesManage Action = "project.rules.manage"
 
