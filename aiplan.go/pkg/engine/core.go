@@ -22,6 +22,8 @@ type Core interface {
 	Storage() filestorage.FileStorage
 	Business() *business.Business
 	Tracker() *tracker.SnapshotTracker
+	// Notifications — отправка писем и уведомлений средствами ядра.
+	Notifications() Notifier
 
 	// RegisterModels добавляет модели движка в AutoMigrate.
 	RegisterModels(models ...any)
@@ -33,6 +35,11 @@ type Core interface {
 	// RegisterRoutes добавляет собственные роуты движка.
 	// api — группа без авторизации, auth — с авторизацией.
 	RegisterRoutes(fn func(api, auth *echo.Group))
+
+	// RegisterNotificationType регистрирует тип уведомления для очереди ядра:
+	// factory возвращает указатель на структуру с json-тегами, в неё
+	// разбирается payload записи. Повторная регистрация имени заменяет фабрику.
+	RegisterNotificationType(name string, factory func() NotificationRenderer)
 
 	// RegisterActions добавляет действия движка в область: они попадут в
 	// наборы прав, отдаваемые наружу (ActionsFor).

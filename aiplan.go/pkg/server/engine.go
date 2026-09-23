@@ -12,6 +12,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/cronmanager"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications"
 	"github.com/labstack/echo/v4"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"gorm.io/gorm"
@@ -28,6 +29,7 @@ type coreAdapter struct {
 	storage filestorage.FileStorage
 	bl      *business.Business
 	st      *tracker.SnapshotTracker
+	nt      engine.Notifier
 
 	// closed запрещает регистрацию после Init: менять состав роутов или
 	// задач на работающем сервере нельзя.
@@ -49,6 +51,14 @@ func (c *coreAdapter) Version() string                   { return c.version }
 func (c *coreAdapter) Storage() filestorage.FileStorage  { return c.storage }
 func (c *coreAdapter) Business() *business.Business      { return c.bl }
 func (c *coreAdapter) Tracker() *tracker.SnapshotTracker { return c.st }
+func (c *coreAdapter) Notifications() engine.Notifier    { return c.nt }
+
+func (c *coreAdapter) RegisterNotificationType(name string, factory func() engine.NotificationRenderer) {
+	if c.rejectAfterInit("notification type") {
+		return
+	}
+	notifications.RegisterNotificationType(name, factory)
+}
 
 func (c *coreAdapter) RegisterModels(models ...any) {
 	if c.rejectAfterInit("models") {

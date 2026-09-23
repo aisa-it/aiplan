@@ -147,6 +147,7 @@ func New(opts Options) (*Server, error) {
 	core := &coreAdapter{
 		db: db, cfg: c, version: opts.Version,
 		storage: storage, bl: bl, st: snapshotTracker,
+		nt: &coreNotifier{db: db, es: es},
 	}
 	if err := initEngine(context.Background(), eng, core); err != nil {
 		return nil, err

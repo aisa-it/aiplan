@@ -57,7 +57,8 @@ func CreateNotificationSender(notification *dao.DeferredNotifications) (INotifyS
 	case "service_message":
 		res = &serviceMessage{}
 	default:
-		return nil, fmt.Errorf("unknown type notify")
+		// Типы, зарегистрированные движком
+		return registeredSender(notification)
 	}
 	if err := json.Unmarshal(notification.NotificationPayload, &res); err != nil {
 		return nil, err
