@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -1893,6 +1894,10 @@ func (s *Services) createIssue(c echo.Context) error {
 		}
 	}
 
+	if err := s.policy.BeforeIssueCreate(c.Request().Context(), apiContext, issueNew); err != nil {
+		return EError(c, err)
+	}
+
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, &issueNew); err != nil {
 			return err
@@ -2089,6 +2094,11 @@ func (s *Services) createIssue(c echo.Context) error {
 				errStack.GetError(c, err)
 			}
 		}
+	}
+
+	// Задача уже сохранена: after-хук её не отменяет, отказ — только в лог.
+	if err := s.policy.AfterIssueCreate(c.Request().Context(), apiContext, issueNew); err != nil {
+		slog.ErrorContext(c.Request().Context(), "After issue create hook", "err", err)
 	}
 
 	return c.JSON(http.StatusCreated, dto.NewIssueID{Id: issueNew.ID})

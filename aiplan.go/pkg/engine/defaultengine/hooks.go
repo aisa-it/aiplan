@@ -20,6 +20,23 @@ import (
 // luaHook — вызов одной функции скрипта для подготовленной задачи.
 type luaHook func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError)
 
+// Создание задачи и комментария ядро не ограничивает: Lua-скриптов для
+// этих событий нет, решение остаётся за подключённым движком.
+
+func (e *Engine) BeforeIssueCreate(context.Context, engine.Subject, dao.Issue) (engine.Verdict, error) {
+	return engine.Default, nil
+}
+
+func (e *Engine) AfterIssueCreate(context.Context, engine.Subject, dao.Issue) error { return nil }
+
+func (e *Engine) BeforeCommentCreate(context.Context, engine.Subject, dao.Issue, dao.IssueComment) (engine.Verdict, error) {
+	return engine.Default, nil
+}
+
+func (e *Engine) AfterCommentCreate(context.Context, engine.Subject, dao.Issue, dao.IssueComment) error {
+	return nil
+}
+
 func (e *Engine) BeforeStateChange(_ context.Context, ev engine.StateTransition) (engine.Verdict, error) {
 	if ev.Issue == nil {
 		return engine.Allow, nil
@@ -178,3 +195,4 @@ func prepareIssue(s engine.Subject, issue *dao.Issue) error {
 }
 
 var _ engine.IssueHooks = (*Engine)(nil)
+var _ engine.CommentHooks = (*Engine)(nil)

@@ -10,6 +10,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -727,6 +728,17 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 		return err
 	}
 
+	// Субъект хуков: ответивший (на no-auth форме — служебный пользователь) и
+	// целевой проект; членства нет — ответивший не обязан быть участником.
+	// Контекст свой: запрос формы к этому моменту уже отвечен.
+	ctx := context.Background()
+	subject := apicontext.NewSubject(apicontext.Prefilled{
+		DB: s.RawDB(), User: user, Workspace: form.Workspace, Project: form.TargetProject,
+	})
+	if err := s.policy.BeforeIssueCreate(ctx, subject, *issue); err != nil {
+		return err
+	}
+
 	if err := s.RawDB().Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, issue); err != nil {
 			return err
@@ -785,6 +797,15 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	err = s.snapshotTracker.TrackChanges(types2.LayerProject, nil, tracker.IssueToSnapshot(*issue), issue.Project, user)
 	if err != nil {
 		errStack.GetError(nil, err)
+	}
+
+	// After-хук получает задачу в том же виде, что и из HTTP-ручки создания
+	if err := s.RawDB().Preload("Assignees").Preload("Watchers").Preload("State").Preload("IssueType").
+		Where("id = ?", issue.ID).First(issue).Error; err != nil {
+		return err
+	}
+	if err := s.policy.AfterIssueCreate(ctx, subject, *issue); err != nil {
+		slog.Error("After issue create hook", "formId", form.ID, "err", err)
 	}
 
 	return nil

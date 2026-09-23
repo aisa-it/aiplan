@@ -2460,17 +2460,21 @@ func (s *Services) createIssueComment(c echo.Context) error {
 	}
 
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
-	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
-		comment.Id = dao.GenUUID()
-		comment.ProjectId = project.ID
-		comment.Project = project
-		comment.IssueId = issue.ID
-		comment.WorkspaceId = project.WorkspaceId
-		comment.Workspace = issue.Workspace
-		comment.ActorId = userID
-		comment.Issue = issue
-		comment.CommentStripped = types.RemoveInvisibleChars(comment.CommentStripped)
+	comment.Id = dao.GenUUID()
+	comment.ProjectId = project.ID
+	comment.Project = project
+	comment.IssueId = issue.ID
+	comment.WorkspaceId = project.WorkspaceId
+	comment.Workspace = issue.Workspace
+	comment.ActorId = userID
+	comment.Issue = issue
+	comment.CommentStripped = types.RemoveInvisibleChars(comment.CommentStripped)
 
+	if err := s.policy.BeforeCommentCreate(c.Request().Context(), apiContext, *issue, comment); err != nil {
+		return EError(c, err)
+	}
+
+	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Omit(clause.Associations).Create(&comment).Error; err != nil {
 			return err
 		}
@@ -2568,6 +2572,11 @@ func (s *Services) createIssueComment(c echo.Context) error {
 
 	if err != nil {
 		errStack.GetError(c, err)
+	}
+
+	// Комментарий уже сохранён: after-хук его не отменяет, отказ — только в лог.
+	if err := s.policy.AfterCommentCreate(c.Request().Context(), apiContext, *issue, comment); err != nil {
+		slog.ErrorContext(c.Request().Context(), "After comment create hook", "err", err)
 	}
 
 	return c.JSON(http.StatusCreated, comment.ToDTO())

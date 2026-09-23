@@ -584,6 +584,10 @@ func createIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 		LLMContent:      true,
 	}
 
+	if err := d.Policy.BeforeIssueCreate(ctx, subject, issueNew); err != nil {
+		return mcpError(err), nil
+	}
+
 	// Транзакция: создание задачи и связей
 	if err := d.DB.Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, &issueNew); err != nil {
@@ -669,6 +673,11 @@ func createIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 	err = d.BL.GetSnapshotTracker().TrackChanges(types.LayerProject, nil, tracker.IssueToSnapshot(issueNew), &project, user)
 	if err != nil {
 		slog.Error("MCP createIssue: track changes failed", "error", err)
+	}
+
+	// Задача уже сохранена: after-хук её не отменяет, отказ — только в лог.
+	if err := d.Policy.AfterIssueCreate(ctx, subject, createdIssue); err != nil {
+		slog.Error("MCP createIssue: after create hook", "error", err)
 	}
 
 	return mcp.NewToolResultJSON(createdIssue.ToDTO())
@@ -1709,6 +1718,10 @@ func createIssueComment(ctx context.Context, d Deps, user *dao.User, request mcp
 		CommentStripped: types.RemoveInvisibleChars(commentHtml),
 	}
 
+	if err := d.Policy.BeforeCommentCreate(ctx, subject, *issue, comment); err != nil {
+		return mcpError(err), nil
+	}
+
 	if err := d.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Omit(clause.Associations).Create(&comment).Error; err != nil {
 			return err
@@ -1727,6 +1740,11 @@ func createIssueComment(ctx context.Context, d Deps, user *dao.User, request mcp
 	err = d.BL.GetSnapshotTracker().TrackChanges(types.LayerIssue, nil, newSnapshot, issue, user)
 	if err != nil {
 		slog.Error("MCP createIssueComment: track changes failed", "error", err)
+	}
+
+	// Комментарий уже сохранён: after-хук его не отменяет, отказ — только в лог.
+	if err := d.Policy.AfterCommentCreate(ctx, subject, *issue, comment); err != nil {
+		slog.Error("MCP createIssueComment: after create hook", "error", err)
 	}
 
 	return mcp.NewToolResultJSON(comment.ToDTO())

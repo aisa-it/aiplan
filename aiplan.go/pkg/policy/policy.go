@@ -29,6 +29,9 @@ type Enforcer struct {
 	hooks         engine.IssueHooks
 	hooksFallback engine.IssueHooks
 
+	comments         engine.CommentHooks
+	commentsFallback engine.CommentHooks
+
 	properties         engine.PropertyPolicy
 	propertiesFallback engine.PropertyPolicy
 }
@@ -57,6 +60,12 @@ func New(primary, fallback engine.Authorizer) *Enforcer {
 	}
 	if h, ok := fallback.(engine.IssueHooks); ok {
 		e.hooksFallback = h
+	}
+	if h, ok := primary.(engine.CommentHooks); ok {
+		e.comments = h
+	}
+	if h, ok := fallback.(engine.CommentHooks); ok {
+		e.commentsFallback = h
 	}
 	if pp, ok := primary.(engine.PropertyPolicy); ok {
 		e.properties = pp
@@ -249,61 +258,90 @@ func (p *Enforcer) PropertyTemplateScope(ctx context.Context, s engine.Subject) 
 	return func(q *gorm.DB) *gorm.DB { return p.ScopePropertyTemplates(ctx, s, q) }
 }
 
-// Хуки изменения задачи.
+// Хуки задачи и комментария.
 //
 // Before-хуки — реакции, а не права: подключённый движок решает первым,
 // DecisionDefault отдаёт слово движку ядра (Lua-скриптам проекта), а
 // отсутствие решения у обоих ничего не запрещает. Ошибка отказа — та,
 // что вернул движок.
+//
+// After-хуки уведомляют оба движка: изменение уже сохранено, и отменить
+// его хук не может. Ошибки собираются и возвращаются вызывающему для лога.
+
+func (p *Enforcer) BeforeIssueCreate(ctx context.Context, s engine.Subject, issue dao.Issue) error {
+	return firstVerdict(p.issueHooks(), func(h engine.IssueHooks) (engine.Verdict, error) {
+		return h.BeforeIssueCreate(ctx, s, issue)
+	})
+}
+
+func (p *Enforcer) AfterIssueCreate(ctx context.Context, s engine.Subject, issue dao.Issue) error {
+	return notifyAll(p.issueHooks(), func(h engine.IssueHooks) error {
+		return h.AfterIssueCreate(ctx, s, issue)
+	})
+}
 
 func (p *Enforcer) BeforeStateChange(ctx context.Context, ev engine.StateTransition) error {
-	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+	return firstVerdict(p.issueHooks(), func(h engine.IssueHooks) (engine.Verdict, error) {
 		return h.BeforeStateChange(ctx, ev)
 	})
 }
 
+func (p *Enforcer) AfterStateChange(ctx context.Context, ev engine.StateTransition) error {
+	return notifyAll(p.issueHooks(), func(h engine.IssueHooks) error {
+		return h.AfterStateChange(ctx, ev)
+	})
+}
+
 func (p *Enforcer) BeforeAssigneesChange(ctx context.Context, s engine.Subject, issue dao.Issue, users []dao.User) error {
-	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+	return firstVerdict(p.issueHooks(), func(h engine.IssueHooks) (engine.Verdict, error) {
 		return h.BeforeAssigneesChange(ctx, s, issue, users)
 	})
 }
 
 func (p *Enforcer) BeforeWatchersChange(ctx context.Context, s engine.Subject, issue dao.Issue, users []dao.User) error {
-	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+	return firstVerdict(p.issueHooks(), func(h engine.IssueHooks) (engine.Verdict, error) {
 		return h.BeforeWatchersChange(ctx, s, issue, users)
 	})
 }
 
 func (p *Enforcer) BeforeLabelsChange(ctx context.Context, s engine.Subject, issue dao.Issue, labels []dao.Label) error {
-	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+	return firstVerdict(p.issueHooks(), func(h engine.IssueHooks) (engine.Verdict, error) {
 		return h.BeforeLabelsChange(ctx, s, issue, labels)
 	})
 }
 
 func (p *Enforcer) BeforePropertyChange(ctx context.Context, s engine.Subject, issue dao.Issue, tpl dao.ProjectPropertyTemplate, newValue string) error {
-	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+	return firstVerdict(p.issueHooks(), func(h engine.IssueHooks) (engine.Verdict, error) {
 		return h.BeforePropertyChange(ctx, s, issue, tpl, newValue)
 	})
 }
 
-// AfterStateChange уведомляет оба движка: изменение уже сохранено, и отменить
-// его хук не может. Ошибки собираются и возвращаются вызывающему для лога.
-func (p *Enforcer) AfterStateChange(ctx context.Context, ev engine.StateTransition) error {
-	var errs []error
-	for _, h := range []engine.IssueHooks{p.hooks, p.hooksFallback} {
-		if h == nil {
-			continue
-		}
-		if err := h.AfterStateChange(ctx, ev); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+func (p *Enforcer) BeforeCommentCreate(ctx context.Context, s engine.Subject, issue dao.Issue, comment dao.IssueComment) error {
+	return firstVerdict(p.commentHooks(), func(h engine.CommentHooks) (engine.Verdict, error) {
+		return h.BeforeCommentCreate(ctx, s, issue, comment)
+	})
 }
 
-func (p *Enforcer) hookVerdict(call func(engine.IssueHooks) (engine.Verdict, error)) error {
-	for _, h := range []engine.IssueHooks{p.hooks, p.hooksFallback} {
-		if h == nil {
+func (p *Enforcer) AfterCommentCreate(ctx context.Context, s engine.Subject, issue dao.Issue, comment dao.IssueComment) error {
+	return notifyAll(p.commentHooks(), func(h engine.CommentHooks) error {
+		return h.AfterCommentCreate(ctx, s, issue, comment)
+	})
+}
+
+// issueHooks и commentHooks — движки в порядке опроса: подключённый, затем ядро.
+func (p *Enforcer) issueHooks() []engine.IssueHooks {
+	return []engine.IssueHooks{p.hooks, p.hooksFallback}
+}
+
+func (p *Enforcer) commentHooks() []engine.CommentHooks {
+	return []engine.CommentHooks{p.comments, p.commentsFallback}
+}
+
+// firstVerdict возвращает решение первого движка, который его принял.
+// Нереализованный движок (nil) пропускается.
+func firstVerdict[H any](hooks []H, call func(H) (engine.Verdict, error)) error {
+	for _, h := range hooks {
+		if any(h) == nil {
 			continue
 		}
 		v, err := call(h)
@@ -315,6 +353,20 @@ func (p *Enforcer) hookVerdict(call func(engine.IssueHooks) (engine.Verdict, err
 		}
 	}
 	return nil
+}
+
+// notifyAll вызывает after-хук у всех движков и собирает их ошибки.
+func notifyAll[H any](hooks []H, call func(H) error) error {
+	var errs []error
+	for _, h := range hooks {
+		if any(h) == nil {
+			continue
+		}
+		if err := call(h); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Permissions считает решения по набору действий для одного субъекта.
