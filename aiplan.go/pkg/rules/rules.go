@@ -82,7 +82,7 @@ func BeforeIssuePropertyChange(issuer dao.User, currentIssue dao.Issue, template
 }
 
 // oldPropertyValueToLua находит текущее значение поля задачи по шаблону и конвертирует
-// его в Lua-значение; для lookup берётся ResolvedValue (см. getPropertiesTables).
+// его в Lua-значение; для lookup и file берётся ResolvedValue (см. getPropertiesTables).
 // Значение не найдено (поле не заполнялось) — LNil
 func oldPropertyValueToLua(props []dao.IssueProperty, template dao.ProjectPropertyTemplate) lua.LValue {
 	for _, prop := range props {
@@ -90,12 +90,18 @@ func oldPropertyValueToLua(props []dao.IssueProperty, template dao.ProjectProper
 			continue
 		}
 		storedValue := prop.Value
-		if template.Type == "lookup" {
+		if usesResolvedValue(template.Type) {
 			storedValue = prop.ResolvedValue
 		}
 		return propertyValueToLua(template.Type, storedValue)
 	}
 	return lua.LNil
+}
+
+// usesResolvedValue: в Lua поле уходит отображаемым значением (ResolvedValue), а не
+// хранимым id — lookup (строка справочника) и file (имя файла вложения)
+func usesResolvedValue(propType string) bool {
+	return propType == "lookup" || propType == "file"
 }
 
 func callEventFunction(fnName string, state *lua.LState, issuer dao.User, currentIssue dao.Issue, params ...interface{}) (LuaResp, []LuaOut, IRulesError) {
@@ -298,13 +304,13 @@ func getStructLTable(state *lua.LState, obj interface{}) *lua.LTable {
 
 // propertyValueToLua преобразует хранимое строковое значение свойства в Lua-значение
 // по типу шаблона (совместимо с dao.ParsePropertyValue).
-// Для lookup-полей значение - отображаемое значение строки справочника (ResolvedValue),
-// не id строки
+// Для lookup- и file-полей значение - отображаемое (ResolvedValue: строка
+// справочника, имя файла), не id
 func propertyValueToLua(propType, value string) lua.LValue {
 	switch propType {
 	case "boolean":
 		return lua.LBool(value == "true")
-	case "select", "link", "lookup", "date":
+	case "select", "link", "lookup", "file", "date":
 		if value == "" {
 			return lua.LNil
 		}
@@ -320,9 +326,22 @@ func propertyValueToLua(propType, value string) lua.LValue {
 			return lua.LNumber(n)
 		}
 		return lua.LString(value)
+	case "number":
+		return numberValueToLua(value)
 	default:
 		return lua.LString(value)
 	}
+}
+
+// numberValueToLua — значение number-поля числом (пустое — nil, неразборчивое — строкой)
+func numberValueToLua(value string) lua.LValue {
+	if value == "" {
+		return lua.LNil
+	}
+	if f, err := strconv.ParseFloat(value, 64); err == nil {
+		return lua.LNumber(f)
+	}
+	return lua.LString(value)
 }
 
 // multiselectValueToLua — список выбранных вариантов Lua-таблицей строк
@@ -349,7 +368,7 @@ func getPropertiesTables(state *lua.LState, props []dao.IssueProperty) (*lua.LTa
 			continue
 		}
 		storedValue := prop.Value
-		if prop.Template.Type == "lookup" {
+		if usesResolvedValue(prop.Template.Type) {
 			storedValue = prop.ResolvedValue
 		}
 		value := propertyValueToLua(prop.Template.Type, storedValue)

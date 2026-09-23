@@ -43,6 +43,7 @@ func New(db *gorm.DB) *Migration {
 			NewMigrateActivitiesToOneTable(db),
 			NewMigrateIssueTokensNormalize(db),
 			NewMigrateDocSlug(db),
+			NewMigratePropertyTemplateRoles(db),
 		},
 	}
 }

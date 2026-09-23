@@ -1,6 +1,7 @@
 package defaultengine
 
 import (
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
@@ -39,6 +40,20 @@ func (e *Engine) authorizeTarget(req engine.AuthzRequest) (engine.Verdict, bool)
 			return engine.Default, false
 		}
 		return e.authorizeIssueDelete(issue, req.Subject), true
+
+	case engine.ActionIssueSetProperty:
+		tpl, ok := engine.TargetAs[*dao.ProjectPropertyTemplate](req)
+		if !ok {
+			return engine.Default, false
+		}
+		// Роль шаблона только сужает: кому поле не по editor_role — отказ,
+		// остальным решает общее правило (автор, администратор, настройки
+		// проекта), как и при проверке до объекта.
+		if projectRole(req.Subject) < tpl.EditorRole {
+			forbidden := apierrors.ErrPropertySetForbidden
+			return engine.Verdict{Decision: engine.DecisionDeny, Error: &forbidden}, true
+		}
+		return engine.Default, false
 
 	case engine.ActionDocCommentUpdate:
 		comment, ok := engine.TargetAs[*dao.DocComment](req)
@@ -99,6 +114,14 @@ func isCommentAuthor(comment *dao.IssueComment, s engine.Subject) bool {
 func isProjectAdmin(s engine.Subject) bool {
 	pm := s.ProjectMember()
 	return pm != nil && pm.Role == types.AdminRole
+}
+
+// projectRole — роль пользователя в проекте; не участник — 0.
+func projectRole(s engine.Subject) int {
+	if pm := s.ProjectMember(); pm != nil {
+		return pm.Role
+	}
+	return 0
 }
 
 // verdict переводит булево решение в вердикт.

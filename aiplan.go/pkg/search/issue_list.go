@@ -20,11 +20,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Visibility — что поиску нужно от политики видимости движка.
-// Реализуется *policy.Enforcer и движком ядра.
+// Visibility — что поиску нужно от политики видимости движка: задачи и
+// шаблоны кастомных полей в них. Реализуется *policy.Enforcer и движком ядра.
 type Visibility interface {
 	VisibleProjects(ctx context.Context, req engine.IssueScope, db *gorm.DB) *gorm.DB
 	ScopeIssues(ctx context.Context, req engine.IssueScope, q *gorm.DB) *gorm.DB
+	ScopePropertyTemplates(ctx context.Context, s engine.Subject, q *gorm.DB) *gorm.DB
 }
 
 // Searcher выполняет поиск задач. Ручка поиска доступна любому участнику,
@@ -68,6 +69,14 @@ func (s *Searcher) scopeIssues(ctx context.Context, scope engine.IssueScope, q *
 		return q.Where("1 = 0")
 	}
 	return q
+}
+
+// propertyTemplateScope — ограничение видимости шаблонов полей для субъекта
+// запроса в виде gorm-scope для dao.FillIssuesProperties.
+func (s *Searcher) propertyTemplateScope(ctx context.Context, scope engine.IssueScope) dao.PropertyTemplateScope {
+	return func(q *gorm.DB) *gorm.DB {
+		return s.visibility.ScopePropertyTemplates(ctx, scope.Subject, q)
+	}
 }
 
 // scopeSprint — спринт запроса в режиме ScopeSprint, иначе nil.
@@ -478,7 +487,7 @@ func (s *Searcher) GetIssueListData(
 	if err := resolveScope(scope); err != nil {
 		return nil, err
 	}
-	user := scope.Subject.User()
+	templateScope := s.propertyTemplateScope(ctx, scope)
 	if searchParams.GroupByParam != "" && !slices.Contains(types.IssueGroupFields, searchParams.GroupByParam) {
 		templateId, ok := types.ParsePropertyGroupBy(searchParams.GroupByParam)
 		if !ok {
@@ -518,7 +527,7 @@ func (s *Searcher) GetIssueListData(
 		var streamMu sync.Mutex
 		totalCount, err := fetchIssuesByGroups( //nolint:contextcheck // контекст привязан к db выше
 			db,
-			user,
+			templateScope,
 			groupSize,
 			query.Session(&gorm.Session{}),
 			searchParams,
@@ -598,7 +607,7 @@ func (s *Searcher) GetIssueListData(
 	}
 
 	dtoIssues := utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() })
-	if err := attachIssuesProperties(db, user, searchParams, dtoIssues); err != nil { //nolint:contextcheck // контекст привязан к db выше
+	if err := attachIssuesProperties(db, templateScope, searchParams, dtoIssues); err != nil { //nolint:contextcheck // контекст привязан к db выше
 		return nil, err
 	}
 
@@ -609,12 +618,13 @@ func (s *Searcher) GetIssueListData(
 }
 
 // attachIssuesProperties подкачивает значения дополнительных параметров в задачи
-// списка по флагу include_properties (колонки таблицы). Light-выдачу не трогает
-func attachIssuesProperties(db *gorm.DB, user *dao.User, searchParams *types.SearchParams, issues []dto.IssueWithCount) error {
+// списка по флагу include_properties (колонки таблицы); видимость шаблонов -
+// scope движка. Light-выдачу не трогает
+func attachIssuesProperties(db *gorm.DB, templateScope dao.PropertyTemplateScope, searchParams *types.SearchParams, issues []dto.IssueWithCount) error {
 	if !searchParams.IncludeProperties || searchParams.LightSearch {
 		return nil
 	}
-	return dao.FillIssuesProperties(db, user, issues)
+	return dao.FillIssuesProperties(db, templateScope, issues)
 }
 
 // FormatIssuesToMarkdownTable форматирует список задач в расширенную Markdown таблицу

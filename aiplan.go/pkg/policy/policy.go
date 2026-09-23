@@ -28,6 +28,9 @@ type Enforcer struct {
 
 	hooks         engine.IssueHooks
 	hooksFallback engine.IssueHooks
+
+	properties         engine.PropertyPolicy
+	propertiesFallback engine.PropertyPolicy
 }
 
 // New собирает применитель правил.
@@ -54,6 +57,12 @@ func New(primary, fallback engine.Authorizer) *Enforcer {
 	}
 	if h, ok := fallback.(engine.IssueHooks); ok {
 		e.hooksFallback = h
+	}
+	if pp, ok := primary.(engine.PropertyPolicy); ok {
+		e.properties = pp
+	}
+	if pp, ok := fallback.(engine.PropertyPolicy); ok {
+		e.propertiesFallback = pp
 	}
 	return e
 }
@@ -218,6 +227,26 @@ func (p *Enforcer) CanViewIssue(ctx context.Context, s engine.Subject, issue *da
 		}
 	}
 	return apierrors.ErrIssueForbidden
+}
+
+// ScopePropertyTemplates ограничивает выборку шаблонов кастомных полей
+// видимыми субъекту: подключённый движок, иначе движок ядра — как у
+// ScopeStates, частичного переопределения нет. Без политики — пустая
+// выборка: пустая выдача безопаснее полной.
+func (p *Enforcer) ScopePropertyTemplates(ctx context.Context, s engine.Subject, q *gorm.DB) *gorm.DB {
+	if p.properties != nil {
+		return p.properties.ScopePropertyTemplates(ctx, s, q)
+	}
+	if p.propertiesFallback != nil {
+		return p.propertiesFallback.ScopePropertyTemplates(ctx, s, q)
+	}
+	return q.Where("1 = 0")
+}
+
+// PropertyTemplateScope — то же ограничение в виде gorm-scope для dao:
+// обработчик строит его один раз и отдаёт в выборки шаблонов.
+func (p *Enforcer) PropertyTemplateScope(ctx context.Context, s engine.Subject) dao.PropertyTemplateScope {
+	return func(q *gorm.DB) *gorm.DB { return p.ScopePropertyTemplates(ctx, s, q) }
 }
 
 // Хуки изменения задачи.

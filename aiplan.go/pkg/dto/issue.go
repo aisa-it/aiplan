@@ -218,8 +218,13 @@ type IssueProperty struct {
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
 	// UniqueValues - для multiselect: значения в списке не должны повторяться
 	UniqueValues bool `json:"unique_values,omitempty"`
-	Value        any  `json:"value"`
+	// Required - поле обязательно для заполнения (пустое значение не принимается)
+	Required bool `json:"required,omitempty"`
+	// Unit - единица измерения для number
+	Unit  string `json:"unit,omitempty"`
+	Value any    `json:"value"`
 	// ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника)
+	// и file-полей (Value хранит id вложения задачи, ValueLabel - имя файла)
 	ValueLabel *string `json:"value_label,omitempty" extensions:"x-nullable"`
 	// ResetProperties - имена зависимых полей, значения которых были сброшены
 	// установкой этого значения (только в ответе установки значения)
@@ -236,25 +241,44 @@ type ProjectPropertyTemplate struct {
 	Options      []string                  `json:"options,omitempty"`
 	DictionaryId uuid.NullUUID             `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
-	OnlyAdmin    bool                      `json:"only_admin"`
+	// ReaderRole/EditorRole - минимальная роль в проекте (5 гость, 10 участник,
+	// 15 администратор) для просмотра и для изменения значения поля
+	ReaderRole int `json:"reader_role"`
+	EditorRole int `json:"editor_role"`
+	// OnlyAdmin - устаревшее, для совместимости клиентов: reader_role == 15
+	OnlyAdmin bool `json:"only_admin"`
 	// UniqueValues - для multiselect: значения в списке не должны повторяться
-	UniqueValues bool      `json:"unique_values"`
-	SortOrder    int       `json:"sort_order"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	UniqueValues bool `json:"unique_values"`
+	// Required - поле обязательно для заполнения
+	Required bool `json:"required"`
+	// Unit - единица измерения для number (у других типов пустая)
+	Unit      string    `json:"unit,omitempty"`
+	SortOrder int       `json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // CreatePropertyTemplateRequest - запрос на создание шаблона поля
 type CreatePropertyTemplateRequest struct {
 	Name         string                    `json:"name" validate:"required,min=1,max=255"`
-	Type         string                    `json:"type" validate:"required,oneof=string boolean select multiselect link lookup date datetime"`
+	Type         string                    `json:"type" validate:"required,oneof=string boolean select multiselect link lookup date datetime number file"`
 	Options      []string                  `json:"options,omitempty"`
 	DictionaryId uuid.NullUUID             `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
-	OnlyAdmin    bool                      `json:"only_admin"`
+	// ReaderRole/EditorRole - минимальная роль (5/10/15) для просмотра и изменения
+	// значения, просмотр не выше изменения; 0 - по умолчанию (5 и 5: без ограничений
+	// сверх общего правила на изменение задачи)
+	ReaderRole int `json:"reader_role,omitempty"`
+	EditorRole int `json:"editor_role,omitempty"`
+	// OnlyAdmin - устаревший шорткат: true = роли 15/15. Явно переданные роли приоритетнее
+	OnlyAdmin bool `json:"only_admin"`
 	// UniqueValues - для multiselect: запрет повторяющихся значений в списке
 	UniqueValues bool `json:"unique_values"`
-	SortOrder    int  `json:"sort_order"`
+	// Required - поле обязательно для заполнения (для boolean не проверяется)
+	Required bool `json:"required"`
+	// Unit - единица измерения для number (у других типов сбрасывается)
+	Unit      string `json:"unit,omitempty"`
+	SortOrder int    `json:"sort_order"`
 }
 
 // UpdatePropertyTemplateRequest - запрос на обновление шаблона поля.
@@ -265,9 +289,16 @@ type UpdatePropertyTemplateRequest struct {
 	Options      *[]string                 `json:"options,omitempty"`
 	DictionaryId *uuid.UUID                `json:"dictionary_id,omitempty" swaggertype:"string" extensions:"x-nullable"`
 	Dependency   *types.PropertyDependency `json:"dependency,omitempty" extensions:"x-nullable"`
-	OnlyAdmin    *bool                     `json:"only_admin,omitempty"`
-	UniqueValues *bool                     `json:"unique_values,omitempty"`
-	SortOrder    *int                      `json:"sort_order,omitempty"`
+	// ReaderRole/EditorRole - минимальная роль (5/10/15) для просмотра и изменения
+	ReaderRole *int `json:"reader_role,omitempty" extensions:"x-nullable"`
+	EditorRole *int `json:"editor_role,omitempty" extensions:"x-nullable"`
+	// OnlyAdmin - устаревший шорткат: true = роли 15/15, false = 5/5. Явно
+	// переданные роли приоритетнее
+	OnlyAdmin    *bool   `json:"only_admin,omitempty"`
+	UniqueValues *bool   `json:"unique_values,omitempty"`
+	Required     *bool   `json:"required,omitempty" extensions:"x-nullable"`
+	Unit         *string `json:"unit,omitempty" extensions:"x-nullable"`
+	SortOrder    *int    `json:"sort_order,omitempty"`
 }
 
 // AvailablePropertyValues - допустимые значения кастомного поля задачи

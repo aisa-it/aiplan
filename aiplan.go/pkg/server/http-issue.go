@@ -36,7 +36,6 @@ import (
 	errStack "github.com/aisa-it/aiplan/aiplan.go/pkg/stack-error"
 	actField "github.com/aisa-it/aiplan/aiplan.go/pkg/types/activities"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/search"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
@@ -3765,13 +3764,13 @@ func (s *Services) issueUnpin(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/ [get]
 func (s *Services) getIssueProperties(c echo.Context) error {
 	apiCtx := apicontext.GetContext(c)
-	projectMember := apiCtx.GetProjectMember()
 	issue := apiCtx.GetIssue()
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
 	}
 
-	result, err := dao.ListIssuePropertiesDTO(s.DB(c), issue, projectMember.Role == types.AdminRole)
+	scope := s.policy.PropertyTemplateScope(c.Request().Context(), apiCtx)
+	result, err := dao.ListIssuePropertiesDTO(s.DB(c), issue, scope)
 	if err != nil {
 		return EError(c, err)
 	}
@@ -3800,7 +3799,6 @@ func (s *Services) getIssueProperties(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/ [post]
 func (s *Services) setIssueProperty(c echo.Context) error {
 	apiCtx := apicontext.GetContext(c)
-	projectMember := apiCtx.GetProjectMember()
 	// WithState обязателен: Lua-хуку BeforeIssuePropertyChange нужен статус задачи —
 	// getCallParams разыменовывает *issue.State без проверки (Project/Workspace
 	// fetchIssue проставляет всегда)
@@ -3830,22 +3828,17 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Проверяем права на OnlyAdmin поля
-	if template.OnlyAdmin && projectMember.Role < types.AdminRole {
-		return EErrorDefined(c, apierrors.ErrPropertyOnlyAdminCanSet)
+	// Право на само поле (editor_role шаблона) - правило движка по объекту
+	if err := s.policy.Authorize(c.Request().Context(), engine.ActionIssueSetProperty, apiCtx, policy.On(&template)); err != nil {
+		return EError(c, err)
 	}
 
-	// Валидируем значение через JSON Schema
-	if err := validatePropertyValue(c.Request().Context(), template, request.Value); err != nil {
-		return EErrorDefined(c, apierrors.ErrPropertyValueValidationFailed)
+	// Форма и семантика значения, уникальность multiselect, обязательность; на выходе -
+	// строка для хранения
+	valueStr, err := dao.PrepareIssuePropertyValue(template, request.Value)
+	if err != nil {
+		return EError(c, err)
 	}
-	// Настройка шаблона multiselect: значения в списке не повторяются
-	if !types.CheckUniqueValues(template.Type, template.UniqueValues, request.Value) {
-		return EErrorDefined(c, apierrors.ErrPropertyValuesNotUnique)
-	}
-
-	// Сериализуем значение для хранения
-	valueStr := serializePropertyValue(request.Value)
 
 	// Для lookup-полей значение - id строки справочника: строка должна существовать
 	// в справочнике шаблона и быть не архивной
@@ -3863,6 +3856,16 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		}
 	}
 
+	// Для file-полей значение - id вложения этой же задачи (загружается обычным
+	// потоком вложений задачи)
+	var fileAttachment *dao.IssueAttachment
+	if template.Type == "file" {
+		fileAttachment, err = dao.CheckFilePropertyValue(s.DB(c), issue.ID, valueStr)
+		if err != nil {
+			return EError(c, err)
+		}
+	}
+
 	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
 	if err := dao.CheckDependencyValue(s.DB(c), template, issue.ID, valueStr, lookupRow); err != nil {
 		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
@@ -3871,10 +3874,14 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	// Для lookup хук получает отображаемое значение строки справочника, не id
+	// Для lookup хук получает отображаемое значение строки справочника, не id;
+	// для file - имя файла вложения
 	hookValue := valueStr
 	if lookupRow != nil {
 		hookValue = lookupRow.Value
+	}
+	if fileAttachment != nil {
+		hookValue = fileAttachment.FileName()
 	}
 	if err := s.policy.BeforePropertyChange(c.Request().Context(), apiCtx, *issue, template, hookValue); err != nil {
 		return EError(c, err)
@@ -3929,6 +3936,10 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	if lookupRow != nil {
 		resp.ValueLabel = &lookupRow.Value
 	}
+	if fileAttachment != nil {
+		fileName := fileAttachment.FileName()
+		resp.ValueLabel = &fileName
+	}
 	resp.ResetProperties = resetProperties
 
 	return c.JSON(status, resp)
@@ -3955,7 +3966,6 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 // @Router /api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueIdOrSeq}/properties/{templateId}/available-values/ [get]
 func (s *Services) getAvailablePropertyValues(c echo.Context) error {
 	apiCtx := apicontext.GetContext(c)
-	projectMember := apiCtx.GetProjectMember()
 	issue := apiCtx.GetIssue()
 	if apiCtx.Error() != nil {
 		return EError(c, apiCtx.Error())
@@ -3966,17 +3976,15 @@ func (s *Services) getAvailablePropertyValues(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
 	}
 
+	// Шаблон грузим через scope видимости: скрытый по роли для пользователя
+	// не существует (как в getIssueProperties)
+	scope := s.policy.PropertyTemplateScope(c.Request().Context(), apiCtx)
 	var template dao.ProjectPropertyTemplate
-	if err := s.DB(c).Where("id = ? AND project_id = ?", templateUUID, issue.ProjectId).First(&template).Error; err != nil {
+	if err := scope(s.DB(c).Where("id = ? AND project_id = ?", templateUUID, issue.ProjectId)).First(&template).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
 		}
 		return EError(c, err)
-	}
-
-	// OnlyAdmin поля не-админам не показываем (как в getIssueProperties)
-	if template.OnlyAdmin && projectMember.Role < types.AdminRole {
-		return EErrorDefined(c, apierrors.ErrPropertyTemplateNotFound)
 	}
 
 	// Каскадное ограничение по текущему значению родителя
@@ -4047,40 +4055,6 @@ func (s *Services) availableLookupRows(c echo.Context, template dao.ProjectPrope
 	}
 	resp.Result = result
 	return &resp, nil
-}
-
-// validatePropertyValue валидирует значение через JSON Schema
-func validatePropertyValue(ctx context.Context, template dao.ProjectPropertyTemplate, value any) error {
-	schema := types.GenValueSchema(template.Type, template.Options)
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource("schema.json", schema); err != nil {
-		return err
-	}
-
-	sch, err := compiler.Compile("schema.json")
-	if err != nil {
-		return err
-	}
-
-	err = sch.Validate(value)
-	if errors.Is(err, &jsonschema.ValidationError{}) {
-		slog.DebugContext(ctx, "JSON schema validation error", "err", err)
-	}
-	if err != nil {
-		return err
-	}
-
-	// Семантика дат: JSON Schema паттерном не поймать 2026-13-45 или unix вне диапазона
-	if !types.CheckDateValue(template.Type, value) {
-		return apierrors.ErrPropertyValueValidationFailed
-	}
-	return nil
-}
-
-// serializePropertyValue сериализует значение в строку для хранения в БД
-// (объект link и массив multiselect - JSON, см. dao.SerializePropertyValue)
-func serializePropertyValue(value any) string {
-	return dao.SerializePropertyValue(value)
 }
 
 // LinkedIssuesIds представляет собой структуру для передачи связанных задач
@@ -4334,9 +4308,35 @@ func (s *Services) loadExportProperties(c echo.Context, result any) (*exportProp
 	if err := resolveLookupExportValues(s.DB(c), data); err != nil {
 		return nil, err
 	}
+	if err := resolveFileExportValues(s.DB(c), data); err != nil {
+		return nil, err
+	}
 	resolveDatetimeExportValues(data)
 	resolveMultiselectExportValues(data)
+	resolveNumberExportValues(data)
 	return data, nil
+}
+
+// resolveNumberExportValues дописывает к значениям number-полей единицу измерения
+// шаблона через пробел («12.5 кг») — выгрузка предназначена для чтения людьми
+func resolveNumberExportValues(data *exportPropertiesData) {
+	units := make(map[uuid.UUID]string)
+	for _, t := range data.templates {
+		if t.Type == "number" && t.Unit != "" {
+			units[t.Id] = t.Unit
+		}
+	}
+	if len(units) == 0 {
+		return
+	}
+
+	for _, issueValues := range data.values {
+		for templateId, value := range issueValues {
+			if unit, ok := units[templateId]; ok && value != "" {
+				issueValues[templateId] = value + " " + unit
+			}
+		}
+	}
 }
 
 // resolveMultiselectExportValues разворачивает значения multiselect-полей
@@ -4390,48 +4390,61 @@ func resolveDatetimeExportValues(data *exportPropertiesData) {
 }
 
 // resolveLookupExportValues подменяет в данных экспорта id строк справочников
-// (значения lookup-полей) отображаемыми значениями строк — выгрузка предназначена
-// для чтения людьми. Значение с недоступной строкой остаётся id (данные не теряем)
+// (значения lookup-полей) отображаемыми значениями строк
 func resolveLookupExportValues(db *gorm.DB, data *exportPropertiesData) error {
-	lookupTemplates := make(map[uuid.UUID]struct{})
+	return resolveReferenceExportValues(db, data, "lookup", dao.ResolveDictionaryRowValues)
+}
+
+// resolveFileExportValues подменяет в данных экспорта id вложений (значения
+// file-полей) именами файлов
+func resolveFileExportValues(db *gorm.DB, data *exportPropertiesData) error {
+	return resolveReferenceExportValues(db, data, "file", dao.ResolveAttachmentFileNames)
+}
+
+// resolveReferenceExportValues подменяет в данных экспорта UUID-значения полей типа
+// propType подписями из resolve (один запрос на тип) — выгрузка предназначена для
+// чтения людьми. Значение без найденной подписи остаётся id (данные не теряем)
+func resolveReferenceExportValues(db *gorm.DB, data *exportPropertiesData, propType string,
+	resolve func(*gorm.DB, []uuid.UUID) (map[uuid.UUID]string, error)) error {
+	templates := make(map[uuid.UUID]struct{})
 	for _, t := range data.templates {
-		if t.Type == "lookup" {
-			lookupTemplates[t.Id] = struct{}{}
+		if t.Type == propType {
+			templates[t.Id] = struct{}{}
 		}
 	}
-	if len(lookupTemplates) == 0 {
+	if len(templates) == 0 {
 		return nil
 	}
 
-	var rowIds []uuid.UUID
+	var ids []uuid.UUID
 	for _, issueValues := range data.values {
 		for templateId, value := range issueValues {
-			if _, ok := lookupTemplates[templateId]; !ok {
+			if _, ok := templates[templateId]; !ok {
 				continue
 			}
-			if rowId, err := uuid.FromString(value); err == nil {
-				rowIds = append(rowIds, rowId)
+			if id, err := uuid.FromString(value); err == nil {
+				ids = append(ids, id)
 			}
 		}
 	}
-	if len(rowIds) == 0 {
+	if len(ids) == 0 {
 		return nil
 	}
 
-	labels, err := dao.ResolveDictionaryRowValues(db, rowIds)
+	labels, err := resolve(db, ids)
 	if err != nil {
 		return err
 	}
 	for _, issueValues := range data.values {
 		for templateId, value := range issueValues {
-			if _, ok := lookupTemplates[templateId]; !ok {
+			if _, ok := templates[templateId]; !ok {
 				continue
 			}
-			rowId, err := uuid.FromString(value)
+			id, err := uuid.FromString(value)
 			if err != nil {
 				continue
 			}
-			if label, ok := labels[rowId]; ok {
+			if label, ok := labels[id]; ok {
 				issueValues[templateId] = label
 			}
 		}

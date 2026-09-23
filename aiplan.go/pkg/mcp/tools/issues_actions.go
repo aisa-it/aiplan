@@ -21,7 +21,6 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
 	"github.com/gofrs/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -365,7 +364,7 @@ var issuesActionsTools = []Tool{
 	{
 		mcp.NewTool(
 			"get_issue_properties",
-			mcp.WithDescription("Получение кастомных свойств задачи. Возвращает все шаблоны проекта со значениями или дефолтами. OnlyAdmin поля скрыты для не-админов"),
+			mcp.WithDescription("Получение кастомных свойств задачи. Возвращает все шаблоны проекта со значениями или дефолтами (number - числом, с unit - единицей измерения; required - поле обязательно для заполнения; file - id вложения задачи, value_label - имя файла). Шаблоны, у которых reader_role выше роли пользователя в проекте, не возвращаются"),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithString("issue_id",
@@ -378,7 +377,7 @@ var issuesActionsTools = []Tool{
 	{
 		mcp.NewTool(
 			"set_issue_property",
-			mcp.WithDescription("Установка значения кастомного свойства задачи. OnlyAdmin шаблоны может ставить только админ. Значение проходит JSON Schema валидацию. Изменение может быть отклонено Lua-сценарием проекта (для не-админов)"),
+			mcp.WithDescription("Установка значения кастомного свойства задачи. Право на поле задаёт editor_role шаблона: роль в проекте не ниже требуемой. Значение проходит JSON Schema валидацию; у required-шаблона пустое значение не принимается. Изменение может быть отклонено Lua-сценарием проекта (для не-админов)"),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithString("issue_id",
@@ -391,7 +390,7 @@ var issuesActionsTools = []Tool{
 			),
 			mcp.WithObject("value",
 				mcp.Required(),
-				mcp.Description("Значение: строка для string/select, массив строк из options для multiselect (пустой массив - сброс; при unique_values шаблона без повторов), bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime"),
+				mcp.Description("Значение: строка для string/select, массив строк из options для multiselect (пустой массив - сброс; при unique_values шаблона без повторов), bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime, число или числовая строка для number (unit шаблона - единица измерения), id вложения этой же задачи (UUID из get_issue_attachments) для file; null или пустая строка - сброс"),
 			),
 		),
 		setIssueProperty,
@@ -1495,9 +1494,9 @@ func getIssueProperties(ctx context.Context, d Deps, user *dao.User, request mcp
 	if errRes != nil {
 		return errRes, nil
 	}
-	issue, pm := subject.GetIssue(), subject.GetProjectMember()
+	issue := subject.GetIssue()
 
-	result, err := dao.ListIssuePropertiesDTO(d.DB, issue, pm.Role == types.AdminRole)
+	result, err := dao.ListIssuePropertiesDTO(d.DB, issue, d.Policy.PropertyTemplateScope(ctx, subject))
 	if err != nil {
 		return logger.Error(err), nil
 	}
@@ -1524,7 +1523,7 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 	if errRes != nil {
 		return errRes, nil
 	}
-	issue, pm := subject.GetIssue(), subject.GetProjectMember()
+	issue := subject.GetIssue()
 
 	var template dao.ProjectPropertyTemplate
 	if err := d.DB.Where("id = ? AND project_id = ?", templateID, issue.ProjectId).First(&template).Error; err != nil {
@@ -1538,19 +1537,17 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 		return errRes, nil
 	}
 
-	if template.OnlyAdmin && pm.Role < types.AdminRole {
-		return apierrors.ErrPropertyOnlyAdminCanSet.MCPError(), nil
+	// Право на само поле (editor_role шаблона) - правило движка по объекту
+	if err := d.Policy.Authorize(ctx, engine.ActionIssueSetProperty, subject, policy.On(&template)); err != nil {
+		return mcpError(err), nil
 	}
 
-	if err := validatePropertyValueMCP(template, value); err != nil {
-		return apierrors.ErrPropertyValueValidationFailed.MCPError(), nil
+	// Форма и семантика значения, уникальность multiselect, обязательность; на выходе -
+	// строка для хранения
+	valueStr, err := dao.PrepareIssuePropertyValue(template, value)
+	if err != nil {
+		return mcpError(err), nil
 	}
-	// Настройка шаблона multiselect: значения в списке не повторяются
-	if !types.CheckUniqueValues(template.Type, template.UniqueValues, value) {
-		return apierrors.ErrPropertyValuesNotUnique.MCPError(), nil
-	}
-
-	valueStr := serializePropertyValueMCP(value)
 
 	// Для lookup-полей значение - id строки справочника: строка должна существовать
 	// в справочнике шаблона и быть не архивной
@@ -1567,6 +1564,15 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 		}
 	}
 
+	// Для file-полей значение - id вложения этой же задачи
+	var fileAttachment *dao.IssueAttachment
+	if template.Type == "file" {
+		fileAttachment, err = dao.CheckFilePropertyValue(d.DB, issue.ID, valueStr)
+		if err != nil {
+			return mcpError(err), nil
+		}
+	}
+
 	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
 	if err := dao.CheckDependencyValue(d.DB, template, issue.ID, valueStr, lookupRow); err != nil {
 		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
@@ -1575,10 +1581,14 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 		return logger.Error(err), nil
 	}
 
-	// Для lookup хук получает отображаемое значение строки справочника, не id
+	// Для lookup хук получает отображаемое значение строки справочника, не id;
+	// для file - имя файла вложения
 	hookValue := valueStr
 	if lookupRow != nil {
 		hookValue = lookupRow.Value
+	}
+	if fileAttachment != nil {
+		hookValue = fileAttachment.FileName()
 	}
 	if err := d.Policy.BeforePropertyChange(ctx, subject, *issue, template, hookValue); err != nil {
 		return mcpError(err), nil
@@ -1623,32 +1633,10 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 	if lookupRow != nil {
 		resp.ValueLabel = &lookupRow.Value
 	}
+	if fileAttachment != nil {
+		fileName := fileAttachment.FileName()
+		resp.ValueLabel = &fileName
+	}
 	resp.ResetProperties = resetProperties
 	return mcp.NewToolResultJSON(resp)
-}
-
-func validatePropertyValueMCP(template dao.ProjectPropertyTemplate, value any) error {
-	schema := types.GenValueSchema(template.Type, template.Options)
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource("schema.json", schema); err != nil {
-		return err
-	}
-	sch, err := compiler.Compile("schema.json")
-	if err != nil {
-		return err
-	}
-	if err := sch.Validate(value); err != nil {
-		return err
-	}
-	// Семантика дат: JSON Schema паттерном не поймать 2026-13-45 или unix вне диапазона
-	if !types.CheckDateValue(template.Type, value) {
-		return apierrors.ErrPropertyValueValidationFailed
-	}
-	return nil
-}
-
-// serializePropertyValueMCP сериализует значение в строку для хранения в БД
-// (объект link и массив multiselect - JSON, см. dao.SerializePropertyValue)
-func serializePropertyValueMCP(value any) string {
-	return dao.SerializePropertyValue(value)
 }

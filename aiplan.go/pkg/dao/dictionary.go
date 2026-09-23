@@ -157,18 +157,7 @@ func IsDictionaryRowUsed(db *gorm.DB, rowId uuid.UUID) (bool, error) {
 
 // lookupRowId извлекает id строки справочника из значения lookup-поля
 func lookupRowId(prop dto.IssueProperty) (uuid.UUID, bool) {
-	if prop.Type != "lookup" {
-		return uuid.Nil, false
-	}
-	value, ok := prop.Value.(string)
-	if !ok || value == "" {
-		return uuid.Nil, false
-	}
-	rowId, err := uuid.FromString(value)
-	if err != nil {
-		return uuid.Nil, false
-	}
-	return rowId, true
+	return propertyValueUUID(prop, "lookup")
 }
 
 // FillLookupValueLabels батчем проставляет отображаемые значения (value_label)

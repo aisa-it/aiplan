@@ -1,9 +1,15 @@
 package types
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 type IssuePropertySchema struct {
@@ -36,12 +42,17 @@ func GenValueSchema(propType string, options []string) map[string]any {
 		return genSelectValueSchema(options)
 	case "multiselect":
 		return genMultiselectValueSchema(options)
-	case "lookup":
-		// Значение - id строки справочника (или null для сброса); существование
-		// строки проверяется отдельным запросом в БД, схема проверяет только форму
+	case "lookup", "file":
+		// Значение - id строки справочника (lookup) или id вложения задачи (file),
+		// null - сброс; существование проверяется отдельным запросом в БД, схема
+		// проверяет только форму
 		return map[string]any{"type": []any{"string", "null"}}
 	case "date", "datetime":
 		return genDateValueSchema(propType)
+	case "number":
+		// JSON-число или числовая строка; null и пустая строка - сброс. Разбор и
+		// отсев NaN/Inf/мусора - в NormalizeNumberValue, схема проверяет только форму
+		return map[string]any{"type": []any{"number", "string", "null"}}
 	case "link":
 		return map[string]any{
 			"$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -124,6 +135,67 @@ func CheckDateValue(propType string, value any) bool {
 		return err == nil && n >= 0 && n <= maxDatetimeUnix
 	}
 	return true
+}
+
+// NormalizeNumberValue приводит значение number-поля к канонической строке хранения
+// (strconv.FormatFloat 'f', -1): принимает JSON-число (float64/json.Number) или
+// числовую строку; nil и пустая строка - сброс (""). ok=false - не число (NaN, Inf, мусор)
+func NormalizeNumberValue(value any) (string, bool) {
+	if s, isString := value.(string); isString {
+		value = strings.TrimSpace(s)
+		if value == "" {
+			value = nil
+		}
+	}
+	if value == nil {
+		return "", true
+	}
+	f, ok := numberValueToFloat(value)
+	if !ok || math.IsNaN(f) || math.IsInf(f, 0) {
+		return "", false
+	}
+	return strconv.FormatFloat(f, 'f', -1, 64), true
+}
+
+// numberValueToFloat - JSON-число (float64/json.Number) или числовая строка как float64
+func numberValueToFloat(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(v, 64)
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// ValidatePropertyValue проверяет значение кастомного поля по типу шаблона: форму -
+// JSON Schema (GenValueSchema), семантику дат - CheckDateValue, число - NormalizeNumberValue.
+// Единая проверка для HTTP- и MCP-каналов
+func ValidatePropertyValue(propType string, options []string, value any) error {
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", GenValueSchema(propType, options)); err != nil {
+		return err
+	}
+	sch, err := compiler.Compile("schema.json")
+	if err != nil {
+		return err
+	}
+	if err := sch.Validate(value); err != nil {
+		return err
+	}
+	if !CheckDateValue(propType, value) {
+		return errors.New("invalid date value")
+	}
+	if propType == "number" {
+		if _, ok := NormalizeNumberValue(value); !ok {
+			return errors.New("invalid number value")
+		}
+	}
+	return nil
 }
 
 // CheckUniqueValues проверяет настройку уникальности multiselect-поля: при

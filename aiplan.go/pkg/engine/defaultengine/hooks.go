@@ -3,7 +3,9 @@ package defaultengine
 import (
 	"context"
 	"log/slog"
+	"strings"
 
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/rules"
@@ -19,12 +21,43 @@ import (
 type luaHook func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError)
 
 func (e *Engine) BeforeStateChange(_ context.Context, ev engine.StateTransition) (engine.Verdict, error) {
-	if ev.Issue == nil || isProjectAdmin(ev.Subject) {
+	if ev.Issue == nil {
+		return engine.Allow, nil
+	}
+	// Обязательность поля - свойство схемы проекта, а не сценарий для участников:
+	// действует и для администратора, поэтому проверяется до обхода Lua-хуков
+	if v, err := requiredPropertiesVerdict(ev); err != nil || v.Decision == engine.DecisionDeny {
+		return v, err
+	}
+	if isProjectAdmin(ev.Subject) {
 		return engine.Allow, nil
 	}
 	return e.runHook(ev.Subject, *ev.Issue, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
 		return rules.BeforeStatusChange(user, issue, ev.To)
 	})
+}
+
+// requiredPropertiesVerdict запрещает завершать задачу с незаполненными
+// обязательными полями. Отмена не проверяется: задачу отменяют как раз потому,
+// что делать её не будут. Список статусов не сужается: как и отказ Lua-хука,
+// правило видно клиенту ошибкой при сохранении
+func requiredPropertiesVerdict(ev engine.StateTransition) (engine.Verdict, error) {
+	if ev.To.Group != "completed" {
+		return engine.Allow, nil
+	}
+	missing, err := dao.MissingRequiredProperties(ev.Subject.DB(), ev.Issue)
+	if err != nil {
+		return engine.Default, err
+	}
+	if len(missing) == 0 {
+		return engine.Allow, nil
+	}
+	names := make([]string, 0, len(missing))
+	for _, tmpl := range missing {
+		names = append(names, tmpl.Name)
+	}
+	clientErr := apierrors.ErrIssueRequiredPropertiesEmpty.WithFormattedMessage(strings.Join(names, ", "))
+	return engine.Verdict{Decision: engine.DecisionDeny, Error: &clientErr}, nil
 }
 
 func (e *Engine) AfterStateChange(_ context.Context, ev engine.StateTransition) error {

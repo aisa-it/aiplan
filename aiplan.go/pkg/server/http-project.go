@@ -3634,17 +3634,14 @@ func (s *Services) deleteProjectRulesScript(c echo.Context) error {
 func (s *Services) getPropertyTemplateList(c echo.Context) error {
 	apiContext := apicontext.GetContext(c)
 	project := apiContext.GetProject()
-	projectMember := apiContext.GetProjectMember()
 	if apiContext.Error() != nil {
 		return EError(c, apiContext.Error())
 	}
 
-	// OnlyAdmin-шаблоны не-админу не отдаём: список задач и карточка их всё
-	// равно фильтруют, а в колонках/группировке они висели пустыми (BUGS-1303)
-	query := s.DB(c).Where("project_id = ?", project.ID)
-	if projectMember.Role != types.AdminRole {
-		query = query.Where("only_admin = ?", false)
-	}
+	// Скрытые по роли шаблоны не отдаём тем же scope, что и карточка со
+	// списком задач: иначе в колонках/группировке они висели бы пустыми
+	scope := s.policy.PropertyTemplateScope(c.Request().Context(), apiContext)
+	query := scope(s.DB(c).Where("project_id = ?", project.ID))
 
 	var templates []dao.ProjectPropertyTemplate
 	if err := query.Order("sort_order, created_at").Find(&templates).Error; err != nil {
@@ -3728,6 +3725,18 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
+	// Роли доступа: явные значения, иначе шорткат only_admin, иначе по умолчанию
+	readerRole, editorRole := dao.PropertyRolesForOnlyAdmin(request.OnlyAdmin)
+	if request.ReaderRole != 0 {
+		readerRole = request.ReaderRole
+	}
+	if request.EditorRole != 0 {
+		editorRole = request.EditorRole
+	}
+	if err := dao.CheckPropertyRoles(readerRole, editorRole); err != nil {
+		return EError(c, err)
+	}
+
 	template := dao.ProjectPropertyTemplate{
 		Id:           dao.GenUUID(),
 		ProjectId:    project.ID,
@@ -3737,8 +3746,11 @@ func (s *Services) createPropertyTemplate(c echo.Context) error {
 		Options:      options,
 		DictionaryId: dictionaryId,
 		Dependency:   request.Dependency,
-		OnlyAdmin:    request.OnlyAdmin,
+		ReaderRole:   readerRole,
+		EditorRole:   editorRole,
 		UniqueValues: request.Type == "multiselect" && request.UniqueValues,
+		Required:     request.Required,
+		Unit:         propertyUnitForType(request.Type, request.Unit),
 		SortOrder:    request.SortOrder,
 		CreatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
 		UpdatedById:  uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -3870,8 +3882,22 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	if request.OnlyAdmin != nil {
-		template.OnlyAdmin = *request.OnlyAdmin
+	// Роли доступа: шорткат only_admin задаёт базу (15/15 или 5/5), явные роли её перекрывают
+	if request.OnlyAdmin != nil || request.ReaderRole != nil || request.EditorRole != nil {
+		readerRole, editorRole := template.ReaderRole, template.EditorRole
+		if request.OnlyAdmin != nil {
+			readerRole, editorRole = dao.PropertyRolesForOnlyAdmin(*request.OnlyAdmin)
+		}
+		if request.ReaderRole != nil {
+			readerRole = *request.ReaderRole
+		}
+		if request.EditorRole != nil {
+			editorRole = *request.EditorRole
+		}
+		if err := dao.CheckPropertyRoles(readerRole, editorRole); err != nil {
+			return EError(c, err)
+		}
+		template.ReaderRole, template.EditorRole = readerRole, editorRole
 		updated = true
 	}
 	if request.UniqueValues != nil {
@@ -3881,6 +3907,19 @@ func (s *Services) updatePropertyTemplate(c echo.Context) error {
 	// Уникальность значений имеет смысл только у multiselect
 	if template.Type != "multiselect" && template.UniqueValues {
 		template.UniqueValues = false
+		updated = true
+	}
+	if request.Required != nil {
+		template.Required = *request.Required
+		updated = true
+	}
+	if request.Unit != nil {
+		template.Unit = *request.Unit
+		updated = true
+	}
+	// Единица измерения имеет смысл только у number
+	if unit := propertyUnitForType(template.Type, template.Unit); unit != template.Unit {
+		template.Unit = unit
 		updated = true
 	}
 	if request.SortOrder != nil {
@@ -3975,7 +4014,15 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 }
 
 // validPropertyTypes - допустимые типы шаблонов кастомных полей
-var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "multiselect": true, "link": true, "lookup": true, "date": true, "datetime": true}
+var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "multiselect": true, "link": true, "lookup": true, "date": true, "datetime": true, "number": true, "file": true}
+
+// propertyUnitForType - единица измерения имеет смысл только у number, у остальных типов пустая
+func propertyUnitForType(propType, unit string) string {
+	if propType != "number" {
+		return ""
+	}
+	return strings.TrimSpace(unit)
+}
 
 // checkTemplateDictionary валидирует справочник шаблона поля: для типа lookup
 // требуется существующий справочник проекта, у остальных типов ссылка сбрасывается

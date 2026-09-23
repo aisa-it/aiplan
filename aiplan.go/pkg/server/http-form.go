@@ -837,7 +837,7 @@ func createAnswerIssueProperties(tx *gorm.DB, form *dao.Form, answer *dao.FormAn
 			ProjectId:   issue.ProjectId,
 			TemplateId:  field.PropertyTemplateId.UUID,
 			IssueId:     issue.ID,
-			Value:       serializePropertyValue(answer.Fields[i].Val),
+			Value:       dao.SerializePropertyValue(answer.Fields[i].Val),
 		}).Error; err != nil {
 			return err
 		}

@@ -262,10 +262,10 @@ var (
 	// 45** - property template errors
 	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
 	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
-	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, multiselect, link, lookup, date, datetime", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, multiselect, link, lookup, date, datetime"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, multiselect, link, lookup, date, datetime, number, file", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, multiselect, link, lookup, date, datetime, number, file"}
 	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
 	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
-	ErrPropertyOnlyAdminCanSet         = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "only admin can set this property", RuErr: "Только администратор может устанавливать это поле"}
+	ErrPropertySetForbidden            = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "insufficient rights to set this property", RuErr: "Недостаточно прав для изменения поля"}
 	ErrPropertyValueValidationFailed   = DefinedError{Code: 4507, StatusCode: http.StatusBadRequest, Err: "property value validation failed", RuErr: "Значение поля не прошло валидацию"}
 	ErrPropertyTemplateOptionsRequired = DefinedError{Code: 4508, StatusCode: http.StatusBadRequest, Err: "options are required for select and multiselect types", RuErr: "Для типов select и multiselect требуются варианты выбора"}
 
@@ -284,6 +284,10 @@ var (
 	ErrIssueTypeNotFound                  = DefinedError{Code: 4520, StatusCode: http.StatusNotFound, Err: "issue type not found", RuErr: "Тип задачи не найден"}
 	ErrIssueTypeNameRequired              = DefinedError{Code: 4521, StatusCode: http.StatusBadRequest, Err: "issue type name is required", RuErr: "Имя типа задачи обязательно"}
 	ErrIssueTypeInUse                     = DefinedError{Code: 4522, StatusCode: http.StatusConflict, Err: "issue type is used by issues", RuErr: "Тип задачи установлен у задач — удаление невозможно"}
+	ErrPropertyRequired                   = DefinedError{Code: 4523, StatusCode: http.StatusBadRequest, Err: "property is required", RuErr: "Поле обязательно для заполнения"}
+	ErrPropertyFileNotFound               = DefinedError{Code: 4524, StatusCode: http.StatusBadRequest, Err: "attachment not found in issue", RuErr: "Вложение не найдено в задаче"}
+	ErrIssueRequiredPropertiesEmpty       = DefinedError{Code: 4525, StatusCode: http.StatusBadRequest, Err: "required properties are not filled: %s", RuErr: "Не заполнены обязательные поля: %s"}
+	ErrPropertyRolesInvalid               = DefinedError{Code: 4526, StatusCode: http.StatusBadRequest, Err: "invalid property access roles", RuErr: "Недопустимые роли доступа к полю"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}

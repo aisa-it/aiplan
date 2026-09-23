@@ -9,8 +9,8 @@ import (
 
 // EnrichIssue догружает в задачу счётчик вложений и значения кастомных полей
 // с шаблонами — данные, недоступные после стандартной загрузки, но нужные Lua-правилам.
-// Для lookup-полей дополнительно резолвит отображаемые значения строк справочников
-// (Value хранит id строки) в IssueProperty.ResolvedValue
+// Для lookup- и file-полей дополнительно резолвит отображаемые значения (строка
+// справочника, имя файла вложения; Value хранит id) в IssueProperty.ResolvedValue
 func EnrichIssue(db *gorm.DB, issue *dao.Issue) error {
 	if err := db.Model(&dao.IssueAttachment{}).
 		Where("issue_id = ?", issue.ID).
@@ -24,37 +24,56 @@ func EnrichIssue(db *gorm.DB, issue *dao.Issue) error {
 		return err
 	}
 
-	return resolveLookupValues(db, issue.Properties)
+	if err := resolveLookupValues(db, issue.Properties); err != nil {
+		return err
+	}
+	return resolveFileValues(db, issue.Properties)
 }
 
 // resolveLookupValues батчем проставляет ResolvedValue для lookup-полей
+// (отображаемое значение строки справочника)
 func resolveLookupValues(db *gorm.DB, props []dao.IssueProperty) error {
-	var rowIds []uuid.UUID
+	return resolveReferenceValues(db, props, "lookup", dao.ResolveDictionaryRowValues)
+}
+
+// resolveFileValues батчем проставляет ResolvedValue для file-полей (имя файла вложения)
+func resolveFileValues(db *gorm.DB, props []dao.IssueProperty) error {
+	return resolveReferenceValues(db, props, "file", dao.ResolveAttachmentFileNames)
+}
+
+// resolveReferenceValues батчем проставляет ResolvedValue полям типа propType, значение
+// которых - UUID-ссылка: подписи берутся из resolve одним запросом
+func resolveReferenceValues(db *gorm.DB, props []dao.IssueProperty, propType string,
+	resolve func(*gorm.DB, []uuid.UUID) (map[uuid.UUID]string, error)) error {
+	var ids []uuid.UUID
 	for _, prop := range props {
-		if prop.Template == nil || prop.Template.Type != "lookup" || prop.Value == "" {
-			continue
-		}
-		if rowId, err := uuid.FromString(prop.Value); err == nil {
-			rowIds = append(rowIds, rowId)
+		if id, ok := referenceValueId(prop, propType); ok {
+			ids = append(ids, id)
 		}
 	}
-	if len(rowIds) == 0 {
+	if len(ids) == 0 {
 		return nil
 	}
 
-	labels, err := dao.ResolveDictionaryRowValues(db, rowIds)
+	labels, err := resolve(db, ids)
 	if err != nil {
 		return err
 	}
 
 	for i := range props {
-		prop := &props[i]
-		if prop.Template == nil || prop.Template.Type != "lookup" || prop.Value == "" {
-			continue
-		}
-		if rowId, err := uuid.FromString(prop.Value); err == nil {
-			prop.ResolvedValue = labels[rowId]
+		if id, ok := referenceValueId(props[i], propType); ok {
+			props[i].ResolvedValue = labels[id]
 		}
 	}
 	return nil
+}
+
+// referenceValueId - UUID из значения поля типа propType; поле другого типа, без
+// шаблона, пустое или не-UUID - false
+func referenceValueId(prop dao.IssueProperty, propType string) (uuid.UUID, bool) {
+	if prop.Template == nil || prop.Template.Type != propType || prop.Value == "" {
+		return uuid.Nil, false
+	}
+	id, err := uuid.FromString(prop.Value)
+	return id, err == nil
 }

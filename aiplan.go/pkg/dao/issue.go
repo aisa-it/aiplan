@@ -1310,7 +1310,20 @@ func (attachment *IssueAttachment) BeforeDelete(tx *gorm.DB) error {
 		Where("new_identifier = ? AND verb = ? AND field = ?", attachment.Id, actField.VerbCreated, actField.Attachment.Field.String()).
 		Model(&ActivityEvent{}).
 		Update("new_identifier", nil)
-	return nil
+	// Значение file-поля - id вложения задачи: с удалением вложения значение сбрасывается.
+	// Хук должен получить загруженный объект с IssueId, иначе UPDATE ничего не найдёт
+	return tx.Exec(`UPDATE issue_properties SET value = ''
+		WHERE issue_id = ? AND value = ?
+		AND template_id IN (SELECT id FROM project_property_templates WHERE type = 'file')`,
+		attachment.IssueId, attachment.Id.String()).Error
+}
+
+// FileName - имя файла вложения (пустая строка, если Asset не подгружен)
+func (attachment *IssueAttachment) FileName() string {
+	if attachment == nil || attachment.Asset == nil {
+		return ""
+	}
+	return attachment.Asset.Name
 }
 
 // ToLightDTO преобразует объект IssueAttachment в структуру dto.Attachment для удобства использования в API.

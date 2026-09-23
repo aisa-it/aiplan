@@ -217,7 +217,7 @@ const skippedGroupCount = -1
 // fetchIssuesByGroups выполняет поиск задач по группам и вызывает callback для каждой группы
 func fetchIssuesByGroups(
 	db *gorm.DB,
-	user *dao.User,
+	templateScope dao.PropertyTemplateScope,
 	groupSize []types.SearchGroupSize,
 	groupSelectQuery *gorm.DB,
 	searchParams *types.SearchParams,
@@ -334,7 +334,7 @@ func fetchIssuesByGroups(
 			populateAuthors(issues)
 
 			dtoIssues := utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) dto.IssueWithCount { return *i.ToDTO() })
-			if err := attachIssuesProperties(db, user, searchParams, dtoIssues); err != nil {
+			if err := attachIssuesProperties(db, templateScope, searchParams, dtoIssues); err != nil {
 				return err
 			}
 

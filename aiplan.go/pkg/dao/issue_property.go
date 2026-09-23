@@ -2,9 +2,13 @@ package dao
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"time"
 
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/utils"
@@ -27,14 +31,31 @@ type ProjectPropertyTemplate struct {
 	WorkspaceId uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:1;type:uuid"`
 	ProjectId   uuid.UUID `gorm:"index:ppt_ws_proj_idx,priority:2;type:uuid"`
 
-	Name      string   `gorm:"not null"`
-	Type      string   `gorm:"not null"` // "string", "boolean", "select", "multiselect", "link", "lookup", "date", "datetime"
+	Name string `gorm:"not null"`
+	// Type - тип поля: "string", "boolean", "select", "multiselect", "link", "lookup", "date",
+	// "datetime", "number", "file" (значение - id вложения этой же задачи)
+	Type      string   `gorm:"not null"`
 	Options   []string `gorm:"serializer:json"`
-	OnlyAdmin bool     `gorm:"default:false"`
 	SortOrder int      `gorm:"default:0"`
+
+	// ReaderRole/EditorRole - минимальная роль в проекте (5 гость, 10 участник,
+	// 15 администратор) для просмотра и для изменения значения поля.
+	// Роли шаблона только сужают общее правило на изменение задачи: 5 - без
+	// дополнительного ограничения. Редактирование не ниже просмотра:
+	// reader_role <= editor_role. Видимость применяет движок
+	// (PropertyTemplateScope), право менять - правило движка по объекту
+	ReaderRole int `gorm:"default:5"`
+	EditorRole int `gorm:"default:5"`
 
 	// UniqueValues - для типа "multiselect": значения в списке не должны повторяться
 	UniqueValues bool `gorm:"default:false"`
+
+	// Required - поле обязательно для заполнения: пустое значение не принимается
+	// (для boolean не проверяется). Включение задним числом существующие задачи не проверяет
+	Required bool `gorm:"default:false"`
+
+	// Unit - единица измерения для типа "number" (свободный текст, у других типов пустая)
+	Unit string
 
 	// DictionaryId - справочник для типа "lookup" (значение поля - id строки справочника)
 	DictionaryId uuid.NullUUID `gorm:"type:uuid" extensions:"x-nullable"`
@@ -51,6 +72,41 @@ type ProjectPropertyTemplate struct {
 
 func (ProjectPropertyTemplate) TableName() string { return "project_property_templates" }
 
+// PropertyTemplateScope - ограничение видимости шаблонов полей для субъекта.
+// Строит движок (policy.Enforcer.PropertyTemplateScope), dao только применяет
+// его к своим выборкам по project_property_templates
+type PropertyTemplateScope func(*gorm.DB) *gorm.DB
+
+// applyTemplateScope применяет ограничение видимости; без него выборка
+// пустая - пустая выдача безопаснее полной
+func applyTemplateScope(q *gorm.DB, scope PropertyTemplateScope) *gorm.DB {
+	if scope == nil {
+		return q.Where("1 = 0")
+	}
+	return scope(q)
+}
+
+// PropertyRolesForOnlyAdmin - роли по устаревшему флагу only_admin:
+// true - только администратор (15/15), false - значения по умолчанию (5/5)
+func PropertyRolesForOnlyAdmin(onlyAdmin bool) (reader, editor int) {
+	if onlyAdmin {
+		return types.AdminRole, types.AdminRole
+	}
+	return types.GuestRole, types.GuestRole
+}
+
+// CheckPropertyRoles проверяет роли доступа к полю: обе - роли проекта,
+// изменение не ниже просмотра
+func CheckPropertyRoles(reader, editor int) error {
+	validRole := func(role int) bool {
+		return role == types.GuestRole || role == types.MemberRole || role == types.AdminRole
+	}
+	if !validRole(reader) || !validRole(editor) || reader > editor {
+		return apierrors.ErrPropertyRolesInvalid
+	}
+	return nil
+}
+
 // ToDTO преобразует ProjectPropertyTemplate в DTO
 func (t *ProjectPropertyTemplate) ToDTO() *dto.ProjectPropertyTemplate {
 	if t == nil {
@@ -65,8 +121,12 @@ func (t *ProjectPropertyTemplate) ToDTO() *dto.ProjectPropertyTemplate {
 		Options:      t.Options,
 		DictionaryId: t.DictionaryId,
 		Dependency:   t.Dependency,
-		OnlyAdmin:    t.OnlyAdmin,
+		ReaderRole:   t.ReaderRole,
+		EditorRole:   t.EditorRole,
+		OnlyAdmin:    t.ReaderRole == types.AdminRole,
 		UniqueValues: t.UniqueValues,
+		Required:     t.Required,
+		Unit:         t.Unit,
 		SortOrder:    t.SortOrder,
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
@@ -89,7 +149,8 @@ type IssueProperty struct {
 	Value string `gorm:"type:text"`
 
 	// ResolvedValue - отображаемое значение lookup-поля (Value хранит id строки
-	// справочника). Заполняется вызывающей стороной (rules.EnrichIssue), в БД не хранится
+	// справочника) или file-поля (Value хранит id вложения, здесь - имя файла).
+	// Заполняется вызывающей стороной (rules.EnrichIssue), в БД не хранится
 	ResolvedValue string `gorm:"-" json:"-"`
 
 	Workspace *Workspace               `gorm:"foreignKey:WorkspaceId" extensions:"x-nullable"`
@@ -124,6 +185,12 @@ func (p *IssueProperty) ToDTO() *dto.IssueProperty {
 		result.DictionaryId = p.Template.DictionaryId
 		result.Dependency = p.Template.Dependency
 		result.UniqueValues = p.Template.UniqueValues
+		result.Required = p.Template.Required
+		result.Unit = p.Template.Unit
+		// Число отдаём числом; остальные типы - хранимой строкой (формат ответа установки)
+		if p.Template.Type == "number" {
+			result.Value = ParsePropertyValue(p.Template.Type, p.Value)
+		}
 	}
 
 	return result
@@ -163,29 +230,34 @@ func ParseMultiselectValue(value string) []string {
 
 // SerializePropertyValue сериализует значение поля в строку для хранения в БД:
 // nil - пустая строка, объект (link) и массив (multiselect) - JSON, пустой массив -
-// пустая строка (= не заполнено), остальное - fmt.Sprint
+// пустая строка (= не заполнено), JSON-число (float64) - каноническая запись без
+// экспоненты, остальное - fmt.Sprint
 func SerializePropertyValue(value any) string {
 	switch v := value.(type) {
 	case nil:
 		return ""
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	case map[string]any:
-		if b, err := json.Marshal(v); err == nil {
-			return string(b)
-		}
+		return marshalOrSprint(v)
 	case []any:
 		if len(v) == 0 {
 			return ""
 		}
-		if b, err := json.Marshal(v); err == nil {
-			return string(b)
-		}
+		return marshalOrSprint(v)
 	case []string:
 		if len(v) == 0 {
 			return ""
 		}
-		if b, err := json.Marshal(v); err == nil {
-			return string(b)
-		}
+		return marshalOrSprint(v)
+	}
+	return fmt.Sprint(value)
+}
+
+// marshalOrSprint - JSON значения; при ошибке сериализации - fmt.Sprint
+func marshalOrSprint(value any) string {
+	if b, err := json.Marshal(value); err == nil {
+		return string(b)
 	}
 	return fmt.Sprint(value)
 }
@@ -195,7 +267,7 @@ func ParsePropertyValue(propType, value string) any {
 	switch propType {
 	case "boolean":
 		return value == "true"
-	case "select", "lookup", "date", "datetime":
+	case "select", "lookup", "file", "date", "datetime":
 		if value == "" {
 			return nil
 		}
@@ -211,19 +283,102 @@ func ParsePropertyValue(propType, value string) any {
 			return value
 		}
 		return m
+	case "number":
+		return parseNumberValue(value)
 	default:
 		return value
 	}
 }
 
-// ListIssuePropertiesDTO собирает все кастомные поля задачи: шаблоны проекта,
-// склеенные с существующими значениями или значениями по умолчанию. OnlyAdmin-поля
-// возвращаются только админам, lookup-значениям заполняется value_label.
-// Единая точка сборки для HTTP- и MCP-каналов
-func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.IssueProperty, error) {
+// parseNumberValue - хранимое значение number-поля как json.Number (в JSON уходит
+// числом без шума float). Пустое или неразборчивое значение - nil: json.Number
+// с мусором сломал бы сериализацию всего ответа
+func parseNumberValue(value string) any {
+	if value == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return nil
+	}
+	return json.Number(strconv.FormatFloat(f, 'f', -1, 64))
+}
+
+// IsEmptyPropertyValue: хранимое значение поля пустое для своего типа - "" для
+// скалярных типов, пустой список для multiselect. boolean не бывает пустым
+func IsEmptyPropertyValue(propType, value string) bool {
+	switch propType {
+	case "boolean":
+		return false
+	case "multiselect":
+		return len(ParseMultiselectValue(value)) == 0
+	default:
+		return value == ""
+	}
+}
+
+// PrepareIssuePropertyValue проверяет устанавливаемое значение поля по шаблону и
+// возвращает строку для хранения: форма и семантика значения (types.ValidatePropertyValue),
+// уникальность multiselect, обязательность заполнения; number приводится к канонической
+// записи. Ошибки - apierrors. Единая точка для HTTP- и MCP-каналов; проверки, требующие
+// БД (lookup-строка, каскад), остаются у вызывающего
+func PrepareIssuePropertyValue(template ProjectPropertyTemplate, value any) (string, error) {
+	if err := types.ValidatePropertyValue(template.Type, template.Options, value); err != nil {
+		return "", apierrors.ErrPropertyValueValidationFailed
+	}
+	if !types.CheckUniqueValues(template.Type, template.UniqueValues, value) {
+		return "", apierrors.ErrPropertyValuesNotUnique
+	}
+	valueStr := SerializePropertyValue(value)
+	if template.Type == "number" {
+		// Валидность уже проверена, здесь только каноническая запись
+		valueStr, _ = types.NormalizeNumberValue(value)
+	}
+	if template.Required && IsEmptyPropertyValue(template.Type, valueStr) {
+		return "", apierrors.ErrPropertyRequired
+	}
+	return valueStr, nil
+}
+
+// MissingRequiredProperties - обязательные шаблоны полей проекта задачи, у которых в
+// задаче нет значения или оно пустое для своего типа (IsEmptyPropertyValue).
+// Движок по умолчанию запрещает по нему завершение задачи
+func MissingRequiredProperties(db *gorm.DB, issue *Issue) ([]ProjectPropertyTemplate, error) {
 	var templates []ProjectPropertyTemplate
-	if err := db.Where("project_id = ?", issue.ProjectId).
-		Where("only_admin = ? OR only_admin = ?", false, isAdmin).
+	if err := db.Where("project_id = ? AND required = true", issue.ProjectId).
+		Order("sort_order, created_at").
+		Find(&templates).Error; err != nil {
+		return nil, err
+	}
+	if len(templates) == 0 {
+		return nil, nil
+	}
+
+	var props []IssueProperty
+	if err := db.Where("issue_id = ?", issue.ID).Find(&props).Error; err != nil {
+		return nil, err
+	}
+	values := make(map[uuid.UUID]string, len(props))
+	for _, p := range props {
+		values[p.TemplateId] = p.Value
+	}
+
+	missing := make([]ProjectPropertyTemplate, 0)
+	for _, tmpl := range templates {
+		if IsEmptyPropertyValue(tmpl.Type, values[tmpl.Id]) {
+			missing = append(missing, tmpl)
+		}
+	}
+	return missing, nil
+}
+
+// ListIssuePropertiesDTO собирает все кастомные поля задачи: шаблоны проекта,
+// склеенные с существующими значениями или значениями по умолчанию. Видимость
+// шаблонов ограничивает scope движка, lookup- и file-значениям заполняется
+// value_label. Единая точка сборки для HTTP- и MCP-каналов
+func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, scope PropertyTemplateScope) ([]dto.IssueProperty, error) {
+	var templates []ProjectPropertyTemplate
+	if err := applyTemplateScope(db.Where("project_id = ?", issue.ProjectId), scope).
 		Order("sort_order, created_at").
 		Find(&templates).Error; err != nil {
 		return nil, err
@@ -241,9 +396,6 @@ func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.Issu
 
 	result := make([]dto.IssueProperty, 0, len(templates))
 	for _, tmpl := range templates {
-		if tmpl.OnlyAdmin && !isAdmin {
-			continue
-		}
 		prop := dto.IssueProperty{
 			TemplateId:   tmpl.Id,
 			IssueId:      issue.ID,
@@ -254,6 +406,8 @@ func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.Issu
 			DictionaryId: tmpl.DictionaryId,
 			Dependency:   tmpl.Dependency,
 			UniqueValues: tmpl.UniqueValues,
+			Required:     tmpl.Required,
+			Unit:         tmpl.Unit,
 			Value:        DefaultPropertyValue(tmpl.Type),
 		}
 		if IsOptionsPropertyType(tmpl.Type) {
@@ -266,19 +420,123 @@ func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, isAdmin bool) ([]dto.Issu
 		result = append(result, prop)
 	}
 
-	// Для lookup-полей резолвим отображаемые значения строк справочников
-	if err := FillLookupValueLabels(db, result); err != nil {
+	if err := FillPropertyValueLabels(db, result); err != nil {
 		return nil, err
+	}
+	return result, nil
+}
+
+// FillPropertyValueLabels проставляет отображаемые значения (value_label) полям,
+// хранящим id: lookup - строка справочника, file - имя файла вложения. По одному
+// запросу на тип
+func FillPropertyValueLabels(db *gorm.DB, props []dto.IssueProperty) error {
+	if err := FillLookupValueLabels(db, props); err != nil {
+		return err
+	}
+	return FillFileValueLabels(db, props)
+}
+
+// propertyValueUUID извлекает UUID-ссылку из значения поля указанного типа
+// (lookup - id строки справочника, file - id вложения); пустое или не-UUID - false
+func propertyValueUUID(prop dto.IssueProperty, propType string) (uuid.UUID, bool) {
+	if prop.Type != propType {
+		return uuid.Nil, false
+	}
+	value, ok := prop.Value.(string)
+	if !ok || value == "" {
+		return uuid.Nil, false
+	}
+	id, err := uuid.FromString(value)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// CheckFilePropertyValue валидирует значение file-поля (id вложения этой же задачи):
+// не UUID - ErrPropertyValueValidationFailed, вложения нет в задаче - ErrPropertyFileNotFound.
+// Возвращает вложение с подгруженным Asset (одна строка - AfterFind допустим).
+// Для пустого значения (сброс) возвращает (nil, nil)
+func CheckFilePropertyValue(db *gorm.DB, issueId uuid.UUID, valueStr string) (*IssueAttachment, error) {
+	if valueStr == "" {
+		return nil, nil
+	}
+	attachmentId, err := uuid.FromString(valueStr)
+	if err != nil {
+		return nil, apierrors.ErrPropertyValueValidationFailed
+	}
+	var attachment IssueAttachment
+	if err := db.Where("id = ? AND issue_id = ?", attachmentId, issueId).First(&attachment).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apierrors.ErrPropertyFileNotFound
+		}
+		return nil, err
+	}
+	return &attachment, nil
+}
+
+// FillFileValueLabels батчем проставляет отображаемые значения (value_label) для
+// file-полей - имена файлов вложений, id которых хранятся в значениях
+func FillFileValueLabels(db *gorm.DB, props []dto.IssueProperty) error {
+	var attachmentIds []uuid.UUID
+	for _, prop := range props {
+		if id, ok := propertyValueUUID(prop, "file"); ok {
+			attachmentIds = append(attachmentIds, id)
+		}
+	}
+	if len(attachmentIds) == 0 {
+		return nil
+	}
+
+	names, err := ResolveAttachmentFileNames(db, attachmentIds)
+	if err != nil {
+		return err
+	}
+
+	for i := range props {
+		id, ok := propertyValueUUID(props[i], "file")
+		if !ok {
+			continue
+		}
+		if name, ok := names[id]; ok {
+			props[i].ValueLabel = &name
+		}
+	}
+	return nil
+}
+
+// ResolveAttachmentFileNames возвращает имена файлов вложений задач по id вложений
+// одним запросом (JOIN на file_assets, без хуков модели - AfterFind на каждую строку
+// дал бы N+1)
+func ResolveAttachmentFileNames(db *gorm.DB, attachmentIds []uuid.UUID) (map[uuid.UUID]string, error) {
+	result := make(map[uuid.UUID]string, len(attachmentIds))
+	if len(attachmentIds) == 0 {
+		return result, nil
+	}
+	var rows []struct {
+		Id   uuid.UUID
+		Name string
+	}
+	if err := db.Table("issue_attachments").
+		Select("issue_attachments.id, file_assets.name").
+		Joins("JOIN file_assets ON file_assets.id = issue_attachments.asset_id").
+		Where("issue_attachments.id IN (?)", attachmentIds).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.Id] = row.Name
 	}
 	return result, nil
 }
 
 // MigratePropertyValuesOnTypeChange приводит существующие значения задач к новой
 // конфигурации шаблона при смене типа или справочника. lookup → string: id строки
-// заменяется отображаемым значением строки справочника. Прочие смены с участием
-// lookup (уход в другой тип, приход в lookup, смена справочника) или link (значение —
-// JSON-ссылка, в других типах это мусор) сбрасывают значения — они перестают быть
-// валидными. Смены между остальными типами значения не трогают
+// заменяется отображаемым значением строки справочника. string ↔ number: текст
+// остаётся, в number проходят только числовые значения. Прочие смены с участием
+// lookup (уход в другой тип, приход в lookup, смена справочника), file (id вложения),
+// link (значение — JSON-ссылка, в других типах это мусор) или number сбрасывают
+// значения — они перестают быть валидными. Смены между остальными типами значения не трогают
 func MigratePropertyValuesOnTypeChange(tx *gorm.DB, templateId uuid.UUID, oldType, newType string, oldDictionaryId, newDictionaryId uuid.NullUUID) error {
 	if oldType == newType && oldDictionaryId == newDictionaryId {
 		return nil
@@ -287,6 +545,9 @@ func MigratePropertyValuesOnTypeChange(tx *gorm.DB, templateId uuid.UUID, oldTyp
 		return convertLookupValuesToStrings(tx, templateId, oldDictionaryId.UUID)
 	}
 	if converted, err := convertSelectMultiselectValues(tx, templateId, oldType, newType); converted {
+		return err
+	}
+	if converted, err := convertStringNumberValues(tx, templateId, oldType, newType); converted {
 		return err
 	}
 	if !typeValuesNeedReset(oldType, newType) {
@@ -314,21 +575,32 @@ func convertSelectMultiselectValues(tx *gorm.DB, templateId uuid.UUID, oldType, 
 	return false, nil
 }
 
+// convertStringNumberValues конвертирует значения при смене string ↔ number:
+// number → string оставляет число как текст, string → number оставляет значения,
+// разбираемые как число (обрезав пробелы), остальные сбрасывает. Каноническую
+// запись хранимого числа при чтении восстанавливает parseNumberValue.
+// converted=false — смена не из этих двух, значения не тронуты
+func convertStringNumberValues(tx *gorm.DB, templateId uuid.UUID, oldType, newType string) (bool, error) {
+	switch {
+	case oldType == "number" && newType == "string":
+		return true, nil
+	case oldType == "string" && newType == "number":
+		// Квантификаторы {0,1} вместо ? — GORM считает ? в тексте запроса плейсхолдером
+		return true, tx.Exec(`UPDATE issue_properties
+			SET value = CASE WHEN btrim(value) ~ '^[+-]{0,1}(\d+(\.\d*){0,1}|\.\d+)([eE][+-]{0,1}\d+){0,1}$' THEN btrim(value) ELSE '' END
+			WHERE template_id = ? AND value <> ''`, templateId).Error
+	}
+	return false, nil
+}
+
 // typeValuesNeedReset: старые значения невалидны для нового типа — в смене участвует
-// lookup (значение — id строки справочника), link (значение — JSON-ссылка),
-// multiselect (значение — JSON-массив; конвертации select↔multiselect обработаны
+// lookup (значение — id строки справочника), file (значение — id вложения задачи),
+// link (значение — JSON-ссылка), multiselect (значение — JSON-массив; конвертации
+// select↔multiselect обработаны выше), number (конвертация string↔number обработана
 // выше) либо date/datetime (форматы дат несовместимы со свободным текстом и друг с другом)
 func typeValuesNeedReset(oldType, newType string) bool {
-	if oldType == "lookup" || newType == "lookup" {
-		return true
-	}
-	if oldType == "multiselect" || newType == "multiselect" {
-		return true
-	}
-	if oldType == "link" || newType == "link" {
-		return true
-	}
-	return oldType == "date" || newType == "date" || oldType == "datetime" || newType == "datetime"
+	resetTypes := []string{"lookup", "file", "multiselect", "link", "number", "date", "datetime"}
+	return slices.Contains(resetTypes, oldType) || slices.Contains(resetTypes, newType)
 }
 
 // convertLookupValuesToStrings заменяет id строк справочника в значениях задач
@@ -365,11 +637,12 @@ func (t ProjectPropertyTemplate) GenSchema() types.IssuePropertySchema {
 
 // FillIssuesProperties батчем подкачивает значения дополнительных параметров в
 // задачи списка (колонки таблицы): шаблоны проектов выдачи + значения по id задач
-// двумя запросами вместо N вызовов ListIssuePropertiesDTO. OnlyAdmin-поля попадают
-// только в задачи проектов, где пользователь админ. Options/Dependency в список
-// осознанно не кладутся — колонка только показывает значение
-func FillIssuesProperties(db *gorm.DB, user *User, issues []dto.IssueWithCount) (err error) {
-	if len(issues) == 0 || user == nil {
+// двумя запросами вместо N вызовов ListIssuePropertiesDTO. Видимость шаблонов
+// ограничивает scope движка - он работает по project_id строки, поэтому один
+// на задачи многих проектов. Options/Dependency в список осознанно не
+// кладутся — колонка только показывает значение
+func FillIssuesProperties(db *gorm.DB, scope PropertyTemplateScope, issues []dto.IssueWithCount) (err error) {
+	if len(issues) == 0 {
 		return nil
 	}
 
@@ -389,7 +662,7 @@ func FillIssuesProperties(db *gorm.DB, user *User, issues []dto.IssueWithCount) 
 
 	span.SetAttributes(attribute.Int("projects.count", len(projectSet)))
 
-	templatesByProject, err := visiblePropertyTemplatesByProject(db, user.ID, utils.SetToSlice(projectSet))
+	templatesByProject, err := visiblePropertyTemplatesByProject(db, scope, utils.SetToSlice(projectSet))
 	if err != nil || len(templatesByProject) == 0 {
 		return err
 	}
@@ -399,8 +672,8 @@ func FillIssuesProperties(db *gorm.DB, user *User, issues []dto.IssueWithCount) 
 		return err
 	}
 
-	// Собираем в один плоский срез, чтобы резолвить lookup-подписи одним запросом,
-	// а задачам раздаём подсрезы (общий backing array)
+	// Собираем в один плоский срез, чтобы резолвить lookup- и file-подписи по одному
+	// запросу на тип, а задачам раздаём подсрезы (общий backing array)
 	all := make([]dto.IssueProperty, 0, len(issues))
 	ranges := make([][2]int, len(issues))
 	for i, issue := range issues {
@@ -413,7 +686,7 @@ func FillIssuesProperties(db *gorm.DB, user *User, issues []dto.IssueWithCount) 
 
 	span.SetAttributes(attribute.Int("properties.count", len(all)))
 
-	if err = FillLookupValueLabels(db, all); err != nil {
+	if err = FillPropertyValueLabels(db, all); err != nil {
 		return err
 	}
 	assignIssuesProperties(issues, all, ranges)
@@ -440,31 +713,17 @@ func endSpan(span trace.Span, err error) {
 	span.End()
 }
 
-// visiblePropertyTemplatesByProject - шаблоны полей проектов, доступные пользователю:
-// OnlyAdmin-шаблоны только там, где он админ проекта
-func visiblePropertyTemplatesByProject(db *gorm.DB, userId uuid.UUID, projectIds []uuid.UUID) (map[uuid.UUID][]ProjectPropertyTemplate, error) {
-	var adminProjects []uuid.UUID
-	if err := db.Model(&ProjectMember{}).Select("project_id").
-		Where("member_id = ? AND role = ? AND project_id IN (?)", userId, types.AdminRole, projectIds).
-		Find(&adminProjects).Error; err != nil {
-		return nil, err
-	}
-	adminSet := make(map[uuid.UUID]struct{}, len(adminProjects))
-	for _, id := range adminProjects {
-		adminSet[id] = struct{}{}
-	}
-
+// visiblePropertyTemplatesByProject - шаблоны полей проектов, видимые
+// пользователю по scope движка, сгруппированные по проекту
+func visiblePropertyTemplatesByProject(db *gorm.DB, scope PropertyTemplateScope, projectIds []uuid.UUID) (map[uuid.UUID][]ProjectPropertyTemplate, error) {
 	var templates []ProjectPropertyTemplate
-	if err := db.Where("project_id IN (?)", projectIds).
+	if err := applyTemplateScope(db.Where("project_id IN (?)", projectIds), scope).
 		Order("sort_order, created_at").
 		Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	result := make(map[uuid.UUID][]ProjectPropertyTemplate, len(projectIds))
 	for _, tmpl := range templates {
-		if _, isAdmin := adminSet[tmpl.ProjectId]; tmpl.OnlyAdmin && !isAdmin {
-			continue
-		}
 		result[tmpl.ProjectId] = append(result[tmpl.ProjectId], tmpl)
 	}
 	return result, nil
@@ -497,6 +756,8 @@ func buildIssuePropertyDTO(issue dto.IssueWithCount, tmpl ProjectPropertyTemplat
 		Type:         tmpl.Type,
 		DictionaryId: tmpl.DictionaryId,
 		UniqueValues: tmpl.UniqueValues,
+		Required:     tmpl.Required,
+		Unit:         tmpl.Unit,
 		Value:        DefaultPropertyValue(tmpl.Type),
 	}
 	if existing, ok := values[tmpl.Id]; ok {
