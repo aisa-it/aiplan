@@ -10,6 +10,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/config"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/cronmanager"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications"
@@ -125,6 +126,17 @@ func (c *coreAdapter) rejectAfterInit(what string) bool {
 		slog.Warn("Engine registration after init ignored", "what", what)
 	}
 	return c.closed
+}
+
+// engineEntityNames — названия сущностей от движка; без EntityNamer или при
+// nil-ответе — пустой словарь, чтобы фронт всегда получал объект, а не null.
+func engineEntityNames(eng engine.Engine) dto.EntityNames {
+	if namer, ok := eng.(engine.EntityNamer); ok {
+		if names := namer.EntityNames(); names != nil {
+			return names
+		}
+	}
+	return dto.EntityNames{}
 }
 
 // initEngine инициализирует движок и возвращает накопленные регистрации.

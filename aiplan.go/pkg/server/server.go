@@ -203,6 +203,7 @@ func New(opts Options) (*Server, error) {
 		NotificationsService: ns,
 		Business:             bl,
 		Policy:               enforcer,
+		EntityNames:          engineEntityNames(eng),
 	})
 	if err != nil {
 		return nil, err

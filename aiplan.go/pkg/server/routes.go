@@ -70,17 +70,7 @@ func (srv *Server) registerRoutes() {
 	s.AddUserWithoutAuthServices(apiGroup)
 	s.AddFormWithoutAuthServices(apiGroup)
 
-	// Version endpoint
-	apiGroup.GET("version/", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"version": version,
-			"sign_up": cfg.SignUpEnable,
-			"demo":    cfg.Demo,
-			"ny":      cfg.NYEnable,
-			"captcha": !cfg.CaptchaDisabled,
-			"jitsi":   !cfg.JitsiDisabled,
-		})
-	})
+	apiGroup.GET("version/", s.getVersion)
 
 	// Health endpoint
 	apiGroup.GET("_health/", func(c echo.Context) error {

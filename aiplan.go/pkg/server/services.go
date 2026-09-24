@@ -8,6 +8,7 @@ import (
 	authprovider "github.com/aisa-it/aiplan/aiplan.go/pkg/auth-provider"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/business"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/config"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	filestorage "github.com/aisa-it/aiplan/aiplan.go/pkg/file-storage"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/integrations"
@@ -51,6 +52,9 @@ type Services struct {
 
 	// policy — применитель правил подключённого движка.
 	policy *policy.Enforcer
+	// entityNames — названия сущностей от движка для фронта; пустой словарь
+	// означает стандартные названия.
+	entityNames dto.EntityNames
 	// search — поиск задач с политикой видимости движка.
 	search *search.Searcher
 }
@@ -76,6 +80,8 @@ type Deps struct {
 
 	// Policy — применитель правил движка. Обязателен.
 	Policy *policy.Enforcer
+	// EntityNames — названия сущностей от движка. Может быть nil.
+	EntityNames dto.EntityNames
 }
 
 // NewServices собирает набор зависимостей HTTP-слоя.
@@ -100,6 +106,7 @@ func NewServices(d Deps) (*Services, error) {
 
 	return &Services{
 		policy:               d.Policy,
+		entityNames:          d.EntityNames,
 		search:               search.New(d.Policy),
 		db:                   d.DB,
 		snapshotTracker:      d.SnapshotTracker,
