@@ -1835,6 +1835,18 @@ func (s *Services) createIssue(c echo.Context) error {
 		return EErrorDefined(c, apierrors.ErrIssueNameEmpty)
 	}
 
+	// Если статус не передали в запросе - установка дефолт статуса проекта
+	if issue.StateId.IsNil() {
+		var defaultState dao.State
+		if err := s.DB(c).Select("id").Where("project_id = ?", issue.ProjectId).First(&defaultState).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
+			}
+			return EError(c, err)
+		}
+		issue.StateId = defaultState.ID
+	}
+
 	userID := uuid.NullUUID{UUID: user.ID, Valid: true}
 	issueNew := dao.Issue{
 		ID:                  dao.GenUUID(),
