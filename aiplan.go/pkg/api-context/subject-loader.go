@@ -71,3 +71,31 @@ func LoadIssueSubject(db *gorm.DB, user *dao.User, issue *dao.Issue) (*APIContex
 	subject.issue.Issue = issue
 	return subject, nil
 }
+
+// LoadDocSubject собирает субъект для действия над документом вне HTTP:
+// хук загрузки файлов. doc должен быть загружен с правилами доступа
+// (Preload("AccessRules")) — движок смотрит на персональные списки.
+//
+// Не участник пространства — apierrors.ErrWorkspaceForbidden: без членства
+// правила документа не считаются, как и в HTTP-цепочке.
+func LoadDocSubject(db *gorm.DB, user *dao.User, doc *dao.Doc) (*APIContext, error) {
+	if user == nil || doc == nil {
+		return nil, apierrors.ErrWorkspaceForbidden
+	}
+
+	var wm dao.WorkspaceMember
+	if err := db.Where("member_id = ? AND workspace_id = ?", user.ID, doc.WorkspaceId).First(&wm).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apierrors.ErrWorkspaceForbidden
+		}
+		return nil, err
+	}
+
+	return NewSubject(Prefilled{
+		DB:              db,
+		User:            user,
+		Workspace:       doc.Workspace,
+		WorkspaceMember: &wm,
+		Doc:             doc,
+	}), nil
+}

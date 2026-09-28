@@ -162,22 +162,23 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrAttachmentIsTooBig.TusdError()
 	}
 
+	// Право на вложение решает движок, как и в HTTP-ручках вложений;
+	// apicontext здесь нет, субъект собирается по сущности.
+	var user dao.User
+	if err := s.db.Where("id = ?", user_id).First(&user).Error; err != nil {
+		return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
+	}
+
 	switch entityType {
 	case "issue":
 		if !(iOk && fOk) {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrAttachmentsIncorrectMetadata.TusdError()
 		}
-		// Право на вложение решает движок, как и в HTTP-ручке вложений;
-		// apicontext здесь нет, субъект собирается по задаче.
 		var issue dao.Issue
 		if err := s.db.Joins("Project").Preload("Assignees").Where("issues.id = ?", issueId).First(&issue).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrIssueNotFound.TusdError()
 			}
-			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
-		}
-		var user dao.User
-		if err := s.db.Where("id = ?", user_id).First(&user).Error; err != nil {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 		}
 		subject, err := apicontext.LoadIssueSubject(s.db, &user, &issue)
@@ -198,21 +199,24 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 		if !(dOk && fOk) {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrAttachmentsIncorrectMetadata.TusdError()
 		}
-		priv, err := dao.GetUserPrivilegesOverDoc(docId, user_id, s.db)
-		if err != nil {
+		var doc dao.Doc
+		if err := s.db.Joins("Workspace").Preload("AccessRules").Where("docs.id = ?", docId).First(&doc).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrDocNotFound.TusdError()
 			}
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrGeneric.TusdError()
 		}
-
-		if !priv.IsAuthor && !priv.IsEditor {
+		subject, err := apicontext.LoadDocSubject(s.db, &user, &doc)
+		if err != nil {
+			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrNotEnoughRights.TusdError()
+		}
+		if err := s.policy.Authorize(context.Background(), engine.ActionDocAttachmentAdd, subject); err != nil {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrNotEnoughRights.TusdError()
 		}
 
 		filteredMetadata = tusd.MetaData{
-			"doc_id":    priv.DocId,
-			"user_id":   priv.UserId,
+			"doc_id":    doc.ID.String(),
+			"user_id":   user.ID.String(),
 			"file_name": fileName,
 			"filetype":  hook.Upload.MetaData["file_type"],
 		}

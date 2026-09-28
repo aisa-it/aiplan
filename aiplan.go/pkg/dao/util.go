@@ -419,37 +419,6 @@ func GetFileAssetFromDescription(query *gorm.DB, description *string) ([]FileAss
 	return fileAssets, nil
 }
 
-// UserPrivilegesOverDoc
-// -migration
-type UserPrivilegesOverDoc struct {
-	UserId        string
-	DocId         string
-	WorkspaceRole int
-	IsAuthor      bool
-	IsEditor      bool
-	IsReader      bool
-	IsWatcher     bool
-}
-
-func GetUserPrivilegesOverDoc(docId string, userId uuid.UUID, db *gorm.DB) (*UserPrivilegesOverDoc, error) {
-	var priv UserPrivilegesOverDoc
-	if err := db.Raw(`select
-	wm.member_id as "user_id",
-  d.id as "doc_id",
-  wm.role as "workspace_role",
-  d.created_by_id = ? as "is_author",
-  (dar.id is not null and dar.edit is true) or wm.role >= d.editor_role as "is_editor",
-  dar.id is not null  or wm.role >= d.reader_role as "is_reader",
-  (dar.id is not null and dar.watch is true)  as "is_watcher"
-from docs d
-left join doc_access_rules dar on d.id = dar.doc_id and dar.member_id = ?
-left join workspace_members wm on d.workspace_id = wm.workspace_id and wm.member_id = ?
-where d.id = ?`, userId, userId, userId, docId).First(&priv).Error; err != nil {
-		return nil, err
-	}
-	return &priv, nil
-}
-
 func GetSystemUser(tx *gorm.DB) *User {
 	var user User
 	username := "system"
