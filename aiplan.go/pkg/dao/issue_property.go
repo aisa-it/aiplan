@@ -33,7 +33,8 @@ type ProjectPropertyTemplate struct {
 
 	Name string `gorm:"not null"`
 	// Type - тип поля: "string", "boolean", "select", "multiselect", "link", "lookup", "date",
-	// "datetime", "number", "file" (значение - id вложения этой же задачи)
+	// "datetime", "number", "file" (значение - id вложения этой же задачи), "user" и "users"
+	// (значение - id участника проекта, для users - JSON-массив id)
 	Type      string   `gorm:"not null"`
 	Options   []string `gorm:"serializer:json"`
 	SortOrder int      `gorm:"default:0"`
@@ -203,7 +204,7 @@ func DefaultPropertyValue(propType string) any {
 		return ""
 	case "boolean":
 		return false
-	case "multiselect":
+	case "multiselect", "users":
 		return []string{}
 	default:
 		return nil
@@ -267,12 +268,12 @@ func ParsePropertyValue(propType, value string) any {
 	switch propType {
 	case "boolean":
 		return value == "true"
-	case "select", "lookup", "file", "date", "datetime":
+	case "select", "lookup", "file", "date", "datetime", "user":
 		if value == "" {
 			return nil
 		}
 		return value
-	case "multiselect":
+	case "multiselect", "users":
 		return ParseMultiselectValue(value)
 	case "link":
 		if value == "" {
@@ -310,7 +311,7 @@ func IsEmptyPropertyValue(propType, value string) bool {
 	switch propType {
 	case "boolean":
 		return false
-	case "multiselect":
+	case "multiselect", "users":
 		return len(ParseMultiselectValue(value)) == 0
 	default:
 		return value == ""
@@ -427,13 +428,16 @@ func ListIssuePropertiesDTO(db *gorm.DB, issue *Issue, scope PropertyTemplateSco
 }
 
 // FillPropertyValueLabels проставляет отображаемые значения (value_label) полям,
-// хранящим id: lookup - строка справочника, file - имя файла вложения. По одному
-// запросу на тип
+// хранящим id: lookup - строка справочника, file - имя файла вложения, user/users -
+// имена пользователей. По одному запросу на тип
 func FillPropertyValueLabels(db *gorm.DB, props []dto.IssueProperty) error {
 	if err := FillLookupValueLabels(db, props); err != nil {
 		return err
 	}
-	return FillFileValueLabels(db, props)
+	if err := FillFileValueLabels(db, props); err != nil {
+		return err
+	}
+	return FillUserValueLabels(db, props)
 }
 
 // propertyValueUUID извлекает UUID-ссылку из значения поля указанного типа
@@ -597,9 +601,10 @@ func convertStringNumberValues(tx *gorm.DB, templateId uuid.UUID, oldType, newTy
 // lookup (значение — id строки справочника), file (значение — id вложения задачи),
 // link (значение — JSON-ссылка), multiselect (значение — JSON-массив; конвертации
 // select↔multiselect обработаны выше), number (конвертация string↔number обработана
-// выше) либо date/datetime (форматы дат несовместимы со свободным текстом и друг с другом)
+// выше), date/datetime (форматы дат несовместимы со свободным текстом и друг с другом)
+// либо user/users (значение — id пользователя или их список)
 func typeValuesNeedReset(oldType, newType string) bool {
-	resetTypes := []string{"lookup", "file", "multiselect", "link", "number", "date", "datetime"}
+	resetTypes := []string{"lookup", "file", "multiselect", "link", "number", "date", "datetime", "user", "users"}
 	return slices.Contains(resetTypes, oldType) || slices.Contains(resetTypes, newType)
 }
 

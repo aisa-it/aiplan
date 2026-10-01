@@ -99,9 +99,10 @@ func oldPropertyValueToLua(props []dao.IssueProperty, template dao.ProjectProper
 }
 
 // usesResolvedValue: в Lua поле уходит отображаемым значением (ResolvedValue), а не
-// хранимым id — lookup (строка справочника) и file (имя файла вложения)
+// хранимым id — lookup (строка справочника), file (имя файла вложения), user/users
+// (имена пользователей через запятую)
 func usesResolvedValue(propType string) bool {
-	return propType == "lookup" || propType == "file"
+	return propType == "lookup" || propType == "file" || dao.IsUserPropertyType(propType)
 }
 
 func callEventFunction(fnName string, state *lua.LState, issuer dao.User, currentIssue dao.Issue, params ...interface{}) (LuaResp, []LuaOut, IRulesError) {
@@ -304,13 +305,13 @@ func getStructLTable(state *lua.LState, obj interface{}) *lua.LTable {
 
 // propertyValueToLua преобразует хранимое строковое значение свойства в Lua-значение
 // по типу шаблона (совместимо с dao.ParsePropertyValue).
-// Для lookup- и file-полей значение - отображаемое (ResolvedValue: строка
-// справочника, имя файла), не id
+// Для lookup-, file- и user/users-полей значение - отображаемое (ResolvedValue:
+// строка справочника, имя файла, имена пользователей через запятую), не id
 func propertyValueToLua(propType, value string) lua.LValue {
 	switch propType {
 	case "boolean":
 		return lua.LBool(value == "true")
-	case "select", "link", "lookup", "file", "date":
+	case "select", "link", "lookup", "file", "date", "user", "users":
 		if value == "" {
 			return lua.LNil
 		}

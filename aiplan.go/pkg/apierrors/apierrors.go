@@ -262,7 +262,7 @@ var (
 	// 45** - property template errors
 	ErrPropertyTemplateNotFound        = DefinedError{Code: 4501, StatusCode: http.StatusNotFound, Err: "property template not found", RuErr: "Шаблон поля не найден"}
 	ErrPropertyTemplateNameRequired    = DefinedError{Code: 4502, StatusCode: http.StatusBadRequest, Err: "property template name is required", RuErr: "Имя шаблона поля обязательно"}
-	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, multiselect, link, lookup, date, datetime, number, file", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, multiselect, link, lookup, date, datetime, number, file"}
+	ErrPropertyTemplateTypeInvalid     = DefinedError{Code: 4503, StatusCode: http.StatusBadRequest, Err: "invalid property type, allowed: string, boolean, select, multiselect, link, lookup, date, datetime, number, file, user, users", RuErr: "Недопустимый тип поля, допустимы: string, boolean, select, multiselect, link, lookup, date, datetime, number, file, user, users"}
 	ErrPropertyAlreadyExists           = DefinedError{Code: 4504, StatusCode: http.StatusConflict, Err: "property value for this template already exists", RuErr: "Значение для этого поля уже установлено"}
 	ErrPropertyNotFound                = DefinedError{Code: 4505, StatusCode: http.StatusNotFound, Err: "property value not found", RuErr: "Значение поля не найдено"}
 	ErrPropertySetForbidden            = DefinedError{Code: 4506, StatusCode: http.StatusForbidden, Err: "insufficient rights to set this property", RuErr: "Недостаточно прав для изменения поля"}
@@ -288,6 +288,7 @@ var (
 	ErrPropertyFileNotFound               = DefinedError{Code: 4524, StatusCode: http.StatusBadRequest, Err: "attachment not found in issue", RuErr: "Вложение не найдено в задаче"}
 	ErrIssueRequiredPropertiesEmpty       = DefinedError{Code: 4525, StatusCode: http.StatusBadRequest, Err: "required properties are not filled: %s", RuErr: "Не заполнены обязательные поля: %s"}
 	ErrPropertyRolesInvalid               = DefinedError{Code: 4526, StatusCode: http.StatusBadRequest, Err: "invalid property access roles", RuErr: "Недопустимые роли доступа к полю"}
+	ErrPropertyUserNotMember              = DefinedError{Code: 4527, StatusCode: http.StatusBadRequest, Err: "user is not a member of the project", RuErr: "Пользователь не является участником проекта"}
 
 	// 5*** - validation and other errors
 	ErrInvalidEmail         = DefinedError{Code: 5001, StatusCode: http.StatusBadRequest, Err: "invalid email %s", RuErr: "Указан некорректный email %s"}

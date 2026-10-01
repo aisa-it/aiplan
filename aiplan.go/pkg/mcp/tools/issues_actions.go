@@ -390,7 +390,7 @@ var issuesActionsTools = []Tool{
 			),
 			mcp.WithObject("value",
 				mcp.Required(),
-				mcp.Description("Значение: строка для string/select, массив строк из options для multiselect (пустой массив - сброс; при unique_values шаблона без повторов), bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime, число или числовая строка для number (unit шаблона - единица измерения), id вложения этой же задачи (UUID из get_issue_attachments) для file; null или пустая строка - сброс"),
+				mcp.Description("Значение: строка для string/select, массив строк из options для multiselect (пустой массив - сброс; при unique_values шаблона без повторов), bool для boolean, объект {url,title} для link, id строки справочника (UUID) для lookup, строка YYYY-MM-DD для date, unix time в секундах строкой для datetime, число или числовая строка для number (unit шаблона - единица измерения), id вложения этой же задачи (UUID из get_issue_attachments) для file, id участника проекта (UUID) для user и массив таких id для users (без повторов; пустой массив - сброс); null или пустая строка - сброс"),
 			),
 		),
 		setIssueProperty,
@@ -1573,6 +1573,15 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 		}
 	}
 
+	// Для user/users-полей значение - id участников проекта
+	var propertyUsers []dao.User
+	if dao.IsUserPropertyType(template.Type) {
+		propertyUsers, err = dao.CheckUserPropertyValue(d.DB, issue.ProjectId, template, valueStr)
+		if err != nil {
+			return mcpError(err), nil
+		}
+	}
+
 	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
 	if err := dao.CheckDependencyValue(d.DB, template, issue.ID, valueStr, lookupRow); err != nil {
 		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
@@ -1582,13 +1591,16 @@ func setIssueProperty(ctx context.Context, d Deps, user *dao.User, request mcp.C
 	}
 
 	// Для lookup хук получает отображаемое значение строки справочника, не id;
-	// для file - имя файла вложения
+	// для file - имя файла вложения; для user/users - имена пользователей
 	hookValue := valueStr
 	if lookupRow != nil {
 		hookValue = lookupRow.Value
 	}
 	if fileAttachment != nil {
 		hookValue = fileAttachment.FileName()
+	}
+	if len(propertyUsers) > 0 {
+		hookValue = dao.UserPropertyLabel(propertyUsers)
 	}
 	if err := d.Policy.BeforePropertyChange(ctx, subject, *issue, template, hookValue); err != nil {
 		return mcpError(err), nil

@@ -3879,6 +3879,15 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 		}
 	}
 
+	// Для user/users-полей значение - id участников проекта
+	var propertyUsers []dao.User
+	if dao.IsUserPropertyType(template.Type) {
+		propertyUsers, err = dao.CheckUserPropertyValue(s.DB(c), issue.ProjectId, template, valueStr)
+		if err != nil {
+			return EError(c, err)
+		}
+	}
+
 	// Каскадная зависимость: значение должно быть допустимо при текущем значении родителя
 	if err := dao.CheckDependencyValue(s.DB(c), template, issue.ID, valueStr, lookupRow); err != nil {
 		if errors.Is(err, dao.ErrDependencyValueIncompatible) {
@@ -3888,13 +3897,16 @@ func (s *Services) setIssueProperty(c echo.Context) error {
 	}
 
 	// Для lookup хук получает отображаемое значение строки справочника, не id;
-	// для file - имя файла вложения
+	// для file - имя файла вложения; для user/users - имена пользователей
 	hookValue := valueStr
 	if lookupRow != nil {
 		hookValue = lookupRow.Value
 	}
 	if fileAttachment != nil {
 		hookValue = fileAttachment.FileName()
+	}
+	if len(propertyUsers) > 0 {
+		hookValue = dao.UserPropertyLabel(propertyUsers)
 	}
 	if err := s.policy.BeforePropertyChange(c.Request().Context(), apiCtx, *issue, template, hookValue); err != nil {
 		return EError(c, err)
@@ -4023,9 +4035,54 @@ func (s *Services) getAvailablePropertyValues(c echo.Context) error {
 			return EError(c, err)
 		}
 		resp.Rows = rows
+	case "user", "users":
+		users, err := s.availablePropertyUsers(c, issue.ProjectId)
+		if err != nil {
+			return EError(c, err)
+		}
+		resp.Users = users
 	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+// availablePropertyUsers возвращает участников проекта - допустимые значения
+// user/users-поля - с пагинацией и поиском по имени, фамилии, логину и почте
+func (s *Services) availablePropertyUsers(c echo.Context, projectId uuid.UUID) (*dao.PaginationResponse, error) {
+	offset := 0
+	limit := 100
+	var searchQuery string
+	if err := echo.QueryParamsBinder(c).
+		Int("offset", &offset).
+		Int("limit", &limit).
+		String("search_query", &searchQuery).
+		BindError(); err != nil {
+		return nil, err
+	}
+	if limit < 1 || limit > 1000 {
+		limit = 100
+	}
+
+	query := s.DB(c).Model(&dao.User{}).
+		Joins("JOIN project_members pm ON pm.member_id = users.id AND pm.project_id = ?", projectId).
+		Order("users.last_name, users.first_name, users.email")
+	if searchQuery != "" {
+		like := "%" + searchQuery + "%"
+		query = query.Where("users.first_name ILIKE ? OR users.last_name ILIKE ? OR users.username ILIKE ? OR users.email ILIKE ?", like, like, like, like)
+	}
+
+	var users []dao.User
+	resp, err := dao.PaginationRequest(offset, limit, query, &users)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]dto.UserLight, 0, len(users))
+	for i := range users {
+		result = append(result, *users[i].ToLightDTO())
+	}
+	resp.Result = result
+	return &resp, nil
 }
 
 // availableLookupRows возвращает строки справочника lookup-поля с пагинацией,
@@ -4321,6 +4378,9 @@ func (s *Services) loadExportProperties(c echo.Context, result any) (*exportProp
 	if err := resolveLookupExportValues(s.DB(c), data); err != nil {
 		return nil, err
 	}
+	if err := resolveUserExportValues(s.DB(c), data); err != nil {
+		return nil, err
+	}
 	if err := resolveFileExportValues(s.DB(c), data); err != nil {
 		return nil, err
 	}
@@ -4412,6 +4472,54 @@ func resolveLookupExportValues(db *gorm.DB, data *exportPropertiesData) error {
 // file-полей) именами файлов
 func resolveFileExportValues(db *gorm.DB, data *exportPropertiesData) error {
 	return resolveReferenceExportValues(db, data, "file", dao.ResolveAttachmentFileNames)
+}
+
+// resolveUserExportValues подменяет в данных экспорта id пользователей (значения
+// user/users-полей) именами через запятую — выгрузка предназначена для чтения людьми.
+// Значение с не-UUID остаётся как есть (данные не теряем)
+func resolveUserExportValues(db *gorm.DB, data *exportPropertiesData) error {
+	types := make(map[uuid.UUID]string)
+	for _, t := range data.templates {
+		if dao.IsUserPropertyType(t.Type) {
+			types[t.Id] = t.Type
+		}
+	}
+	if len(types) == 0 {
+		return nil
+	}
+
+	var ids []uuid.UUID
+	for _, issueValues := range data.values {
+		for templateId, value := range issueValues {
+			propType, ok := types[templateId]
+			if !ok {
+				continue
+			}
+			if valueIds, err := dao.UserPropertyIds(propType, value); err == nil {
+				ids = append(ids, valueIds...)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	names, err := dao.ResolveUserNames(db, ids)
+	if err != nil {
+		return err
+	}
+	for _, issueValues := range data.values {
+		for templateId, value := range issueValues {
+			propType, ok := types[templateId]
+			if !ok {
+				continue
+			}
+			if valueIds, err := dao.UserPropertyIds(propType, value); err == nil && len(valueIds) > 0 {
+				issueValues[templateId] = dao.JoinUserNames(valueIds, names)
+			}
+		}
+	}
+	return nil
 }
 
 // resolveReferenceExportValues подменяет в данных экспорта UUID-значения полей типа

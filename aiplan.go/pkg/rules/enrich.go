@@ -9,8 +9,9 @@ import (
 
 // EnrichIssue догружает в задачу счётчик вложений и значения кастомных полей
 // с шаблонами — данные, недоступные после стандартной загрузки, но нужные Lua-правилам.
-// Для lookup- и file-полей дополнительно резолвит отображаемые значения (строка
-// справочника, имя файла вложения; Value хранит id) в IssueProperty.ResolvedValue
+// Для lookup-, file- и user/users-полей дополнительно резолвит отображаемые значения
+// (строка справочника, имя файла вложения, имена пользователей; Value хранит id)
+// в IssueProperty.ResolvedValue
 func EnrichIssue(db *gorm.DB, issue *dao.Issue) error {
 	if err := db.Model(&dao.IssueAttachment{}).
 		Where("issue_id = ?", issue.ID).
@@ -27,7 +28,40 @@ func EnrichIssue(db *gorm.DB, issue *dao.Issue) error {
 	if err := resolveLookupValues(db, issue.Properties); err != nil {
 		return err
 	}
-	return resolveFileValues(db, issue.Properties)
+	if err := resolveFileValues(db, issue.Properties); err != nil {
+		return err
+	}
+	return resolveUserValues(db, issue.Properties)
+}
+
+// resolveUserValues батчем проставляет ResolvedValue для user/users-полей (имена
+// пользователей через запятую); значение с не-UUID остаётся без подписи
+func resolveUserValues(db *gorm.DB, props []dao.IssueProperty) error {
+	idsByProp := make(map[int][]uuid.UUID)
+	var all []uuid.UUID
+	for i, prop := range props {
+		if prop.Template == nil || !dao.IsUserPropertyType(prop.Template.Type) {
+			continue
+		}
+		ids, err := dao.UserPropertyIds(prop.Template.Type, prop.Value)
+		if err != nil || len(ids) == 0 {
+			continue
+		}
+		idsByProp[i] = ids
+		all = append(all, ids...)
+	}
+	if len(all) == 0 {
+		return nil
+	}
+
+	names, err := dao.ResolveUserNames(db, all)
+	if err != nil {
+		return err
+	}
+	for i, ids := range idsByProp {
+		props[i].ResolvedValue = dao.JoinUserNames(ids, names)
+	}
+	return nil
 }
 
 // resolveLookupValues батчем проставляет ResolvedValue для lookup-полей

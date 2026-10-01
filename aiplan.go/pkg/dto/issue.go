@@ -223,8 +223,9 @@ type IssueProperty struct {
 	// Unit - единица измерения для number
 	Unit  string `json:"unit,omitempty"`
 	Value any    `json:"value"`
-	// ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника)
-	// и file-полей (Value хранит id вложения задачи, ValueLabel - имя файла)
+	// ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника),
+	// file-полей (Value хранит id вложения задачи, ValueLabel - имя файла) и user/users-полей
+	// (Value хранит id пользователей, ValueLabel - имена через запятую)
 	ValueLabel *string `json:"value_label,omitempty" extensions:"x-nullable"`
 	// ResetProperties - имена зависимых полей, значения которых были сброшены
 	// установкой этого значения (только в ответе установки значения)
@@ -311,6 +312,8 @@ type AvailablePropertyValues struct {
 	Options []string `json:"options,omitempty"`
 	// Rows - допустимые строки справочника с пагинацией (для типа lookup)
 	Rows any `json:"rows,omitempty" swaggertype:"object" extensions:"x-nullable"`
+	// Users - участники проекта с пагинацией (для типов user и users)
+	Users any `json:"users,omitempty" swaggertype:"object" extensions:"x-nullable"`
 }
 
 // SetIssuePropertyRequest - запрос на установку значения поля задачи

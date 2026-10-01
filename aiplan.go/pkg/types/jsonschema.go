@@ -42,11 +42,8 @@ func GenValueSchema(propType string, options []string) map[string]any {
 		return genSelectValueSchema(options)
 	case "multiselect":
 		return genMultiselectValueSchema(options)
-	case "lookup", "file":
-		// Значение - id строки справочника (lookup) или id вложения задачи (file),
-		// null - сброс; существование проверяется отдельным запросом в БД, схема
-		// проверяет только форму
-		return map[string]any{"type": []any{"string", "null"}}
+	case "lookup", "file", "user", "users":
+		return genReferenceValueSchema(propType)
 	case "date", "datetime":
 		return genDateValueSchema(propType)
 	case "number":
@@ -72,6 +69,17 @@ func GenValueSchema(propType string, options []string) map[string]any {
 	default:
 		return map[string]any{}
 	}
+}
+
+// genReferenceValueSchema - схемы полей-ссылок: id строки справочника (lookup), id
+// вложения задачи (file), id пользователя (user) - строка или null (сброс); users -
+// массив id или null. Существование, членство в проекте и отсутствие повторов
+// проверяются отдельными запросами в БД, схема проверяет только форму
+func genReferenceValueSchema(propType string) map[string]any {
+	if propType == "users" {
+		return map[string]any{"type": []any{"array", "null"}, "items": map[string]any{"type": "string"}}
+	}
+	return map[string]any{"type": []any{"string", "null"}}
 }
 
 // genSelectValueSchema - строка из options или null (сброс значения)

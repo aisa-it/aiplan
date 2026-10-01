@@ -4024,7 +4024,7 @@ func (s *Services) deletePropertyTemplate(c echo.Context) error {
 }
 
 // validPropertyTypes - допустимые типы шаблонов кастомных полей
-var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "multiselect": true, "link": true, "lookup": true, "date": true, "datetime": true, "number": true, "file": true}
+var validPropertyTypes = map[string]bool{"string": true, "boolean": true, "select": true, "multiselect": true, "link": true, "lookup": true, "date": true, "datetime": true, "number": true, "file": true, "user": true, "users": true}
 
 // propertyUnitForType - единица измерения имеет смысл только у number, у остальных типов пустая
 func propertyUnitForType(propType, unit string) string {
