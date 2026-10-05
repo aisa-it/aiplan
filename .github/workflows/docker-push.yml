@@ -58,7 +58,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           call: build-app --source=. --version=${{ steps.meta.outputs.version }} --registryUser=${{ github.actor }} --registrySecret=GITHUB_TOKEN --imageName=aisa-it/aiplan --movingTag=${{ steps.meta.outputs.moving_tag }}
-          version: "0.20.8"
+          version: "0.21.10"
 
   generate-api:
     runs-on: ubuntu-latest
