@@ -102,6 +102,9 @@ func (srv *Server) setupMiddlewares() {
 		middleware.ContextTimeout(requestTimeout),
 		middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 			Skipper: func(c echo.Context) bool {
+				if u := c.Get("user"); u != nil {
+					return u.(*dao.User).IsSuperuser
+				}
 				return !strings.HasPrefix(c.Path(), "/api")
 			},
 			Store: middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
