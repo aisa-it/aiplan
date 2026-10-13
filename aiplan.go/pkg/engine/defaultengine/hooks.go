@@ -19,6 +19,46 @@ import (
 // luaHook — вызов одной функции скрипта для подготовленной задачи.
 type luaHook func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError)
 
+// BeforeIssueCreate прогоняет по ещё не сохранённой задаче те же скрипты,
+// что и при правке: статус, исполнители, наблюдатели, метки. Пустые списки
+// связей не проверяются. Скрипт отличает создание по ctx.is_new.
+func (e *Engine) BeforeIssueCreate(_ context.Context, ev engine.IssueCreation) (engine.Verdict, error) {
+	if bypassesRules(ev.Subject) {
+		return engine.Allow, nil
+	}
+	issue := ev.Issue
+	issue.State = &ev.State
+
+	hooks := []luaHook{
+		func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeStatusChange(user, issue, ev.State)
+		},
+	}
+	if len(ev.Assignees) > 0 {
+		hooks = append(hooks, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeAssigneesChange(user, issue, ev.Assignees)
+		})
+	}
+	if len(ev.Watchers) > 0 {
+		hooks = append(hooks, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeWatchersChange(user, issue, ev.Watchers)
+		})
+	}
+	if len(ev.Labels) > 0 {
+		hooks = append(hooks, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeLabelsChange(user, issue, ev.Labels)
+		})
+	}
+
+	for _, hook := range hooks {
+		v, err := e.runHook(ev.Subject, issue, hook)
+		if err != nil || v.Decision == engine.DecisionDeny {
+			return v, err
+		}
+	}
+	return engine.Allow, nil
+}
+
 func (e *Engine) BeforeStateChange(_ context.Context, ev engine.StateTransition) (engine.Verdict, error) {
 	if ev.Issue == nil || bypassesRules(ev.Subject) {
 		return engine.Allow, nil

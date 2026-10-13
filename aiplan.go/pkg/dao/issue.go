@@ -1814,20 +1814,23 @@ func (ic *IssueComment) BeforeDelete(tx *gorm.DB) error {
 //
 // Возвращает:
 //   - error: ошибка, если при создании задачи произошла ошибка, nil в противном случае.
+//
+// DefaultState — стартовый статус проекта: помеченный default, иначе любой.
+func DefaultState(db *gorm.DB, projectId uuid.UUID) (State, error) {
+	var state State
+	err := db.Where("project_id = ?", projectId).Where("states.default = ?", true).First(&state).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = db.Where("project_id = ?", projectId).First(&state).Error
+	}
+	return state, err
+}
+
 func CreateIssue(db *gorm.DB, issue *Issue) error {
 	// State fill
 	if issue.StateId == uuid.Nil {
-		// default state or random
-		var defaultState State
-		if err := db.Where("project_id = ?", issue.ProjectId).Where("states.default = ?", true).First(&defaultState).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// random state
-				if err := db.Where("project_id = ?", issue.ProjectId).First(&defaultState).Error; err != nil {
-					return err
-				}
-			} else {
-				return err
-			}
+		defaultState, err := DefaultState(db, issue.ProjectId)
+		if err != nil {
+			return err
 		}
 		issue.StateId = defaultState.ID
 		issue.State = &defaultState

@@ -531,17 +531,17 @@ func createIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 		stateId, _ = uuid.FromString(s)
 	}
 	// Стартовый статус: задачи ещё нет, движку передаётся переход без исходного.
+	// Без state_id берётся статус проекта по умолчанию.
+	var state dao.State
 	if stateId != uuid.Nil {
-		var state dao.State
-		if err := d.DB.Select("from_states").Where("id = ? AND project_id = ?", stateId, projectId).First(&state).Error; err != nil {
+		if err := d.DB.Where("id = ? AND project_id = ?", stateId, projectId).First(&state).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return apierrors.ErrProjectStateNotFound.MCPError(), nil
 			}
 			return logger.Error(err), nil
 		}
-		if err := d.Policy.CheckTransition(ctx, engine.StateTransition{Subject: subject, To: state}); err != nil {
-			return mcpError(err), nil
-		}
+	} else if state, err = dao.DefaultState(d.DB, projectId); err != nil {
+		return logger.Error(err), nil
 	}
 
 	var parentId uuid.NullUUID
@@ -580,61 +580,74 @@ func createIssue(ctx context.Context, d Deps, user *dao.User, request mcp.CallTo
 		LLMContent:      true,
 	}
 
+	var assigneeIds, labelIds []uuid.UUID
+	if raw, ok := args["assignee_ids"].([]any); ok {
+		assigneeIds = uuidArgs(raw)
+	}
+	if raw, ok := args["label_ids"].([]any); ok {
+		labelIds = uuidArgs(raw)
+	}
+
+	// Хуки движка — до проверки перехода, как при правке.
+	creation := engine.IssueCreation{Subject: subject, Issue: issueNew, State: state}
+	if len(assigneeIds) > 0 {
+		if creation.Assignees, err = projectUsersByIDs(d.DB, projectId, assigneeIds); err != nil {
+			return logger.Error(err), nil
+		}
+	}
+	if len(labelIds) > 0 {
+		if err := d.DB.Where("project_id = ?", projectId).Where("id in ?", labelIds).Find(&creation.Labels).Error; err != nil {
+			return logger.Error(err), nil
+		}
+	}
+	if err := d.Policy.BeforeIssueCreate(ctx, creation); err != nil {
+		return mcpError(err), nil
+	}
+	if stateId != uuid.Nil {
+		if err := d.Policy.CheckTransition(ctx, engine.StateTransition{Subject: subject, To: state}); err != nil {
+			return mcpError(err), nil
+		}
+	}
+
 	// Транзакция: создание задачи и связей
 	if err := d.DB.Transaction(func(tx *gorm.DB) error {
 		if err := dao.CreateIssue(tx, &issueNew); err != nil {
 			return err
 		}
 
-		// Добавление assignees
-		if assigneeIds, ok := args["assignee_ids"].([]interface{}); ok && len(assigneeIds) > 0 {
-			var newAssignees []dao.IssueAssignee
-			for _, a := range assigneeIds {
-				if assigneeStr, ok := a.(string); ok {
-					assigneeUUID := uuid.FromStringOrNil(assigneeStr)
-					if assigneeUUID != uuid.Nil {
-						newAssignees = append(newAssignees, dao.IssueAssignee{
-							Id:          dao.GenUUID(),
-							AssigneeId:  assigneeUUID,
-							IssueId:     issueNew.ID,
-							ProjectId:   projectId,
-							WorkspaceId: issueNew.WorkspaceId,
-							CreatedById: userID,
-							UpdatedById: userID,
-						})
-					}
-				}
+		if len(assigneeIds) > 0 {
+			newAssignees := make([]dao.IssueAssignee, 0, len(assigneeIds))
+			for _, assigneeId := range assigneeIds {
+				newAssignees = append(newAssignees, dao.IssueAssignee{
+					Id:          dao.GenUUID(),
+					AssigneeId:  assigneeId,
+					IssueId:     issueNew.ID,
+					ProjectId:   projectId,
+					WorkspaceId: issueNew.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				})
 			}
-			if len(newAssignees) > 0 {
-				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&newAssignees, 10).Error; err != nil {
-					return err
-				}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&newAssignees, 10).Error; err != nil {
+				return err
 			}
 		}
 
-		// Добавление labels
-		if labelIds, ok := args["label_ids"].([]interface{}); ok && len(labelIds) > 0 {
-			var newLabels []dao.IssueLabel
-			for _, l := range labelIds {
-				if labelStr, ok := l.(string); ok {
-					labelUUID, err := uuid.FromString(labelStr)
-					if err == nil {
-						newLabels = append(newLabels, dao.IssueLabel{
-							Id:          dao.GenUUID(),
-							LabelId:     labelUUID,
-							IssueId:     issueNew.ID,
-							ProjectId:   projectId,
-							WorkspaceId: issueNew.WorkspaceId,
-							CreatedById: userID,
-							UpdatedById: userID,
-						})
-					}
-				}
+		if len(labelIds) > 0 {
+			newLabels := make([]dao.IssueLabel, 0, len(labelIds))
+			for _, labelId := range labelIds {
+				newLabels = append(newLabels, dao.IssueLabel{
+					Id:          dao.GenUUID(),
+					LabelId:     labelId,
+					IssueId:     issueNew.ID,
+					ProjectId:   projectId,
+					WorkspaceId: issueNew.WorkspaceId,
+					CreatedById: userID,
+					UpdatedById: userID,
+				})
 			}
-			if len(newLabels) > 0 {
-				if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
-					return err
-				}
+			if err := tx.CreateInBatches(&newLabels, 10).Error; err != nil {
+				return err
 			}
 		}
 

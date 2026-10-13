@@ -15,6 +15,8 @@ import (
 // Дефолтный движок реализует хуки через пользовательские Lua-скрипты
 // проекта (пакет rules).
 type IssueHooks interface {
+	BeforeIssueCreate(ctx context.Context, ev IssueCreation) (Verdict, error)
+
 	BeforeStateChange(ctx context.Context, ev StateTransition) (Verdict, error)
 	AfterStateChange(ctx context.Context, ev StateTransition) error
 
@@ -22,4 +24,15 @@ type IssueHooks interface {
 	BeforeWatchersChange(ctx context.Context, s Subject, issue dao.Issue, newWatchers []dao.User) (Verdict, error)
 	BeforeLabelsChange(ctx context.Context, s Subject, issue dao.Issue, newLabels []dao.Label) (Verdict, error)
 	BeforePropertyChange(ctx context.Context, s Subject, issue dao.Issue, tpl dao.ProjectPropertyTemplate, newValue string) (Verdict, error)
+}
+
+// IssueCreation — задача перед сохранением: ID уже назначен, стартовый статус
+// и состав связей известны, в БД ничего нет.
+type IssueCreation struct {
+	Subject   Subject
+	Issue     dao.Issue
+	State     dao.State
+	Assignees []dao.User
+	Watchers  []dao.User
+	Labels    []dao.Label
 }

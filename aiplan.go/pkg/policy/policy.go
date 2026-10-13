@@ -227,6 +227,12 @@ func (p *Enforcer) CanViewIssue(ctx context.Context, s engine.Subject, issue *da
 // отсутствие решения у обоих ничего не запрещает. Ошибка отказа — та,
 // что вернул движок.
 
+func (p *Enforcer) BeforeIssueCreate(ctx context.Context, ev engine.IssueCreation) error {
+	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
+		return h.BeforeIssueCreate(ctx, ev)
+	})
+}
+
 func (p *Enforcer) BeforeStateChange(ctx context.Context, ev engine.StateTransition) error {
 	return p.hookVerdict(func(h engine.IssueHooks) (engine.Verdict, error) {
 		return h.BeforeStateChange(ctx, ev)

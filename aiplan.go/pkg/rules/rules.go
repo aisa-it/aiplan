@@ -15,8 +15,11 @@
 //   - BeforeIssuePropertyChange(ctx, property) — перед изменением кастомного поля задачи;
 //     property — таблица {name, type, old_value, new_value}
 //
+// Хуки вызываются и при создании задачи: ctx.status тогда равен стартовому
+// статусу, а ctx.is_new == true.
+//
 // Первый аргумент хука (ctx/params) содержит таблицы user, status, project, space, issue
-// (включая issue.attachment_count), а также значения кастомных полей задачи:
+// (включая issue.attachment_count), флаг is_new, а также значения кастомных полей задачи:
 // properties (список {name, type, value}) и метод ctx:getProp(name) для доступа
 // к значению по имени поля. Данные берутся из Issue.Properties и
 // Issue.AttachmentCount — вызывающая сторона должна догрузить их заранее
@@ -372,6 +375,7 @@ func getCallParams(state *lua.LState, issuer dao.User, currentIssue dao.Issue) *
 	params.RawSetString("project", getStructLTable(state, *currentIssue.Project))
 	params.RawSetString("space", getStructLTable(state, *currentIssue.Workspace))
 	params.RawSetString("issue", getStructLTable(state, currentIssue))
+	params.RawSetString("is_new", lua.LBool(currentIssue.CreatedAt.IsZero()))
 
 	propsList, propsByName := getPropertiesTables(state, currentIssue.Properties)
 	params.RawSetString("properties", propsList)
