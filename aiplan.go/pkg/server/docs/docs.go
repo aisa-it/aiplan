@@ -22068,6 +22068,9 @@ const docTemplate = `{
                 "member_attachments_allowed": {
                     "type": "boolean"
                 },
+                "admin_rules_enforced": {
+                    "type": "boolean"
+                },
                 "member_properties_allowed": {
                     "type": "boolean"
                 },
@@ -22206,6 +22209,9 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "member_attachments_allowed": {
+                    "type": "boolean"
+                },
+                "admin_rules_enforced": {
                     "type": "boolean"
                 },
                 "member_properties_allowed": {

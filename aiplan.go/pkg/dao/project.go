@@ -71,7 +71,9 @@ type Project struct {
 	MemberAttachmentsAllowed bool `json:"member_attachments_allowed" gorm:"default:false"`
 	// Участники (не гости) могут редактировать дополнительные параметры в любых задачах проекта, а не только в своих/назначенных
 	MemberPropertiesAllowed bool `json:"member_properties_allowed" gorm:"default:false"`
-	Archived                bool `gorm:"default:false;index"`
+	// Хуки (Lua-скрипт) и переходы статусов действуют и на администраторов проекта, а не только на участников
+	AdminRulesEnforced bool `json:"admin_rules_enforced" gorm:"default:false"`
+	Archived           bool `gorm:"default:false;index"`
 
 	Hash []byte `json:"-" gorm:"->;-:migration"`
 
@@ -156,6 +158,7 @@ func (project *Project) ToLightDTO() *dto.ProjectLight {
 		IssueDeletionAllowed:     project.IssueDeletionAllowed,
 		MemberAttachmentsAllowed: project.MemberAttachmentsAllowed,
 		MemberPropertiesAllowed:  project.MemberPropertiesAllowed,
+		AdminRulesEnforced:       project.AdminRulesEnforced,
 	}
 }
 

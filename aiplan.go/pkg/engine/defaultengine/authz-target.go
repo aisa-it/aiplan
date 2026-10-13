@@ -101,6 +101,17 @@ func isProjectAdmin(s engine.Subject) bool {
 	return pm != nil && pm.Role == types.AdminRole
 }
 
+// bypassesRules сообщает, свободен ли пользователь от хуков и переходов
+// статусов: администратор проекта, пока настройка admin_rules_enforced
+// не распространила правила и на него.
+func bypassesRules(s engine.Subject) bool {
+	if !isProjectAdmin(s) {
+		return false
+	}
+	project := s.Project()
+	return project == nil || !project.AdminRulesEnforced
+}
+
 // verdict переводит булево решение в вердикт.
 func verdict(allowed bool) engine.Verdict {
 	if allowed {
