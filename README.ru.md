@@ -69,7 +69,7 @@ docker-compose run --rm server ./aiplan -configPath /путь/до/config.json
 Шаблон JSON файла конфигурации доступен в `config_template.json` в корне проекта.
 
 - Приложение будет доступно по адресу http://localhost:8080
-- Пользователь по умолчанию (с правами суперпользователя) email: `DEFAULT_EMAIL`; password: `password123`
+- Пользователь по умолчанию (с правами суперпользователя) email: из env `DEFAULT_EMAIL`, `aiplan@aisa.ru` по дефолту; password: `password123`
 
 ## Система конфигурации
 
