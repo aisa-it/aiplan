@@ -114,6 +114,7 @@ func (s *Searcher) buildSearchQuery(ctx context.Context, db *gorm.DB, scope engi
 			Preload("Project").
 			Preload("Workspace").
 			Preload("Assignees").
+			Preload("Watchers").
 			Preload("Labels")
 	} else {
 		query = db.
@@ -121,6 +122,7 @@ func (s *Searcher) buildSearchQuery(ctx context.Context, db *gorm.DB, scope engi
 			Preload("State").
 			Preload("Project").
 			Preload("Assignees").
+			Preload("Watchers").
 			Preload("Labels").
 			Preload("Sprints").
 			Preload("Parent.State")
