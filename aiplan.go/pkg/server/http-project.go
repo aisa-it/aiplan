@@ -294,7 +294,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		utils.SliceToSlice(&projects, func(p *dao.ProjectWithCount) dto.ProjectLight { return *p.ToLightDTO() }))
 }
 
-var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow", "issue_deletion_allowed", "member_attachments_allowed", "member_properties_allowed"}
+var allowedFields []string = []string{"name", "description", "description_text", "description_html", "public", "identifier", "default_assignees", "default_watchers", "project_lead_id", "emoji", "cover_image", "rules_script", "hide_fields", "states_flow", "issue_deletion_allowed", "member_attachments_allowed", "member_properties_allowed", "admin_rules_enforced"}
 
 // updateProject godoc
 // @id updateProject
@@ -1874,15 +1874,35 @@ func (s *Services) createIssue(c echo.Context) error {
 		Draft:               issue.Draft,
 	}
 
-	// State flow check
 	// Стартовый статус: задачи ещё нет, поэтому движку передаётся переход
-	// без исходного статуса.
+	// без исходного статуса. Хуки движка — до проверки перехода, как при правке.
 	{
 		var state dao.State
-		if err := s.DB(c).Select("from_states").Where("id = ?", issue.StateId).First(&state).Error; err != nil {
+		if err := s.DB(c).Where("id = ?", issue.StateId).Where("project_id = ?", project.ID).First(&state).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return EErrorDefined(c, apierrors.ErrProjectStateNotFound)
 			}
+			return EError(c, err)
+		}
+
+		creation := engine.IssueCreation{Subject: apiContext, Issue: issueNew, State: state}
+		if len(issue.AssigneesList) > 0 || len(issue.WatchersList) > 0 {
+			var members []dao.User
+			if err := s.DB(c).
+				Where("id in ?", append(slices.Clone(issue.AssigneesList), issue.WatchersList...)).
+				Where("id in (?)", s.DB(c).Model(&dao.ProjectMember{}).Select("member_id").Where("project_id = ?", project.ID)).
+				Find(&members).Error; err != nil {
+				return EError(c, err)
+			}
+			creation.Assignees = dao.UsersByIDs(members, issue.AssigneesList)
+			creation.Watchers = dao.UsersByIDs(members, issue.WatchersList)
+		}
+		if len(issue.LabelsList) > 0 {
+			if err := s.DB(c).Where("project_id = ?", project.ID).Where("id in ?", issue.LabelsList).Find(&creation.Labels).Error; err != nil {
+				return EError(c, err)
+			}
+		}
+		if err := s.policy.BeforeIssueCreate(c.Request().Context(), creation); err != nil {
 			return EError(c, err)
 		}
 
@@ -1892,10 +1912,6 @@ func (s *Services) createIssue(c echo.Context) error {
 		}); err != nil {
 			return EError(c, err)
 		}
-	}
-
-	if err := s.policy.BeforeIssueCreate(c.Request().Context(), apiContext, issueNew); err != nil {
-		return EError(c, err)
 	}
 
 	if err := s.DB(c).Transaction(func(tx *gorm.DB) error {

@@ -735,7 +735,15 @@ func (s *Services) createAnswerIssue(c echo.Context, form *dao.Form, answer *dao
 	subject := apicontext.NewSubject(apicontext.Prefilled{
 		DB: s.RawDB(), User: user, Workspace: form.Workspace, Project: form.TargetProject,
 	})
-	if err := s.policy.BeforeIssueCreate(ctx, subject, *issue); err != nil {
+	// Стартовый статус формы — статус проекта по умолчанию: его же подставит
+	// dao.CreateIssue при сохранении.
+	startState, err := dao.DefaultState(s.RawDB(), issue.ProjectId)
+	if err != nil {
+		return err
+	}
+	if err := s.policy.BeforeIssueCreate(ctx, engine.IssueCreation{
+		Subject: subject, Issue: *issue, State: startState, FromForm: true,
+	}); err != nil {
 		return err
 	}
 

@@ -282,6 +282,17 @@ func GetUserNeighbors(tx *gorm.DB, userID uuid.UUID, workspaceIDs, projectIDs []
 	return query
 }
 
+// UsersByIDs — пользователи из списка, чьи ID есть в ids.
+func UsersByIDs(users []User, ids []uuid.UUID) []User {
+	res := make([]User, 0, len(ids))
+	for _, user := range users {
+		if slices.Contains(ids, user.ID) {
+			res = append(res, user)
+		}
+	}
+	return res
+}
+
 func GetUserFromProjectMember(members []User, ids []interface{}) []User {
 	users := make([]User, 0, len(members))
 	idsMap := make(map[uuid.UUID]struct{}, len(ids))

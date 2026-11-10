@@ -39,6 +39,7 @@ type ProjectLight struct {
 	IssueDeletionAllowed     bool   `json:"issue_deletion_allowed"`
 	MemberAttachmentsAllowed bool   `json:"member_attachments_allowed"`
 	MemberPropertiesAllowed  bool   `json:"member_properties_allowed"`
+	AdminRulesEnforced       bool   `json:"admin_rules_enforced"`
 	TotalMembers             int    `json:"total_members,omitempty"`
 	NameHighlighted          string `json:"name_highlighted,omitempty"`
 }

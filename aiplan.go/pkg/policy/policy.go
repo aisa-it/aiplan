@@ -268,9 +268,9 @@ func (p *Enforcer) PropertyTemplateScope(ctx context.Context, s engine.Subject) 
 // After-хуки уведомляют оба движка: изменение уже сохранено, и отменить
 // его хук не может. Ошибки собираются и возвращаются вызывающему для лога.
 
-func (p *Enforcer) BeforeIssueCreate(ctx context.Context, s engine.Subject, issue dao.Issue) error {
+func (p *Enforcer) BeforeIssueCreate(ctx context.Context, ev engine.IssueCreation) error {
 	return firstVerdict(p.issueHooks(), func(h engine.IssueHooks) (engine.Verdict, error) {
-		return h.BeforeIssueCreate(ctx, s, issue)
+		return h.BeforeIssueCreate(ctx, ev)
 	})
 }
 

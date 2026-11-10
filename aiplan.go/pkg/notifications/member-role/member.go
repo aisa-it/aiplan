@@ -105,6 +105,9 @@ type workspaceMemberNotifies struct {
 }
 
 func (w *workspaceMemberNotifies) getSettings(nCh types.NotifyChannel) *types.WorkspaceMemberNS {
+	if w == nil {
+		return nil
+	}
 	switch nCh {
 	case types.TgCh:
 		return &w.Tg

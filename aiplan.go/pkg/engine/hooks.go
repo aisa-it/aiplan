@@ -19,12 +19,9 @@ import (
 // Lua-скрипты проекта (пакет rules); на создание задачи ядро правил
 // не накладывает.
 type IssueHooks interface {
-	// BeforeIssueCreate вызывается до сохранения задачи. issue уже собрана
-	// (проект, автор, стартовый статус, тип, описание), но исполнители,
-	// наблюдатели и метки ещё не привязаны. StateId может быть пустым —
-	// тогда ядро подставит статус проекта по умолчанию при сохранении.
+	// BeforeIssueCreate вызывается до сохранения задачи: в БД ещё ничего нет.
 	// Subject — в скоупе проекта: Subject.Issue() == nil.
-	BeforeIssueCreate(ctx context.Context, s Subject, issue dao.Issue) (Verdict, error)
+	BeforeIssueCreate(ctx context.Context, ev IssueCreation) (Verdict, error)
 	// AfterIssueCreate получает сохранённую задачу с подгруженными статусом,
 	// типом, исполнителями и наблюдателями.
 	AfterIssueCreate(ctx context.Context, s Subject, issue dao.Issue) error
@@ -49,4 +46,18 @@ type CommentHooks interface {
 	BeforeCommentCreate(ctx context.Context, s Subject, issue dao.Issue, comment dao.IssueComment) (Verdict, error)
 	// AfterCommentCreate получает сохранённый комментарий с вложениями.
 	AfterCommentCreate(ctx context.Context, s Subject, issue dao.Issue, comment dao.IssueComment) error
+}
+
+// IssueCreation — задача перед сохранением: ID уже назначен, стартовый статус
+// и состав связей известны, в БД ничего нет.
+type IssueCreation struct {
+	Subject   Subject
+	Issue     dao.Issue
+	State     dao.State
+	Assignees []dao.User
+	Watchers  []dao.User
+	Labels    []dao.Label
+	// FromForm — задача создаётся из ответа формы: субъект — ответивший, он
+	// может не быть участником проекта, а на форме без входа — пользователя нет.
+	FromForm bool
 }

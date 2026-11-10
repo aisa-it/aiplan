@@ -14,7 +14,8 @@ import (
 // Правило хранится в `states.from_states` — списке статусов, из которых
 // разрешён переход в данный. Пустой список означает переход из любого
 // статуса, а uuid.Nil в списке — что статус можно выбрать при создании
-// задачи. Администратор проекта не ограничен.
+// задачи. Администратор проекта не ограничен, пока настройка проекта
+// admin_rules_enforced не включила правила и для него.
 //
 // CanTransition и ScopeAvailableStates — две стороны одного правила и
 // обязаны оставаться согласованными, поэтому лежат рядом. Расхождение
@@ -23,7 +24,7 @@ import (
 
 // CanTransition решает, разрешён ли перевод задачи в новый статус.
 func (e *Engine) CanTransition(_ context.Context, req engine.StateTransition) (engine.Verdict, error) {
-	if isProjectAdmin(req.Subject) {
+	if bypassesRules(req.Subject) {
 		return engine.Allow, nil
 	}
 
@@ -44,13 +45,14 @@ func (e *Engine) CanTransition(_ context.Context, req engine.StateTransition) (e
 }
 
 // ScopeAvailableStates сужает запрос по статусам проекта до доступных
-// пользователю. Администратору проекта условия не навешиваются.
+// пользователю. Администратору проекта (без admin_rules_enforced) условия
+// не навешиваются.
 func (e *Engine) ScopeAvailableStates(
 	_ context.Context,
 	req engine.StateScopeRequest,
 	q *gorm.DB,
 ) *gorm.DB {
-	if isProjectAdmin(req.Subject) {
+	if bypassesRules(req.Subject) {
 		return q
 	}
 

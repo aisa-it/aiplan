@@ -14,18 +14,61 @@ import (
 // Хуки задачи — пользовательские Lua-скрипты проекта (pkg/rules).
 //
 // Before-хуки не вызываются для администратора проекта: скрипты ограничивают
-// участников. After-хук вызывается для всех. Результат каждого вызова
+// участников. Настройка проекта admin_rules_enforced распространяет их и на
+// администраторов. After-хук вызывается для всех. Результат каждого вызова
 // пишется в rules_log сразу.
 
 // luaHook — вызов одной функции скрипта для подготовленной задачи.
 type luaHook func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError)
 
-// Создание задачи и комментария ядро не ограничивает: Lua-скриптов для
-// этих событий нет, решение остаётся за подключённым движком.
+// BeforeIssueCreate прогоняет по ещё не сохранённой задаче те же скрипты,
+// что и при правке: статус, исполнители, наблюдатели, метки. Пустые списки
+// связей не проверяются. Скрипт отличает создание по ctx.is_new.
+//
+// Задачи из ответов форм скриптами не ограничиваются: ответивший не обязан
+// быть участником проекта, решение остаётся за подключённым движком.
+func (e *Engine) BeforeIssueCreate(_ context.Context, ev engine.IssueCreation) (engine.Verdict, error) {
+	if ev.FromForm {
+		return engine.Default, nil
+	}
+	if bypassesRules(ev.Subject) {
+		return engine.Allow, nil
+	}
+	issue := ev.Issue
+	issue.State = &ev.State
 
-func (e *Engine) BeforeIssueCreate(context.Context, engine.Subject, dao.Issue) (engine.Verdict, error) {
-	return engine.Default, nil
+	hooks := []luaHook{
+		func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeStatusChange(user, issue, ev.State)
+		},
+	}
+	if len(ev.Assignees) > 0 {
+		hooks = append(hooks, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeAssigneesChange(user, issue, ev.Assignees)
+		})
+	}
+	if len(ev.Watchers) > 0 {
+		hooks = append(hooks, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeWatchersChange(user, issue, ev.Watchers)
+		})
+	}
+	if len(ev.Labels) > 0 {
+		hooks = append(hooks, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
+			return rules.BeforeLabelsChange(user, issue, ev.Labels)
+		})
+	}
+
+	for _, hook := range hooks {
+		v, err := e.runHook(ev.Subject, issue, hook)
+		if err != nil || v.Decision == engine.DecisionDeny {
+			return v, err
+		}
+	}
+	return engine.Allow, nil
 }
+
+// Сохранённую задачу и комментарий ядро не ограничивает: Lua-скриптов для
+// этих событий нет, решение остаётся за подключённым движком.
 
 func (e *Engine) AfterIssueCreate(context.Context, engine.Subject, dao.Issue) error { return nil }
 
@@ -46,7 +89,7 @@ func (e *Engine) BeforeStateChange(_ context.Context, ev engine.StateTransition)
 	if v, err := requiredPropertiesVerdict(ev); err != nil || v.Decision == engine.DecisionDeny {
 		return v, err
 	}
-	if isProjectAdmin(ev.Subject) {
+	if bypassesRules(ev.Subject) {
 		return engine.Allow, nil
 	}
 	return e.runHook(ev.Subject, *ev.Issue, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
@@ -94,7 +137,7 @@ func (e *Engine) AfterStateChange(_ context.Context, ev engine.StateTransition) 
 }
 
 func (e *Engine) BeforeAssigneesChange(_ context.Context, s engine.Subject, issue dao.Issue, newAssignees []dao.User) (engine.Verdict, error) {
-	if isProjectAdmin(s) {
+	if bypassesRules(s) {
 		return engine.Allow, nil
 	}
 	return e.runHook(s, issue, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
@@ -103,7 +146,7 @@ func (e *Engine) BeforeAssigneesChange(_ context.Context, s engine.Subject, issu
 }
 
 func (e *Engine) BeforeWatchersChange(_ context.Context, s engine.Subject, issue dao.Issue, newWatchers []dao.User) (engine.Verdict, error) {
-	if isProjectAdmin(s) {
+	if bypassesRules(s) {
 		return engine.Allow, nil
 	}
 	return e.runHook(s, issue, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
@@ -112,7 +155,7 @@ func (e *Engine) BeforeWatchersChange(_ context.Context, s engine.Subject, issue
 }
 
 func (e *Engine) BeforeLabelsChange(_ context.Context, s engine.Subject, issue dao.Issue, newLabels []dao.Label) (engine.Verdict, error) {
-	if isProjectAdmin(s) {
+	if bypassesRules(s) {
 		return engine.Allow, nil
 	}
 	return e.runHook(s, issue, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
@@ -121,7 +164,7 @@ func (e *Engine) BeforeLabelsChange(_ context.Context, s engine.Subject, issue d
 }
 
 func (e *Engine) BeforePropertyChange(_ context.Context, s engine.Subject, issue dao.Issue, tpl dao.ProjectPropertyTemplate, newValue string) (engine.Verdict, error) {
-	if isProjectAdmin(s) {
+	if bypassesRules(s) {
 		return engine.Allow, nil
 	}
 	return e.runHook(s, issue, func(user dao.User, issue dao.Issue) (rules.LuaResp, []rules.LuaOut, rules.IRulesError) {
