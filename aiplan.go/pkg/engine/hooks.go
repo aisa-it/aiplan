@@ -61,3 +61,23 @@ type IssueCreation struct {
 	// может не быть участником проекта, а на форме без входа — пользователя нет.
 	FromForm bool
 }
+
+// AuthHooks — реакции движка на вход в систему. Необязательный интерфейс:
+// нужен движкам, которые ведут журнал безопасности.
+type AuthHooks interface {
+	// AfterLogin вызывается после попытки входа по логину и паролю —
+	// удачной или нет. Запретить вход хук не может.
+	AfterLogin(ctx context.Context, ev LoginAttempt)
+}
+
+// LoginAttempt — попытка входа в систему.
+type LoginAttempt struct {
+	// Email — логин, с которым входили.
+	Email string
+	// User — учётная запись; nil, если такой нет.
+	User *dao.User
+	// Success — вход выполнен.
+	Success   bool
+	IP        string
+	UserAgent string
+}

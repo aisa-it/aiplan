@@ -110,6 +110,10 @@ const (
 	ActionProjectJoin Action = "project.join"
 	// ActionProjectSelfSettings — личные настройки участника в проекте (уведомления).
 	ActionProjectSelfSettings Action = "project.self.settings"
+	// ActionProjectSelfView — сведения о собственном участии в проекте.
+	// Отделено от project.member.view: движок может скрыть состав
+	// участников, не лишая пользователя сведений о себе.
+	ActionProjectSelfView Action = "project.self.view"
 	// ActionProjectRulesLogView — журнал срабатываний скрипта правил.
 	ActionProjectRulesLogView Action = "project.rules.log.view"
 )

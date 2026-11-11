@@ -27,6 +27,17 @@ func (s *Searcher) getIssuesGroups(ctx context.Context, db *gorm.DB, scope engin
 	visible := s.visibility.VisibleProjects(ctx, scope, db)
 	query := db.Session(&gorm.Session{})
 
+	// Построчная видимость: если политика скрывает задачи внутри проекта,
+	// группы считаются только по видимым задачам. В запросах с LEFT JOIN
+	// условие идёт в сам JOIN — группа без видимых задач остаётся с нулём,
+	// как и группа без задач вовсе.
+	rows := s.visibleRows(ctx, db, scope)
+	joinRows, joinArgs := "", []any{}
+	if rows != nil {
+		joinRows, joinArgs = " and i.id in (?)", []any{rows}
+	}
+	leftJoined := false
+
 	// Проекты, по которым считаются группы. Везде, кроме проектного режима
 	// (членство там проверено до вызова), сужаются видимыми проектами: иначе
 	// счётчики групп выдают число задач в проектах, где пользователь не состоит,
@@ -70,18 +81,20 @@ func (s *Searcher) getIssuesGroups(ctx context.Context, db *gorm.DB, scope engin
 			Group("priority").
 			Order("case when priority='urgent' then 5 when priority='high' then 4 when priority='medium' then 3 when priority='low' then 2 when priority is null then 1 end")
 	case "author":
+		leftJoined = true
 		query = db.
 			Model(&dao.ProjectMember{}).
-			Joins("LEFT JOIN issues i on project_members.member_id = i.created_by_id and i.project_id in (?) and i.deleted_at is null", projectQuery).
+			Joins("LEFT JOIN issues i on project_members.member_id = i.created_by_id and i.project_id in (?) and i.deleted_at is null"+joinRows, append([]any{projectQuery}, joinArgs...)...).
 			Joins("LEFT JOIN users u on u.id = i.created_by_id").
 			Where("project_members.project_id in (?)", projectQuery).
 			Select("count(distinct i.id) as Count, project_members.member_id as \"Key\", coalesce((u.first_name || ' ' || u.last_name), u.email) as sub").
 			Group(`"Key", sub`).
 			Order("sub")
 	case "state":
+		leftJoined = true
 		query = db.
 			Model(&dao.State{}).
-			Joins("LEFT JOIN issues i on states.id = i.state_id and i.project_id in (?) and i.deleted_at is null", projectQuery).
+			Joins("LEFT JOIN issues i on states.id = i.state_id and i.project_id in (?) and i.deleted_at is null"+joinRows, append([]any{projectQuery}, joinArgs...)...).
 			Where("states.project_id in (?)", projectQuery).
 			Select("count(i.state_id) as Count, states.project_id || states.name || states.color || states.group as \"Key\", max(states.name) as state_name, max(states.sequence) as state_seq").
 			Group(`"Key", states.group`).
@@ -122,9 +135,10 @@ func (s *Searcher) getIssuesGroups(ctx context.Context, db *gorm.DB, scope engin
 			Group(`"Key"`).
 			Order("sub")
 	case "project":
+		leftJoined = true
 		query = db.
 			Table("projects p").
-			Joins("LEFT JOIN issues i on p.id = i.project_id and i.deleted_at is null").
+			Joins("LEFT JOIN issues i on p.id = i.project_id and i.deleted_at is null"+joinRows, joinArgs...).
 			Select("count(i.project_id) as Count, p.id as \"Key\", p.name as sub").
 			Where("p.id in (?)", projectQuery).
 			Group(`"Key", sub`).
@@ -136,6 +150,10 @@ func (s *Searcher) getIssuesGroups(ctx context.Context, db *gorm.DB, scope engin
 		if !user.IsSuperuser {
 			query = query.Where("p.id in (?)", visible)
 		}
+	}
+
+	if rows != nil && !leftJoined {
+		query = query.Where("i.id in (?)", rows)
 	}
 
 	if sprint != nil {
@@ -182,6 +200,18 @@ func (s *Searcher) getIssuesGroups(ctx context.Context, db *gorm.DB, scope engin
 		return nil, err
 	}
 	return count, nil
+}
+
+// visibleRows — подзапрос id задач, видимых субъекту, либо nil, если
+// политика видимости задачи внутри проектов не скрывает.
+func (s *Searcher) visibleRows(ctx context.Context, db *gorm.DB, scope engine.IssueScope) *gorm.DB {
+	rv, ok := s.visibility.(interface {
+		RestrictsRows(ctx context.Context, req engine.IssueScope) bool
+	})
+	if !ok || !rv.RestrictsRows(ctx, scope) {
+		return nil
+	}
+	return s.visibility.ScopeIssues(ctx, scope, db.Session(&gorm.Session{NewDB: true}).Model(&dao.Issue{}).Select("issues.id"))
 }
 
 // memberProjectsQuery — видимые проекты для подсчёта групп в глобальном поиске,

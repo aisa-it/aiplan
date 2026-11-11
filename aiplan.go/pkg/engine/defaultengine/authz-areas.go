@@ -55,6 +55,7 @@ var (
 	projectAnyMember = newActionSet(
 		engine.ActionProjectView, engine.ActionProjectActivity, engine.ActionProjectMemberView,
 		engine.ActionProjectStats, engine.ActionProjectDictionaryView, engine.ActionProjectSelfSettings,
+		engine.ActionProjectSelfView,
 		engine.ActionProjectViewManage, engine.ActionIssueSearch,
 	)
 	projectMember = newActionSet(engine.ActionIssueCreate)

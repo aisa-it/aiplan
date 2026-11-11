@@ -212,3 +212,33 @@ func (s *Services) checkRouteActions(e *echo.Echo) error {
 	}
 	return fmt.Errorf("routes without action (%d): %s", len(missing), strings.Join(missing, ", "))
 }
+
+// addEngineRoutes регистрирует роуты движка в областях пространства,
+// проекта и задачи. Группы повторяют цепочку роутов ядра той же области,
+// поэтому сущности пути загружены и проверены до обработчика, а право на
+// действие проверяет тот же permissionMiddleware.
+func (s *Services) addEngineRoutes(g *echo.Group, routes []engine.ActionRoute) error {
+	if len(routes) == 0 {
+		return nil
+	}
+	workspaceGroup := g.Group(workspaceScopePrefix, s.WorkspaceMiddleware)
+	projectGroup := workspaceGroup.Group("/projects/:projectId", s.ProjectMiddleware, s.ProjectArchivedMiddleware)
+	issueGroup := projectGroup.Group("/issues/:issueIdOrSeq", s.FindIssueByIdOrSeqMiddleware)
+
+	for _, r := range routes {
+		if r.Handler == nil || r.Method == "" || r.Action == "" {
+			return fmt.Errorf("engine route %s %s: method, action and handler are required", r.Method, r.Path)
+		}
+		switch r.Area {
+		case engine.AreaWorkspace:
+			s.workspaceRoute(workspaceGroup, r.Method, r.Path, r.Action, r.Handler)
+		case engine.AreaProject:
+			s.projectRoute(projectGroup, r.Method, r.Path, r.Action, r.Handler)
+		case engine.AreaIssue:
+			s.issueRoute(issueGroup, r.Method, r.Path, r.Action, r.Handler)
+		default:
+			return fmt.Errorf("engine route %s %s: unsupported area %q", r.Method, r.Path, r.Area)
+		}
+	}
+	return nil
+}

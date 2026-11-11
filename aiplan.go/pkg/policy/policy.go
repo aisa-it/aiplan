@@ -34,6 +34,9 @@ type Enforcer struct {
 
 	properties         engine.PropertyPolicy
 	propertiesFallback engine.PropertyPolicy
+
+	// auth — хуки входа подключённого движка; у ядра своих нет.
+	auth engine.AuthHooks
 }
 
 // New собирает применитель правил.
@@ -54,6 +57,9 @@ func New(primary, fallback engine.Authorizer) *Enforcer {
 	}
 	if vp, ok := fallback.(engine.VisibilityPolicy); ok {
 		e.visibilityFallback = vp
+	}
+	if h, ok := primary.(engine.AuthHooks); ok {
+		e.auth = h
 	}
 	if h, ok := primary.(engine.IssueHooks); ok {
 		e.hooks = h
@@ -183,7 +189,11 @@ func (p *Enforcer) CheckTransition(ctx context.Context, req engine.StateTransiti
 // список доступных статусов обязан совпадать с тем, что примет CheckTransition.
 func (p *Enforcer) ScopeStates(ctx context.Context, req engine.StateScopeRequest, q *gorm.DB) *gorm.DB {
 	if p.states != nil {
-		return p.states.ScopeAvailableStates(ctx, req, q)
+		// nil — движок не решает: как и CanTransition с DecisionDefault,
+		// запрос уходит движку ядра.
+		if scoped := p.states.ScopeAvailableStates(ctx, req, q); scoped != nil {
+			return scoped
+		}
 	}
 	if p.statesFallback != nil {
 		return p.statesFallback.ScopeAvailableStates(ctx, req, q)
@@ -218,6 +228,37 @@ func (p *Enforcer) ScopeIssues(ctx context.Context, req engine.IssueScope, q *go
 		return vp.ScopeIssues(ctx, req, q)
 	}
 	return q.Where("1 = 0")
+}
+
+// AfterLogin сообщает подключённому движку о попытке входа в систему.
+func (p *Enforcer) AfterLogin(ctx context.Context, ev engine.LoginAttempt) {
+	if p.auth != nil {
+		p.auth.AfterLogin(ctx, ev)
+	}
+}
+
+// ScopeComments ограничивает выборку комментариев задачи видимыми
+// субъекту. Политика без CommentPolicy комментарии не скрывает.
+func (p *Enforcer) ScopeComments(ctx context.Context, s engine.Subject, q *gorm.DB) *gorm.DB {
+	if cp, ok := p.visibilityPolicy().(engine.CommentPolicy); ok {
+		return cp.ScopeComments(ctx, s, q)
+	}
+	return q
+}
+
+// RestrictsComments — есть ли у действующей политики правила видимости
+// комментариев: без них лишние условия в запросы не добавляются.
+func (p *Enforcer) RestrictsComments() bool {
+	_, ok := p.visibilityPolicy().(engine.CommentPolicy)
+	return ok
+}
+
+// RestrictsRows — скрывает ли действующая политика видимости отдельные
+// задачи внутри видимых проектов. Политика без RowVisibilityPolicy
+// построчных правил не имеет.
+func (p *Enforcer) RestrictsRows(ctx context.Context, req engine.IssueScope) bool {
+	rv, ok := p.visibilityPolicy().(engine.RowVisibilityPolicy)
+	return ok && rv.RestrictsRows(ctx, req)
 }
 
 // CanViewIssue проверяет право просмотра одной задачи.

@@ -36,10 +36,11 @@ type coreAdapter struct {
 	// задач на работающем сервере нельзя.
 	closed bool
 
-	models      []any
-	actHandlers []tracker.ActHandler
-	cronJobs    cronmanager.JobRegistry
-	routeFns    []func(api, auth *echo.Group)
+	models       []any
+	actHandlers  []tracker.ActHandler
+	cronJobs     cronmanager.JobRegistry
+	routeFns     []func(api, auth *echo.Group)
+	actionRoutes []engine.ActionRoute
 
 	mcpTools     []mcpserver.ServerTool
 	mcpResources []mcpserver.ServerResource
@@ -90,6 +91,13 @@ func (c *coreAdapter) RegisterRoutes(fn func(api, auth *echo.Group)) {
 		return
 	}
 	c.routeFns = append(c.routeFns, fn)
+}
+
+func (c *coreAdapter) RegisterActionRoutes(routes ...engine.ActionRoute) {
+	if c.rejectAfterInit("action routes") {
+		return
+	}
+	c.actionRoutes = append(c.actionRoutes, routes...)
 }
 
 func (c *coreAdapter) RegisterActions(area engine.Area, actions ...engine.Action) {

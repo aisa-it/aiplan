@@ -31,6 +31,7 @@ import (
 
 	mem "github.com/aisa-it/aiplan-mem/api"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/engine"
 	"github.com/altcha-org/altcha-lib-go"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
@@ -331,6 +332,7 @@ func (s *Services) emailLogin(c echo.Context) error {
 					return EError(c, err)
 				}
 			} else {
+				s.loginAttempt(c, req.Email, nil, false)
 				return EErrorDefined(c, apierrors.ErrFailedLogin)
 			}
 		} else {
@@ -371,6 +373,7 @@ func (s *Services) emailLogin(c echo.Context) error {
 	}
 
 	if !sucessfullLogin {
+		s.loginAttempt(c, req.Email, &user, false)
 		user.LoginAttempts++
 		time.Sleep(time.Second * time.Duration(user.LoginAttempts))
 
@@ -414,11 +417,20 @@ func (s *Services) emailLogin(c echo.Context) error {
 	}
 
 	setAuthCookies(c, access_token, refresh_token)
+	s.loginAttempt(c, req.Email, &user, true)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"access_token":  access_token.SignedString,
 		"refresh_token": refresh_token.SignedString,
 		"user":          user,
+	})
+}
+
+// loginAttempt сообщает движку о попытке входа по логину и паролю.
+func (s *Services) loginAttempt(c echo.Context, email string, user *dao.User, success bool) {
+	s.policy.AfterLogin(c.Request().Context(), engine.LoginAttempt{
+		Email: email, User: user, Success: success,
+		IP: c.RealIP(), UserAgent: c.Request().UserAgent(),
 	})
 }
 

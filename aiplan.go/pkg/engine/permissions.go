@@ -97,7 +97,7 @@ var (
 			ActionProjectRulesManage, ActionProjectLabelManage, ActionProjectEstimateManage,
 			ActionProjectTemplateManage, ActionProjectPropertyManage,
 			ActionProjectDictionaryView, ActionProjectDictionaryManage, ActionProjectViewManage,
-			ActionProjectJoin, ActionProjectSelfSettings, ActionProjectRulesLogView,
+			ActionProjectJoin, ActionProjectSelfSettings, ActionProjectSelfView, ActionProjectRulesLogView,
 			ActionIssueCreate, ActionIssueSearch, ActionIssueBulkEdit, ActionIssueMigrate,
 		},
 		AreaWorkspace: {

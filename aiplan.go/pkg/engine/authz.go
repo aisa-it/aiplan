@@ -33,3 +33,15 @@ func TargetAs[T any](req AuthzRequest) (T, bool) {
 type Authorizer interface {
 	Authorize(ctx context.Context, req AuthzRequest) (Verdict, error)
 }
+
+// AttachmentUpload — файл, который прикладывают к задаче: объект действия
+// issue.attachment.add. По нему движок может ограничить тип и размер
+// файла и суммарный объём вложений задачи.
+type AttachmentUpload struct {
+	Name        string
+	ContentType string
+	// Size — размер прикладываемого файла в байтах.
+	Size int64
+	// IssueTotal — суммарный размер уже приложенных к задаче файлов.
+	IssueTotal int64
+}

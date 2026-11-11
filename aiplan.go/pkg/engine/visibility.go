@@ -52,3 +52,29 @@ type VisibilityPolicy interface {
 	// CanViewIssue — построчная проверка для получения одной задачи.
 	CanViewIssue(ctx context.Context, s Subject, issue *dao.Issue) (Verdict, error)
 }
+
+// RowVisibilityPolicy — необязательное дополнение VisibilityPolicy для
+// движков, которые скрывают отдельные задачи внутри видимого проекта.
+//
+// VisibleProjects отвечает только за набор проектов, поэтому подсчёты по
+// проекту (группы поиска) без этого дополнения считают и скрытые задачи.
+// Движок, сужающий выдачу построчно, сообщает об этом — и ядро применяет
+// ScopeIssues к подсчётам. Движку без построчных правил реализовывать
+// интерфейс не нужно: лишнее условие в подсчётах стоит запроса.
+type RowVisibilityPolicy interface {
+	// RestrictsRows — сужает ли ScopeIssues выдачу этого запроса сверх
+	// набора проектов.
+	RestrictsRows(ctx context.Context, req IssueScope) bool
+}
+
+// CommentPolicy — видимость комментариев задачи. Необязательный интерфейс:
+// без него комментарии видит каждый, кому разрешено issue.comment.view.
+//
+// Нужен движкам, у которых комментарии одной задачи видны разным
+// пользователям по-разному. Ядро применяет условие к списку комментариев,
+// одному комментарию, его истории и к событиям активности о комментариях.
+type CommentPolicy interface {
+	// ScopeComments навешивает ограничения на запрос по issue_comments.
+	// Задача субъекта известна: Subject.Issue().
+	ScopeComments(ctx context.Context, s Subject, q *gorm.DB) *gorm.DB
+}

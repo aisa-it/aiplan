@@ -141,7 +141,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 	s.workspaceRoute(workspaceGroup, http.MethodGet, "/project-identifiers/", engine.ActionWorkspaceView, s.checkProjectIdentifierAvailability)
 
 	s.projectRoute(projectGroup, http.MethodGet, "/members/", engine.ActionProjectMemberView, s.getProjectMemberList)
-	s.projectRoute(projectGroup, http.MethodGet, "/members/me/", engine.ActionProjectMemberView, s.getProjectCurrentMembership)
+	s.projectRoute(projectGroup, http.MethodGet, "/members/me/", engine.ActionProjectSelfView, s.getProjectCurrentMembership)
 	s.projectRoute(projectGroup, http.MethodGet, "/members/:memberId/", engine.ActionProjectMemberView, s.getProjectMember)
 	s.projectRoute(projectGroup, http.MethodPatch, "/members/:memberId/", engine.ActionProjectMemberManage, s.updateProjectMember)
 	s.projectRoute(projectGroup, http.MethodDelete, "/members/:memberId/", engine.ActionProjectMemberManage, s.deleteProjectMember)
@@ -153,7 +153,7 @@ func (s *Services) AddProjectServices(g *echo.Group) {
 
 	s.projectRoute(projectGroup, http.MethodPost, "/project-views/", engine.ActionProjectViewManage, s.updateProjectView)
 
-	s.projectRoute(projectGroup, http.MethodGet, "/project-members/me/", engine.ActionProjectMemberView, s.getProjectMemberMe) // Legacy TODO: delete after front
+	s.projectRoute(projectGroup, http.MethodGet, "/project-members/me/", engine.ActionProjectSelfView, s.getProjectMemberMe) // Legacy TODO: delete after front
 
 	s.workspaceRoute(workspaceGroup, http.MethodGet, "/user-favorite-projects/", engine.ActionWorkspaceSelfSettings, s.getFavoriteProjects)
 	s.workspaceRoute(workspaceGroup, http.MethodPost, "/user-favorite-projects/", engine.ActionWorkspaceSelfSettings, s.addProjectToFavorites)

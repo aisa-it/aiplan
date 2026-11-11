@@ -185,7 +185,8 @@ func (s *Services) attachmentsUploadValidator(hook tusd.HookEvent) (tusd.HTTPRes
 		if err != nil {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrNotEnoughRights.TusdError()
 		}
-		if err := s.policy.Authorize(context.Background(), engine.ActionIssueAttachmentAdd, subject); err != nil {
+		upload := s.attachmentUpload(s.db, issue.ID, fileName, hook.Upload.MetaData["file_type"], hook.Upload.Size)
+		if err := s.policy.Authorize(context.Background(), engine.ActionIssueAttachmentAdd, subject, policy.On(upload)); err != nil {
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, apierrors.ErrNotEnoughRights.TusdError()
 		}
 
@@ -594,6 +595,7 @@ func (s *Services) getIssue(c echo.Context) error {
 		return EError(c, apiContext.Error())
 	}
 
+	s.hideInvisibleParent(c, issue)
 	result := issue.ToDTO()
 	permissions, err := s.policy.IssuePermissions(c.Request().Context(), apiContext, issue)
 	if err != nil {
@@ -601,6 +603,62 @@ func (s *Services) getIssue(c echo.Context) error {
 	}
 	result.Permissions = permissions.Strings()
 	return c.JSON(http.StatusOK, result)
+}
+
+// attachmentUpload описывает прикладываемый к задаче файл для проверки
+// права: вместе с ним движок получает объём уже приложенного.
+func (s *Services) attachmentUpload(db *gorm.DB, issueID uuid.UUID, name, contentType string, size int64) *engine.AttachmentUpload {
+	upload := &engine.AttachmentUpload{Name: name, ContentType: contentType, Size: size}
+	if err := db.Table("issue_attachments ia").
+		Joins("JOIN file_assets fa ON fa.id = ia.asset_id").
+		Where("ia.issue_id = ?", issueID).
+		Select("coalesce(sum(fa.file_size), 0)").Scan(&upload.IssueTotal).Error; err != nil {
+		slog.Error("Issue attachments total size", "issue", issueID, "err", err)
+	}
+	return upload
+}
+
+// visibleComments ограничивает выборку комментариев задачи запроса
+// видимыми субъекту.
+func (s *Services) visibleComments(c echo.Context, q *gorm.DB) *gorm.DB {
+	return s.policy.ScopeComments(c.Request().Context(), apicontext.GetContext(c), q)
+}
+
+// visibleCommentEvents убирает из выборки событий активности события о
+// комментариях, которые субъект не видит.
+func (s *Services) visibleCommentEvents(c echo.Context, q *gorm.DB) *gorm.DB {
+	if !s.policy.RestrictsComments() {
+		return q
+	}
+	visible := s.visibleComments(c, s.DB(c).Model(&dao.IssueComment{}).Select("issue_comments.id"))
+	return q.Where("(activity_events.field <> ? OR activity_events.new_identifier IN (?))", actField.Comment.Field.String(), visible)
+}
+
+// visibleIssues ограничивает выборку задач проекта видимыми субъекту
+// запроса: списки внутри карточки (подзадачи, связанные, кандидаты в связи)
+// обязаны показывать то же, что и поиск.
+func (s *Services) visibleIssues(c echo.Context, q *gorm.DB) *gorm.DB {
+	scope := engine.IssueScope{Subject: apicontext.GetContext(c), Kind: engine.ScopeProject}
+	return s.policy.ScopeIssues(c.Request().Context(), scope, q)
+}
+
+// hideInvisibleParent убирает из карточки сведения о родительской задаче,
+// которую субъект не видит; ссылка на родителя остаётся. Проверка нужна
+// только при построчной видимости: без неё родитель в том же проекте
+// виден всегда.
+func (s *Services) hideInvisibleParent(c echo.Context, issue *dao.Issue) {
+	if issue.Parent == nil {
+		return
+	}
+	apiContext := apicontext.GetContext(c)
+	ctx := c.Request().Context()
+	scope := engine.IssueScope{Subject: apiContext, Kind: engine.ScopeProject}
+	if !s.policy.RestrictsRows(ctx, scope) {
+		return
+	}
+	if err := s.policy.CanViewIssue(ctx, apiContext, issue.Parent); err != nil {
+		issue.Parent = nil
+	}
 }
 
 // getIssuePermissions godoc
@@ -1378,7 +1436,7 @@ func (s *Services) getSubIssueList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.DB(c).
+	query := s.visibleIssues(c, s.DB(c)).
 		Where(&dao.Issue{ParentId: uuid.NullUUID{UUID: issueId, Valid: true}, ProjectId: project.ID}).
 		Joins("State").
 		Joins("Project").
@@ -1826,7 +1884,7 @@ func (s *Services) availableIssues(c echo.Context, issuesType int) error {
 		limit = 100
 	}
 
-	query := s.DB(c).
+	query := s.visibleIssues(c, s.DB(c)).
 		Preload("Workspace").
 		Preload("Watchers").
 		Preload("Assignees").
@@ -2283,9 +2341,9 @@ func (s *Services) getIssueHistoryList(c echo.Context) error {
 	}
 
 	var issueComments []dao.IssueComment
-	if err := s.DB(c).Where("issue_id = ?", issueId).
-		Where("project_id = ?", project.ID).
-		Order("created_at DESC").Preload(clause.Associations).Find(&issueComments).Error; err != nil {
+	if err := s.visibleComments(c, s.DB(c).Model(&dao.IssueComment{})).Where("issue_comments.issue_id = ?", issueId).
+		Where("issue_comments.project_id = ?", project.ID).
+		Order("issue_comments.created_at DESC").Preload(clause.Associations).Find(&issueComments).Error; err != nil {
 		return EError(c, err)
 	}
 
@@ -2357,7 +2415,7 @@ func (s *Services) getIssueCommentList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.DB(c).
+	query := s.visibleComments(c, s.DB(c)).
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
@@ -2613,7 +2671,7 @@ func (s *Services) getIssueComment(c echo.Context) error {
 	issueId := issue.ID
 	commentId := c.Param("commentId")
 
-	query := s.DB(c).
+	query := s.visibleComments(c, s.DB(c)).
 		Joins("Actor").
 		Joins("OriginalComment").
 		Joins("OriginalComment.Actor").
@@ -2673,7 +2731,7 @@ func (s *Services) getIssueCommentUpdateList(c echo.Context) error {
 	}
 
 	var comments []dao.ActivityEvent
-	queryHistory := s.DB(c).
+	queryHistory := s.visibleCommentEvents(c, s.DB(c)).
 		Joins("Actor").
 		Where("activity_events.project_id = ?", project.ID).
 		Where("activity_events.issue_id = ?", issueId).
@@ -3109,7 +3167,7 @@ func (s *Services) getIssueActivityList(c echo.Context) error {
 		return EError(c, err)
 	}
 
-	query := s.db.
+	query := s.visibleCommentEvents(c, s.db).
 		Joins("Issue").
 		Joins("Actor").
 		Joins("Project").
@@ -3244,6 +3302,13 @@ func (s *Services) createIssueAttachments(c echo.Context) error {
 	asset, err := c.FormFile("asset")
 	if err != nil {
 		return EError(c, err)
+	}
+
+	// Право на вложение вообще проверено на роуте; здесь — на этот файл:
+	// движок может ограничить тип, размер и суммарный объём вложений.
+	upload := s.attachmentUpload(s.DB(c), issue.ID, asset.Filename, asset.Header.Get("Content-Type"), asset.Size)
+	if err := s.policy.Authorize(c.Request().Context(), engine.ActionIssueAttachmentAdd, apiCtx, policy.On(upload)); err != nil {
+		return EErrorDefined(c, apierrors.ErrNotEnoughRights)
 	}
 
 	assetSrc, err := asset.Open()
@@ -3477,9 +3542,9 @@ func (s *Services) getIssueLinkedIssueList(c echo.Context) error {
 	}
 
 	var issues []dao.Issue
-	if err := s.DB(c).Where("project_id = ?", issue.ProjectId).
+	if err := s.visibleIssues(c, s.DB(c).Model(&dao.Issue{})).Where("issues.project_id = ?", issue.ProjectId).
 		Preload(clause.Associations).
-		Where("id in (?)", issue.LinkedIssuesIDs).
+		Where("issues.id in (?)", issue.LinkedIssuesIDs).
 		Order("sequence_id").Find(&issues).Error; err != nil {
 		return EError(c, err)
 	}

@@ -44,6 +44,8 @@ func (r StateScopeRequest) IsCreate() bool { return r.Issue == nil }
 type StatePolicy interface {
 	CanTransition(ctx context.Context, req StateTransition) (Verdict, error)
 	// ScopeAvailableStates навешивает условия на запрос по dao.State,
-	// в который уже добавлен фильтр по проекту.
+	// в который уже добавлен фильтр по проекту. nil — подключённый движок
+	// по этому запросу не решает (как DecisionDefault у CanTransition):
+	// условия построит движок ядра. Движок ядра nil не возвращает.
 	ScopeAvailableStates(ctx context.Context, req StateScopeRequest, q *gorm.DB) *gorm.DB
 }

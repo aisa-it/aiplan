@@ -62,6 +62,8 @@ type Server struct {
 
 	engine engine.Engine
 	core   *coreAdapter
+	// routesErr — ошибка регистрации роутов движка: сервер с ней не стартует.
+	routesErr error
 
 	cron       *cronmanager.CronManager
 	stopTracer tracer.StopFn
@@ -231,6 +233,9 @@ func New(opts Options) (*Server, error) {
 
 	srv.setupMiddlewares()
 	srv.registerRoutes()
+	if srv.routesErr != nil {
+		return nil, srv.routesErr
+	}
 
 	// Разметка роутов проверяется до старта: неразмеченный роут иначе
 	// молча получит отказ в доступе уже на проде.

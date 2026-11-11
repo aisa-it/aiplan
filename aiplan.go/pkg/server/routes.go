@@ -117,6 +117,7 @@ func (srv *Server) registerRoutes() {
 		for _, fn := range srv.core.routeFns {
 			fn(apiGroup, authGroup)
 		}
+		srv.routesErr = s.addEngineRoutes(authGroup, srv.core.actionRoutes)
 	}
 
 	// Front handler
