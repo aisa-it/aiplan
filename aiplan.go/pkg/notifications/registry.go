@@ -40,6 +40,14 @@ func IsNotificationTypeRegistered(name string) bool {
 	case "message", "deadline_notification", "service_message":
 		return true
 	}
+	return IsEngineNotificationType(name)
+}
+
+// IsEngineNotificationType сообщает, зарегистрирован ли тип движком.
+// Внутреннее уведомление такого типа строит рендерер движка (RenderApp)
+// при доставке: заголовок, текст и привязки к задаче и пространству
+// сохраняются в самой записи уведомления.
+func IsEngineNotificationType(name string) bool {
 	rendererMu.RLock()
 	defer rendererMu.RUnlock()
 	_, ok := rendererFactories[name]

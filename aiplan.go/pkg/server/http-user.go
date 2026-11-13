@@ -1526,7 +1526,7 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 			CreatedAt: notify.CreatedAt.UTC(),
 		}
 
-		switch tmp.Type {
+		switch notifyKind(tmp.Type) {
 		case "service_message":
 			tmp.Data = notifications.NotificationResponseMessage{
 				Title: notify.Title,
@@ -1580,6 +1580,17 @@ func userNotifyToSimple(from interface{}) *[]notifications.NotificationResponse 
 	}
 
 	return &res
+}
+
+// notifyKind — вид, по которому уведомление представляется в списке.
+// Уведомление типа, зарегистрированного движком, показывается как message:
+// заголовок, текст и привязки к задаче и пространству построил рендерер
+// движка при доставке, и в записи они лежат так же.
+func notifyKind(notifyType string) string {
+	if notifications.IsEngineNotificationType(notifyType) {
+		return "message"
+	}
+	return notifyType
 }
 
 // deleteMyNotifications godoc

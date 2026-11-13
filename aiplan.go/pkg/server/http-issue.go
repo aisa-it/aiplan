@@ -115,7 +115,10 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 	s.issueRoute(issueGroup, http.MethodGet, "/issue-attachments/", engine.ActionIssueAttachmentView, s.getIssueAttachmentList)
 	s.issueRoute(issueGroup, http.MethodPost, "/issue-attachments/", engine.ActionIssueAttachmentAdd, s.createIssueAttachments)
 	s.issueRoute(issueGroup, http.MethodGet, "/issue-attachments/all/", engine.ActionIssueExport, s.downloadIssueAttachments)
-	s.issueRoute(issueGroup, http.MethodDelete, "/issue-attachments/:attachmentId/", engine.ActionIssueAttachmentDelete, s.deleteIssueAttachment)
+	// Право на удаление вложения проверяется один раз — в обработчике, по
+	// самому вложению: правило движка может зависеть от автора вложения, а
+	// проверка до объекта не знает, чьё вложение удаляют.
+	s.route(issueGroup, http.MethodDelete, "/issue-attachments/:attachmentId/", engine.ActionIssueAttachmentDelete, s.deleteIssueAttachment)
 
 	s.issueRoute(issueGroup, http.MethodGet, "/linked-issues/", engine.ActionIssueView, s.getIssueLinkedIssueList)
 	s.issueRoute(issueGroup, http.MethodPost, "/linked-issues/", engine.ActionIssueRelationManage, s.addIssueLinkedIssueList)
@@ -3502,6 +3505,15 @@ func (s *Services) deleteIssueAttachment(c echo.Context) error {
 		Where("issue_id = ?", issue.ID).
 		Where("issue_attachments.id = ?", attachmentId).
 		Find(&attachment).Error; err != nil {
+		return EError(c, err)
+	}
+
+	if err := s.policy.Authorize(
+		c.Request().Context(),
+		engine.ActionIssueAttachmentDelete,
+		apiCtx,
+		policy.On(&attachment),
+	); err != nil {
 		return EError(c, err)
 	}
 	oldSnapshot := tracker.AttachmentToSnapshot(&attachment)
