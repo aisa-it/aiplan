@@ -915,7 +915,7 @@ type Label struct {
 	// updated_at timestamp with time zone NOT NULL,
 	UpdatedAt time.Time `json:"updated_at"`
 	// name character varying(255) COLLATE pg_catalog."default" NOT NULL,
-	Name       string         `json:"name" gorm:"uniqueIndex:label_name_color_unique_idx,priority:2"`
+	Name       string         `json:"name" gorm:"uniqueIndex:label_name_color_unique_idx,priority:2;index:label_name_lower_idx,expression:LOWER(name)"`
 	NameTokens types.TsVector `json:"-" gorm:"index:label_name_tokens,type:gin"`
 	// description text COLLATE pg_catalog."default" NOT NULL,
 	Description string `json:"description"`

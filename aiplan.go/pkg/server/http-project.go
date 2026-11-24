@@ -276,7 +276,7 @@ func (s *Services) getProjectList(c echo.Context) error {
 		Order("is_favorite desc, lower(name)")
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where(
 			"lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, searchQuery)
@@ -763,7 +763,7 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 
 	switch orderBy {
 	case "email":
-		orderBy = "lower\"Member\".email)"
+		orderBy = "lower(\"Member\".email)"
 	case "role":
 		break
 	default:
@@ -771,7 +771,7 @@ func (s *Services) getProjectMemberList(c echo.Context) error {
 	}
 
 	if searchQuery != "" {
-		searchQuery = PrepareSearchRequest(searchQuery)
+		searchQuery = utils.PrepareSearchRequest(searchQuery)
 	}
 
 	findMap := make(map[string]struct{}, len(findBy))
@@ -2156,7 +2156,7 @@ func (s *Services) getIssueLabelList(c echo.Context) error {
 		Order("name")
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
 	}
 
@@ -2477,7 +2477,7 @@ func (s *Services) getStateList(c echo.Context) error {
 		Where("project_id = ?", project.ID)
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery))
 	}
 

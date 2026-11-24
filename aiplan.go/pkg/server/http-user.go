@@ -1228,7 +1228,7 @@ func (s *Services) getCurrentUserAllProjectList(c echo.Context) error {
 			Order("name"))
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
 	}
 
@@ -1747,7 +1747,7 @@ func (s *Services) getSearchFilterList(c echo.Context) error {
 	}
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery)
 	}
 

@@ -50,7 +50,15 @@ CREATE INDEX IF NOT EXISTS "idx_forms_hash" ON "forms" USING hash("hash");
 CREATE EXTENSION if not exists pg_trgm;
 CREATE EXTENSION if not exists btree_gin;
 CREATE EXTENSION if not exists btree_gist;
-CREATE INDEX IF NOT EXISTS "issues_gin" ON "issues" USING gin("workspace_id","project_id","sequence_id",(sequence_id::text)) WHERE deleted_at is not null;
+CREATE INDEX IF NOT EXISTS "issues_sequence_gin" ON "issues" USING gin("workspace_id","project_id","sequence_id",(sequence_id::text)) WHERE deleted_at is null;
+
+-- Старые индексы задач покрывали только удалённые задачи (deleted_at is not null).
+-- Замены: issues_sequence_gin выше и индексы в dao.Issue.
+DROP INDEX IF EXISTS "issues_gin";
+DROP INDEX IF EXISTS "tokens_gin";
+DROP INDEX IF EXISTS "idx_issues_sequence_id";
+DROP INDEX IF EXISTS "idx_issues_project_id";
+DROP INDEX IF EXISTS "idx_issues_workspace_id";
 
 -- delete deprecated
 DO $$
@@ -203,6 +211,24 @@ CREATE OR REPLACE TRIGGER insert_or_update_issues
     ON issues
     FOR EACH ROW
 EXECUTE PROCEDURE gen_issue_vectors();
+
+-- Issue comments triggers
+-- BEFORE: вектор пишется в ту же строку, без второго UPDATE.
+CREATE OR REPLACE FUNCTION gen_issue_comment_vectors()
+    RETURNS TRIGGER
+    LANGUAGE PLPGSQL
+AS $$
+BEGIN
+    NEW.tokens := to_tsvector_multilang('', NEW.comment_stripped);
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER insert_or_update_issue_comments
+    BEFORE INSERT OR UPDATE OF comment_stripped
+    ON issue_comments
+    FOR EACH ROW
+EXECUTE PROCEDURE gen_issue_comment_vectors();
 
 -- Labels trigger
 CREATE OR REPLACE FUNCTION gen_label_name_tokens()

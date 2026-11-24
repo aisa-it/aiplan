@@ -24,6 +24,8 @@ type Migration struct {
 	db *gorm.DB
 
 	sources []IMigration
+	// background — долгие миграции, без которых сервер работает: идут в фоне и не задерживают запуск.
+	background []IMigration
 }
 
 type IMigration interface {
@@ -41,15 +43,23 @@ func New(db *gorm.DB) *Migration {
 			NewMigrateActivityFieldsUpdate(db),
 			NewMigrateActivityTargetDateUpdate(db),
 			NewMigrateActivitiesToOneTable(db),
-			NewMigrateIssueTokensNormalize(db),
 			NewMigrateDocSlug(db),
 			NewMigratePropertyTemplateRoles(db),
+		},
+		background: []IMigration{
+			NewMigrateIssueTokensNormalize(db),
+			NewMigrateIssueCommentTokens(db),
 		},
 	}
 }
 
 func (m *Migration) Run() {
-	for _, source := range m.sources {
+	run(m.sources)
+	go run(m.background)
+}
+
+func run(sources []IMigration) {
+	for _, source := range sources {
 		ok, err := source.CheckMigrate()
 		if err != nil {
 			slog.Error("Migration", "error", err.Error())

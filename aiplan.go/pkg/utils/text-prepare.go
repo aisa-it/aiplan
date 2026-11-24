@@ -101,3 +101,12 @@ func replaceTablesToText(html string) string {
 
 	return result
 }
+
+// PrepareSearchRequest готовит строку для LIKE: экранирует спецсимволы, приводит к нижнему регистру и оборачивает в %.
+func PrepareSearchRequest(query string) string {
+	query = strings.ReplaceAll(query, `\`, `\\`)
+	query = strings.ReplaceAll(query, `%`, `\%`)
+	query = strings.ReplaceAll(query, `_`, `\_`)
+
+	return "%" + strings.ToLower(query) + "%"
+}

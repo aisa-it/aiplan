@@ -216,7 +216,7 @@ func (s *Services) getAllWorkspaceList(c echo.Context) error {
 	}
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) like ? or name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, strings.ToLower(searchQuery)).Order("search_rank desc")
 	}
 
@@ -374,7 +374,7 @@ func (s *Services) getWorkspaceProjectList(c echo.Context) error {
 	}
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))", escapedSearchQuery, searchQuery).Order("search_rank desc")
 	}
 
@@ -444,7 +444,7 @@ func (s *Services) getAllUserList(c echo.Context) error {
 	}
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.
 			Where("lower(email) LIKE ? OR lower(first_name) LIKE ? OR lower(last_name) LIKE ?", escapedSearchQuery, escapedSearchQuery, escapedSearchQuery)
 	}
@@ -798,7 +798,7 @@ func (s *Services) geWorkspaceListByUser(c echo.Context) error {
 		Order(orderBy)
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) LIKE ? OR lower(slug) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, escapedSearchQuery, searchQuery)
 	}
@@ -901,7 +901,7 @@ func (s *Services) getProjectListByUser(c echo.Context) error {
 		Order("name")
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, searchQuery)
 	}

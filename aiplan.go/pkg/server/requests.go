@@ -11,7 +11,6 @@
 package server
 
 import (
-	"strings"
 	"time"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
@@ -86,14 +85,6 @@ func ExtractFilterRequest(c echo.Context) (*dao.User, FilterParams, int, int, er
 	}
 
 	return user, param, offset, limit, nil
-}
-
-func PrepareSearchRequest(query string) string {
-	query = strings.ReplaceAll(query, `\`, `\\`)
-	query = strings.ReplaceAll(query, `%`, `\%`)
-	query = strings.ReplaceAll(query, `_`, `\_`)
-
-	return "%" + strings.ToLower(query) + "%"
 }
 
 type DayRequest time.Time

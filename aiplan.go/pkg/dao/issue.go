@@ -51,7 +51,7 @@ type Issue struct {
 	TargetDate  *types.TargetDateTimeZ `json:"target_date" extensions:"x-nullable"`
 	CompletedAt *types.TargetDateTimeZ `json:"completed_at" extensions:"x-nullable"`
 
-	SequenceId int `json:"sequence_id" gorm:"default:1;index:,where:deleted_at is not null"`
+	SequenceId int `json:"sequence_id" gorm:"default:1;index:issues_sequence_id_idx,where:deleted_at is null"`
 	// created_by_id uuid,
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	CreatedById uuid.UUID `json:"created_by" gorm:"type:uuid"`
@@ -59,7 +59,7 @@ type Issue struct {
 	ParentId uuid.NullUUID `json:"parent" gorm:"type:uuid;index;index:issue_sort_order_index,priority:1"`
 	// project_id uuid NOT NULL,
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
-	ProjectId uuid.UUID `json:"project" gorm:"index:,type:hash,where:deleted_at is not null;type:uuid"`
+	ProjectId uuid.UUID `json:"project" gorm:"index:issues_project_id_hash,type:hash,where:deleted_at is null;type:uuid"`
 	// state_id uuid NOT NULL,
 	StateId uuid.UUID `json:"state"`
 	// Тип задачи: необязателен, у задач, заведённых до появления справочника, его нет
@@ -68,7 +68,7 @@ type Issue struct {
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	UpdatedById uuid.NullUUID `json:"-" gorm:"type:uuid" extensions:"x-nullable"`
 	// workspace_id uuid NOT NULL,
-	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid;index:,type:hash,where:deleted_at is not null"`
+	WorkspaceId uuid.UUID `json:"workspace" gorm:"type:uuid;index:issues_workspace_id_hash,type:hash,where:deleted_at is null"`
 
 	DescriptionHtml     string          `json:"description_html" gorm:"default:<p></p>"`
 	DescriptionStripped *string         `json:"description_stripped" extensions:"x-nullable"`
@@ -76,7 +76,7 @@ type Issue struct {
 	DescriptionJSON     editor.Document `json:"description_json" gorm:"type:jsonb"`
 	LLMContent          bool            `gorm:"index;default:false"`
 
-	Tokens types.TsVector `json:"-" gorm:"index:tokens_gin,type:gin,where:deleted_at is not null;->:false"`
+	Tokens types.TsVector `json:"-" gorm:"index:issues_tokens_gin,type:gin,where:deleted_at is null;->:false"`
 
 	// Sort order for sub issues list
 	SortOrder int `json:"sort_order" gorm:"type:smallint;index:issue_sort_order_index,priority:2"`
@@ -1529,7 +1529,7 @@ type IssueLabel struct {
 	// issue_id uuid IS_NULL:NO
 	IssueId uuid.UUID `json:"issue_id" gorm:"type:uuid;index"`
 	// label_id uuid IS_NULL:NO
-	LabelId uuid.UUID `json:"label_id" gorm:"foreignKey:ID;references:Label"`
+	LabelId uuid.UUID `json:"label_id" gorm:"foreignKey:ID;references:Label;index"`
 	// project_id uuid IS_NULL:NO
 	// Note: type:text используется потому что в существующей БД это поле имеет тип text, а не uuid
 	ProjectId uuid.UUID `json:"project_id" gorm:"type:uuid"`
@@ -1559,7 +1559,7 @@ func (IssueLabel) TableName() string { return "issue_labels" }
 
 type IssueComment struct {
 	Id        uuid.UUID      `json:"id" gorm:"primaryKey;type:uuid"`
-	CreatedAt time.Time      `json:"created_at"`
+	CreatedAt time.Time      `json:"created_at" gorm:"index"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
@@ -1575,6 +1575,8 @@ type IssueComment struct {
 
 	CommentHtml     types.RedactorHTML `json:"comment_html"`
 	CommentStripped string             `json:"comment_stripped"`
+	// Заполняет триггер gen_issue_comment_vectors (triggers.sql).
+	Tokens types.TsVector `json:"-" gorm:"index:issue_comment_tokens_gin,type:gin,where:deleted_at is null;->:false"`
 
 	IntegrationMeta  string        `json:"-" gorm:"index:integration,priority:2"`
 	ReplyToCommentId uuid.NullUUID `json:"reply_to_comment_id" gorm:"type:uuid" extensions:"x-nullable"`

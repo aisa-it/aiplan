@@ -728,7 +728,7 @@ func (s *Services) getWorkspaceMemberList(c echo.Context) error {
 		Order(orderBy)
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(email) like ? or lower(last_name) like ? or lower(first_name) like ?", escapedSearchQuery, escapedSearchQuery, escapedSearchQuery)
 	}
 
@@ -1440,7 +1440,7 @@ func (s *Services) getUserWorkspaceList(c echo.Context) error {
 		Order("is_favorite desc, lower(name)")
 
 	if searchQuery != "" {
-		escapedSearchQuery := PrepareSearchRequest(searchQuery)
+		escapedSearchQuery := utils.PrepareSearchRequest(searchQuery)
 		query = query.Where("lower(name) LIKE ? OR name_tokens @@ websearch_to_tsquery('russian', lower(?))",
 			escapedSearchQuery, searchQuery)
 	}
