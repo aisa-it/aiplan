@@ -4549,6 +4549,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/search": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Ищет задачи запросом на языке AQL среди всех видимых пользователю задач, например: priority = high ORDER BY priority DESC.\nСортировка задаётся в запросе через ORDER BY, по умолчанию - по номеру задачи по убыванию. Черновики в выдачу не попадают.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Issues"
+                ],
+                "summary": "Задачи: поиск задач по AQL",
+                "operationId": "searchIssues",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Запрос AQL, до 10000 байт",
+                        "name": "aql",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение для пагинации",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Лимит записей от 1 до 100, иначе 100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Найденные задачи и их общее количество",
+                        "schema": {
+                            "$ref": "#/definitions/dto.IssuesSearchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Запрос не передан или содержит ошибку; место ошибки в запросе - в поле aql",
+                        "schema": {
+                            "$ref": "#/definitions/server.aqlErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Необходима авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "408": {
+                        "description": "Время ожидания запроса истекло",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/sign-out-everywhere/": {
             "post": {
                 "security": [
@@ -6936,7 +7003,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "получение документа",
+                "description": "получение документа по id или адресу (слагу от корня, «/» экранирован как %2F)",
                 "consumes": [
                     "application/json"
                 ],
@@ -12029,6 +12096,330 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issue-types/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает справочник типов задач проекта, отсортированный по названию.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueTypes"
+                ],
+                "summary": "Типы задач: получение списка типов проекта",
+                "operationId": "getIssueTypeList",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список типов задач",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.IssueTypeLight"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к проекту",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Добавляет тип задачи в справочник проекта.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueTypes"
+                ],
+                "summary": "Типы задач: создание типа задачи",
+                "operationId": "createIssueType",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные типа задачи",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateIssueTypeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Созданный тип задачи",
+                        "schema": {
+                            "$ref": "#/definitions/dto.IssueTypeLight"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на создание",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/workspaces/{workspaceSlug}/projects/{projectId}/issue-types/{issueTypeId}/": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращает тип задачи проекта по идентификатору.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueTypes"
+                ],
+                "summary": "Типы задач: получение типа задачи",
+                "operationId": "getIssueType",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID типа задачи",
+                        "name": "issueTypeId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Тип задачи",
+                        "schema": {
+                            "$ref": "#/definitions/dto.IssueTypeLight"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к проекту",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Тип задачи не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет тип задачи проекта. Тип, установленный хотя бы у одной задачи, удалить нельзя.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueTypes"
+                ],
+                "summary": "Типы задач: удаление типа задачи",
+                "operationId": "deleteIssueType",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID типа задачи",
+                        "name": "issueTypeId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Тип задачи успешно удален"
+                    },
+                    "403": {
+                        "description": "Нет прав на удаление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Тип задачи не найден",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "409": {
+                        "description": "Тип задачи установлен у задач",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Обновляет название, описание, цвет или признак типа по умолчанию.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IssueTypes"
+                ],
+                "summary": "Типы задач: обновление типа задачи",
+                "operationId": "updateIssueType",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Slug рабочего пространства",
+                        "name": "workspaceSlug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID проекта",
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID типа задачи",
+                        "name": "issueTypeId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Данные для обновления",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateIssueTypeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Обновленный тип задачи",
+                        "schema": {
+                            "$ref": "#/definitions/dto.IssueTypeLight"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на обновление",
+                        "schema": {
+                            "$ref": "#/definitions/apierrors.DefinedError"
+                        }
+                    },
+                    "404": {
+                        "description": "Тип задачи не найден",
                         "schema": {
                             "$ref": "#/definitions/apierrors.DefinedError"
                         }
@@ -19945,6 +20336,27 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/version": {
+            "get": {
+                "description": "Версия сервера, включённые возможности и названия сущностей от подключённого движка. Без авторизации.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Система: версия и флаги сборки",
+                "operationId": "getVersion",
+                "responses": {
+                    "200": {
+                        "description": "Версия и флаги",
+                        "schema": {
+                            "$ref": "#/definitions/dto.VersionInfo"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -19979,6 +20391,26 @@ const docTemplate = `{
                 },
                 "ru_error": {
                     "type": "string"
+                }
+            }
+        },
+        "aql.Error": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "end": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "ru_error": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "integer"
                 }
             }
         },
@@ -20208,6 +20640,11 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                },
+                "users": {
+                    "description": "Users - участники проекта с пагинацией (для типов user и users)",
+                    "type": "object",
+                    "x-nullable": true
                 }
             }
         },
@@ -20369,6 +20806,28 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateIssueTypeRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "default": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                }
+            }
+        },
         "dto.CreatePropertyTemplateRequest": {
             "type": "object",
             "required": [
@@ -20388,12 +20847,16 @@ const docTemplate = `{
                     "type": "string",
                     "x-nullable": true
                 },
+                "editor_role": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 255,
                     "minLength": 1
                 },
                 "only_admin": {
+                    "description": "OnlyAdmin - устаревший шорткат: true = роли 15/15. Явно переданные роли приоритетнее",
                     "type": "boolean"
                 },
                 "options": {
@@ -20401,6 +20864,14 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "reader_role": {
+                    "description": "ReaderRole/EditorRole - минимальная роль (5/10/15) для просмотра и изменения\nзначения, просмотр не выше изменения; 0 - по умолчанию (5 и 5: без ограничений\nсверх общего правила на изменение задачи)",
+                    "type": "integer"
+                },
+                "required": {
+                    "description": "Required - поле обязательно для заполнения (для boolean не проверяется)",
+                    "type": "boolean"
                 },
                 "sort_order": {
                     "type": "integer"
@@ -20415,12 +20886,18 @@ const docTemplate = `{
                         "link",
                         "lookup",
                         "date",
-                        "datetime"
+                        "datetime",
+                        "number",
+                        "file"
                     ]
                 },
                 "unique_values": {
                     "description": "UniqueValues - для multiselect: запрет повторяющихся значений в списке",
                     "type": "boolean"
+                },
+                "unit": {
+                    "description": "Unit - единица измерения для number (у других типов сбрасывается)",
+                    "type": "string"
                 }
             }
         },
@@ -20564,6 +21041,9 @@ const docTemplate = `{
                 "short_url": {
                     "type": "string"
                 },
+                "slug": {
+                    "type": "string"
+                },
                 "title": {
                     "type": "string"
                 },
@@ -20680,12 +21160,42 @@ const docTemplate = `{
                 "short_url": {
                     "type": "string"
                 },
+                "slug": {
+                    "type": "string"
+                },
                 "title": {
                     "type": "string"
                 },
                 "url": {
                     "type": "string"
                 }
+            }
+        },
+        "dto.EntityName": {
+            "type": "object",
+            "properties": {
+                "create": {
+                    "description": "Create — подпись действия создания: «Новая задача».",
+                    "type": "string"
+                },
+                "genitive": {
+                    "description": "Genitive — родительный падеж для подписей вида «нет задачи»: «задачи».",
+                    "type": "string"
+                },
+                "many": {
+                    "description": "Many — множественное число: «Задачи».",
+                    "type": "string"
+                },
+                "one": {
+                    "description": "One — единственное число: «Задача».",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.EntityNames": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/dto.EntityName"
             }
         },
         "dto.FileAsset": {
@@ -21124,6 +21634,23 @@ const docTemplate = `{
                     },
                     "x-nullable": true
                 },
+                "issue_type": {
+                    "description": "Тип задачи необязателен: у старых задач его нет",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "issue_type_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.IssueTypeLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
                 "label_details": {
                     "type": "array",
                     "items": {
@@ -21407,6 +21934,23 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "issue_type": {
+                    "description": "Тип задачи необязателен: у старых задач его нет",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "issue_type_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.IssueTypeLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
                 "name": {
                     "type": "string"
                 },
@@ -21503,6 +22047,10 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string"
                 },
+                "required": {
+                    "description": "Required - поле обязательно для заполнения (пустое значение не принимается)",
+                    "type": "boolean"
+                },
                 "reset_properties": {
                     "description": "ResetProperties - имена зависимых полей, значения которых были сброшены\nустановкой этого значения (только в ответе установки значения)",
                     "type": "array",
@@ -21520,9 +22068,13 @@ const docTemplate = `{
                     "description": "UniqueValues - для multiselect: значения в списке не должны повторяться",
                     "type": "boolean"
                 },
+                "unit": {
+                    "description": "Unit - единица измерения для number",
+                    "type": "string"
+                },
                 "value": {},
                 "value_label": {
-                    "description": "ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника)",
+                    "description": "ValueLabel - отображаемое значение для lookup-полей (Value хранит id строки справочника),\nfile-полей (Value хранит id вложения задачи, ValueLabel - имя файла) и user/users-полей\n(Value хранит id пользователей, ValueLabel - имена через запятую)",
                     "type": "string",
                     "x-nullable": true
                 },
@@ -21579,6 +22131,26 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "workspace_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.IssueTypeLight": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "default": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
                     "type": "string"
                 }
             }
@@ -21662,6 +22234,23 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.IssueLinkLight"
                     },
+                    "x-nullable": true
+                },
+                "issue_type": {
+                    "description": "Тип задачи необязателен: у старых задач его нет",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "issue_type_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.IssueTypeLight"
+                        }
+                    ],
                     "x-nullable": true
                 },
                 "label_details": {
@@ -21795,6 +22384,26 @@ const docTemplate = `{
                         }
                     ],
                     "x-nullable": true
+                }
+            }
+        },
+        "dto.IssuesSearchResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.IssueWithCount"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
                 }
             }
         },
@@ -21997,6 +22606,9 @@ const docTemplate = `{
         "dto.Project": {
             "type": "object",
             "properties": {
+                "admin_rules_enforced": {
+                    "type": "boolean"
+                },
                 "archived": {
                     "type": "boolean"
                 },
@@ -22066,9 +22678,6 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "member_attachments_allowed": {
-                    "type": "boolean"
-                },
-                "admin_rules_enforced": {
                     "type": "boolean"
                 },
                 "member_properties_allowed": {
@@ -22149,6 +22758,9 @@ const docTemplate = `{
         "dto.ProjectLight": {
             "type": "object",
             "properties": {
+                "admin_rules_enforced": {
+                    "type": "boolean"
+                },
                 "archived": {
                     "type": "boolean"
                 },
@@ -22209,9 +22821,6 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "member_attachments_allowed": {
-                    "type": "boolean"
-                },
-                "admin_rules_enforced": {
                     "type": "boolean"
                 },
                 "member_properties_allowed": {
@@ -22438,6 +23047,9 @@ const docTemplate = `{
                     "type": "string",
                     "x-nullable": true
                 },
+                "editor_role": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -22445,6 +23057,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "only_admin": {
+                    "description": "OnlyAdmin - устаревшее, для совместимости клиентов: reader_role == 15",
                     "type": "boolean"
                 },
                 "options": {
@@ -22456,6 +23069,14 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string"
                 },
+                "reader_role": {
+                    "description": "ReaderRole/EditorRole - минимальная роль в проекте (5 гость, 10 участник,\n15 администратор) для просмотра и для изменения значения поля",
+                    "type": "integer"
+                },
+                "required": {
+                    "description": "Required - поле обязательно для заполнения",
+                    "type": "boolean"
+                },
                 "sort_order": {
                     "type": "integer"
                 },
@@ -22465,6 +23086,10 @@ const docTemplate = `{
                 "unique_values": {
                     "description": "UniqueValues - для multiselect: значения в списке не должны повторяться",
                     "type": "boolean"
+                },
+                "unit": {
+                    "description": "Unit - единица измерения для number (у других типов пустая)",
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
@@ -23127,6 +23752,27 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateIssueTypeRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "default": {
+                    "type": "boolean",
+                    "x-nullable": true
+                },
+                "description": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "name": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
         "dto.UpdatePropertyTemplateRequest": {
             "type": "object",
             "properties": {
@@ -23142,10 +23788,15 @@ const docTemplate = `{
                     "type": "string",
                     "x-nullable": true
                 },
+                "editor_role": {
+                    "type": "integer",
+                    "x-nullable": true
+                },
                 "name": {
                     "type": "string"
                 },
                 "only_admin": {
+                    "description": "OnlyAdmin - устаревший шорткат: true = роли 15/15, false = 5/5. Явно\nпереданные роли приоритетнее",
                     "type": "boolean"
                 },
                 "options": {
@@ -23153,6 +23804,15 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "reader_role": {
+                    "description": "ReaderRole/EditorRole - минимальная роль (5/10/15) для просмотра и изменения",
+                    "type": "integer",
+                    "x-nullable": true
+                },
+                "required": {
+                    "type": "boolean",
+                    "x-nullable": true
                 },
                 "sort_order": {
                     "type": "integer"
@@ -23162,6 +23822,10 @@ const docTemplate = `{
                 },
                 "unique_values": {
                     "type": "boolean"
+                },
+                "unit": {
+                    "type": "string",
+                    "x-nullable": true
                 }
             }
         },
@@ -23364,6 +24028,37 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "x-nullable": true
+                }
+            }
+        },
+        "dto.VersionInfo": {
+            "type": "object",
+            "properties": {
+                "captcha": {
+                    "type": "boolean"
+                },
+                "demo": {
+                    "type": "boolean"
+                },
+                "entity_names": {
+                    "description": "EntityNames — названия сущностей от движка.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.EntityNames"
+                        }
+                    ]
+                },
+                "jitsi": {
+                    "type": "boolean"
+                },
+                "ny": {
+                    "type": "boolean"
+                },
+                "sign_up": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "string"
                 }
             }
         },
@@ -24407,6 +25102,23 @@ const docTemplate = `{
                     },
                     "x-nullable": true
                 },
+                "issue_type": {
+                    "description": "Тип задачи необязателен: у старых задач его нет",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_gofrs_uuid.NullUUID"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "issue_type_detail": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.IssueTypeLight"
+                        }
+                    ],
+                    "x-nullable": true
+                },
                 "label_details": {
                     "type": "array",
                     "items": {
@@ -24934,6 +25646,23 @@ const docTemplate = `{
                 }
             }
         },
+        "server.aqlErrorResponse": {
+            "type": "object",
+            "properties": {
+                "aql": {
+                    "$ref": "#/definitions/aql.Error"
+                },
+                "code": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "ru_error": {
+                    "type": "string"
+                }
+            }
+        },
         "server.projectNotificationRequest": {
             "type": "object",
             "properties": {
@@ -25277,6 +26006,14 @@ const docTemplate = `{
                 },
                 "created_at_to": {
                     "type": "number"
+                },
+                "issue_types": {
+                    "description": "IssueTypes - фильтр по типу задачи; пустое значение в списке отбирает задачи без типа",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FilterUUIDs"
+                        }
+                    ]
                 },
                 "labels": {
                     "$ref": "#/definitions/types.FilterUUIDs"
@@ -25672,23 +26409,9 @@ const docTemplate = `{
                 3,
                 4,
                 5,
-                6,
-                0,
-                1,
-                2,
-                3,
-                4,
-                5,
                 6
             ],
             "x-enum-varnames": [
-                "Sunday",
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
                 "Sunday",
                 "Monday",
                 "Tuesday",

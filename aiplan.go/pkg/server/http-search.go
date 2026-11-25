@@ -77,12 +77,15 @@ func (s *Services) searchIssues(c echo.Context) error {
 	)
 	if err != nil {
 		var aqlErr *aql.Error
-		if errors.As(err, &aqlErr) {
+		if errors.As(err, &aqlErr) && aqlErr.Code != aql.ErrInternal.Code {
 			return c.JSON(http.StatusBadRequest, aqlErrorResponse{DefinedError: apierrors.ErrAQLQuery, AQL: aqlErr})
 		}
 		return EError(c, err)
 	}
 	q = s.policy.ScopeIssues(ctx, scope, q)
+	if apiContext.Error() != nil {
+		return EError(c, apiContext.Error())
+	}
 
 	var (
 		issues []dao.IssueWithCount
