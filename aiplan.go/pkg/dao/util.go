@@ -347,11 +347,25 @@ func prefixTSQuery(searchQuery, sep string, minPrefix int) string {
 // с tsvector, не пользовательский ввод. normalize_fts_text (triggers.sql) — та же нормализация, что у векторов.
 // Пустой prefixQuery — только websearch.
 func TokensMatch(column, query, prefixQuery string) clause.Expr {
-	websearch := column + " @@ (websearch_to_tsquery('simple', normalize_fts_text(?)) || websearch_to_tsquery('russian', normalize_fts_text(?)) || websearch_to_tsquery('english', normalize_fts_text(?)))"
+	websearch := column + " @@ (" + websearchTSQuery + ")"
 	if prefixQuery == "" {
 		return gorm.Expr("("+websearch+")", query, query, query)
 	}
-	return gorm.Expr("("+websearch+" OR "+column+" @@ (to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?)))",
+	return gorm.Expr("("+websearch+" OR "+column+" @@ ("+prefixedTSQuery+"))",
+		query, query, query, prefixQuery, prefixQuery, prefixQuery)
+}
+
+const (
+	websearchTSQuery = "websearch_to_tsquery('simple', normalize_fts_text(?)) || websearch_to_tsquery('russian', normalize_fts_text(?)) || websearch_to_tsquery('english', normalize_fts_text(?))"
+	prefixedTSQuery  = "to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?)"
+)
+
+// TokensQuery — tsquery, которым TokensMatch проверяет вектор: для ts_rank и ts_headline.
+func TokensQuery(query, prefixQuery string) clause.Expr {
+	if prefixQuery == "" {
+		return gorm.Expr("("+websearchTSQuery+")", query, query, query)
+	}
+	return gorm.Expr("("+websearchTSQuery+" || "+prefixedTSQuery+")",
 		query, query, query, prefixQuery, prefixQuery, prefixQuery)
 }
 

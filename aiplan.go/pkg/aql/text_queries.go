@@ -27,6 +27,7 @@ func textCmp(match func(v *Visitor, text string) *gorm.DB) cmpFunc {
 		if op == parser.AQLParserNOT_LIKE {
 			return v.newQuery().Not(cond), nil
 		}
+		v.searchTerms = append(v.searchTerms, dao.TokensQuery(text[0], prefixQuery(text[0])))
 		return cond, nil
 	}
 }
@@ -34,14 +35,17 @@ func textCmp(match func(v *Visitor, text string) *gorm.DB) cmpFunc {
 // websearchSyntax — фраза в кавычках или -слово.
 var websearchSyntax = regexp.MustCompile(`"|(^|\s)-\pL`)
 
-// tokensMatch: в запросе с фразой или исключением префиксы не ищутся — префиксный запрос требует
+// prefixQuery: в запросе с фразой или исключением префиксы не ищутся — префиксный запрос требует
 // все слова в любом порядке и отменил бы и фразу, и исключение.
-func tokensMatch(column, text string) clause.Expr {
-	prefix := ""
-	if !websearchSyntax.MatchString(text) {
-		prefix = dao.AllWordsTSQuery(text, minLikeLen)
+func prefixQuery(text string) string {
+	if websearchSyntax.MatchString(text) {
+		return ""
 	}
-	return dao.TokensMatch(column, text, prefix)
+	return dao.AllWordsTSQuery(text, minLikeLen)
+}
+
+func tokensMatch(column, text string) clause.Expr {
+	return dao.TokensMatch(column, text, prefixQuery(text))
 }
 
 // titleMatch: issues.tokens собран из названия и описания и покрыт индексом, по нему отбор;

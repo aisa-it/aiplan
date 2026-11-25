@@ -8,6 +8,7 @@ import (
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dao"
 	"github.com/antlr4-go/antlr/v4"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Visitor struct {
@@ -27,6 +28,9 @@ type Visitor struct {
 	templatesCache map[string][]dao.ProjectPropertyTemplate
 
 	showDrafts bool
+
+	// tsquery каждого ~ по тексту: для подсветки и сортировки по релевантности.
+	searchTerms []clause.Expression
 }
 
 func (v *Visitor) VisitQuery(ctx *parser.QueryContext) interface{} {
@@ -39,9 +43,28 @@ func (v *Visitor) VisitQuery(ctx *parser.QueryContext) interface{} {
 	if ctx.Expr() != nil {
 		q = q.Where(ctx.Expr().Accept(v))
 	}
-	if ctx.OrderBy() != nil {
+	var terms clause.Expr
+	if len(v.searchTerms) > 0 {
+		terms = clause.Expr{SQL: strings.Repeat("? || ", len(v.searchTerms)-1) + "?"}
+		for _, term := range v.searchTerms {
+			terms.Vars = append(terms.Vars, term)
+		}
+		v.selectExprs = append(v.selectExprs,
+			"ts_headline('russian', issues.name, ?) as name_highlighted",
+			"ts_headline('russian', issues.description_stripped, ?, 'MaxFragments=10, MaxWords=8, MinWords=3') as desc_highlighted",
+		)
+		v.selectInterface = append(v.selectInterface, terms, terms)
+	}
+
+	switch {
+	case ctx.OrderBy() != nil:
 		q = q.Order(ctx.OrderBy().Accept(v))
-	} else {
+	case len(v.searchTerms) > 0:
+		// Без ORDER BY запрос с ~ сортируется по релевантности.
+		v.selectExprs = append(v.selectExprs, "ts_rank(issues.tokens, ?) as ts_rank")
+		v.selectInterface = append(v.selectInterface, terms)
+		q = q.Order("ts_rank DESC, issues.sequence_id DESC, issues.id")
+	default:
 		q = q.Order("issues.sequence_id DESC, issues.id")
 	}
 	return q.Select(strings.Join(v.selectExprs, ", "), v.selectInterface...)
