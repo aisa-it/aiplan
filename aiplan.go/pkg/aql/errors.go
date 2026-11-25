@@ -39,6 +39,7 @@ var (
 	ErrFieldUnsupported   = Error{Code: "field_unsupported", Err: "field is not supported", Ru: "Поиск по этому полю не поддерживается"}
 	ErrOperator           = Error{Code: "operator", Err: "only =, !=, IN and NOT IN are supported for this field", Ru: "Для этого поля доступны только =, !=, IN и NOT IN"}
 	ErrLikeOperator       = Error{Code: "like_operator", Err: "~ and !~ are supported only for text fields", Ru: "~ и !~ доступны только для текстовых полей"}
+	ErrTextOperator       = Error{Code: "text_operator", Err: "only ~ and !~ are supported for this field", Ru: "Для этого поля доступны только ~ и !~"}
 	ErrDateOperator       = Error{Code: "date_operator", Err: "only =, !=, <, <=, >, >= are supported for dates", Ru: "Для дат доступны только =, !=, <, <=, >, >="}
 	ErrValue              = Error{Code: "value", Err: "expected name or id", Ru: "Ожидается название или id"}
 	ErrCustomFieldID      = Error{Code: "cf_unsupported", Err: "cf[id] is not supported, use the property name in quotes", Ru: "cf[…] не поддерживается: укажите название параметра в кавычках"}

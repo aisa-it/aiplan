@@ -32,5 +32,9 @@ func ParseAQLQuery(db *gorm.DB, scope ScopeFunc, templateScope dao.PropertyTempl
 
 	v := NewVisitor(db, currentUser, scope, templateScope)
 	q = tree.Accept(v).(*gorm.DB)
+
+	if !v.showDrafts {
+		q = q.Where("issues.draft = false or issues.draft is null")
+	}
 	return
 }

@@ -25,6 +25,8 @@ type Visitor struct {
 	funcCount int
 
 	templatesCache map[string][]dao.ProjectPropertyTemplate
+
+	showDrafts bool
 }
 
 func (v *Visitor) VisitQuery(ctx *parser.QueryContext) interface{} {
@@ -40,7 +42,7 @@ func (v *Visitor) VisitQuery(ctx *parser.QueryContext) interface{} {
 	if ctx.OrderBy() != nil {
 		q = q.Order(ctx.OrderBy().Accept(v))
 	} else {
-		q = q.Order("issues.sequence_id DESC")
+		q = q.Order("issues.sequence_id DESC, issues.id")
 	}
 	return q.Select(strings.Join(v.selectExprs, ", "), v.selectInterface...)
 }

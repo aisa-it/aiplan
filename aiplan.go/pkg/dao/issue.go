@@ -463,16 +463,7 @@ func (Issue) FullTextSearch(tx *gorm.DB, search_query string) *gorm.DB {
 		return tx.Where("p.identifier = ? AND issues.sequence_id = ?", m[1], seqID)
 	}
 
-	splitQ := SplitTSQuery(q)
-
-	// normalize_fts_text (triggers.sql) — та же нормализация, что у issues.tokens; вектор и запрос идут через одну функцию.
-	return tx.Or(
-		"issues.tokens @@ (websearch_to_tsquery('simple', normalize_fts_text(?)) || websearch_to_tsquery('russian', normalize_fts_text(?)) || websearch_to_tsquery('english', normalize_fts_text(?)))",
-		q, q, q,
-	).Or(
-		"issues.tokens @@ (to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?))",
-		splitQ, splitQ, splitQ,
-	).Or("issues.sequence_id::text like ?", q+"%")
+	return tx.Or(TokensMatch("issues.tokens", q, SplitTSQuery(q))).Or("issues.sequence_id::text like ?", q+"%")
 }
 
 // IssueWithCount - вспомогательная структура задачи, для вытягивания счетчиков из запроса списка задач(без доп запросов)

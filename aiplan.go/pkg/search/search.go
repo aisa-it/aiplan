@@ -361,7 +361,7 @@ func fetchIssuesByGroups(
 				return iterFunc(dto.IssuesGroupResponse{SortId: i, Count: skippedGroupCount})
 			}
 
-			populateAuthors(issues)
+			PopulateAuthors(issues)
 
 			dtoIssues := utils.SliceToSlice(&issues, func(i *dao.IssueWithCount) dto.IssueWithCount { return *i.ToDTO() })
 			if err := attachIssuesProperties(db, templateScope, searchParams, dtoIssues); err != nil {

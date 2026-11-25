@@ -10,6 +10,7 @@ func (v *Visitor) VisitOrderBy(ctx *parser.OrderByContext) interface{} {
 	for _, o := range ctx.AllSortField() {
 		order.Columns = append(order.Columns, o.Accept(v).(clause.OrderByColumn))
 	}
+	order.Columns = append(order.Columns, clause.OrderByColumn{Column: clause.Column{Table: "issues", Name: "id"}})
 	return order
 }
 

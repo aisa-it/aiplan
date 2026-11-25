@@ -18,6 +18,11 @@ var cmpFieldsFunc = map[string]cmpFunc{
 	"completed": dateCmp("issues.completed_at"),
 	"startdate": dateCmp("issues.start_date"),
 	"duedate":   dateCmp("issues.target_date"),
+
+	"title":       textCmp(titleMatch),
+	"description": textCmp(descriptionMatch),
+	"comment":     textCmp(commentMatch),
+	"text":        textCmp(textMatch),
 }
 
 // cmpQuery — сравнение поля с одним значением; = EMPTY и != EMPTY проверяют поле на пустоту.

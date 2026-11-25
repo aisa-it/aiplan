@@ -74,6 +74,7 @@ func (s *Services) AddIssueServices(g *echo.Group) {
 
 	s.route(g, http.MethodPost, "issues/search/", engine.ActionIssueSearch, s.getIssueList)
 	s.route(g, http.MethodPost, "issues/search/export/", engine.ActionIssueExport, s.exportIssueList)
+	s.route(g, http.MethodGet, "search/", engine.ActionIssueSearch, s.searchIssues)
 
 	s.issueRoute(issueGroup, http.MethodGet, "/", engine.ActionIssueView, s.getIssue)
 	s.issueRoute(issueGroup, http.MethodPatch, "/", engine.ActionIssueUpdate, s.updateIssue)

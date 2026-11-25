@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
 	"github.com/gofrs/uuid"
@@ -320,24 +321,38 @@ var filterRegexp = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 
 // SplitTSQuery строит префиксный tsquery `word:* | word2:*`; дефисы — разделители (согласовано с normalize_fts_text).
 func SplitTSQuery(searchQuery string) string {
-	searchQuery = strings.TrimSpace(searchQuery)
-	if searchQuery == "" {
-		return ""
-	}
+	return prefixTSQuery(searchQuery, " | ", 0)
+}
 
-	searchQuery = filterRegexp.ReplaceAllString(searchQuery, " ")
-	words := strings.Fields(searchQuery)
-	var tokens []string
+// AllWordsTSQuery — tsquery для фильтра: `word & word2:*`, все слова обязательны. Префиксом ищутся
+// только слова от minPrefix букв: по короткому префиксу GIN перебирает большую часть словаря.
+func AllWordsTSQuery(searchQuery string, minPrefix int) string {
+	return prefixTSQuery(searchQuery, " & ", minPrefix)
+}
+
+func prefixTSQuery(searchQuery, sep string, minPrefix int) string {
+	words := strings.Fields(filterRegexp.ReplaceAllString(searchQuery, " "))
+	tokens := make([]string, 0, len(words))
 	for _, word := range words {
-		if word != "" {
-			tokens = append(tokens, word+":*")
+		if utf8.RuneCountInString(word) >= minPrefix {
+			word += ":*"
 		}
+		tokens = append(tokens, word)
 	}
+	return strings.Join(tokens, sep)
+}
 
-	if len(tokens) == 0 {
-		return ""
+// TokensMatch — вектор column подходит под запрос: словоформы на трёх языках через websearch_to_tsquery
+// (фразы в кавычках, or, -слово) или prefixQuery из SplitTSQuery/AllWordsTSQuery. column — SQL-выражение
+// с tsvector, не пользовательский ввод. normalize_fts_text (triggers.sql) — та же нормализация, что у векторов.
+// Пустой prefixQuery — только websearch.
+func TokensMatch(column, query, prefixQuery string) clause.Expr {
+	websearch := column + " @@ (websearch_to_tsquery('simple', normalize_fts_text(?)) || websearch_to_tsquery('russian', normalize_fts_text(?)) || websearch_to_tsquery('english', normalize_fts_text(?)))"
+	if prefixQuery == "" {
+		return gorm.Expr("("+websearch+")", query, query, query)
 	}
-	return strings.Join(tokens, " | ")
+	return gorm.Expr("("+websearch+" OR "+column+" @@ (to_tsquery('simple', ?) || to_tsquery('russian', ?) || to_tsquery('english', ?)))",
+		query, query, query, prefixQuery, prefixQuery, prefixQuery)
 }
 
 func GetIssuesLink(id1 uuid.UUID, id2 uuid.UUID) LinkedIssues {

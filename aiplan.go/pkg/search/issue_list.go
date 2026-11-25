@@ -98,14 +98,6 @@ func scopeProjectID(scope engine.IssueScope) uuid.UUID {
 	return uuid.Nil
 }
 
-func populateAuthors(issues []dao.IssueWithCount) {
-	for i := range issues {
-		if author, ok := cache.UsersCache.LoadAsDAO(issues[i].CreatedById); ok {
-			issues[i].Author = author
-		}
-	}
-}
-
 func (s *Searcher) buildSearchQuery(ctx context.Context, db *gorm.DB, scope engine.IssueScope) *gorm.DB {
 	searchParams := scope.Params
 	user := scope.Subject.User()
@@ -470,7 +462,7 @@ func (s *Searcher) SearchIssuesList(ctx context.Context, db *gorm.DB, scope engi
 		return nil, 0, err
 	}
 
-	populateAuthors(issues)
+	PopulateAuthors(issues)
 
 	return issues, int(count), nil
 }
@@ -654,4 +646,12 @@ func FormatIssuesToMarkdownTable(issues []dao.IssueWithCount, count, offset, lim
 	}
 
 	return sb.String()
+}
+
+func PopulateAuthors(issues []dao.IssueWithCount) {
+	for i := range issues {
+		if author, ok := cache.UsersCache.LoadAsDAO(issues[i].CreatedById); ok {
+			issues[i].Author = author
+		}
+	}
 }
