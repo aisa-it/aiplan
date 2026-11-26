@@ -66,7 +66,8 @@ type IssuesLightSearchResponse struct {
 
 type IssuesSearchResponse struct {
 	PaginationMeta
-	Issues []IssueWithCount `json:"issues"`
+	Issues   []IssueWithCount `json:"issues"`
+	Duration int64            `json:"duration_ms"`
 }
 
 // IssuesGroupResponse - одна группа в группированном ответе

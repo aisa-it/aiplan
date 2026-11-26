@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
@@ -78,6 +79,8 @@ func (s *Services) searchIssues(c echo.Context) error {
 		offset = 0
 	}
 
+	startMs := time.Now()
+
 	q, err := aql.ParseAQLQuery(
 		s.DB(c),
 		func(q *gorm.DB) *gorm.DB { return s.policy.ScopeIssues(ctx, scope, q) },
@@ -133,5 +136,6 @@ func (s *Services) searchIssues(c echo.Context) error {
 	return c.JSON(http.StatusOK, dto.IssuesSearchResponse{
 		PaginationMeta: paginationMeta,
 		Issues:         dtoIssues,
+		Duration:       time.Since(startMs).Milliseconds(),
 	})
 }
