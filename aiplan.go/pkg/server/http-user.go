@@ -22,6 +22,7 @@ import (
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/apierrors"
+	"github.com/aisa-it/aiplan/aiplan.go/pkg/aql"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/dto"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/notifications"
 	"github.com/aisa-it/aiplan/aiplan.go/pkg/types"
@@ -1776,7 +1777,8 @@ func (s *Services) getSearchFilterList(c echo.Context) error {
 // createSearchFilter godoc
 // @id createSearchFilter
 // @Summary Фильтры: создание нового фильтра поиска
-// @Description Создает новый фильтр поиска для текущего пользователя
+// @Description Создает новый фильтр поиска для текущего пользователя.
+// @Description Фильтр задаётся условиями filter (aql собирается из них) либо, если условий нет, запросом aql: он проверяется по грамматике, место ошибки - в поле aql ответа.
 // @Tags Search Filters
 // @Security ApiKeyAuth
 // @Accept json
@@ -1792,7 +1794,7 @@ func (s *Services) createSearchFilter(c echo.Context) error {
 
 	filter, _, err := bindSearchFilter(c, nil)
 	if err != nil {
-		return EError(c, err)
+		return aqlError(c, err)
 	}
 
 	if err := s.DB(c).Model(user).Association("SearchFilters").Append(filter); err != nil {
@@ -1835,7 +1837,8 @@ func (s *Services) getSearchFilter(c echo.Context) error {
 // updateSearchFilter godoc
 // @id updateSearchFilter
 // @Summary Фильтры: обновление фильтра поиска
-// @Description Обновляет фильтр поиска по его ID для текущего пользователя
+// @Description Обновляет фильтр поиска по его ID для текущего пользователя.
+// @Description Тело заменяет фильтр целиком: без условий filter они стираются, и фильтр остаётся заданным только запросом aql.
 // @Tags Search Filters
 // @Security ApiKeyAuth
 // @Accept json
@@ -1862,7 +1865,7 @@ func (s *Services) updateSearchFilter(c echo.Context) error {
 
 	newFilter, fields, err := bindSearchFilter(c, filter)
 	if err != nil {
-		return EError(c, err)
+		return aqlError(c, err)
 	}
 
 	if err := s.DB(c).Select(fields).Updates(newFilter).Error; err != nil {
@@ -2296,6 +2299,10 @@ type NotificationViewRequest struct {
 	ViewedAll bool     `json:"viewed_all,omitempty"`
 }
 
+// bindSearchFilter читает фильтр из тела запроса. Есть условия filter - aql собирается из них
+// в поясе автора (менять фильтр может только он), aql из тела не учитывается. Условий нет -
+// фильтр задан запросом aql из тела, он проверяется по грамматике, без обращения к базе.
+// Узнать, передан ли filter, нельзя: BindData отдаёт все поля структуры, а не пришедшие.
 func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilter, []string, error) {
 	var req dto.SearchFilterLight
 	fields, err := BindData(c, "search_filter", &req)
@@ -2307,8 +2314,18 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 		return nil, nil, err
 	}
 
+	user := apicontext.GetContext(c).GetUser()
+	loc := (*time.Location)(&user.UserTimezone)
+
+	query := aql.ParseOldFilters(req.Filter, loc)
+	if query == "" {
+		query = req.AQL
+		if err := aql.CheckSyntax(query); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	if filter == nil {
-		user := apicontext.GetContext(c).GetUser()
 		return &dao.SearchFilter{
 			ID: dao.GenUUID(),
 			//CreatedAt:   time.Now(),
@@ -2318,6 +2335,7 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 			Description: req.Description,
 			Public:      req.Public,
 			Filter:      req.Filter,
+			AQL:         query,
 			Author:      user,
 		}, fields, nil
 	} else {
@@ -2333,6 +2351,10 @@ func bindSearchFilter(c echo.Context, filter *dao.SearchFilter) (*dao.SearchFilt
 			case "filter":
 				CompareAndAddFields(&filter.Filter, &req.Filter, field, &resFields)
 			}
+		}
+		if filter.AQL != query {
+			filter.AQL = query
+			resFields = append(resFields, "aql")
 		}
 		return filter, resFields, nil
 	}

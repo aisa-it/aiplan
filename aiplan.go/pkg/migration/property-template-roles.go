@@ -46,9 +46,10 @@ func (m *MigratePropertyTemplateRoles) Execute() error {
 		}
 	}
 
+	// без приведения Postgres считает параметры внутри CASE текстом
 	res := m.db.Exec(`UPDATE project_property_templates
-		SET reader_role = CASE WHEN only_admin THEN ? ELSE ? END,
-		    editor_role = CASE WHEN only_admin THEN ? ELSE ? END`,
+		SET reader_role = CASE WHEN only_admin THEN ?::int ELSE ?::int END,
+		    editor_role = CASE WHEN only_admin THEN ?::int ELSE ?::int END`,
 		types.AdminRole, types.GuestRole, types.AdminRole, types.GuestRole)
 	if res.Error != nil {
 		return fmt.Errorf("MigratePropertyTemplateRoles update: %w", res.Error)

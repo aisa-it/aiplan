@@ -45,6 +45,7 @@ func New(db *gorm.DB) *Migration {
 			NewMigrateActivitiesToOneTable(db),
 			NewMigrateDocSlug(db),
 			NewMigratePropertyTemplateRoles(db),
+			NewMigrateSearchFilterAQL(db),
 		},
 		background: []IMigration{
 			NewMigrateIssueTokensNormalize(db),

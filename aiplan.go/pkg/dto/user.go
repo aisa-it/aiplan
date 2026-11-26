@@ -140,6 +140,7 @@ type SearchFilterLight struct {
 	Description string                  `json:"description"`
 	Public      bool                    `json:"public"`
 	Filter      types.IssuesListFilters `json:"filter"`
+	AQL         string                  `json:"aql"`
 	Url         types.JsonURL           `json:"url,omitempty"`
 	ShortUrl    types.JsonURL           `json:"short_url,omitempty"`
 }

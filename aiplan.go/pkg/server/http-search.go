@@ -23,6 +23,16 @@ type aqlErrorResponse struct {
 	AQL *aql.Error `json:"aql"`
 }
 
+// aqlError отвечает на ошибку разбора AQL: ошибку в запросе отдаёт с местом для подсветки,
+// остальное - как EError (текст внутренней ошибки клиенту не уходит).
+func aqlError(c echo.Context, err error) error {
+	var aqlErr *aql.Error
+	if errors.As(err, &aqlErr) && aqlErr.Code != aql.ErrInternal.Code {
+		return c.JSON(http.StatusBadRequest, aqlErrorResponse{DefinedError: apierrors.ErrAQLQuery, AQL: aqlErr})
+	}
+	return EError(c, err)
+}
+
 // searchIssues godoc
 // @id searchIssues
 // @Summary Задачи: поиск задач по AQL
@@ -76,11 +86,7 @@ func (s *Services) searchIssues(c echo.Context) error {
 		query,
 	)
 	if err != nil {
-		var aqlErr *aql.Error
-		if errors.As(err, &aqlErr) && aqlErr.Code != aql.ErrInternal.Code {
-			return c.JSON(http.StatusBadRequest, aqlErrorResponse{DefinedError: apierrors.ErrAQLQuery, AQL: aqlErr})
-		}
-		return EError(c, err)
+		return aqlError(c, err)
 	}
 	q = s.policy.ScopeIssues(ctx, scope, q)
 	if apiContext.Error() != nil {

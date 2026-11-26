@@ -298,6 +298,7 @@ type SearchFilter struct {
 	Public      bool           `json:"public"`
 
 	Filter types.IssuesListFilters `json:"filter" gorm:"type:jsonb"`
+	AQL    string
 
 	Author *User `json:"author_detail" gorm:"foreignKey:AuthorID" extensions:"x-nullable"`
 
@@ -317,6 +318,7 @@ func (sf *SearchFilter) ToLightDTO() *dto.SearchFilterLight {
 		Description: sf.Description,
 		Public:      sf.Public,
 		Filter:      sf.Filter,
+		AQL:         sf.AQL,
 		Url:         types.JsonURL{URL: sf.URL},
 		ShortUrl:    types.JsonURL{URL: sf.ShortURL},
 	}

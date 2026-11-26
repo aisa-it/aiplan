@@ -18,6 +18,7 @@ var emptyFieldsFunc = map[string]emptyFunc{
 	//"status":        nil,
 	//"statusgroup":   nil,
 	"priority": columnEmpty("issues.priority"),
+	"type":     columnEmpty("issues.issue_type_id"),
 	"labels":   relationEmpty(&dao.IssueLabel{}),
 	"assignee": relationEmpty(&dao.IssueAssignee{}),
 	//"author":        nil,

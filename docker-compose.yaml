@@ -20,7 +20,7 @@ services:
       - aiplan-net
 
   db:
-    image: aiplan-postgres
+    image: ghcr.io/aisa-it/postgres-pgvector:17-alpine
     ports:
       - 5432:5432 # For database debug
     restart: always
