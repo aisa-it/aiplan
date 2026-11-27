@@ -1,8 +1,12 @@
 package server
 
 import (
+	"archive/zip"
+	"compress/flate"
 	"errors"
+	"io"
 	"net/http"
+	"os"
 	"time"
 
 	apicontext "github.com/aisa-it/aiplan/aiplan.go/pkg/api-context"
@@ -34,6 +38,29 @@ func aqlError(c echo.Context, err error) error {
 	return EError(c, err)
 }
 
+// aqlIssuesQuery разбирает запрос AQL и навешивает видимость задач пользователя.
+func (s *Services) aqlIssuesQuery(c echo.Context, query string) (*gorm.DB, error) {
+	apiContext := apicontext.GetContext(c)
+	ctx := c.Request().Context()
+	scope := engine.IssueScope{Subject: apiContext, Kind: engine.ScopeGlobal}
+
+	q, err := aql.ParseAQLQuery(
+		s.DB(c),
+		func(q *gorm.DB) *gorm.DB { return s.policy.ScopeIssues(ctx, scope, q) },
+		s.policy.PropertyTemplateScope(ctx, apiContext),
+		apiContext.GetUser(),
+		query,
+	)
+	if err != nil {
+		return nil, err
+	}
+	q = s.policy.ScopeIssues(ctx, scope, q)
+	if apiContext.Error() != nil {
+		return nil, apiContext.Error()
+	}
+	return q, nil
+}
+
 // searchIssues godoc
 // @id searchIssues
 // @Summary Задачи: поиск задач по AQL
@@ -51,10 +78,6 @@ func aqlError(c echo.Context, err error) error {
 // @Failure 408 {object} apierrors.DefinedError "Время ожидания запроса истекло"
 // @Router /api/auth/search [get]
 func (s *Services) searchIssues(c echo.Context) error {
-	apiContext := apicontext.GetContext(c)
-	ctx := c.Request().Context()
-	scope := engine.IssueScope{Subject: apiContext, Kind: engine.ScopeGlobal}
-
 	query := ""
 	limit := 100
 	offset := 0
@@ -81,19 +104,9 @@ func (s *Services) searchIssues(c echo.Context) error {
 
 	startMs := time.Now()
 
-	q, err := aql.ParseAQLQuery(
-		s.DB(c),
-		func(q *gorm.DB) *gorm.DB { return s.policy.ScopeIssues(ctx, scope, q) },
-		s.policy.PropertyTemplateScope(ctx, apiContext),
-		apiContext.GetUser(),
-		query,
-	)
+	q, err := s.aqlIssuesQuery(c, query)
 	if err != nil {
 		return aqlError(c, err)
-	}
-	q = s.policy.ScopeIssues(ctx, scope, q)
-	if apiContext.Error() != nil {
-		return EError(c, apiContext.Error())
 	}
 
 	var (
@@ -138,4 +151,101 @@ func (s *Services) searchIssues(c echo.Context) error {
 		Issues:         dtoIssues,
 		Duration:       time.Since(startMs).Milliseconds(),
 	})
+}
+
+// exportSearchIssues godoc
+// @id exportSearchIssues
+// @Summary Задачи: экспорт задач по AQL в CSV
+// @Description Экспортирует найденные запросом AQL задачи в ZIP архив с файлом issues.csv. Сортировка - как в поиске, черновики не выгружаются.
+// @Tags Issues
+// @Security ApiKeyAuth
+// @Produce application/zip
+// @Param aql query string true "Запрос AQL, до 10000 байт"
+// @Param include_properties query bool false "Добавить колонки дополнительных параметров задач" default(false)
+// @Success 200 {file} binary "ZIP архив с CSV файлом"
+// @Failure 400 {object} aqlErrorResponse "Запрос не передан или содержит ошибку; место ошибки в запросе - в поле aql"
+// @Failure 401 {object} apierrors.DefinedError "Необходима авторизация"
+// @Failure 408 {object} apierrors.DefinedError "Время ожидания запроса истекло"
+// @Router /api/auth/search/export [get]
+func (s *Services) exportSearchIssues(c echo.Context) error {
+	query := ""
+	includeProperties := false
+
+	if err := echo.QueryParamsBinder(c).
+		String("aql", &query).
+		Bool("include_properties", &includeProperties).
+		BindError(); err != nil {
+		return EError(c, err)
+	}
+
+	if query == "" {
+		return EErrorDefined(c, apierrors.ErrAQLQueryRequired)
+	}
+
+	q, err := s.aqlIssuesQuery(c, query)
+	if err != nil {
+		return aqlError(c, err)
+	}
+
+	var issues []dao.IssueWithCount
+	if err := q.Model(&dao.Issue{}).
+		Preload("Workspace").
+		Preload("State").
+		Preload("Project").
+		Preload("Assignees").
+		Preload("Watchers").
+		Preload("Labels").
+		Preload("Sprints").
+		Limit(issueExportLimit).
+		Find(&issues).Error; err != nil {
+		return EError(c, err)
+	}
+
+	search.PopulateAuthors(issues)
+
+	res := dto.IssuesSearchResponse{
+		Issues: utils.SliceToSlice(&issues, func(iwc *dao.IssueWithCount) dto.IssueWithCount { return *iwc.ToDTO() }),
+	}
+
+	var propsData *exportPropertiesData
+	if includeProperties {
+		propsData, err = s.loadExportProperties(c, res)
+		if err != nil {
+			return EError(c, err)
+		}
+	}
+
+	f, err := os.CreateTemp("", "export-*.zip")
+	if err != nil {
+		return EError(c, err)
+	}
+	defer os.Remove(f.Name())
+
+	z := zip.NewWriter(f)
+	z.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(w, flate.BestCompression)
+	})
+
+	entry, err := z.Create("issues.csv")
+	if err != nil {
+		return EError(c, err)
+	}
+	rows := make([]*dto.IssueWithCount, len(res.Issues))
+	for i := range res.Issues {
+		rows[i] = &res.Issues[i]
+	}
+	if err := writeIssuesCSV(entry, rows, propsData); err != nil {
+		return EError(c, err)
+	}
+
+	if err := z.Close(); err != nil {
+		return EError(c, err)
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return EError(c, err)
+	}
+
+	c.Response().Header().Set("Content-Disposition", "attachment; filename=issues-export.zip")
+	return c.Stream(http.StatusOK, "application/zip", f)
 }
