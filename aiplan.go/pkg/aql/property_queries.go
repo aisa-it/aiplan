@@ -42,17 +42,24 @@ func (v *Visitor) propertyField(name string, ctx antlr.ParserRuleContext) fieldF
 	for _, t := range templates {
 		byType[t.Type] = append(byType[t.Type], t)
 	}
-	return fieldFuncs{
+	f := fieldFuncs{
 		in: func(v *Visitor, values []any) (*gorm.DB, error) {
 			return propertyIn(v, byType, values)
 		},
 		cmp: func(v *Visitor, op int, value any) (*gorm.DB, error) {
 			return propertyCmp(v, byType, op, value)
 		},
-		empty: func(v *Visitor, negate bool) *gorm.DB {
-			return propertyEmpty(v, templates, negate)
-		},
 	}
+	// boolean пустым не бывает: без значения он считается false.
+	notBool := slices.DeleteFunc(slices.Clone(templates), func(t dao.ProjectPropertyTemplate) bool {
+		return t.Type == "boolean"
+	})
+	if len(notBool) > 0 {
+		f.empty = func(v *Visitor, negate bool) *gorm.DB {
+			return propertyEmpty(v, notBool, negate)
+		}
+	}
+	return f
 }
 
 func propertyIn(v *Visitor, byType map[string][]dao.ProjectPropertyTemplate, values []any) (*gorm.DB, error) {
